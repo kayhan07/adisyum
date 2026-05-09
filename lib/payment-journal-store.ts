@@ -1,0 +1,81 @@
+'use client';
+
+const STORAGE_KEY = 'adisyon-payment-journal';
+const EVENT_NAME = 'adisyon-payment-journal:changed';
+
+export type PaymentJournalMethod = 'cash' | 'card' | 'account' | 'meal' | 'euro' | 'dollar';
+
+export type PaymentJournalEntry = {
+  id: string;
+  date: string;
+  amount: number;
+  method: PaymentJournalMethod;
+  source: 'table' | 'delivery';
+  sourceId: string;
+  label: string;
+  createdAt: string;
+};
+
+function emitChange() {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(EVENT_NAME));
+}
+
+function uniqueById<T extends { id: string }>(items: T[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
+
+export function loadPaymentJournal() {
+  if (typeof window === 'undefined') {
+    return [] as PaymentJournalEntry[];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as PaymentJournalEntry[];
+    return Array.isArray(parsed) ? uniqueById(parsed) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function savePaymentJournal(entries: PaymentJournalEntry[]) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(uniqueById(entries)));
+  emitChange();
+}
+
+export function appendPaymentJournalEntries(entries: PaymentJournalEntry[]) {
+  const current = loadPaymentJournal();
+  savePaymentJournal([...entries, ...current]);
+}
+
+export function subscribeToPaymentJournalChanges(callback: () => void) {
+  if (typeof window === 'undefined') return () => {};
+
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === STORAGE_KEY) callback();
+  };
+  const onCustom = () => callback();
+
+  window.addEventListener('storage', onStorage);
+  window.addEventListener(EVENT_NAME, onCustom);
+  return () => {
+    window.removeEventListener('storage', onStorage);
+    window.removeEventListener(EVENT_NAME, onCustom);
+  };
+}
+
+export function buildPaymentJournalEntry(params: Omit<PaymentJournalEntry, 'id' | 'createdAt'>) {
+  return {
+    ...params,
+    id: `payment-journal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    createdAt: new Date().toISOString(),
+  } satisfies PaymentJournalEntry;
+}
