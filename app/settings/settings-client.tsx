@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Building2, Code2, KeyRound, PlugZap, Printer, RefreshCw, Save, ShieldCheck, Trash2, UserPlus } from 'lucide-react';
+import { Building2, CheckCircle2, Code2, KeyRound, PlugZap, Printer, RefreshCw, Save, ShieldCheck, Trash2, UserPlus, XCircle } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { getDefaultCompanyState, loadCompanyState, saveCompanyState, subscribeToCompanyChanges, type CompanyState } from '@/lib/company-store';
 import { getDefaultAccessState, loadAccessState, saveAccessState, subscribeToAccessChanges, type AccessUser } from '@/lib/access-store';
@@ -12,6 +12,7 @@ import {
   loadIntegrationState,
   saveIntegrationState,
   subscribeToIntegrationChanges,
+  type PrinterDeviceType,
   type PartnerIntegrationRecord,
   type PrintLogRecord,
 } from '@/lib/integration-store';
@@ -21,13 +22,33 @@ type SettingsTab = 'company' | 'integrations' | 'access' | 'developer';
 type PrinterConnectionType = 'usb' | 'network';
 type SystemPrinter = {
   name: string;
-  driverName: string;
-  portName: string;
-  status: string;
-  shared: boolean;
+  driverName?: string;
+  portName?: string;
+  status?: string;
+  shared?: boolean;
   connectionType: PrinterConnectionType;
   ip: string;
-  source?: 'local-agent' | 'server';
+};
+
+type AgentStatus = 'checking' | 'online' | 'offline';
+
+type PrintableDeviceType = Exclude<PrinterDeviceType, 'fiscal_pos'>;
+
+const deviceTypeLabels: Record<PrinterDeviceType, string> = {
+  receipt_printer: 'Fiş yazıcı',
+  kitchen_printer: 'Mutfak yazıcı',
+  bar_printer: 'Bar yazıcı',
+  fiscal_pos: 'Yazar kasa POS',
+};
+
+const printableDeviceTypeOptions: PrintableDeviceType[] = ['receipt_printer', 'kitchen_printer', 'bar_printer'];
+
+function isPrintableDeviceType(value: string): value is PrintableDeviceType {
+  return value === 'receipt_printer' || value === 'kitchen_printer' || value === 'bar_printer';
+}
+
+function isPrinterDeviceType(value: string): value is PrinterDeviceType {
+  return value === 'receipt_printer' || value === 'kitchen_printer' || value === 'bar_printer' || value === 'fiscal_pos';
 };
 type PrinterDraft = {
   name: string;
@@ -35,6 +56,7 @@ type PrinterDraft = {
   ip: string;
   port: string;
   group: string;
+  deviceType: PrinterDeviceType;
 };
 
 type UserDraft = {
@@ -100,6 +122,7 @@ export default function SettingsPage() {
   const [selectedSystemPrinterName, setSelectedSystemPrinterName] = useState('');
   const [printerScanLoading, setPrinterScanLoading] = useState(false);
   const [printerAutoScanned, setPrinterAutoScanned] = useState(false);
+  const [agentStatus, setAgentStatus] = useState<AgentStatus>('checking');
   const [integrationTestLoadingId, setIntegrationTestLoadingId] = useState('');
   const [printerDraft, setPrinterDraft] = useState<PrinterDraft>({
     name: '',
@@ -107,6 +130,7 @@ export default function SettingsPage() {
     ip: '',
     port: '9100',
     group: 'Kasa hattı',
+    deviceType: 'receipt_printer',
   });
   const [message, setMessage] = useState('');
 
@@ -152,8 +176,14 @@ export default function SettingsPage() {
   useEffect(() => {
     if (activeTab !== 'integrations' || printerAutoScanned) return;
     setPrinterAutoScanned(true);
+    void checkAgentStatus();
     void scanSystemPrinters();
   }, [activeTab, printerAutoScanned]);
+
+  const availablePrinterDevices = useMemo(
+    () => integrationState.printerDevices.filter((printer) => printer.deviceType !== 'fiscal_pos'),
+    [integrationState.printerDevices],
+  );
 
   const queueSummary = useMemo(() => {
     const waiting = integrationState.printLogs.filter((log) => log.status === 'Bekliyor').length;
@@ -244,22 +274,23 @@ export default function SettingsPage() {
     setMessage('');
 
     try {
-      const localAgentResult = await scanLocalAgentPrinters();
-      if (localAgentResult.printers.length > 0) {
-        setSystemPrinters(localAgentResult.printers);
-        setSelectedSystemPrinterName(localAgentResult.printers[0]?.name ?? '');
-        setMessage(`${localAgentResult.printers.length} yazıcı POS bilgisayarındaki local agent üzerinden bulundu.`);
+      const isOnline = await checkAgentStatus();
+      if (!isOnline) {
+        setSystemPrinters([]);
+        setSelectedSystemPrinterName('');
+        setMessage('Agent bulunamadı. Yazıcılar sadece bu bilgisayardaki local agent üzerinden okunur.');
         return;
       }
 
-      const response = await fetch('/api/printers/system', { cache: 'no-store' });
-      const data = await response.json() as { printers?: SystemPrinter[]; error?: string };
-      const printers = (data.printers ?? []).map((printer) => ({ ...printer, source: 'server' as const }));
-      setSystemPrinters(printers);
-      setSelectedSystemPrinterName(printers[0]?.name ?? '');
-      setMessage(data.error
-        ? `Sunucu yazıcıları okunamadı: ${data.error}. Canlı ortamda müşteri bilgisayarındaki USB yazıcılar için local agent çalışmalı.`
-        : `${printers.length} yazıcı sunucu üzerinden bulundu.`);
+      const localAgentResult = await scanLocalAgentPrinters();
+      setSystemPrinters(localAgentResult.printers);
+      setSelectedSystemPrinterName(localAgentResult.printers[0]?.name ?? '');
+      if (localAgentResult.printers.length > 0) {
+        setMessage(`${localAgentResult.printers.length} yazıcı local agent üzerinden bulundu.`);
+        return;
+      }
+
+      setMessage('Local agent çalışıyor ancak yazıcı bulunamadı.');
     } catch {
       setMessage('Yazıcılar okunamadı. POS bilgisayarında Adisyum Local Agent çalışmalı ve http://127.0.0.1:3001 erişilebilir olmalı.');
     } finally {
@@ -267,13 +298,39 @@ export default function SettingsPage() {
     }
   }
 
+  async function checkAgentStatus() {
+    setAgentStatus('checking');
+    try {
+      const response = await fetch('http://127.0.0.1:3001/printers', { cache: 'no-store' });
+      if (!response.ok) {
+        setAgentStatus('offline');
+        return false;
+      }
+
+      setAgentStatus('online');
+      return true;
+    } catch {
+      setAgentStatus('offline');
+      return false;
+    }
+  }
+
   async function scanLocalAgentPrinters() {
     try {
-      const response = await fetch('http://127.0.0.1:3001/api/printers', { cache: 'no-store' });
-      const data = await response.json() as { printers?: SystemPrinter[]; error?: string };
+      const response = await fetch('http://127.0.0.1:3001/printers', { cache: 'no-store' });
+      const data = await response.json() as Array<string | { Name?: string; name?: string }>;
+      const names = Array.isArray(data)
+        ? data
+            .map((item) => (typeof item === 'string' ? item : (item.Name ?? item.name ?? '')))
+            .filter((name): name is string => Boolean(name && name.trim()))
+        : [];
+
       return {
-        printers: (data.printers ?? []).map((printer) => ({ ...printer, source: 'local-agent' as const })),
-        error: data.error,
+        printers: names.map((name) => ({
+          name,
+          connectionType: 'usb' as const,
+          ip: '',
+        })),
       };
     } catch (error) {
       return {
@@ -287,6 +344,7 @@ export default function SettingsPage() {
     name: string;
     role: string;
     connectionType: PrinterConnectionType;
+    deviceType: PrinterDeviceType;
     ip?: string;
     port?: number;
     group: string;
@@ -301,6 +359,7 @@ export default function SettingsPage() {
       id: `prt-${slugify(trimmedName) || Date.now()}-${Date.now()}`,
       name: trimmedName,
       role: device.role.trim() || 'POS Yazıcısı',
+      deviceType: device.deviceType,
       connectionType: device.connectionType,
       systemName: device.systemName,
       driverName: device.driverName,
@@ -335,10 +394,15 @@ export default function SettingsPage() {
       return;
     }
 
+    const inferredType: PrintableDeviceType = printerDraft.deviceType === 'kitchen_printer' || printerDraft.deviceType === 'bar_printer'
+      ? printerDraft.deviceType
+      : 'receipt_printer';
+
     addPrinterDevice({
       name: selectedSystemPrinter.name,
       role: selectedSystemPrinter.connectionType === 'network' ? 'Ağ POS Yazıcısı' : 'USB POS Yazıcısı',
       connectionType: selectedSystemPrinter.connectionType,
+      deviceType: inferredType,
       ip: selectedSystemPrinter.ip,
       port: 9100,
       group: selectedSystemPrinter.connectionType === 'network' ? 'Ağ hattı' : 'USB POS hattı',
@@ -358,11 +422,49 @@ export default function SettingsPage() {
       name: printerDraft.name,
       role: printerDraft.role,
       connectionType: 'network',
+      deviceType: printerDraft.deviceType,
       ip: printerDraft.ip,
       port: Number(printerDraft.port) || 9100,
       group: printerDraft.group,
     });
-    setPrinterDraft((current) => ({ ...current, name: '', ip: '', port: '9100' }));
+    setPrinterDraft((current) => ({ ...current, name: '', ip: '', port: '9100', deviceType: current.deviceType }));
+  }
+
+  function setPrinterDeviceType(printerId: string, deviceType: PrinterDeviceType) {
+    persistIntegration({
+      ...integrationState,
+      printerDevices: integrationState.printerDevices.map((printer) =>
+        printer.id === printerId
+          ? {
+              ...printer,
+              deviceType,
+            }
+          : printer,
+      ),
+    });
+    setMessage('Yazıcı tipi güncellendi.');
+  }
+
+  function saveTenantPrinterSelections() {
+    if (availablePrinterDevices.length === 0) {
+      setMessage('Önce en az bir yazıcı ekleyin.');
+      return;
+    }
+
+    const fallback = availablePrinterDevices[0]?.name ?? '';
+
+    persistIntegration({
+      ...integrationState,
+      printerSettings: {
+        defaultPrinter: integrationState.printerSettings.defaultPrinter || fallback,
+        kitchenPrinter: integrationState.printerSettings.kitchenPrinter || fallback,
+        barPrinter: integrationState.printerSettings.barPrinter || fallback,
+        deviceType: isPrintableDeviceType(integrationState.printerSettings.deviceType)
+          ? integrationState.printerSettings.deviceType
+          : 'receipt_printer',
+      },
+    });
+    setMessage('Tenant yazıcı seçimleri kaydedildi.');
   }
 
   function removePrinterDevice(printerId: string) {
@@ -529,9 +631,40 @@ export default function SettingsPage() {
     setMessage('Bekleyen ve hatalı yazdırma işleri tekrar işlendi.');
   }
 
-  function manualReprint() {
+  async function manualReprint() {
     const printer = integrationState.printerDevices.find((item) => item.id === selectedPrinterId);
     if (!printer) return;
+
+    if (printer.deviceType === 'fiscal_pos') {
+      setMessage('Yazar kasa POS ayrı sistemdir. Local agent ile test yazdırma yapılmaz.');
+      return;
+    }
+
+    try {
+      const sampleText = [
+        company.tradeName,
+        'Test Yazdır',
+        `Tarih/Saat: ${new Date().toLocaleString('tr-TR')}`,
+        '------------------------------',
+        '1 x Deneme Ürünü',
+      ].join('\n');
+
+      const response = await fetch('http://127.0.0.1:3001/print', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          printerName: printer.name,
+          text: sampleText,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Local agent yazdırma isteğini işleyemedi.');
+      }
+    } catch {
+      setMessage('Test Yazdır başarısız. Local agent çalışmıyor olabilir.');
+      return;
+    }
 
     const log: PrintLogRecord = {
       id: `manual-${Date.now()}`,
@@ -542,7 +675,7 @@ export default function SettingsPage() {
       info: 'Ayarlar panelinden manuel yazdırıldı',
     };
     persistIntegration({ ...integrationState, printLogs: [log, ...integrationState.printLogs] });
-    setMessage(`${printer.name} için manuel yazdırma kaydı oluşturuldu.`);
+    setMessage(`${printer.name} için Test Yazdır gönderildi.`);
   }
 
   function rotateKey(id: string) {
@@ -674,6 +807,33 @@ export default function SettingsPage() {
                 </button>
               </div>
 
+              <div className="mt-4 rounded-3xl border border-line bg-canvas p-4">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted">POS Agent Kurulumu</p>
+                    <h3 className="mt-2 text-lg font-semibold text-ink">Her POS bilgisayarı kendi agent’ını çalıştırmalı</h3>
+                    <p className="mt-1 text-sm text-muted">Yazıcı listesi sunucudan değil sadece local agent üzerinden okunur.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <a href="/downloads/adisyum-pos-agent-x64.exe" className="inline-flex h-10 items-center rounded-2xl bg-accent px-4 text-sm font-semibold text-white">Windows (64-bit)</a>
+                    <a href="/downloads/adisyum-pos-agent-x86.exe" className="inline-flex h-10 items-center rounded-2xl border border-line bg-panel px-4 text-sm font-semibold text-ink">Windows (32-bit)</a>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-line bg-panel px-4 py-3 text-sm text-muted">
+                  <p className="font-semibold text-ink">Kurulum adımları</p>
+                  <p className="mt-1">1. İndir</p>
+                  <p>2. Çalıştır</p>
+                  <p>3. Agent otomatik başlar</p>
+                  <p>4. Sayfayı yenile</p>
+                </div>
+
+                <div className={`mt-4 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${agentStatus === 'online' ? 'bg-emerald-500/10 text-emerald-700' : 'bg-rose-500/10 text-rose-700'}`}>
+                  {agentStatus === 'online' ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+                  {agentStatus === 'online' ? 'Agent aktif' : 'Agent bulunamadı'}
+                </div>
+              </div>
+
               <div className="mt-5 grid gap-4 lg:grid-cols-2">
                 <div className="rounded-3xl border border-line bg-canvas p-4">
                   <div className="flex items-center justify-between gap-3">
@@ -690,7 +850,7 @@ export default function SettingsPage() {
                   </select>
                   {!printerScanLoading && systemPrinters.length === 0 ? (
                     <div className="mt-3 rounded-2xl border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-700">
-                      Sistem yazıcısı görünmüyor. Canlı ortamda USB yazıcıları görmek için POS bilgisayarında Adisyum Local Agent çalışmalı: http://127.0.0.1:3001
+                      Sistem yazıcısı görünmüyor. Yazıcılar sadece bu bilgisayarın local agent servisinden okunur: http://127.0.0.1:3001/printers
                     </div>
                   ) : null}
                   {selectedSystemPrinter ? (
@@ -698,9 +858,27 @@ export default function SettingsPage() {
                       <p><span className="font-semibold text-ink">Port:</span> {selectedSystemPrinter.portName || '-'}</p>
                       <p className="mt-1"><span className="font-semibold text-ink">Sürücü:</span> {selectedSystemPrinter.driverName || '-'}</p>
                       <p className="mt-1"><span className="font-semibold text-ink">Tip:</span> {selectedSystemPrinter.connectionType === 'network' ? 'Ağ / TCP-IP' : 'USB / Windows kuyruğu'}</p>
-                      <p className="mt-1"><span className="font-semibold text-ink">Kaynak:</span> {selectedSystemPrinter.source === 'local-agent' ? 'POS bilgisayarı local agent' : 'Sunucu'}</p>
+                      <p className="mt-1"><span className="font-semibold text-ink">Kaynak:</span> POS bilgisayarı local agent</p>
                     </div>
                   ) : null}
+                  <label className="mt-3 block">
+                    <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Cihaz tipi</span>
+                    <select
+                      value={printerDraft.deviceType}
+                      onChange={(event) => {
+                        const nextType = event.target.value;
+                        setPrinterDraft((current) => ({
+                          ...current,
+                          deviceType: isPrinterDeviceType(nextType) ? nextType : current.deviceType,
+                        }));
+                      }}
+                      className="mt-2 h-11 w-full rounded-2xl border border-line bg-panel px-4 text-sm font-semibold text-ink outline-none"
+                    >
+                      {printableDeviceTypeOptions.map((deviceType) => (
+                        <option key={deviceType} value={deviceType}>{deviceTypeLabels[deviceType]}</option>
+                      ))}
+                    </select>
+                  </label>
                   <button type="button" onClick={addSelectedSystemPrinter} className="mt-4 w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white">
                     Seçili yazıcıyı POS'a ekle
                   </button>
@@ -718,6 +896,22 @@ export default function SettingsPage() {
                       <input value={printerDraft.role} onChange={(event) => setPrinterDraft((current) => ({ ...current, role: event.target.value }))} placeholder="Mutfak / Bar / Kasa" className="h-11 rounded-2xl border border-line bg-panel px-4 text-sm font-semibold text-ink outline-none" />
                       <input value={printerDraft.group} onChange={(event) => setPrinterDraft((current) => ({ ...current, group: event.target.value }))} placeholder="Mutfak hattı" className="h-11 rounded-2xl border border-line bg-panel px-4 text-sm font-semibold text-ink outline-none" />
                     </div>
+                    <select
+                      value={printerDraft.deviceType}
+                      onChange={(event) => {
+                        const nextType = event.target.value;
+                        setPrinterDraft((current) => ({
+                          ...current,
+                          deviceType: isPrinterDeviceType(nextType) ? nextType : current.deviceType,
+                        }));
+                      }}
+                      className="h-11 rounded-2xl border border-line bg-panel px-4 text-sm font-semibold text-ink outline-none"
+                    >
+                      <option value="receipt_printer">Fiş yazıcı</option>
+                      <option value="kitchen_printer">Mutfak yazıcı</option>
+                      <option value="bar_printer">Bar yazıcı</option>
+                      <option value="fiscal_pos">Yazar kasa POS (ayrı sistem)</option>
+                    </select>
                     <button type="button" onClick={addManualNetworkPrinter} className="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white">
                       IP yazıcıyı ekle
                     </button>
@@ -742,9 +936,29 @@ export default function SettingsPage() {
                           <p className="mt-1 text-xs text-muted">
                             {printer.connectionType === 'usb' ? `USB · ${printer.systemName ?? printer.portName ?? 'Windows yazıcı kuyruğu'}` : `Ağ · ${printer.ip}:${printer.port || 9100}`} · {printer.role}
                           </p>
+                          <p className="mt-1 text-xs text-muted">{deviceTypeLabels[printer.deviceType ?? 'receipt_printer']}</p>
+                          {printer.deviceType === 'fiscal_pos' ? (
+                            <p className="mt-1 text-xs font-semibold text-amber-700">Yazar kasa POS ayrı sistemdir.</p>
+                          ) : (
+                            <p className="mt-1 text-xs font-semibold text-sky-700">Bu yazıcı sadece fiş yazdırır.</p>
+                          )}
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
+                        <select
+                          value={printer.deviceType ?? 'receipt_printer'}
+                          onChange={(event) => {
+                            const nextType = event.target.value;
+                            if (!isPrinterDeviceType(nextType)) return;
+                            setPrinterDeviceType(printer.id, nextType);
+                          }}
+                          className="h-8 rounded-full border border-line bg-canvas px-3 text-xs font-semibold text-ink"
+                        >
+                          <option value="receipt_printer">Fiş yazıcı</option>
+                          <option value="kitchen_printer">Mutfak yazıcı</option>
+                          <option value="bar_printer">Bar yazıcı</option>
+                          <option value="fiscal_pos">Yazar kasa POS</option>
+                        </select>
                         <span className={`rounded-full px-3 py-1 text-xs font-semibold ${printer.status === 'Pasif' ? 'bg-slate-500/10 text-slate-600' : 'bg-emerald-500/10 text-emerald-700'}`}>{printer.status}</span>
                         <button
                           type="button"
@@ -764,8 +978,85 @@ export default function SettingsPage() {
                     </div>
                   ))}
                 </div>
+                <div className="mt-4 rounded-2xl border border-line bg-panel p-4">
+                  <p className="font-semibold text-ink">Tenant yazıcı seçimleri</p>
+                  <p className="mt-1 text-sm text-muted">Yazıcı listesi local’de kalır; tenant için sadece seçilen yazıcı adları saklanır.</p>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <label className="block">
+                      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Default printer</span>
+                      <select
+                        value={integrationState.printerSettings.defaultPrinter}
+                        onChange={(event) => persistIntegration({
+                          ...integrationState,
+                          printerSettings: {
+                            ...integrationState.printerSettings,
+                            defaultPrinter: event.target.value,
+                          },
+                        })}
+                        className="mt-2 h-10 w-full rounded-2xl border border-line bg-canvas px-3 text-sm font-semibold text-ink outline-none"
+                      >
+                        {availablePrinterDevices.map((printer) => <option key={`def-${printer.id}`} value={printer.name}>{printer.name}</option>)}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Kitchen printer</span>
+                      <select
+                        value={integrationState.printerSettings.kitchenPrinter}
+                        onChange={(event) => persistIntegration({
+                          ...integrationState,
+                          printerSettings: {
+                            ...integrationState.printerSettings,
+                            kitchenPrinter: event.target.value,
+                          },
+                        })}
+                        className="mt-2 h-10 w-full rounded-2xl border border-line bg-canvas px-3 text-sm font-semibold text-ink outline-none"
+                      >
+                        {availablePrinterDevices.map((printer) => <option key={`kit-${printer.id}`} value={printer.name}>{printer.name}</option>)}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Bar printer</span>
+                      <select
+                        value={integrationState.printerSettings.barPrinter}
+                        onChange={(event) => persistIntegration({
+                          ...integrationState,
+                          printerSettings: {
+                            ...integrationState.printerSettings,
+                            barPrinter: event.target.value,
+                          },
+                        })}
+                        className="mt-2 h-10 w-full rounded-2xl border border-line bg-canvas px-3 text-sm font-semibold text-ink outline-none"
+                      >
+                        {availablePrinterDevices.map((printer) => <option key={`bar-${printer.id}`} value={printer.name}>{printer.name}</option>)}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Device type</span>
+                      <select
+                        value={integrationState.printerSettings.deviceType}
+                        onChange={(event) => {
+                          const nextType = event.target.value;
+                          if (!isPrintableDeviceType(nextType)) return;
+                          persistIntegration({
+                            ...integrationState,
+                            printerSettings: {
+                              ...integrationState.printerSettings,
+                              deviceType: nextType,
+                            },
+                          });
+                        }}
+                        className="mt-2 h-10 w-full rounded-2xl border border-line bg-canvas px-3 text-sm font-semibold text-ink outline-none"
+                      >
+                        {printableDeviceTypeOptions.map((deviceType) => (
+                          <option key={`type-${deviceType}`} value={deviceType}>{deviceType}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <button type="button" onClick={saveTenantPrinterSelections} className="mt-3 rounded-2xl bg-accent px-4 py-2 text-sm font-semibold text-white">Seçimleri kaydet</button>
+                </div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <button type="button" onClick={manualReprint} className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white">Manuel yazdır</button>
+                  <button type="button" onClick={() => void manualReprint()} className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white">Test Yazdır</button>
                   <button type="button" onClick={retryFailedJobs} className="rounded-2xl border border-line bg-panel px-4 py-3 text-sm font-semibold text-ink">Kuyruğu işle</button>
                 </div>
               </div>

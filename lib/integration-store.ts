@@ -59,10 +59,13 @@ export type PartnerIntegrationRecord = {
   notes?: string;
 };
 
+export type PrinterDeviceType = 'receipt_printer' | 'kitchen_printer' | 'bar_printer' | 'fiscal_pos';
+
 export type PrinterDeviceRecord = {
   id: string;
   name: string;
   role: string;
+  deviceType?: PrinterDeviceType;
   connectionType?: 'usb' | 'network';
   systemName?: string;
   driverName?: string;
@@ -74,6 +77,13 @@ export type PrinterDeviceRecord = {
   retry: string;
   backup: string;
   group: string;
+};
+
+export type TenantPrinterSettings = {
+  defaultPrinter: string;
+  kitchenPrinter: string;
+  barPrinter: string;
+  deviceType: Exclude<PrinterDeviceType, 'fiscal_pos'>;
 };
 
 export type PrinterMappingRecord = {
@@ -99,6 +109,7 @@ export type IntegrationState = {
   webhookEvents: WebhookEventRecord[];
   partnerIntegrations: PartnerIntegrationRecord[];
   printerDevices: PrinterDeviceRecord[];
+  printerSettings: TenantPrinterSettings;
   printerMappings: PrinterMappingRecord[];
   printLogs: PrintLogRecord[];
 };
@@ -128,11 +139,17 @@ const DEFAULT_STATE: IntegrationState = {
     { id: 'int-trendyol', name: 'Trendyol', type: 'Marketplace', status: 'Hazır adaptör', version: 'v2' },
   ],
   printerDevices: [
-    { id: 'prt-mutfak-a', name: 'Sıcak Mutfak A', role: 'Mutfak', ip: '192.168.1.210', port: 9100, status: 'Aktif', queue: 3, retry: '15 sn', backup: 'Sıcak Mutfak B', group: 'Mutfak hattı' },
-    { id: 'prt-mutfak-b', name: 'Sıcak Mutfak B', role: 'Mutfak Yedek', ip: '192.168.1.211', port: 9100, status: 'Yedek', queue: 1, retry: '15 sn', backup: 'Otomatik devralır', group: 'Mutfak hattı' },
-    { id: 'prt-bar', name: 'Bar İstasyonu', role: 'Bar', ip: '192.168.1.212', port: 9100, status: 'Aktif', queue: 2, retry: '20 sn', backup: 'Tatlı İstasyonu', group: 'İçecek hattı' },
-    { id: 'prt-kasa', name: 'Kasa POS Yazıcısı', role: 'Kasa', ip: '192.168.1.213', port: 9100, status: 'Aktif', queue: 0, retry: '10 sn', backup: 'Ön Kasa Yedek', group: 'Kasa hattı' },
+    { id: 'prt-mutfak-a', name: 'Sıcak Mutfak A', role: 'Mutfak', deviceType: 'kitchen_printer', ip: '192.168.1.210', port: 9100, status: 'Aktif', queue: 3, retry: '15 sn', backup: 'Sıcak Mutfak B', group: 'Mutfak hattı' },
+    { id: 'prt-mutfak-b', name: 'Sıcak Mutfak B', role: 'Mutfak Yedek', deviceType: 'kitchen_printer', ip: '192.168.1.211', port: 9100, status: 'Yedek', queue: 1, retry: '15 sn', backup: 'Otomatik devralır', group: 'Mutfak hattı' },
+    { id: 'prt-bar', name: 'Bar İstasyonu', role: 'Bar', deviceType: 'bar_printer', ip: '192.168.1.212', port: 9100, status: 'Aktif', queue: 2, retry: '20 sn', backup: 'Tatlı İstasyonu', group: 'İçecek hattı' },
+    { id: 'prt-kasa', name: 'Kasa POS Yazıcısı', role: 'Kasa', deviceType: 'receipt_printer', ip: '192.168.1.213', port: 9100, status: 'Aktif', queue: 0, retry: '10 sn', backup: 'Ön Kasa Yedek', group: 'Kasa hattı' },
   ],
+  printerSettings: {
+    defaultPrinter: 'Kasa POS Yazıcısı',
+    kitchenPrinter: 'Sıcak Mutfak A',
+    barPrinter: 'Bar İstasyonu',
+    deviceType: 'receipt_printer',
+  },
   printerMappings: [
     { id: 'map-food', category: 'Yemek', printer: 'Sıcak Mutfak A', fallback: 'Sıcak Mutfak B', load: 'Mutfak A/B arasında paylaştırılır' },
     { id: 'map-drink', category: 'İçecek', printer: 'Bar İstasyonu', fallback: 'Tatlı İstasyonu', load: 'Bar hattı yoğunluğa göre yönlenir' },
@@ -156,9 +173,43 @@ function normalizePrinterDevices(devices: PrinterDeviceRecord[]) {
 
     return {
       ...printer,
+      deviceType: normalizePrinterDeviceType(printer.deviceType, printer.role),
       id: count === 0 ? baseId : `${baseId}-${count + 1}`,
     };
   });
+}
+
+function normalizePrinterDeviceType(
+  deviceType: PrinterDeviceRecord['deviceType'],
+  role: string,
+): PrinterDeviceType {
+  if (deviceType === 'receipt_printer' || deviceType === 'kitchen_printer' || deviceType === 'bar_printer' || deviceType === 'fiscal_pos') {
+    return deviceType;
+  }
+
+  const normalizedRole = role.toLocaleLowerCase('tr-TR');
+  if (normalizedRole.includes('fiscal') || normalizedRole.includes('yazar') || normalizedRole.includes('kasa pos')) return 'fiscal_pos';
+  if (normalizedRole.includes('mutfak')) return 'kitchen_printer';
+  if (normalizedRole.includes('bar') || normalizedRole.includes('içecek') || normalizedRole.includes('icecek')) return 'bar_printer';
+  return 'receipt_printer';
+}
+
+function normalizePrinterSettings(input: Partial<TenantPrinterSettings> | undefined, devices: PrinterDeviceRecord[]): TenantPrinterSettings {
+  const nonFiscal = devices.filter((device) => device.deviceType !== 'fiscal_pos');
+  const firstReceipt = nonFiscal.find((device) => device.deviceType === 'receipt_printer')?.name ?? nonFiscal[0]?.name ?? '';
+  const firstKitchen = nonFiscal.find((device) => device.deviceType === 'kitchen_printer')?.name ?? firstReceipt;
+  const firstBar = nonFiscal.find((device) => device.deviceType === 'bar_printer')?.name ?? firstReceipt;
+
+  const deviceType = input?.deviceType === 'kitchen_printer' || input?.deviceType === 'bar_printer' || input?.deviceType === 'receipt_printer'
+    ? input.deviceType
+    : 'receipt_printer';
+
+  return {
+    defaultPrinter: input?.defaultPrinter?.trim() || firstReceipt,
+    kitchenPrinter: input?.kitchenPrinter?.trim() || firstKitchen,
+    barPrinter: input?.barPrinter?.trim() || firstBar,
+    deviceType,
+  };
 }
 
 function getPartnerIntegrationDefaults(id: string): Partial<PartnerIntegrationRecord> {
@@ -334,6 +385,8 @@ export function loadIntegrationState() {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return getDefaultIntegrationState();
     const parsed = JSON.parse(raw) as Partial<IntegrationState>;
+    const printerDevices = normalizePrinterDevices(Array.isArray(parsed.printerDevices) ? parsed.printerDevices : DEFAULT_STATE.printerDevices);
+
     return {
       apiKeys: Array.isArray(parsed.apiKeys) ? parsed.apiKeys : DEFAULT_STATE.apiKeys,
       apiUsageLogs: Array.isArray(parsed.apiUsageLogs) ? parsed.apiUsageLogs : DEFAULT_STATE.apiUsageLogs,
@@ -341,7 +394,8 @@ export function loadIntegrationState() {
       partnerIntegrations: normalizePartnerIntegrations(
         Array.isArray(parsed.partnerIntegrations) ? parsed.partnerIntegrations : DEFAULT_STATE.partnerIntegrations,
       ),
-      printerDevices: normalizePrinterDevices(Array.isArray(parsed.printerDevices) ? parsed.printerDevices : DEFAULT_STATE.printerDevices),
+      printerDevices,
+      printerSettings: normalizePrinterSettings(parsed.printerSettings, printerDevices),
       printerMappings: Array.isArray(parsed.printerMappings) ? parsed.printerMappings : DEFAULT_STATE.printerMappings,
       printLogs: Array.isArray(parsed.printLogs) ? parsed.printLogs : DEFAULT_STATE.printLogs,
     } satisfies IntegrationState;
@@ -353,10 +407,13 @@ export function loadIntegrationState() {
 export function saveIntegrationState(state: IntegrationState) {
   if (typeof window === 'undefined') return;
   try {
+    const printerDevices = normalizePrinterDevices(state.printerDevices);
+
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
       ...state,
       partnerIntegrations: normalizePartnerIntegrations(state.partnerIntegrations),
-      printerDevices: normalizePrinterDevices(state.printerDevices),
+      printerDevices,
+      printerSettings: normalizePrinterSettings(state.printerSettings, printerDevices),
     }));
     emitChange();
   } catch {

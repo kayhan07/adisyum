@@ -275,7 +275,7 @@ function looksLikeBarCategory(value: string) {
 }
 
 function resolveTenantPrinterSettings(integrationState: ReturnType<typeof getDefaultIntegrationState>): TenantPrinterSettings {
-  const activeDevices = integrationState.printerDevices.filter((device) => device.status !== 'Pasif');
+  const activeDevices = integrationState.printerDevices.filter((device) => device.status !== 'Pasif' && device.deviceType !== 'fiscal_pos');
   const sourceDevices = activeDevices.length > 0 ? activeDevices : integrationState.printerDevices;
 
   const firstPrinter = sourceDevices[0]?.name ?? 'POS Yazıcısı';
@@ -297,9 +297,9 @@ function resolveTenantPrinterSettings(integrationState: ReturnType<typeof getDef
   const kitchenMapped = resolvePrinterNameForCategory('Yemek', integrationState.printerMappings, integrationState.printerDevices);
   const barMapped = resolvePrinterNameForCategory('İçecek', integrationState.printerMappings, integrationState.printerDevices);
 
-  const defaultPrinter = defaultPrinterByRole ?? firstPrinter;
-  const kitchenPrinter = kitchenMapped === 'Mutfak yazıcısı' ? (kitchenPrinterByRole ?? defaultPrinter) : kitchenMapped;
-  const barPrinter = barMapped === 'Bar yazıcısı' ? (barPrinterByRole ?? defaultPrinter) : barMapped;
+  const defaultPrinter = integrationState.printerSettings.defaultPrinter || defaultPrinterByRole || firstPrinter;
+  const kitchenPrinter = integrationState.printerSettings.kitchenPrinter || (kitchenMapped === 'Mutfak yazıcısı' ? (kitchenPrinterByRole ?? defaultPrinter) : kitchenMapped);
+  const barPrinter = integrationState.printerSettings.barPrinter || (barMapped === 'Bar yazıcısı' ? (barPrinterByRole ?? defaultPrinter) : barMapped);
 
   return {
     defaultPrinter,
@@ -1546,9 +1546,14 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       );
 
       const categoryDefault = looksLikeBarCategory(category) ? tenantPrinters.barPrinter : tenantPrinters.kitchenPrinter;
-      const printerName = (mappedPrinter === 'Mutfak yazıcısı' || mappedPrinter === 'Bar yazıcısı' || mappedPrinter === 'Tatlı yazıcısı')
+      const resolvedName = (mappedPrinter === 'Mutfak yazıcısı' || mappedPrinter === 'Bar yazıcısı' || mappedPrinter === 'Tatlı yazıcısı')
         ? (categoryDefault || tenantPrinters.defaultPrinter)
         : (mappedPrinter || categoryDefault || tenantPrinters.defaultPrinter);
+
+      const resolvedDevice = integrationState.printerDevices.find((device) => device.name === resolvedName);
+      const printerName = resolvedDevice?.deviceType === 'fiscal_pos'
+        ? (categoryDefault || tenantPrinters.defaultPrinter)
+        : resolvedName;
 
       if (!groups[printerName]) {
         groups[printerName] = [];
