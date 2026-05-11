@@ -27,6 +27,7 @@ type SystemPrinter = {
   shared: boolean;
   connectionType: PrinterConnectionType;
   ip: string;
+  source?: 'local-agent' | 'server';
 };
 type PrinterDraft = {
   name: string;
@@ -243,16 +244,42 @@ export default function SettingsPage() {
     setMessage('');
 
     try {
+      const localAgentResult = await scanLocalAgentPrinters();
+      if (localAgentResult.printers.length > 0) {
+        setSystemPrinters(localAgentResult.printers);
+        setSelectedSystemPrinterName(localAgentResult.printers[0]?.name ?? '');
+        setMessage(`${localAgentResult.printers.length} yazıcı POS bilgisayarındaki local agent üzerinden bulundu.`);
+        return;
+      }
+
       const response = await fetch('/api/printers/system', { cache: 'no-store' });
       const data = await response.json() as { printers?: SystemPrinter[]; error?: string };
-      const printers = data.printers ?? [];
+      const printers = (data.printers ?? []).map((printer) => ({ ...printer, source: 'server' as const }));
       setSystemPrinters(printers);
       setSelectedSystemPrinterName(printers[0]?.name ?? '');
-      setMessage(data.error ? `Sistem yazıcıları okunamadı: ${data.error}` : `${printers.length} sistem yazıcısı bulundu.`);
+      setMessage(data.error
+        ? `Sunucu yazıcıları okunamadı: ${data.error}. Canlı ortamda müşteri bilgisayarındaki USB yazıcılar için local agent çalışmalı.`
+        : `${printers.length} yazıcı sunucu üzerinden bulundu.`);
     } catch {
-      setMessage('Sistem yazıcıları okunamadı. Next.js sunucusunun POS bilgisayarında çalıştığından emin olun.');
+      setMessage('Yazıcılar okunamadı. POS bilgisayarında Adisyum Local Agent çalışmalı ve http://127.0.0.1:3001 erişilebilir olmalı.');
     } finally {
       setPrinterScanLoading(false);
+    }
+  }
+
+  async function scanLocalAgentPrinters() {
+    try {
+      const response = await fetch('http://127.0.0.1:3001/api/printers', { cache: 'no-store' });
+      const data = await response.json() as { printers?: SystemPrinter[]; error?: string };
+      return {
+        printers: (data.printers ?? []).map((printer) => ({ ...printer, source: 'local-agent' as const })),
+        error: data.error,
+      };
+    } catch (error) {
+      return {
+        printers: [] as SystemPrinter[],
+        error: error instanceof Error ? error.message : 'Local agent erişilemedi.',
+      };
     }
   }
 
@@ -336,6 +363,38 @@ export default function SettingsPage() {
       group: printerDraft.group,
     });
     setPrinterDraft((current) => ({ ...current, name: '', ip: '', port: '9100' }));
+  }
+
+  function removePrinterDevice(printerId: string) {
+    const printer = integrationState.printerDevices.find((item) => item.id === printerId);
+    if (!printer) return;
+
+    const nextPrinters = integrationState.printerDevices.filter((item) => item.id !== printerId);
+    persistIntegration({
+      ...integrationState,
+      printerDevices: nextPrinters,
+      printerMappings: integrationState.printerMappings.map((mapping) => ({
+        ...mapping,
+        printer: mapping.printer === printer.name ? '' : mapping.printer,
+        fallback: mapping.fallback === printer.name ? '' : mapping.fallback,
+      })),
+    });
+    setSelectedPrinterId(nextPrinters[0]?.id ?? '');
+    setMessage(`${printer.name} kayıtlı POS yazıcılarından kaldırıldı.`);
+  }
+
+  function togglePrinterDeviceStatus(printerId: string) {
+    const printer = integrationState.printerDevices.find((item) => item.id === printerId);
+    if (!printer) return;
+
+    const nextStatus = printer.status === 'Pasif' ? 'Aktif' : 'Pasif';
+    persistIntegration({
+      ...integrationState,
+      printerDevices: integrationState.printerDevices.map((item) =>
+        item.id === printerId ? { ...item, status: nextStatus } : item,
+      ),
+    });
+    setMessage(`${printer.name} ${nextStatus.toLocaleLowerCase('tr-TR')} duruma alındı.`);
   }
 
   function addRole() {
@@ -631,7 +690,7 @@ export default function SettingsPage() {
                   </select>
                   {!printerScanLoading && systemPrinters.length === 0 ? (
                     <div className="mt-3 rounded-2xl border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-700">
-                      Sistem yazıcısı görünmüyor. POS bilgisayarında Windows'a yazıcı kurulmuş olmalı ve Next.js sunucusu aynı bilgisayarda çalışmalı.
+                      Sistem yazıcısı görünmüyor. Canlı ortamda USB yazıcıları görmek için POS bilgisayarında Adisyum Local Agent çalışmalı: http://127.0.0.1:3001
                     </div>
                   ) : null}
                   {selectedSystemPrinter ? (
@@ -639,6 +698,7 @@ export default function SettingsPage() {
                       <p><span className="font-semibold text-ink">Port:</span> {selectedSystemPrinter.portName || '-'}</p>
                       <p className="mt-1"><span className="font-semibold text-ink">Sürücü:</span> {selectedSystemPrinter.driverName || '-'}</p>
                       <p className="mt-1"><span className="font-semibold text-ink">Tip:</span> {selectedSystemPrinter.connectionType === 'network' ? 'Ağ / TCP-IP' : 'USB / Windows kuyruğu'}</p>
+                      <p className="mt-1"><span className="font-semibold text-ink">Kaynak:</span> {selectedSystemPrinter.source === 'local-agent' ? 'POS bilgisayarı local agent' : 'Sunucu'}</p>
                     </div>
                   ) : null}
                   <button type="button" onClick={addSelectedSystemPrinter} className="mt-4 w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white">
@@ -684,7 +744,23 @@ export default function SettingsPage() {
                           </p>
                         </div>
                       </div>
-                      <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-700">{printer.status}</span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${printer.status === 'Pasif' ? 'bg-slate-500/10 text-slate-600' : 'bg-emerald-500/10 text-emerald-700'}`}>{printer.status}</span>
+                        <button
+                          type="button"
+                          onClick={() => togglePrinterDeviceStatus(printer.id)}
+                          className="rounded-full border border-line bg-canvas px-3 py-1 text-xs font-semibold text-ink"
+                        >
+                          {printer.status === 'Pasif' ? 'Aktif et' : 'Pasife al'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removePrinterDevice(printer.id)}
+                          className="inline-flex items-center gap-1 rounded-full border border-rose-300/40 bg-rose-500/10 px-3 py-1 text-xs font-semibold text-rose-700"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" /> Kaldır
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
