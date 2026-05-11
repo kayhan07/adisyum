@@ -43,7 +43,7 @@ app.post('/print', (req, res) => {
   return res.json({ success: true, printerName, queued: true });
 });
 
-app.listen(HTTP_PORT, '127.0.0.1', () => {
+app.listen(HTTP_PORT, () => {
   console.log(`Adisyum POS Agent HTTP running at http://127.0.0.1:${HTTP_PORT}`);
 });
 
@@ -54,7 +54,7 @@ if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
   const cert = fs.readFileSync(certPath);
   const key = fs.readFileSync(keyPath);
 
-  https.createServer({ key, cert }, app).listen(HTTPS_PORT, '127.0.0.1', () => {
+  https.createServer({ key, cert }, app).listen(HTTPS_PORT, () => {
     console.log(`Adisyum POS Agent HTTPS running at https://127.0.0.1:${HTTPS_PORT}`);
   });
 } else {

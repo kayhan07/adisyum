@@ -1,7 +1,7 @@
 'use client';
 
-const HTTP_BASE = 'http://127.0.0.1:3001';
-const HTTPS_BASE = 'https://127.0.0.1:3443';
+const HTTP_BASES = ['http://127.0.0.1:3001', 'http://localhost:3001'];
+const HTTPS_BASES = ['https://127.0.0.1:3443', 'https://localhost:3443'];
 
 type LocalAgentRequestOptions = {
   method?: 'GET' | 'POST';
@@ -11,14 +11,14 @@ type LocalAgentRequestOptions = {
 
 function getPreferredBases() {
   if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
-    return [HTTPS_BASE, HTTP_BASE];
+    return [...HTTPS_BASES, ...HTTP_BASES];
   }
 
-  return [HTTP_BASE, HTTPS_BASE];
+  return [...HTTP_BASES, ...HTTPS_BASES];
 }
 
 export function getLocalAgentBaseHint() {
-  return `${HTTP_BASE} veya ${HTTPS_BASE}`;
+  return `${HTTP_BASES[0]} / ${HTTP_BASES[1]} veya ${HTTPS_BASES[0]} / ${HTTPS_BASES[1]}`;
 }
 
 export async function fetchFromLocalAgent(path: string, options: LocalAgentRequestOptions = {}) {
