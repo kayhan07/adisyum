@@ -25,7 +25,6 @@ export async function fetchFromLocalAgent(path: string, options: LocalAgentReque
 
   for (const base of bases) {
     try {
-      console.log('[LocalAgent] trying', base + path);
       const response = await fetch(`${base}${path}`, {
         method: options.method ?? 'GET',
         cache: 'no-store',
@@ -37,15 +36,12 @@ export async function fetchFromLocalAgent(path: string, options: LocalAgentReque
       });
 
       if (!response.ok) {
-        console.warn('[LocalAgent]', base + path, 'status', response.status);
         lastError = new Error(`Local agent status ${response.status}`);
         continue;
       }
 
-      console.log('[LocalAgent] success', base + path);
       return { response, base };
     } catch (error) {
-      console.warn('[LocalAgent]', base + path, 'error:', error);
       lastError = error;
     }
   }
