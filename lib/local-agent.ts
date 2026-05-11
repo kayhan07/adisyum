@@ -10,10 +10,23 @@ type LocalAgentRequestOptions = {
 };
 
 function getPreferredBases() {
-  // Always try HTTP loopback first – Chrome exempts 127.0.0.1/localhost from
-  // mixed-content blocking, so HTTP works even when the page is HTTPS.
-  // HTTPS bases are kept as last-resort fallback.
-  return [...HTTP_BASES, ...HTTPS_BASES];
+  // Prefer 127.0.0.1 (IP) over localhost to avoid hostname-based private network restrictions.
+  // If page is HTTPS, try HTTPS agent first; otherwise HTTP only.
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+    // HTTPS page: prefer HTTPS agent (3443), fall back to HTTP (3001)
+    return [
+      'https://127.0.0.1:3443',
+      'https://localhost:3443',
+      'http://127.0.0.1:3001',
+      'http://localhost:3001',
+    ];
+  }
+  
+  // HTTP page: can only use HTTP (Chrome blocks HTTP→HTTPS mixed content)
+  return [
+    'http://127.0.0.1:3001',
+    'http://localhost:3001',
+  ];
 }
 
 export function getLocalAgentBaseHint() {
