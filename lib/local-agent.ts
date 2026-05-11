@@ -10,10 +10,9 @@ type LocalAgentRequestOptions = {
 };
 
 function getPreferredBases() {
-  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
-    return [...HTTPS_BASES, ...HTTP_BASES];
-  }
-
+  // Always try HTTP loopback first – Chrome exempts 127.0.0.1/localhost from
+  // mixed-content blocking, so HTTP works even when the page is HTTPS.
+  // HTTPS bases are kept as last-resort fallback.
   return [...HTTP_BASES, ...HTTPS_BASES];
 }
 
