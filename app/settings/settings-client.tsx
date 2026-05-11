@@ -43,6 +43,7 @@ const deviceTypeLabels: Record<PrinterDeviceType, string> = {
 };
 
 const printableDeviceTypeOptions: PrintableDeviceType[] = ['receipt_printer', 'kitchen_printer', 'bar_printer'];
+const AGENT_INSTALLER_VERSION = '20260512-3';
 
 function isPrintableDeviceType(value: string): value is PrintableDeviceType {
   return value === 'receipt_printer' || value === 'kitchen_printer' || value === 'bar_printer';
@@ -805,8 +806,8 @@ export default function SettingsPage() {
                     <p className="mt-1 text-sm text-muted">Yazıcı listesi sunucudan değil sadece local agent üzerinden okunur.</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <a href="/downloads/adisyum-pos-agent-x64.exe" className="inline-flex h-10 items-center rounded-2xl bg-accent px-4 text-sm font-semibold text-white">Windows (64-bit)</a>
-                    <a href="/downloads/adisyum-pos-agent-x86.exe" className="inline-flex h-10 items-center rounded-2xl border border-line bg-panel px-4 text-sm font-semibold text-ink">Windows (32-bit)</a>
+                    <a href={`/downloads/adisyum-pos-agent-x64.exe?v=${AGENT_INSTALLER_VERSION}`} className="inline-flex h-10 items-center rounded-2xl bg-accent px-4 text-sm font-semibold text-white">Windows (64-bit)</a>
+                    <a href={`/downloads/adisyum-pos-agent-x86.exe?v=${AGENT_INSTALLER_VERSION}`} className="inline-flex h-10 items-center rounded-2xl border border-line bg-panel px-4 text-sm font-semibold text-ink">Windows (32-bit)</a>
                   </div>
                 </div>
 
