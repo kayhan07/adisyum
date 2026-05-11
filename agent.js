@@ -1,5 +1,4 @@
 const express = require('express');
-const cors = require('cors');
 const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -9,18 +8,23 @@ const app = express();
 const HTTP_PORT = Number(process.env.PORT || 3001);
 const HTTPS_PORT = Number(process.env.HTTPS_PORT || 3443);
 
-app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 
-// PNA (Private Network Access) + CORS handling
+// Manual CORS + PNA (Private Network Access) handling
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  const origin = req.headers.origin || '*';
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Private-Network', 'true');
-  res.setHeader('Vary', 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers, Access-Control-Request-Private-Network');
   
+  // Critical for PNA preflight
   if (req.method === 'OPTIONS') {
+    // Check for PNA preflight
+    if (req.headers['access-control-request-private-network'] === 'true') {
+      res.setHeader('Access-Control-Allow-Private-Network', 'true');
+    }
     return res.status(204).end();
   }
   next();
