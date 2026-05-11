@@ -303,13 +303,6 @@ export default function SettingsPage() {
   async function checkAgentStatus() {
     setAgentStatus('checking');
     try {
-      const response = await fetch('/api/printers/local-agent', { cache: 'no-store' });
-      const data = await response.json() as { ok?: boolean };
-      if (data.ok) {
-        setAgentStatus('online');
-        return true;
-      }
-
       await fetchLocalAgentJson<unknown>('/printers');
       setAgentStatus('online');
       return true;
@@ -321,29 +314,12 @@ export default function SettingsPage() {
 
   async function scanLocalAgentPrinters() {
     try {
-      const response = await fetch('/api/printers/local-agent', { cache: 'no-store' });
-      const proxied = await response.json() as { ok?: boolean; printers?: string[]; error?: string };
-
-      const names = proxied.ok
-        ? (proxied.printers ?? [])
+      const { data } = await fetchLocalAgentJson<Array<string | { Name?: string; name?: string }>>('/printers');
+      const names = Array.isArray(data)
+        ? data
+            .map((item) => (typeof item === 'string' ? item : (item.Name ?? item.name ?? '')))
+            .filter((name): name is string => Boolean(name && name.trim()))
         : [];
-
-      if (!proxied.ok) {
-        const { data } = await fetchLocalAgentJson<Array<string | { Name?: string; name?: string }>>('/printers');
-        const fallbackNames = Array.isArray(data)
-          ? data
-              .map((item) => (typeof item === 'string' ? item : (item.Name ?? item.name ?? '')))
-              .filter((name): name is string => Boolean(name && name.trim()))
-          : [];
-
-        return {
-          printers: fallbackNames.map((name) => ({
-            name,
-            connectionType: 'usb' as const,
-            ip: '',
-          })),
-        };
-      }
 
       return {
         printers: names.map((name) => ({
@@ -669,29 +645,13 @@ export default function SettingsPage() {
         '1 x Deneme Ürünü',
       ].join('\n');
 
-      const response = await fetch('/api/printers/local-agent/print', {
+      await fetchLocalAgentJson('/print', {
         method: 'POST',
-        cache: 'no-store',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+        body: {
           printerName: printer.name,
           text: sampleText,
-        }),
+        },
       });
-
-      const result = await response.json() as { ok?: boolean };
-
-      if (!result.ok) {
-        await fetchLocalAgentJson('/print', {
-          method: 'POST',
-          body: {
-            printerName: printer.name,
-            text: sampleText,
-          },
-        });
-      }
     } catch {
       setMessage('Test Yazdır başarısız. Local agent çalışmıyor olabilir.');
       return;
