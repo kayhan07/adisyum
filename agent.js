@@ -11,6 +11,10 @@ const HTTPS_PORT = Number(process.env.HTTPS_PORT || 3443);
 
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  next();
+});
 
 app.get('/printers', (req, res) => {
   exec(

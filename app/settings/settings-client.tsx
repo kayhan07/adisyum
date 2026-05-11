@@ -43,7 +43,7 @@ const deviceTypeLabels: Record<PrinterDeviceType, string> = {
 };
 
 const printableDeviceTypeOptions: PrintableDeviceType[] = ['receipt_printer', 'kitchen_printer', 'bar_printer'];
-const AGENT_INSTALLER_VERSION = '20260512-3';
+const AGENT_INSTALLER_VERSION = '20260512-4';
 
 function isPrintableDeviceType(value: string): value is PrintableDeviceType {
   return value === 'receipt_printer' || value === 'kitchen_printer' || value === 'bar_printer';

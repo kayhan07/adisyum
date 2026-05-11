@@ -155,6 +155,8 @@ namespace AdisyumPosAgent
             response.Headers["Access-Control-Allow-Origin"] = "*";
             response.Headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS";
             response.Headers["Access-Control-Allow-Headers"] = "Content-Type";
+            response.Headers["Access-Control-Allow-Private-Network"] = "true";
+            response.Headers["Vary"] = "Origin, Access-Control-Request-Method, Access-Control-Request-Headers, Access-Control-Request-Private-Network";
             response.ContentType = "application/json; charset=utf-8";
         }
 
