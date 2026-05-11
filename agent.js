@@ -1,9 +1,13 @@
 const express = require('express');
 const cors = require('cors');
 const { exec } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const https = require('https');
 
 const app = express();
-const PORT = 3001;
+const HTTP_PORT = Number(process.env.PORT || 3001);
+const HTTPS_PORT = Number(process.env.HTTPS_PORT || 3443);
 
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
@@ -39,6 +43,21 @@ app.post('/print', (req, res) => {
   return res.json({ success: true, printerName, queued: true });
 });
 
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`Adisyum POS Agent running at http://127.0.0.1:${PORT}`);
+app.listen(HTTP_PORT, '127.0.0.1', () => {
+  console.log(`Adisyum POS Agent HTTP running at http://127.0.0.1:${HTTP_PORT}`);
 });
+
+const certPath = process.env.AGENT_TLS_CERT || path.join(__dirname, 'certs', 'localhost.crt');
+const keyPath = process.env.AGENT_TLS_KEY || path.join(__dirname, 'certs', 'localhost.key');
+
+if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+  const cert = fs.readFileSync(certPath);
+  const key = fs.readFileSync(keyPath);
+
+  https.createServer({ key, cert }, app).listen(HTTPS_PORT, '127.0.0.1', () => {
+    console.log(`Adisyum POS Agent HTTPS running at https://127.0.0.1:${HTTPS_PORT}`);
+  });
+} else {
+  console.log('HTTPS disabled: certificate files not found.');
+  console.log(`To enable HTTPS place certs at: ${certPath} and ${keyPath}`);
+}

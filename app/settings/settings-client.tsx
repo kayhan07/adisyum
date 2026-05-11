@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Building2, CheckCircle2, Code2, KeyRound, PlugZap, Printer, RefreshCw, Save, ShieldCheck, Trash2, UserPlus, XCircle } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
+import { fetchLocalAgentJson, getLocalAgentBaseHint } from '@/lib/local-agent';
 import { getDefaultCompanyState, loadCompanyState, saveCompanyState, subscribeToCompanyChanges, type CompanyState } from '@/lib/company-store';
 import { getDefaultAccessState, loadAccessState, saveAccessState, subscribeToAccessChanges, type AccessUser } from '@/lib/access-store';
 import {
@@ -292,7 +293,7 @@ export default function SettingsPage() {
 
       setMessage('Local agent çalışıyor ancak yazıcı bulunamadı.');
     } catch {
-      setMessage('Yazıcılar okunamadı. POS bilgisayarında Adisyum Local Agent çalışmalı ve http://127.0.0.1:3001 erişilebilir olmalı.');
+      setMessage(`Yazıcılar okunamadı. POS bilgisayarında Adisyum Local Agent çalışmalı ve ${getLocalAgentBaseHint()} erişilebilir olmalı.`);
     } finally {
       setPrinterScanLoading(false);
     }
@@ -301,12 +302,7 @@ export default function SettingsPage() {
   async function checkAgentStatus() {
     setAgentStatus('checking');
     try {
-      const response = await fetch('http://127.0.0.1:3001/printers', { cache: 'no-store' });
-      if (!response.ok) {
-        setAgentStatus('offline');
-        return false;
-      }
-
+      await fetchLocalAgentJson<unknown>('/printers');
       setAgentStatus('online');
       return true;
     } catch {
@@ -317,8 +313,7 @@ export default function SettingsPage() {
 
   async function scanLocalAgentPrinters() {
     try {
-      const response = await fetch('http://127.0.0.1:3001/printers', { cache: 'no-store' });
-      const data = await response.json() as Array<string | { Name?: string; name?: string }>;
+      const { data } = await fetchLocalAgentJson<Array<string | { Name?: string; name?: string }>>('/printers');
       const names = Array.isArray(data)
         ? data
             .map((item) => (typeof item === 'string' ? item : (item.Name ?? item.name ?? '')))
@@ -649,18 +644,13 @@ export default function SettingsPage() {
         '1 x Deneme Ürünü',
       ].join('\n');
 
-      const response = await fetch('http://127.0.0.1:3001/print', {
+      await fetchLocalAgentJson('/print', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           printerName: printer.name,
           text: sampleText,
-        }),
+        },
       });
-
-      if (!response.ok) {
-        throw new Error('Local agent yazdırma isteğini işleyemedi.');
-      }
     } catch {
       setMessage('Test Yazdır başarısız. Local agent çalışmıyor olabilir.');
       return;
@@ -850,7 +840,7 @@ export default function SettingsPage() {
                   </select>
                   {!printerScanLoading && systemPrinters.length === 0 ? (
                     <div className="mt-3 rounded-2xl border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-700">
-                      Sistem yazıcısı görünmüyor. Yazıcılar sadece bu bilgisayarın local agent servisinden okunur: http://127.0.0.1:3001/printers
+                      Sistem yazıcısı görünmüyor. Yazıcılar sadece bu bilgisayarın local agent servisinden okunur: {getLocalAgentBaseHint()}/printers
                     </div>
                   ) : null}
                   {selectedSystemPrinter ? (

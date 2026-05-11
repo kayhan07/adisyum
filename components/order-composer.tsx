@@ -47,6 +47,7 @@ import { appendPaymentJournalEntries, buildPaymentJournalEntry } from '@/lib/pay
 import { getDefaultTableLayoutState, loadTableLayoutState, subscribeToTableLayoutChanges } from '@/lib/table-layout-store';
 import { getProductMapping, validateProductMapping } from '@/lib/pos-mapping-store';
 import { queueOfflineOrderSnapshot, syncOfflineOrders } from '@/lib/offline-sync-store';
+import { fetchLocalAgentJson } from '@/lib/local-agent';
 
 type Category = { id: string; label: string };
 type ProductCard = {
@@ -343,25 +344,10 @@ function extractTableNumber(tableName: string) {
 }
 
 async function sendLocalAgentPrint(printerName: string, text: string) {
-  const response = await fetch('http://127.0.0.1:3001/print', {
+  await fetchLocalAgentJson('/print', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ printerName, text }),
+    body: { printerName, text },
   });
-
-  if (response.ok) {
-    return;
-  }
-
-  let detail = '';
-  try {
-    const payload = await response.json() as { error?: string; message?: string };
-    detail = payload.error ?? payload.message ?? '';
-  } catch {
-    detail = '';
-  }
-
-  throw new Error(detail || `Print agent yanıtı başarısız (${response.status})`);
 }
 
 export function OrderComposer({ initialTableId, autoOpenPayment = false }: OrderComposerProps) {

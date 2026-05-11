@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Cpu, FileText, Loader2, Network, RefreshCw, Receipt, Save, Settings2, Shuffle, TerminalSquare, Wifi } from 'lucide-react';
 import { DEFAULT_SALE_PRODUCT_BASE, loadStoredSaleProducts, subscribeToStoredSaleProductsChanges } from '@/lib/sale-product-catalog';
 import { AppShell } from '@/components/app-shell';
+import { fetchLocalAgentJson } from '@/lib/local-agent';
 
 type PosTab = 'device' | 'mapping' | 'test' | 'logs';
 type DeviceType = 'ESC_POS' | 'SDK_DLL' | 'ANDROID_API' | 'JSON_HTTP';
@@ -625,19 +626,13 @@ export function PosSettingsClient() {
         '------------------------------',
       ].join('\n');
 
-      const response = await fetch('http://127.0.0.1:3001/print', {
+      await fetchLocalAgentJson('/print', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           printerName: selectedDevice.name,
           text: sampleReceipt,
-        }),
+        },
       });
-      const body = await readJson(response);
-
-      if (!response.ok) {
-        throw new Error(typeof body?.message === 'string' ? body.message : 'Test fişi gönderilemedi. Local agent çalışmıyor olabilir.');
-      }
 
       setNotice({
         type: 'success',
