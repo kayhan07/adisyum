@@ -303,10 +303,12 @@ export default function SettingsPage() {
   async function checkAgentStatus() {
     setAgentStatus('checking');
     try {
-      await fetchLocalAgentJson<unknown>('/printers');
+      const result = await fetchLocalAgentJson<unknown>('/printers');
+      console.log('[Agent] checkAgentStatus OK, base=', result.base);
       setAgentStatus('online');
       return true;
-    } catch {
+    } catch (err) {
+      console.error('[Agent] checkAgentStatus FAILED:', err);
       setAgentStatus('offline');
       return false;
     }
@@ -314,7 +316,9 @@ export default function SettingsPage() {
 
   async function scanLocalAgentPrinters() {
     try {
-      const { data } = await fetchLocalAgentJson<Array<string | { Name?: string; name?: string }>>('/printers');
+      console.log('[Agent] scanLocalAgentPrinters starting...');
+      const { data, base } = await fetchLocalAgentJson<Array<string | { Name?: string; name?: string }>>('/printers');
+      console.log('[Agent] scanLocalAgentPrinters OK, base=', base, 'data=', data);
       const names = Array.isArray(data)
         ? data
             .map((item) => (typeof item === 'string' ? item : (item.Name ?? item.name ?? '')))
@@ -329,6 +333,7 @@ export default function SettingsPage() {
         })),
       };
     } catch (error) {
+      console.error('[Agent] scanLocalAgentPrinters FAILED:', error);
       return {
         printers: [] as SystemPrinter[],
         error: error instanceof Error ? error.message : 'Local agent erişilemedi.',
