@@ -615,20 +615,33 @@ export function PosSettingsClient() {
 
     setPrintingTest(true);
     try {
-      const response = await fetch('/api/pos/test', {
+      const sampleReceipt = [
+        'Adisyum Test Fişi',
+        'Masa: TEST-01',
+        `Tarih/Saat: ${new Date().toLocaleString('tr-TR')}`,
+        '------------------------------',
+        '1 x Test Ürün',
+        '2 x Örnek İçecek',
+        '------------------------------',
+      ].join('\n');
+
+      const response = await fetch('http://127.0.0.1:3001/print', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceId: selectedDevice.id, action: 'print' }),
+        body: JSON.stringify({
+          printerName: selectedDevice.name,
+          text: sampleReceipt,
+        }),
       });
       const body = await readJson(response);
 
       if (!response.ok) {
-        throw new Error(typeof body?.message === 'string' ? body.message : 'Test fişi gönderilemedi.');
+        throw new Error(typeof body?.message === 'string' ? body.message : 'Test fişi gönderilemedi. Local agent çalışmıyor olabilir.');
       }
 
       setNotice({
-        type: body?.success ? 'success' : 'error',
-        text: body?.success ? `${selectedDevice.name} için test fişi gönderildi.` : (typeof body?.error === 'string' ? body.error : 'Test fişi başarısız oldu.'),
+        type: 'success',
+        text: `${selectedDevice.name} için test fişi gönderildi.`,
       });
       await loadOverview(true);
     } catch (error) {

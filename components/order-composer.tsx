@@ -8,6 +8,7 @@ import {
   loadStoredAccounts,
   subscribeToStoredAccountChanges,
 } from '@/lib/account-store';
+import { getDefaultCompanyState, loadCompanyState, subscribeToCompanyChanges } from '@/lib/company-store';
 import {
   getPaymentRequestedTableIds,
   getStoredOrdersByTable,
@@ -262,9 +263,111 @@ function getOrderGross(lines: OrderLine[]) {
   return Number((subtotal * (1 + VAT_RATE)).toFixed(2));
 }
 
+type TenantPrinterSettings = {
+  defaultPrinter: string;
+  kitchenPrinter: string;
+  barPrinter: string;
+};
+
+function looksLikeBarCategory(value: string) {
+  const key = value.toLocaleLowerCase('tr-TR');
+  return key.includes('bar') || key.includes('içecek') || key.includes('icecek') || key.includes('kahve') || key.includes('alkol') || key.includes('su');
+}
+
+function resolveTenantPrinterSettings(integrationState: ReturnType<typeof getDefaultIntegrationState>): TenantPrinterSettings {
+  const activeDevices = integrationState.printerDevices.filter((device) => device.status !== 'Pasif');
+  const sourceDevices = activeDevices.length > 0 ? activeDevices : integrationState.printerDevices;
+
+  const firstPrinter = sourceDevices[0]?.name ?? 'POS Yazıcısı';
+  const defaultPrinterByRole = sourceDevices.find((device) => {
+    const role = device.role.toLocaleLowerCase('tr-TR');
+    return role.includes('kasa') || role.includes('pos');
+  })?.name;
+
+  const kitchenPrinterByRole = sourceDevices.find((device) => {
+    const role = device.role.toLocaleLowerCase('tr-TR');
+    return role.includes('mutfak') || role.includes('kitchen');
+  })?.name;
+
+  const barPrinterByRole = sourceDevices.find((device) => {
+    const role = device.role.toLocaleLowerCase('tr-TR');
+    return role.includes('bar');
+  })?.name;
+
+  const kitchenMapped = resolvePrinterNameForCategory('Yemek', integrationState.printerMappings, integrationState.printerDevices);
+  const barMapped = resolvePrinterNameForCategory('İçecek', integrationState.printerMappings, integrationState.printerDevices);
+
+  const defaultPrinter = defaultPrinterByRole ?? firstPrinter;
+  const kitchenPrinter = kitchenMapped === 'Mutfak yazıcısı' ? (kitchenPrinterByRole ?? defaultPrinter) : kitchenMapped;
+  const barPrinter = barMapped === 'Bar yazıcısı' ? (barPrinterByRole ?? defaultPrinter) : barMapped;
+
+  return {
+    defaultPrinter,
+    kitchenPrinter: kitchenPrinter || defaultPrinter,
+    barPrinter: barPrinter || defaultPrinter,
+  };
+}
+
+function formatReceiptDate(date: Date) {
+  return date.toLocaleString('tr-TR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
+function buildReceiptText(input: {
+  restaurantName: string;
+  tableNumber: string;
+  date: Date;
+  items: Array<{ name: string; qty: number }>;
+}) {
+  const lines = [
+    input.restaurantName,
+    `Masa: ${input.tableNumber}`,
+    `Tarih/Saat: ${formatReceiptDate(input.date)}`,
+    '------------------------------',
+    ...input.items.map((item) => `${item.qty} x ${item.name}`),
+    '------------------------------',
+  ];
+
+  return lines.join('\n');
+}
+
+function extractTableNumber(tableName: string) {
+  const match = tableName.match(/(\d+)/);
+  return match?.[1] ?? tableName;
+}
+
+async function sendLocalAgentPrint(printerName: string, text: string) {
+  const response = await fetch('http://127.0.0.1:3001/print', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ printerName, text }),
+  });
+
+  if (response.ok) {
+    return;
+  }
+
+  let detail = '';
+  try {
+    const payload = await response.json() as { error?: string; message?: string };
+    detail = payload.error ?? payload.message ?? '';
+  } catch {
+    detail = '';
+  }
+
+  throw new Error(detail || `Print agent yanıtı başarısız (${response.status})`);
+}
+
 export function OrderComposer({ initialTableId, autoOpenPayment = false }: OrderComposerProps) {
   const router = useRouter();
   const [sessionState, setSessionState] = useState(() => getDefaultSessionState());
+  const [companyState, setCompanyState] = useState(() => getDefaultCompanyState());
   const [accessState, setAccessState] = useState(() => getDefaultAccessState());
   const [tableLayoutState, setTableLayoutState] = useState(() => getDefaultTableLayoutState());
   const [integrationState, setIntegrationState] = useState(() => getDefaultIntegrationState());
@@ -362,22 +465,26 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const [productCardComplimentary, setProductCardComplimentary] = useState(false);
   const [productCardComplimentaryReason, setProductCardComplimentaryReason] = useState('');
   const [productCardIsReturn, setProductCardIsReturn] = useState(false);
+  const [testPrintLoading, setTestPrintLoading] = useState(false);
 
   useEffect(() => {
     const refresh = () => {
       setSessionState(loadSessionState());
       setAccessState(loadAccessState());
       setTableLayoutState(loadTableLayoutState());
+      setCompanyState(loadCompanyState());
     };
 
     refresh();
 
     const unsubscribeSession = subscribeToSessionChanges(refresh);
+    const unsubscribeCompany = subscribeToCompanyChanges(refresh);
     const unsubscribeAccess = subscribeToAccessChanges(refresh);
     const unsubscribeTables = subscribeToTableLayoutChanges(refresh);
 
     return () => {
       unsubscribeSession();
+      unsubscribeCompany();
       unsubscribeAccess();
       unsubscribeTables();
     };
@@ -606,6 +713,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     [lines],
   );
   const unsentItemCount = useMemo(() => unsentLines.reduce((sum, item) => sum + item.unsentQty, 0), [unsentLines]);
+  const tenantPrinters = useMemo(() => resolveTenantPrinterSettings(integrationState), [integrationState]);
   const subtotal = useMemo(() => lines.reduce((sum, item) => sum + getOrderLineSubtotal(item), 0), [lines]);
   const vat = subtotal * VAT_RATE;
   
@@ -1422,22 +1530,64 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     setFeedbackMessage(paymentOpen ? 'Haz\u0131r' : 'Tahsilat tutar\u0131n\u0131 girin');
   };
 
-  const sendOrder = () => {
+  const sendOrder = async () => {
     if (!currentTable || lines.length === 0 || !hasPermission('orders.edit')) return;
     if (unsentLines.length === 0) {
       setFeedbackMessage('Kaydedilecek yeni ürün yok');
       return;
     }
 
-    const printerGroups = unsentLines.reduce<Record<string, number>>((groups, line) => {
-      const printerName = resolvePrinterNameForCategory(
-        line.printCategory ?? line.category,
+    const groupedByPrinter = unsentLines.reduce<Record<string, Array<{ name: string; qty: number }>>>((groups, line) => {
+      const category = line.printCategory ?? line.category;
+      const mappedPrinter = resolvePrinterNameForCategory(
+        category,
         integrationState.printerMappings,
         integrationState.printerDevices,
       );
-      groups[printerName] = (groups[printerName] ?? 0) + line.unsentQty;
+
+      const categoryDefault = looksLikeBarCategory(category) ? tenantPrinters.barPrinter : tenantPrinters.kitchenPrinter;
+      const printerName = (mappedPrinter === 'Mutfak yazıcısı' || mappedPrinter === 'Bar yazıcısı' || mappedPrinter === 'Tatlı yazıcısı')
+        ? (categoryDefault || tenantPrinters.defaultPrinter)
+        : (mappedPrinter || categoryDefault || tenantPrinters.defaultPrinter);
+
+      if (!groups[printerName]) {
+        groups[printerName] = [];
+      }
+
+      groups[printerName].push({
+        name: line.name,
+        qty: line.unsentQty,
+      });
+
       return groups;
     }, {});
+
+    const restaurantName = companyState.tradeName || 'Adisyum';
+    const tableNumber = extractTableNumber(currentTable.name);
+    const printedAt = new Date();
+
+    const printResults = await Promise.all(
+      Object.entries(groupedByPrinter).map(async ([printerName, items]) => {
+        const receipt = buildReceiptText({
+          restaurantName,
+          tableNumber,
+          date: printedAt,
+          items,
+        });
+
+        try {
+          await sendLocalAgentPrint(printerName, receipt);
+          return { printerName, qty: items.reduce((sum, item) => sum + item.qty, 0), ok: true as const };
+        } catch (error) {
+          return {
+            printerName,
+            qty: items.reduce((sum, item) => sum + item.qty, 0),
+            ok: false as const,
+            error: error instanceof Error ? error.message : 'Local agent erişilemedi',
+          };
+        }
+      }),
+    );
 
     setOrdersByTable((current) => {
       rememberUndo(current, 'Adisyon kaydedildi');
@@ -1451,11 +1601,45 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     });
 
     setPaymentOpen(false);
+
+    const successfulPrints = printResults.filter((result) => result.ok);
+    const failedPrints = printResults.filter((result) => !result.ok);
+
+    if (failedPrints.length > 0) {
+      const failedPrinterNames = failedPrints.map((result) => result.printerName).join(', ');
+      setFeedbackMessage(`Adisyon kaydedildi fakat yazdırma hatası var: ${failedPrinterNames}. Local agent çalışmıyor olabilir.`);
+      return;
+    }
+
     setFeedbackMessage(
-      Object.entries(printerGroups)
-        .map(([printerName, qty]) => `${printerName}: ${qty} ürün yazdırıldı`)
+      successfulPrints
+        .map((result) => `${result.printerName}: ${result.qty} ürün yazdırıldı`)
         .join(' | '),
     );
+  };
+
+  const sendTestPrint = async () => {
+    if (!currentTable) return;
+
+    setTestPrintLoading(true);
+    try {
+      const receipt = buildReceiptText({
+        restaurantName: companyState.tradeName || 'Adisyum',
+        tableNumber: extractTableNumber(currentTable.name),
+        date: new Date(),
+        items: [
+          { name: 'Deneme Ürün 1', qty: 1 },
+          { name: 'Deneme Ürün 2', qty: 2 },
+        ],
+      });
+
+      await sendLocalAgentPrint(tenantPrinters.defaultPrinter, receipt);
+      setFeedbackMessage(`Test print gönderildi (${tenantPrinters.defaultPrinter})`);
+    } catch {
+      setFeedbackMessage('Test print gönderilemedi. Local agent erişilemedi.');
+    } finally {
+      setTestPrintLoading(false);
+    }
   };
 
   const sendCheckToTable = () => {
@@ -2882,6 +3066,17 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
               <span className="inline-flex items-center justify-center gap-2">
                 <Send className="h-4.5 w-4.5" /> {unsentItemCount > 0 ? `Kaydet ve yazdır (${unsentItemCount})` : 'Kaydet ve yazdır'}
               </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                void sendTestPrint();
+              }}
+              disabled={testPrintLoading || !currentTable}
+              className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-[0.95rem] border border-slate-300 bg-white px-4 text-[14px] font-semibold text-slate-700 transition duration-150 hover:-translate-y-[1px] hover:bg-slate-50 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Send className="h-4.5 w-4.5" /> {testPrintLoading ? 'Test print gönderiliyor...' : 'Test Print'}
             </button>
 
             <button
