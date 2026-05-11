@@ -9,6 +9,8 @@ if (-not $changes) {
 }
 
 git commit -m "auto update: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-git push origin main
 
-Write-Host "✅ Deploy tamamlandı" -ForegroundColor Green
+# KRİTİK SATIR 👇
+git push origin main --force
+
+Write-Host "✅ Deploy tamamlandı (force push)" -ForegroundColor Green
