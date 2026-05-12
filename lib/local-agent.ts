@@ -10,9 +10,22 @@ type LocalAgentRequestOptions = {
 };
 
 function getPreferredBases() {
-  // Use only 127.0.0.1 IP address (not localhost hostname).
-  // Agent serves HTTP on port 3001. PNA allows requests to loopback IPs.
-  return ['http://127.0.0.1:3001'];
+  // Prefer secure context (HTTPS) → HTTPS localhost → HTTP localhost
+  // HTTPS page should connect to HTTPS agent (no mixed-content warning)
+  // Agent runs on: HTTP localhost:3001, HTTPS localhost:3443
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+    // HTTPS page: prefer HTTPS agent to avoid mixed-content blocks
+    return [
+      'https://localhost:3443',
+      'http://localhost:3001',
+      'http://127.0.0.1:3001',
+    ];
+  }
+  // HTTP page: use HTTP agent
+  return [
+    'http://localhost:3001',
+    'http://127.0.0.1:3001',
+  ];
 }
 
 export function getLocalAgentBaseHint() {

@@ -61,20 +61,28 @@ app.post('/print', (req, res) => {
 });
 
 app.listen(HTTP_PORT, () => {
-  console.log(`Adisyum POS Agent HTTP running at http://127.0.0.1:${HTTP_PORT}`);
+  console.log(`Adisyum POS Agent HTTP running at http://127.0.0.1:${HTTP_PORT} and http://localhost:${HTTP_PORT}`);
 });
 
-const certPath = process.env.AGENT_TLS_CERT || path.join(__dirname, 'certs', 'localhost.crt');
-const keyPath = process.env.AGENT_TLS_KEY || path.join(__dirname, 'certs', 'localhost.key');
+// HTTPS support using PFX certificate (created by PowerShell)
+const pfxPath = process.env.AGENT_TLS_PFX || path.join(__dirname, 'certs', 'localhost.pfx');
+const pfxPassword = process.env.AGENT_TLS_PFX_PASSWORD || 'adisyum';
 
-if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
-  const cert = fs.readFileSync(certPath);
-  const key = fs.readFileSync(keyPath);
-
-  https.createServer({ key, cert }, app).listen(HTTPS_PORT, () => {
-    console.log(`Adisyum POS Agent HTTPS running at https://127.0.0.1:${HTTPS_PORT}`);
-  });
+if (fs.existsSync(pfxPath)) {
+  try {
+    const pfxData = fs.readFileSync(pfxPath);
+    // PFX can be used directly with https.createServer in Node.js if password provided
+    // However, modern Node.js prefers PEM format. For now, use pfx option:
+    https.createServer({ 
+      pfx: pfxData,
+      passphrase: pfxPassword
+    }, app).listen(HTTPS_PORT, () => {
+      console.log(`Adisyum POS Agent HTTPS running at https://localhost:${HTTPS_PORT}`);
+    });
+  } catch (err) {
+    console.log('HTTPS initialization failed:', err.message);
+    console.log('Continuing with HTTP only mode...');
+  }
 } else {
-  console.log('HTTPS disabled: certificate files not found.');
-  console.log(`To enable HTTPS place certs at: ${certPath} and ${keyPath}`);
+  console.log(`Note: HTTPS not available. PFX file not found at: ${pfxPath}`);
 }
