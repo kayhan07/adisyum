@@ -13,18 +13,17 @@ app.use(express.json({ limit: '2mb' }));
 // Manual CORS + PNA (Private Network Access) handling
 app.use((req, res, next) => {
   const origin = req.headers.origin || '*';
+  
   res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
+  
+  // CRITICAL: Always set PNA header for loopback addresses, especially for OPTIONS preflight
   res.setHeader('Access-Control-Allow-Private-Network', 'true');
   
-  // Critical for PNA preflight
+  // Handle OPTIONS (CORS preflight)
   if (req.method === 'OPTIONS') {
-    // Check for PNA preflight
-    if (req.headers['access-control-request-private-network'] === 'true') {
-      res.setHeader('Access-Control-Allow-Private-Network', 'true');
-    }
     return res.status(204).end();
   }
   next();
