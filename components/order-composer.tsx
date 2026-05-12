@@ -49,7 +49,7 @@ import { getDefaultTableLayoutState, loadTableLayoutState, subscribeToTableLayou
 import { getProductMapping, validateProductMapping } from '@/lib/pos-mapping-store';
 import { queueOfflineOrderSnapshot, syncOfflineOrders } from '@/lib/offline-sync-store';
 import { fetchLocalAgentJson } from '@/lib/local-agent';
-import { formatReceipt } from '@/lib/receipt-formatter';
+import { formatReceipt, formatKitchenReceipt, formatBarReceipt, formatCashReceipt } from '@/lib/receipt-formatter';
 
 type Category = { id: string; label: string };
 type ProductCard = {
@@ -1659,7 +1659,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       return;
     }
 
-    const groupedByPrinter = unsentLines.reduce<Record<string, Array<{ name: string; qty: number }>>>((groups, line) => {
+    const groupedByPrinter = unsentLines.reduce<Record<string, Array<{ name: string; qty: number; category: string; printCategory: string }>>>((groups, line) => {
       const category = line.printCategory ?? line.category;
       const mappedPrinter = resolvePrinterNameForCategory(
         category,
@@ -1684,6 +1684,8 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       groups[printerName].push({
         name: line.name,
         qty: line.unsentQty,
+        category: line.category,
+        printCategory: category,
       });
 
       return groups;
@@ -1692,15 +1694,29 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     const restaurantName = companyState.tradeName || 'Adisyum';
     const tableNumber = extractTableNumber(currentTable.name);
     const printedAt = new Date();
+    const isFirstOrder = lines.every((line) => line.sentQty === 0);
 
     const printResults = await Promise.all(
       Object.entries(groupedByPrinter).map(async ([printerName, items]) => {
-        const receipt = buildReceiptText({
-          restaurantName,
-          tableNumber,
-          date: printedAt,
-          items,
-        });
+        // Determine if this is a kitchen or bar ticket
+        const isBar = items.some((item) => looksLikeBarCategory(item.printCategory));
+        
+        // Create receipt based on printer type
+        let receipt: string;
+        if (isBar) {
+          receipt = formatBarReceipt({
+            restaurantName,
+            table: tableNumber,
+            items: items.map(item => ({ name: item.name, qty: item.qty, price: 0 })),
+          });
+        } else {
+          receipt = formatKitchenReceipt({
+            restaurantName,
+            table: tableNumber,
+            items: items.map(item => ({ name: item.name, qty: item.qty, price: 0 })),
+          });
+        }
+
         const totalQty = items.reduce((sum, item) => sum + item.qty, 0);
         const fallbackPrinter = runtimeTenantPrinters.defaultPrinter;
 
@@ -1802,11 +1818,14 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     }
 
     const tableNumber = extractTableNumber(currentTable.name);
-    const receipt = buildCheckReceiptText({
+    const isFirstOrder = lines.every((line) => line.sentQty === 0);
+    
+    // Use new ESC/POS cash receipt formatter
+    const receipt = formatCashReceipt({
       restaurantName: companyState.tradeName || 'Adisyum',
-      tableNumber,
+      table: tableNumber,
       date: new Date(),
-      lines: lines.map((line) => ({
+      items: lines.map((line) => ({
         name: line.name,
         qty: line.qty,
         unitPrice: getOrderLineUnitAmount(line),
@@ -1815,6 +1834,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       subtotal: settlementSubtotal,
       vat: settlementVat,
       total: settlementTotal,
+      isFirstOrder,
     });
 
     const defaultPrinter = runtimeTenantPrinters.defaultPrinter;
@@ -1841,7 +1861,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
     updatePaymentRequested(currentTable.id, true);
     setPaymentOpen(false);
-    setFeedbackMessage(`Hesap adisyonu yazdırıldı (${printedPrinter})`);
+    setFeedbackMessage(`Hesap adisyonu yazdırıldı (${printedPrinter}) ${isFirstOrder ? '(İlk Adisyon)' : ''}`);
   };
   const selectedAccount = chargeAccounts.find((account) => account.id === selectedAccountId) ?? null;
     const paymentLabel = paymentMethod === 'cash'
@@ -3271,7 +3291,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
               disabled={testPrintLoading || !currentTable}
               className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-[0.95rem] border border-slate-300 bg-white px-4 text-[14px] font-semibold text-slate-700 transition duration-150 hover:-translate-y-[1px] hover:bg-slate-50 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Send className="h-4.5 w-4.5" /> {testPrintLoading ? 'Test print gönderiliyor...' : 'Test Print'}
+              <Send className="h-4.5 w-4.5" /> {testPrintLoading ? 'Test fiş gönderiliyor...' : 'Test Fiş Bas'}
             </button>
 
             <button
