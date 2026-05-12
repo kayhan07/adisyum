@@ -48,7 +48,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { response, base } = await postToLocalAgent('/print', { printerName, text });
+    const { response, base } = await postToLocalAgent('/print', { printerName, text, mode: 'raw' });
     const payload = await response.json().catch(() => ({}));
     return NextResponse.json({ ok: true, base, payload });
   } catch (error) {

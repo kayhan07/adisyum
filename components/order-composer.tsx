@@ -49,7 +49,7 @@ import { getDefaultTableLayoutState, loadTableLayoutState, subscribeToTableLayou
 import { getProductMapping, validateProductMapping } from '@/lib/pos-mapping-store';
 import { queueOfflineOrderSnapshot, syncOfflineOrders } from '@/lib/offline-sync-store';
 import { fetchLocalAgentJson } from '@/lib/local-agent';
-import { formatReceipt, formatKitchenReceipt, formatBarReceipt, formatCashReceipt } from '@/lib/receipt-formatter';
+import { printReceipt, printKitchenTicket, printBarTicket } from '@/lib/receipt-formatter';
 
 type Category = { id: string; label: string };
 type ProductCard = {
@@ -272,8 +272,8 @@ type TenantPrinterSettings = {
   barPrinter: string;
 };
 
-function looksLikeBarCategory(value: string) {
-  const key = value.toLocaleLowerCase('tr-TR');
+function looksLikeBarCategory(value: unknown) {
+  const key = String(value ?? '').toLocaleLowerCase('tr-TR');
   return key.includes('bar') || key.includes('içecek') || key.includes('icecek') || key.includes('kahve') || key.includes('alkol') || key.includes('su');
 }
 
@@ -1692,41 +1692,90 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     }, {});
 
     const restaurantName = companyState.tradeName || 'Adisyum';
+    const branchName = companyState.branchName || '';
+    const logoUrl = companyState.logoUrl || '';
     const tableNumber = extractTableNumber(currentTable.name);
-    const printedAt = new Date();
     const isFirstOrder = lines.every((line) => line.sentQty === 0);
 
     const printResults = await Promise.all(
       Object.entries(groupedByPrinter).map(async ([printerName, items]) => {
         // Determine if this is a kitchen or bar ticket
         const isBar = items.some((item) => looksLikeBarCategory(item.printCategory));
-        
-        // Create receipt based on printer type
-        let receipt: string;
-        if (isBar) {
-          receipt = formatBarReceipt({
-            restaurantName,
-            table: tableNumber,
-            items: items.map(item => ({ name: item.name, qty: item.qty, price: 0 })),
-          });
-        } else {
-          receipt = formatKitchenReceipt({
-            restaurantName,
-            table: tableNumber,
-            items: items.map(item => ({ name: item.name, qty: item.qty, price: 0 })),
-          });
-        }
 
         const totalQty = items.reduce((sum, item) => sum + item.qty, 0);
         const fallbackPrinter = runtimeTenantPrinters.defaultPrinter;
 
         try {
-          await sendLocalAgentPrint(printerName, receipt);
+          if (isBar) {
+            await printBarTicket({
+              ticketType: 'bar',
+              printerName,
+              isAdditionalOrder: !isFirstOrder,
+              settings: {
+                restaurantName,
+                branchName,
+                logoUrl,
+                paperWidth: '80mm',
+              },
+              order: {
+                table: tableNumber,
+                items: items.map((item) => ({ name: item.name, qty: item.qty, price: 0 })),
+              },
+            });
+          } else {
+            await printKitchenTicket({
+              ticketType: 'kitchen',
+              printerName,
+              isAdditionalOrder: !isFirstOrder,
+              settings: {
+                restaurantName,
+                branchName,
+                logoUrl,
+                paperWidth: '80mm',
+              },
+              order: {
+                table: tableNumber,
+                items: items.map((item) => ({ name: item.name, qty: item.qty, price: 0 })),
+              },
+            });
+          }
           return { printerName, qty: totalQty, ok: true as const };
         } catch (error) {
           if (fallbackPrinter && fallbackPrinter !== printerName) {
             try {
-              await sendLocalAgentPrint(fallbackPrinter, receipt);
+              if (isBar) {
+                await printBarTicket({
+                  ticketType: 'bar',
+                  printerName: fallbackPrinter,
+                  isAdditionalOrder: !isFirstOrder,
+                  settings: {
+                    restaurantName,
+                    branchName,
+                    logoUrl,
+                    paperWidth: '80mm',
+                  },
+                  order: {
+                    table: tableNumber,
+                    items: items.map((item) => ({ name: item.name, qty: item.qty, price: 0 })),
+                  },
+                });
+              } else {
+                await printKitchenTicket({
+                  ticketType: 'kitchen',
+                  printerName: fallbackPrinter,
+                  isAdditionalOrder: !isFirstOrder,
+                  settings: {
+                    restaurantName,
+                    branchName,
+                    logoUrl,
+                    paperWidth: '80mm',
+                  },
+                  order: {
+                    table: tableNumber,
+                    items: items.map((item) => ({ name: item.name, qty: item.qty, price: 0 })),
+                  },
+                });
+              }
               return {
                 printerName: `${printerName} -> ${fallbackPrinter}`,
                 qty: totalQty,
@@ -1788,17 +1837,24 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         return;
       }
 
-      const receipt = formatReceipt({
-        restaurantName: companyState.tradeName || 'Adisyum',
-        table: extractTableNumber(currentTable.name),
-        items: [
-          { name: 'Deneme Ürün 1', qty: 1, price: 50 },
-          { name: 'Deneme Ürün 2', qty: 2, price: 30 },
-          { name: 'Deneme Ürün 3', qty: 1, price: 25 },
-        ],
+      await printReceipt({
+        printerName: runtimeTenantPrinters.defaultPrinter,
+        settings: {
+          restaurantName: companyState.tradeName || 'Adisyum',
+          branchName: companyState.branchName || '',
+          logoUrl: companyState.logoUrl || '',
+          footerText: companyState.receiptFooter || 'Afiyet olsun',
+          paperWidth: '80mm',
+        },
+        order: {
+          table: extractTableNumber(currentTable.name),
+          items: [
+            { name: 'Deneme Ürün 1', qty: 1, price: 50 },
+            { name: 'Deneme Ürün 2', qty: 2, price: 30 },
+            { name: 'Deneme Ürün 3', qty: 1, price: 25 },
+          ],
+        },
       });
-
-      await sendLocalAgentPrint(runtimeTenantPrinters.defaultPrinter, receipt);
       setFeedbackMessage(`Test print gönderildi (${runtimeTenantPrinters.defaultPrinter})`);
     } catch {
       setFeedbackMessage('Test print gönderilemedi. Local agent erişilemedi.');
@@ -1819,23 +1875,6 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
     const tableNumber = extractTableNumber(currentTable.name);
     const isFirstOrder = lines.every((line) => line.sentQty === 0);
-    
-    // Use new ESC/POS cash receipt formatter
-    const receipt = formatCashReceipt({
-      restaurantName: companyState.tradeName || 'Adisyum',
-      table: tableNumber,
-      date: new Date(),
-      items: lines.map((line) => ({
-        name: line.name,
-        qty: line.qty,
-        unitPrice: getOrderLineUnitAmount(line),
-        lineTotal: getOrderLineSubtotal(line),
-      })),
-      subtotal: settlementSubtotal,
-      vat: settlementVat,
-      total: settlementTotal,
-      isFirstOrder,
-    });
 
     const defaultPrinter = runtimeTenantPrinters.defaultPrinter;
     const kitchenPrinter = runtimeTenantPrinters.kitchenPrinter;
@@ -1843,11 +1882,59 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     let printedPrinter = primaryPrinter;
 
     try {
-      await sendLocalAgentPrint(primaryPrinter, receipt);
+      await printReceipt({
+        printerName: primaryPrinter,
+        settings: {
+          restaurantName: companyState.tradeName || 'Adisyum',
+          branchName: companyState.branchName || '',
+          logoUrl: companyState.logoUrl || '',
+          footerText: companyState.receiptFooter || 'Afiyet olsun',
+          paperWidth: '80mm',
+        },
+        order: {
+          table: tableNumber,
+          createdAt: new Date(),
+          subtotal: settlementSubtotal,
+          discount: 0,
+          total: settlementTotal,
+          netTotal: settlementTotal,
+          items: lines.map((line) => ({
+            id: line.id,
+            name: line.name,
+            qty: line.qty,
+            price: getOrderLineUnitAmount(line),
+            category: line.category,
+          })),
+        },
+      });
     } catch {
       if (defaultPrinter && defaultPrinter !== primaryPrinter) {
         try {
-          await sendLocalAgentPrint(defaultPrinter, receipt);
+          await printReceipt({
+            printerName: defaultPrinter,
+            settings: {
+              restaurantName: companyState.tradeName || 'Adisyum',
+              branchName: companyState.branchName || '',
+              logoUrl: companyState.logoUrl || '',
+              footerText: companyState.receiptFooter || 'Afiyet olsun',
+              paperWidth: '80mm',
+            },
+            order: {
+              table: tableNumber,
+              createdAt: new Date(),
+              subtotal: settlementSubtotal,
+              discount: 0,
+              total: settlementTotal,
+              netTotal: settlementTotal,
+              items: lines.map((line) => ({
+                id: line.id,
+                name: line.name,
+                qty: line.qty,
+                price: getOrderLineUnitAmount(line),
+                category: line.category,
+              })),
+            },
+          });
           printedPrinter = defaultPrinter;
         } catch {
           setFeedbackMessage('Hesap adisyonu gönderilemedi. Local agent veya yazıcıyı kontrol edin.');

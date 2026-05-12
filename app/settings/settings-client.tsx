@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Building2, CheckCircle2, Code2, KeyRound, PlugZap, Printer, RefreshCw, Save, ShieldCheck, Trash2, UserPlus, XCircle } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
@@ -44,6 +44,9 @@ const deviceTypeLabels: Record<PrinterDeviceType, string> = {
 
 const printableDeviceTypeOptions: PrintableDeviceType[] = ['receipt_printer', 'kitchen_printer', 'bar_printer'];
 const AGENT_INSTALLER_VERSION = '20260512-4';
+const AGENT_STATUS_RETRY_COUNT = 3;
+const AGENT_STATUS_RETRY_DELAY_MS = 500;
+const AGENT_HEARTBEAT_MS = 6000;
 
 function isPrintableDeviceType(value: string): value is PrintableDeviceType {
   return value === 'receipt_printer' || value === 'kitchen_printer' || value === 'bar_printer';
@@ -83,7 +86,6 @@ const tabs: Array<{ id: SettingsTab; label: string; icon: typeof Building2 }> = 
   { id: 'company', label: 'Firma', icon: Building2 },
   { id: 'integrations', label: 'Entegrasyonlar', icon: PlugZap },
   { id: 'access', label: 'Yetkiler', icon: ShieldCheck },
-  { id: 'developer', label: 'Geliştirici', icon: Code2 },
 ];
 
 function buildApiPrefix() {
@@ -125,7 +127,6 @@ export default function SettingsPage() {
   const [printerScanLoading, setPrinterScanLoading] = useState(false);
   const [printerAutoScanned, setPrinterAutoScanned] = useState(false);
   const [agentStatus, setAgentStatus] = useState<AgentStatus>('checking');
-  const [integrationTestLoadingId, setIntegrationTestLoadingId] = useState('');
   const [printerDraft, setPrinterDraft] = useState<PrinterDraft>({
     name: '',
     role: 'Kasa',
@@ -135,10 +136,11 @@ export default function SettingsPage() {
     deviceType: 'receipt_printer',
   });
   const [message, setMessage] = useState('');
+  const integrationStateRef = useRef(integrationState);
 
   useEffect(() => {
     const tab = searchParams.get('tab');
-    if (tab === 'integrations' || tab === 'access' || tab === 'developer' || tab === 'company') {
+    if (tab === 'integrations' || tab === 'access' || tab === 'company') {
       setActiveTab(tab);
     }
   }, [searchParams]);
@@ -164,6 +166,24 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
+    integrationStateRef.current = integrationState;
+  }, [integrationState]);
+
+  useEffect(() => {
+    const persistBeforeUnload = () => {
+      saveIntegrationState(integrationStateRef.current);
+    };
+
+    window.addEventListener('beforeunload', persistBeforeUnload);
+    window.addEventListener('pagehide', persistBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', persistBeforeUnload);
+      window.removeEventListener('pagehide', persistBeforeUnload);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!selectedPrinterId && integrationState.printerDevices[0]) {
       setSelectedPrinterId(integrationState.printerDevices[0].id);
     }
@@ -178,9 +198,40 @@ export default function SettingsPage() {
   useEffect(() => {
     if (activeTab !== 'integrations' || printerAutoScanned) return;
     setPrinterAutoScanned(true);
-    void checkAgentStatus();
     void scanSystemPrinters();
   }, [activeTab, printerAutoScanned]);
+
+  useEffect(() => {
+    if (activeTab !== 'integrations') return;
+
+    let stopped = false;
+    let hadOnline = false;
+
+    const pollAgent = async () => {
+      if (stopped) return;
+      const isOnline = await checkAgentStatus({ quiet: true, retries: 1 });
+      if (isOnline && !hadOnline) {
+        hadOnline = true;
+        if (systemPrinters.length === 0) {
+          await scanSystemPrinters();
+        }
+        return;
+      }
+      if (!isOnline) {
+        hadOnline = false;
+      }
+    };
+
+    void pollAgent();
+    const timer = window.setInterval(() => {
+      void pollAgent();
+    }, AGENT_HEARTBEAT_MS);
+
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [activeTab, systemPrinters.length]);
 
   const availablePrinterDevices = useMemo(
     () => integrationState.printerDevices.filter((printer) => printer.deviceType !== 'fiscal_pos'),
@@ -212,6 +263,7 @@ export default function SettingsPage() {
   );
 
   function changeTab(tab: SettingsTab) {
+    saveIntegrationState(integrationState);
     setActiveTab(tab);
     router.replace(`/settings?tab=${tab}`);
   }
@@ -219,6 +271,29 @@ export default function SettingsPage() {
   function saveCompany() {
     saveCompanyState(company);
     setMessage('Firma bilgileri kaydedildi.');
+  }
+
+  function handleLogoUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      if (!result) {
+        setMessage('Logo yüklenemedi. Lütfen tekrar deneyin.');
+        return;
+      }
+
+      setCompany((current) => ({ ...current, logoUrl: result }));
+      setMessage('Logo yüklendi. Kaydet ile kalıcı hale getirin.');
+    };
+
+    reader.onerror = () => {
+      setMessage('Logo okunamadı. Farklı bir dosya deneyin.');
+    };
+
+    reader.readAsDataURL(file);
   }
 
   function persistAccess(nextState: ReturnType<typeof loadAccessState>) {
@@ -231,52 +306,12 @@ export default function SettingsPage() {
     setIntegrationState(nextState);
   }
 
-  function patchPartnerIntegration(id: string, patch: Partial<PartnerIntegrationRecord>) {
-    persistIntegration({
-      ...integrationState,
-      partnerIntegrations: integrationState.partnerIntegrations.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              ...patch,
-            }
-          : item,
-      ),
-    });
-  }
-
-  async function testPartnerIntegration(integration: PartnerIntegrationRecord) {
-    setIntegrationTestLoadingId(integration.id);
-    setMessage('');
-
-    try {
-      const response = await fetch('/api/delivery/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ integration }),
-      });
-      const data = await response.json() as { orders?: Array<{ externalId: string }>; error?: string };
-
-      if (!response.ok) {
-        setMessage(data.error ?? `${integration.name} bağlantısı kurulamadı.`);
-        return;
-      }
-
-      patchPartnerIntegration(integration.id, { lastPullAt: new Date().toISOString() });
-      setMessage(`${integration.name} bağlantısı başarılı. ${data.orders?.length ?? 0} sipariş okundu.`);
-    } catch {
-      setMessage(`${integration.name} bağlantı testi başarısız oldu.`);
-    } finally {
-      setIntegrationTestLoadingId('');
-    }
-  }
-
   async function scanSystemPrinters() {
     setPrinterScanLoading(true);
     setMessage('');
 
     try {
-      const isOnline = await checkAgentStatus();
+      const isOnline = await checkAgentStatus({ retries: AGENT_STATUS_RETRY_COUNT });
       if (!isOnline) {
         setSystemPrinters([]);
         setSelectedSystemPrinterName('');
@@ -300,23 +335,41 @@ export default function SettingsPage() {
     }
   }
 
-  async function checkAgentStatus() {
-    setAgentStatus('checking');
-    try {
-      await fetchLocalAgentJson<unknown>('/printers');
-      setAgentStatus('online');
-      return true;
-    } catch {
-      setAgentStatus('offline');
-      return false;
+  async function checkAgentStatus(options: { quiet?: boolean; retries?: number } = {}) {
+    const retries = options.retries ?? 1;
+    if (!options.quiet) {
+      setAgentStatus('checking');
     }
+
+    for (let attempt = 1; attempt <= retries; attempt += 1) {
+      try {
+        await fetchLocalAgentJson<unknown>('/printers');
+        setAgentStatus('online');
+        return true;
+      } catch {
+        if (attempt < retries) {
+          await new Promise((resolve) => window.setTimeout(resolve, AGENT_STATUS_RETRY_DELAY_MS));
+        }
+      }
+    }
+
+    setAgentStatus('offline');
+    return false;
   }
 
   async function scanLocalAgentPrinters() {
     try {
-      const { data } = await fetchLocalAgentJson<Array<string | { Name?: string; name?: string }>>('/printers');
-      const names = Array.isArray(data)
+      const { data } = await fetchLocalAgentJson<
+        Array<string | { Name?: string; name?: string }>
+        | { ok?: boolean; printers?: Array<string | { Name?: string; name?: string }>; error?: string }
+      >('/printers');
+      const rawPrinters = Array.isArray(data)
         ? data
+        : Array.isArray(data.printers)
+          ? data.printers
+          : [];
+      const names = Array.isArray(rawPrinters)
+        ? rawPrinters
             .map((item) => (typeof item === 'string' ? item : (item.Name ?? item.name ?? '')))
             .filter((name): name is string => Boolean(name && name.trim()))
         : [];
@@ -761,6 +814,17 @@ export default function SettingsPage() {
                 <span className="text-sm font-medium text-muted">Fiş alt yazısı</span>
                 <input value={company.receiptFooter} onChange={(event) => setCompany((current) => ({ ...current, receiptFooter: event.target.value }))} className="mt-2 h-12 w-full rounded-2xl border border-line bg-canvas px-4 font-semibold text-ink outline-none" />
               </label>
+              <label className="block md:col-span-2">
+                <span className="text-sm font-medium text-muted">Logo Yükle</span>
+                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleLogoUpload} className="mt-2 block w-full rounded-2xl border border-line bg-canvas px-4 py-3 font-semibold text-ink outline-none file:mr-3 file:rounded-xl file:border-0 file:bg-accent file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white" />
+                {company.logoUrl ? (
+                  <div className="mt-3 rounded-2xl border border-line bg-canvas p-3">
+                    <img src={company.logoUrl} alt="Firma logosu" className="h-14 w-auto object-contain" />
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs text-muted">Logo tanımlı değil. Fişte logo görünmesi için görsel yükleyin.</p>
+                )}
+              </label>
             </div>
           </section>
         ) : null}
@@ -911,11 +975,19 @@ export default function SettingsPage() {
               </div>
 
               <div className="mt-5 rounded-3xl border border-line bg-canvas p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="font-semibold text-ink">Kayıtlı POS yazıcıları</p>
-                  <select value={selectedPrinterId} onChange={(event) => setSelectedPrinterId(event.target.value)} className="h-10 rounded-2xl border border-line bg-panel px-3 text-sm font-semibold text-ink outline-none">
-                    {integrationState.printerDevices.map((printer, index) => <option key={`${printer.id}-${index}`} value={printer.id}>{printer.name}</option>)}
-                  </select>
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="font-semibold text-ink">Kayıtlı POS yazıcıları</p>
+                    <p className="mt-1 text-sm text-muted">Yazıcı ve yazar kasa POS kayıtları burada saklanır.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select value={selectedPrinterId} onChange={(event) => setSelectedPrinterId(event.target.value)} className="h-10 rounded-2xl border border-line bg-panel px-3 text-sm font-semibold text-ink outline-none">
+                      {integrationState.printerDevices.map((printer, index) => <option key={`${printer.id}-${index}`} value={printer.id}>{printer.name}</option>)}
+                    </select>
+                    <button type="button" onClick={() => { saveIntegrationState(integrationState); setMessage('Yazıcı ayarları kaydedildi.'); }} className="rounded-2xl bg-accent px-4 py-2 text-sm font-semibold text-white">
+                      Kaydet
+                    </button>
+                  </div>
                 </div>
                 <div className="mt-4 space-y-2">
                   {integrationState.printerDevices.map((printer, index) => (
@@ -969,243 +1041,10 @@ export default function SettingsPage() {
                     </div>
                   ))}
                 </div>
-                <div className="mt-4 rounded-2xl border border-line bg-panel p-4">
-                  <p className="font-semibold text-ink">Tenant yazıcı seçimleri</p>
-                  <p className="mt-1 text-sm text-muted">Yazıcı listesi local’de kalır; tenant için sadece seçilen yazıcı adları saklanır.</p>
-                  <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    <label className="block">
-                      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Default printer</span>
-                      <select
-                        value={integrationState.printerSettings.defaultPrinter}
-                        onChange={(event) => persistIntegration({
-                          ...integrationState,
-                          printerSettings: {
-                            ...integrationState.printerSettings,
-                            defaultPrinter: event.target.value,
-                          },
-                        })}
-                        className="mt-2 h-10 w-full rounded-2xl border border-line bg-canvas px-3 text-sm font-semibold text-ink outline-none"
-                      >
-                        {availablePrinterDevices.map((printer) => <option key={`def-${printer.id}`} value={printer.name}>{printer.name}</option>)}
-                      </select>
-                    </label>
-                    <label className="block">
-                      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Kitchen printer</span>
-                      <select
-                        value={integrationState.printerSettings.kitchenPrinter}
-                        onChange={(event) => persistIntegration({
-                          ...integrationState,
-                          printerSettings: {
-                            ...integrationState.printerSettings,
-                            kitchenPrinter: event.target.value,
-                          },
-                        })}
-                        className="mt-2 h-10 w-full rounded-2xl border border-line bg-canvas px-3 text-sm font-semibold text-ink outline-none"
-                      >
-                        {availablePrinterDevices.map((printer) => <option key={`kit-${printer.id}`} value={printer.name}>{printer.name}</option>)}
-                      </select>
-                    </label>
-                    <label className="block">
-                      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Bar printer</span>
-                      <select
-                        value={integrationState.printerSettings.barPrinter}
-                        onChange={(event) => persistIntegration({
-                          ...integrationState,
-                          printerSettings: {
-                            ...integrationState.printerSettings,
-                            barPrinter: event.target.value,
-                          },
-                        })}
-                        className="mt-2 h-10 w-full rounded-2xl border border-line bg-canvas px-3 text-sm font-semibold text-ink outline-none"
-                      >
-                        {availablePrinterDevices.map((printer) => <option key={`bar-${printer.id}`} value={printer.name}>{printer.name}</option>)}
-                      </select>
-                    </label>
-                    <label className="block">
-                      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Device type</span>
-                      <select
-                        value={integrationState.printerSettings.deviceType}
-                        onChange={(event) => {
-                          const nextType = event.target.value;
-                          if (!isPrintableDeviceType(nextType)) return;
-                          persistIntegration({
-                            ...integrationState,
-                            printerSettings: {
-                              ...integrationState.printerSettings,
-                              deviceType: nextType,
-                            },
-                          });
-                        }}
-                        className="mt-2 h-10 w-full rounded-2xl border border-line bg-canvas px-3 text-sm font-semibold text-ink outline-none"
-                      >
-                        {printableDeviceTypeOptions.map((deviceType) => (
-                          <option key={`type-${deviceType}`} value={deviceType}>{deviceType}</option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  <button type="button" onClick={saveTenantPrinterSelections} className="mt-3 rounded-2xl bg-accent px-4 py-2 text-sm font-semibold text-white">Seçimleri kaydet</button>
-                </div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   <button type="button" onClick={() => void manualReprint()} className="rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white">Test Yazdır</button>
                   <button type="button" onClick={retryFailedJobs} className="rounded-2xl border border-line bg-panel px-4 py-3 text-sm font-semibold text-ink">Kuyruğu işle</button>
                 </div>
-              </div>
-            </article>
-
-            <article className="rounded-[1.5rem] border border-line bg-panel p-5 shadow-soft">
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted">Dış servisler ve kuyruk</p>
-              <div className="mt-4 grid grid-cols-3 gap-3">
-                <Stat label="Bekleyen" value={queueSummary.waiting} />
-                <Stat label="Gönderilen" value={queueSummary.sent} />
-                <Stat label="Hatalı" value={queueSummary.failed} />
-              </div>
-              <div className="mt-4 space-y-3">
-                {integrationState.partnerIntegrations.map((integration) => (
-                  <div key={integration.id} className="rounded-3xl border border-line bg-canvas px-4 py-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="font-semibold text-ink">{integration.name}</p>
-                        <p className="mt-1 text-sm text-muted">{integration.type} · {integration.version}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => patchPartnerIntegration(integration.id, {
-                            status: integration.status === 'Pasif' ? 'Aktif' : 'Pasif',
-                          })}
-                          className="rounded-full border border-line bg-panel px-3 py-1 text-xs font-semibold text-ink"
-                        >
-                          {integration.status === 'Pasif' ? 'Aktif et' : 'Pasife al'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => patchPartnerIntegration(integration.id, {
-                            autoImport: integration.autoImport === false,
-                            lastPullAt: new Date().toISOString(),
-                          })}
-                          className="rounded-full border border-line bg-panel px-3 py-1 text-xs font-semibold text-ink"
-                        >
-                          {integration.autoImport === false ? 'Oto çek aç' : 'Oto çek kapat'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void testPartnerIntegration(integration)}
-                          disabled={integrationTestLoadingId === integration.id}
-                          className="rounded-full border border-line bg-panel px-3 py-1 text-xs font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {integrationTestLoadingId === integration.id ? 'Test ediliyor' : 'Bağlantıyı test et'}
-                        </button>
-                        <span className="rounded-full bg-accentSoft px-3 py-1 text-sm font-semibold text-accent">{integration.status}</span>
-                      </div>
-                    </div>
-                    <p className="mt-3 text-xs text-muted">
-                      {integration.autoImport === false ? 'Otomatik sipariş çekimi kapalı.' : 'Sipariş çekimi aktif.'}
-                    </p>
-                    <div className="mt-4 grid gap-3 md:grid-cols-2">
-                      <label className="space-y-2 text-sm text-muted">
-                        <span>Base URL</span>
-                        <input
-                          value={integration.baseUrl ?? ''}
-                          onChange={(event) => patchPartnerIntegration(integration.id, { baseUrl: event.target.value })}
-                          placeholder="https://api.partner.com"
-                          className="h-11 w-full rounded-2xl border border-line bg-panel px-4 font-semibold text-ink outline-none"
-                        />
-                      </label>
-                      <label className="space-y-2 text-sm text-muted">
-                        <span>Sipariş endpoint</span>
-                        <input
-                          value={integration.ordersPath ?? ''}
-                          onChange={(event) => patchPartnerIntegration(integration.id, { ordersPath: event.target.value })}
-                          placeholder="/orders veya /suppliers/{sellerId}/orders"
-                          className="h-11 w-full rounded-2xl border border-line bg-panel px-4 font-semibold text-ink outline-none"
-                        />
-                      </label>
-                      <label className="space-y-2 text-sm text-muted">
-                        <span>Kimlik doğrulama</span>
-                        <select
-                          value={integration.authType ?? 'bearer'}
-                          onChange={(event) => patchPartnerIntegration(integration.id, { authType: event.target.value as PartnerIntegrationRecord['authType'] })}
-                          className="h-11 w-full rounded-2xl border border-line bg-panel px-4 font-semibold text-ink outline-none"
-                        >
-                          <option value="basic">Basic</option>
-                          <option value="bearer">Bearer</option>
-                          <option value="apiKey">API Key</option>
-                        </select>
-                      </label>
-                      <label className="space-y-2 text-sm text-muted">
-                        <span>İstek tipi</span>
-                        <select
-                          value={integration.method ?? 'GET'}
-                          onChange={(event) => patchPartnerIntegration(integration.id, { method: event.target.value as PartnerIntegrationRecord['method'] })}
-                          className="h-11 w-full rounded-2xl border border-line bg-panel px-4 font-semibold text-ink outline-none"
-                        >
-                          <option value="GET">GET</option>
-                          <option value="POST">POST</option>
-                        </select>
-                      </label>
-                      <label className="space-y-2 text-sm text-muted">
-                        <span>Kullanıcı adı / client id</span>
-                        <input
-                          value={integration.username ?? ''}
-                          onChange={(event) => patchPartnerIntegration(integration.id, { username: event.target.value })}
-                          placeholder="Kullanıcı adı"
-                          className="h-11 w-full rounded-2xl border border-line bg-panel px-4 font-semibold text-ink outline-none"
-                        />
-                      </label>
-                      <label className="space-y-2 text-sm text-muted">
-                        <span>Şifre / secret</span>
-                        <input
-                          type="password"
-                          value={integration.password ?? ''}
-                          onChange={(event) => patchPartnerIntegration(integration.id, { password: event.target.value })}
-                          placeholder="Şifre veya secret"
-                          className="h-11 w-full rounded-2xl border border-line bg-panel px-4 font-semibold text-ink outline-none"
-                        />
-                      </label>
-                      <label className="space-y-2 text-sm text-muted">
-                        <span>API key / token</span>
-                        <input
-                          value={integration.apiKey ?? ''}
-                          onChange={(event) => patchPartnerIntegration(integration.id, { apiKey: event.target.value })}
-                          placeholder="API key veya access token"
-                          className="h-11 w-full rounded-2xl border border-line bg-panel px-4 font-semibold text-ink outline-none"
-                        />
-                      </label>
-                      <label className="space-y-2 text-sm text-muted">
-                        <span>API secret</span>
-                        <input
-                          type="password"
-                          value={integration.apiSecret ?? ''}
-                          onChange={(event) => patchPartnerIntegration(integration.id, { apiSecret: event.target.value })}
-                          placeholder="API secret"
-                          className="h-11 w-full rounded-2xl border border-line bg-panel px-4 font-semibold text-ink outline-none"
-                        />
-                      </label>
-                      <label className="space-y-2 text-sm text-muted">
-                        <span>Seller / mağaza kodu</span>
-                        <input
-                          value={integration.sellerId ?? ''}
-                          onChange={(event) => patchPartnerIntegration(integration.id, { sellerId: event.target.value, storeId: event.target.value })}
-                          placeholder="Seller veya mağaza kodu"
-                          className="h-11 w-full rounded-2xl border border-line bg-panel px-4 font-semibold text-ink outline-none"
-                        />
-                      </label>
-                      <label className="space-y-2 text-sm text-muted">
-                        <span>API key header</span>
-                        <input
-                          value={integration.apiKeyHeader ?? ''}
-                          onChange={(event) => patchPartnerIntegration(integration.id, { apiKeyHeader: event.target.value })}
-                          placeholder="Authorization veya X-API-Key"
-                          className="h-11 w-full rounded-2xl border border-line bg-panel px-4 font-semibold text-ink outline-none"
-                        />
-                      </label>
-                    </div>
-                    <p className="mt-3 text-xs text-muted">
-                      Son çekim: {integration.lastPullAt ? new Date(integration.lastPullAt).toLocaleString('tr-TR') : 'Henüz çekim yapılmadı'}
-                    </p>
-                  </div>
-                ))}
               </div>
             </article>
           </section>

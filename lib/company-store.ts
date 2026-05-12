@@ -3,6 +3,7 @@
 export type CompanyState = {
   tradeName: string;
   branchName: string;
+  logoUrl: string;
   taxOffice: string;
   taxNumber: string;
   phone: string;
@@ -18,6 +19,7 @@ export function getDefaultCompanyState(): CompanyState {
   return {
     tradeName: 'Aurelia Restaurant',
     branchName: 'Merkez Şube',
+    logoUrl: '',
     taxOffice: '',
     taxNumber: '',
     phone: '',
