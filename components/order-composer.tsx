@@ -311,6 +311,91 @@ function resolveTenantPrinterSettings(integrationState: ReturnType<typeof getDef
   };
 }
 
+function formatReceiptDate(date: Date) {
+  return date.toLocaleString('tr-TR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
+const ESC = '\x1B';
+const GS  = '\x1D';
+const INIT        = ESC + '@';
+const ALIGN_CTR   = ESC + 'a\x01';
+const ALIGN_LEFT  = ESC + 'a\x00';
+const BOLD_ON     = ESC + 'E\x01';
+const BOLD_OFF    = ESC + 'E\x00';
+const PAPER_CUT   = GS  + 'V\x00';
+const COL = 32;
+
+function padLine(left: string, right: string): string {
+  const gap = COL - left.length - right.length;
+  return left + ' '.repeat(Math.max(1, gap)) + right;
+}
+
+function buildReceiptText(input: {
+  restaurantName: string;
+  tableNumber: string;
+  date: Date;
+  items: Array<{ name: string; qty: number }>;
+}) {
+  const sep = '-'.repeat(COL);
+  const parts: string[] = [
+    INIT,
+    ALIGN_CTR + BOLD_ON + input.restaurantName + BOLD_OFF,
+    ALIGN_LEFT,
+    `Masa: ${input.tableNumber}`,
+    `Tarih: ${formatReceiptDate(input.date)}`,
+    sep,
+    ...input.items.map((item) => `${item.qty} x ${item.name}`),
+    sep,
+    '',
+    PAPER_CUT,
+  ];
+  return parts.join('\n');
+}
+
+function buildCheckReceiptText(input: {
+  restaurantName: string;
+  tableNumber: string;
+  date: Date;
+  lines: Array<{ name: string; qty: number; unitPrice: number; lineTotal: number }>;
+  subtotal: number;
+  vat: number;
+  total: number;
+}) {
+  const sep = '-'.repeat(COL);
+  const header: string[] = [
+    INIT,
+    ALIGN_CTR + BOLD_ON + input.restaurantName + BOLD_OFF,
+    ALIGN_CTR + 'HESAP ADISYONU',
+    ALIGN_LEFT,
+    `Masa: ${input.tableNumber}`,
+    `Tarih: ${formatReceiptDate(input.date)}`,
+    sep,
+  ];
+
+  const body = input.lines.flatMap((line) => [
+    padLine(`${line.qty}x ${line.name}`, `${formatMoney(line.lineTotal)}`),
+  ]);
+
+  const footer: string[] = [
+    sep,
+    padLine('Ara Toplam:', formatMoney(input.subtotal)),
+    padLine('KDV (%10):', formatMoney(input.vat)),
+    BOLD_ON + padLine('TOPLAM:', formatMoney(input.total)) + BOLD_OFF,
+    sep,
+    '',
+    PAPER_CUT,
+  ];
+
+  return [...header, ...body, ...footer].join('\n');
+}
+
 function extractTableNumber(tableName: string) {
   const match = tableName.match(/(\d+)/);
   return match?.[1] ?? tableName;
@@ -1574,7 +1659,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       return;
     }
 
-    const groupedByPrinter = unsentLines.reduce<Record<string, Array<{ name: string; qty: number; price: number }>>>((groups, line) => {
+    const groupedByPrinter = unsentLines.reduce<Record<string, Array<{ name: string; qty: number }>>>((groups, line) => {
       const category = line.printCategory ?? line.category;
       const mappedPrinter = resolvePrinterNameForCategory(
         category,
@@ -1599,7 +1684,6 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       groups[printerName].push({
         name: line.name,
         qty: line.unsentQty,
-        price: getOrderLineUnitAmount(line),
       });
 
       return groups;
@@ -1611,16 +1695,11 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
     const printResults = await Promise.all(
       Object.entries(groupedByPrinter).map(async ([printerName, items]) => {
-        const receipt = formatReceipt({
+        const receipt = buildReceiptText({
           restaurantName,
           tableNumber,
           date: printedAt,
-          items: items.map((item) => ({
-            name: item.name,
-            qty: item.qty,
-            price: item.price,
-          })),
-          total: items.reduce((sum, item) => sum + (item.qty * item.price), 0),
+          items,
         });
         const totalQty = items.reduce((sum, item) => sum + item.qty, 0);
         const fallbackPrinter = runtimeTenantPrinters.defaultPrinter;
@@ -1695,13 +1774,12 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
       const receipt = formatReceipt({
         restaurantName: companyState.tradeName || 'Adisyum',
-        tableNumber: extractTableNumber(currentTable.name),
-        date: new Date(),
+        table: extractTableNumber(currentTable.name),
         items: [
-          { name: 'Deneme Ürün 1', qty: 1, price: 120 },
-          { name: 'Deneme Ürün 2', qty: 2, price: 85 },
+          { name: 'Deneme Ürün 1', qty: 1, price: 50 },
+          { name: 'Deneme Ürün 2', qty: 2, price: 30 },
+          { name: 'Deneme Ürün 3', qty: 1, price: 25 },
         ],
-        total: 290,
       });
 
       await sendLocalAgentPrint(runtimeTenantPrinters.defaultPrinter, receipt);
@@ -1724,16 +1802,18 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     }
 
     const tableNumber = extractTableNumber(currentTable.name);
-    const receipt = formatReceipt({
+    const receipt = buildCheckReceiptText({
       restaurantName: companyState.tradeName || 'Adisyum',
       tableNumber,
       date: new Date(),
-      items: lines.map((line) => ({
+      lines: lines.map((line) => ({
         name: line.name,
         qty: line.qty,
-        price: getOrderLineUnitAmount(line),
-        total: getOrderLineSubtotal(line),
+        unitPrice: getOrderLineUnitAmount(line),
+        lineTotal: getOrderLineSubtotal(line),
       })),
+      subtotal: settlementSubtotal,
+      vat: settlementVat,
       total: settlementTotal,
     });
 
@@ -3191,7 +3271,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
               disabled={testPrintLoading || !currentTable}
               className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-[0.95rem] border border-slate-300 bg-white px-4 text-[14px] font-semibold text-slate-700 transition duration-150 hover:-translate-y-[1px] hover:bg-slate-50 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Send className="h-4.5 w-4.5" /> {testPrintLoading ? 'Test fiş gönderiliyor...' : 'Test Fiş Bas'}
+              <Send className="h-4.5 w-4.5" /> {testPrintLoading ? 'Test print gönderiliyor...' : 'Test Print'}
             </button>
 
             <button

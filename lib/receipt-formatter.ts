@@ -1,74 +1,72 @@
-'use client';
+/**
+ * Thermal printer receipt formatter
+ * Max line width: 32 characters
+ */
 
-export const RECEIPT_WIDTH = 32;
+const LINE_WIDTH = 32;
+const SEPARATOR = '-'.repeat(LINE_WIDTH);
 
-export type ReceiptItem = {
-  qty: number;
+function center(text: string): string {
+  const padding = Math.max(0, Math.floor((LINE_WIDTH - text.length) / 2));
+  return ' '.repeat(padding) + text;
+}
+
+export interface ReceiptItem {
   name: string;
+  qty: number;
   price: number;
-  total?: number;
-};
+}
 
-export type ReceiptOrder = {
-  tableNumber?: string | number;
+export interface ReceiptOrder {
+  restaurantName?: string;
   table?: string | number;
-  date?: Date | string | number;
   items: ReceiptItem[];
   total?: number;
-  restaurantName?: string;
-};
-
-function toMoney(value: number) {
-  return new Intl.NumberFormat('tr-TR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
 }
 
-function clip(value: string, width = RECEIPT_WIDTH) {
-  if (value.length <= width) return value;
-  return value.slice(0, width);
-}
-
-function fitLine(value: string, width = RECEIPT_WIDTH) {
-  return clip(value).padEnd(width, ' ');
-}
-
-function formatItemLine(item: ReceiptItem) {
-  const lineTotal = item.total ?? (item.qty * item.price);
-  const priceText = `${toMoney(lineTotal)} ₺`;
-  const prefix = `${item.qty}x `;
-  const leftWidth = Math.max(1, RECEIPT_WIDTH - priceText.length);
-  const nameWidth = Math.max(1, leftWidth - prefix.length);
-  const left = `${prefix}${clip(item.name, nameWidth).padEnd(nameWidth, ' ')}`;
-  return `${left}${priceText}`;
-}
-
-export function formatReceipt(order: ReceiptOrder) {
-  const table = order.tableNumber ?? order.table ?? '-';
-  const rawDate = order.date ? new Date(order.date) : new Date();
-  const dateText = Number.isNaN(rawDate.getTime())
-    ? new Date().toLocaleString('tr-TR')
-    : rawDate.toLocaleString('tr-TR');
-
-  const computedTotal = order.items.reduce((sum, item) => sum + (item.total ?? (item.qty * item.price)), 0);
-  const total = typeof order.total === 'number' ? order.total : computedTotal;
-
+/**
+ * Format an order into a plain-text thermal receipt (32-char wide)
+ */
+export function formatReceipt(order: ReceiptOrder): string {
   const lines: string[] = [];
-  lines.push(fitLine((order.restaurantName || 'ADISYUM RESTAURANT').toUpperCase()));
-  lines.push('-'.repeat(RECEIPT_WIDTH));
-  lines.push(fitLine(`Masa: ${table}`));
-  lines.push(fitLine(`Tarih: ${dateText}`));
+
+  // Header
+  const restaurantName = order.restaurantName || 'ADISYUM RESTAURANT';
+  lines.push(center(restaurantName));
+  lines.push(SEPARATOR);
+
+  if (order.table != null) {
+    lines.push(`Masa: ${order.table}`);
+  }
+  lines.push(`Tarih: ${new Date().toLocaleString('tr-TR')}`);
   lines.push('');
 
+  // Items
   order.items.forEach((item) => {
-    lines.push(formatItemLine(item));
+    const lineTotal = item.qty * item.price;
+    // Format: "1x Adana Kebap      15.00 ₺"
+    // prefix = "1x " = 3 chars, suffix = " ₺" = 2 chars
+    // price field = 7 chars right-aligned, name = remaining
+    const prefix = `${item.qty}x `;
+    const suffix = `${lineTotal.toFixed(2)} \u20ba`;
+    const nameWidth = LINE_WIDTH - prefix.length - suffix.length;
+    const name = item.name.length > nameWidth
+      ? item.name.slice(0, nameWidth)
+      : item.name.padEnd(nameWidth, ' ');
+    lines.push(`${prefix}${name}${suffix}`);
   });
 
-  lines.push('-'.repeat(RECEIPT_WIDTH));
-  lines.push(fitLine(`TOPLAM: ${toMoney(total)} ₺`));
+  // Footer
+  lines.push(SEPARATOR);
+
+  const total = order.total ?? order.items.reduce((acc, i) => acc + i.qty * i.price, 0);
+  const totalStr = `${total.toFixed(2)} \u20ba`;
+  const totalLabel = 'TOPLAM: ';
+  const totalPad = LINE_WIDTH - totalLabel.length - totalStr.length;
+  lines.push(`${totalLabel}${' '.repeat(Math.max(0, totalPad))}${totalStr}`);
+
   lines.push('');
-  lines.push(fitLine('Teşekkür ederiz'));
+  lines.push(center('Te\u015fekk\u00fcr ederiz'));
 
   return lines.join('\n');
 }
