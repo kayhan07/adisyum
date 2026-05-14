@@ -4,12 +4,93 @@ using System.Diagnostics;
 using System.Drawing.Printing;
 using System.IO;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Win32;
 
 namespace AdisyumPosAgentInstaller
 {
+    // ------------------------------------------------------------------ //
+    //  Raw-printer P/Invoke helpers                                        //
+    // ------------------------------------------------------------------ //
+    internal static class RawPrinter
+    {
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        public class DOCINFO
+        {
+            [MarshalAs(UnmanagedType.LPWStr)] public string pDocName;
+            [MarshalAs(UnmanagedType.LPWStr)] public string pOutputFile;
+            [MarshalAs(UnmanagedType.LPWStr)] public string pDataType;
+        }
+
+        [DllImport("winspool.Drv", EntryPoint = "OpenPrinterW", SetLastError = true, CharSet = CharSet.Unicode)]
+        public static extern bool OpenPrinter(string pPrinterName, out IntPtr phPrinter, IntPtr pDefault);
+
+        [DllImport("winspool.Drv", SetLastError = true)]
+        public static extern bool ClosePrinter(IntPtr hPrinter);
+
+        [DllImport("winspool.Drv", SetLastError = true, CharSet = CharSet.Unicode)]
+        public static extern bool StartDocPrinter(IntPtr hPrinter, int level, DOCINFO di);
+
+        [DllImport("winspool.Drv", SetLastError = true)]
+        public static extern bool EndDocPrinter(IntPtr hPrinter);
+
+        [DllImport("winspool.Drv", SetLastError = true)]
+        public static extern bool StartPagePrinter(IntPtr hPrinter);
+
+        [DllImport("winspool.Drv", SetLastError = true)]
+        public static extern bool EndPagePrinter(IntPtr hPrinter);
+
+        [DllImport("winspool.Drv", SetLastError = true)]
+        public static extern bool WritePrinter(IntPtr hPrinter, byte[] pBytes, int dwCount, out int dwWritten);
+
+        /// <summary>Sends a RAW ESC/POS byte array directly to the named Windows printer.</summary>
+        public static int SendRaw(string printerName, byte[] data)
+        {
+            if (data == null || data.Length == 0)
+                throw new ArgumentException("ESC/POS data boş.");
+
+            IntPtr hPrinter;
+            if (!OpenPrinter(printerName, out hPrinter, IntPtr.Zero))
+                throw new InvalidOperationException("OpenPrinter failed. LastError=" + Marshal.GetLastWin32Error());
+
+            try
+            {
+                var doc = new DOCINFO
+                {
+                    pDocName  = "Adisyum ESCPOS RAW",
+                    pDataType = "RAW",
+                    pOutputFile = null
+                };
+
+                if (!StartDocPrinter(hPrinter, 1, doc))
+                    throw new InvalidOperationException("StartDocPrinter failed. LastError=" + Marshal.GetLastWin32Error());
+
+                try
+                {
+                    if (!StartPagePrinter(hPrinter))
+                        throw new InvalidOperationException("StartPagePrinter failed. LastError=" + Marshal.GetLastWin32Error());
+
+                    try
+                    {
+                        int written;
+                        if (!WritePrinter(hPrinter, data, data.Length, out written))
+                            throw new InvalidOperationException("WritePrinter failed. LastError=" + Marshal.GetLastWin32Error());
+
+                        if (written != data.Length)
+                            throw new InvalidOperationException($"Eksik yazım: {written}/{data.Length} byte");
+
+                        return written;
+                    }
+                    finally { EndPagePrinter(hPrinter); }
+                }
+                finally { EndDocPrinter(hPrinter); }
+            }
+            finally { ClosePrinter(hPrinter); }
+        }
+    }
+
     internal static class Program
     {
         private const string ListenPrefix = "http://127.0.0.1:3001/";
@@ -105,10 +186,30 @@ namespace AdisyumPosAgentInstaller
             }
         }
 
+        private static void SetCorsHeaders(HttpListenerResponse response, string origin)
+        {
+            response.Headers["Access-Control-Allow-Origin"]          = string.IsNullOrEmpty(origin) ? "*" : origin;
+            response.Headers["Access-Control-Allow-Methods"]         = "GET, POST, OPTIONS";
+            response.Headers["Access-Control-Allow-Headers"]         = "Content-Type, Authorization";
+            response.Headers["Access-Control-Allow-Credentials"]     = "true";
+            response.Headers["Access-Control-Allow-Private-Network"] = "true";
+        }
+
         private static void HandleRequest(HttpListenerContext context)
         {
-            var request = context.Request;
+            var request  = context.Request;
             var response = context.Response;
+            var origin   = request.Headers["Origin"] ?? "*";
+
+            SetCorsHeaders(response, origin);
+
+            // ---------- CORS preflight ----------
+            if (request.HttpMethod == "OPTIONS")
+            {
+                response.StatusCode = 204;
+                response.OutputStream.Close();
+                return;
+            }
 
             if (request.Url == null)
             {
@@ -119,6 +220,7 @@ namespace AdisyumPosAgentInstaller
 
             var path = request.Url.AbsolutePath.Trim('/').ToLowerInvariant();
 
+            // ---------- GET /printers ----------
             if (request.HttpMethod == "GET" && path == "printers")
             {
                 var printers = GetInstalledPrinters();
@@ -126,23 +228,77 @@ namespace AdisyumPosAgentInstaller
                 return;
             }
 
+            // ---------- POST /print ----------
             if (request.HttpMethod == "POST" && path == "print")
             {
+                string body;
                 using (var reader = new StreamReader(request.InputStream, request.ContentEncoding ?? Encoding.UTF8))
                 {
-                    var body = reader.ReadToEnd();
-                    var payload = JsonSerializer.Deserialize<PrintPayload>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    body = reader.ReadToEnd();
+                }
 
-                    if (payload == null || string.IsNullOrWhiteSpace(payload.PrinterName) || string.IsNullOrWhiteSpace(payload.Text))
-                    {
-                        response.StatusCode = 400;
-                        WriteJson(response, new { error = "printerName ve text zorunlu." });
-                        return;
-                    }
-
-                    WriteJson(response, new { success = true, printerName = payload.PrinterName, queued = true });
+                PrintPayload payload;
+                try
+                {
+                    payload = JsonSerializer.Deserialize<PrintPayload>(
+                        body,
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                }
+                catch
+                {
+                    response.StatusCode = 400;
+                    WriteJson(response, new { error = "JSON parse hatası." });
                     return;
                 }
+
+                if (payload == null
+                    || string.IsNullOrWhiteSpace(payload.PrinterName)
+                    || string.IsNullOrWhiteSpace(payload.BytesBase64))
+                {
+                    response.StatusCode = 400;
+                    WriteJson(response, new { error = "printerName ve bytesBase64 zorunlu." });
+                    return;
+                }
+
+                byte[] rawBytes;
+                try
+                {
+                    rawBytes = Convert.FromBase64String(payload.BytesBase64);
+                }
+                catch
+                {
+                    response.StatusCode = 400;
+                    WriteJson(response, new { error = "Geçersiz bytesBase64 verisi." });
+                    return;
+                }
+
+                if (rawBytes.Length == 0)
+                {
+                    response.StatusCode = 400;
+                    WriteJson(response, new { error = "RAW buffer boş." });
+                    return;
+                }
+
+                try
+                {
+                    int written = RawPrinter.SendRaw(payload.PrinterName, rawBytes);
+                    WriteJson(response, new
+                    {
+                        success      = true,
+                        printerName  = payload.PrinterName,
+                        printed      = true,
+                        mode         = "raw",
+                        bytes        = written,
+                        printJobs    = 1,
+                        writeCalls   = 1
+                    });
+                }
+                catch (Exception ex)
+                {
+                    response.StatusCode = 500;
+                    WriteJson(response, new { error = ex.Message });
+                }
+                return;
             }
 
             response.StatusCode = 404;
@@ -182,7 +338,9 @@ namespace AdisyumPosAgentInstaller
         private sealed class PrintPayload
         {
             public string PrinterName { get; set; }
-            public string Text { get; set; }
+            public string BytesBase64 { get; set; }
+            public string Source      { get; set; }
+            public string Mode        { get; set; }
         }
     }
 }

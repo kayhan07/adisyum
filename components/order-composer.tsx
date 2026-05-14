@@ -2,7 +2,7 @@
 
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, ChevronUp, CreditCard, Minus, Plus, RotateCcw, Search, Send, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, CreditCard, Minus, Plus, Repeat2, RotateCcw, Search, Send, Smartphone, Zap, X } from 'lucide-react';
 import {
   appendStoredAccount,
   loadStoredAccounts,
@@ -12,6 +12,7 @@ import { getDefaultCompanyState, loadCompanyState, subscribeToCompanyChanges } f
 import {
   getPaymentRequestedTableIds,
   getStoredOrdersByTable,
+  syncTableStateFromServer,
   getStoredTableMeta,
   setStoredOrdersByTable,
   setTableLiveTotals,
@@ -47,9 +48,12 @@ import { erpAccounts, type Account } from '@/lib/erp-engine';
 import { appendPaymentJournalEntries, buildPaymentJournalEntry } from '@/lib/payment-journal-store';
 import { getDefaultTableLayoutState, loadTableLayoutState, subscribeToTableLayoutChanges } from '@/lib/table-layout-store';
 import { getProductMapping, validateProductMapping } from '@/lib/pos-mapping-store';
-import { queueOfflineOrderSnapshot, syncOfflineOrders } from '@/lib/offline-sync-store';
+import { queueOfflineOrderSnapshot, queueOfflinePaymentSnapshot, syncOfflineOrders } from '@/lib/offline-sync-store';
+import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
 import { fetchLocalAgentJson } from '@/lib/local-agent';
-import { printReceipt, printKitchenTicket, printBarTicket } from '@/lib/receipt-formatter';
+import { printCustomerReceipt, printKitchenTicket, printBarTicket } from '@/lib/receipt-formatter';
+import { recordOrderForSmartStock } from '@/lib/smart-recipe-stock-engine';
+import type { BranchId } from '@/lib/erp-engine';
 
 type Category = { id: string; label: string };
 type ProductCard = {
@@ -124,9 +128,10 @@ const categories: Category[] = [
   { id: 'icecek', label: '\u0130\u00e7ecek' },
   { id: 'tatli', label: 'Tatl\u0131' },
 ];
-
 const VAT_RATE = 0.1;
 const RECENT_ACCOUNT_KEY = 'adisyon-recent-charge-accounts';
+const WAITER_RECENT_PRODUCT_KEY = 'adisyon-waiter-recent-products';
+const EMPTY_ORDER_LINES: OrderLine[] = [];
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat('tr-TR', {
@@ -166,6 +171,25 @@ function cloneOrders(source: Record<string, OrderLine[]>) {
   return Object.fromEntries(
     Object.entries(source).map(([tableId, lines]) => [tableId, lines.map((line) => ({ ...line }))]),
   );
+}
+
+function areStringArraysEqual(first: string[], second: string[]) {
+  return first.length === second.length && first.every((value, index) => value === second[index]);
+}
+
+function areOrderMapsEqual(first: Record<string, OrderLine[]>, second: Record<string, OrderLine[]>) {
+  const firstKeys = Object.keys(first);
+  const secondKeys = Object.keys(second);
+  if (!areStringArraysEqual(firstKeys.sort(), secondKeys.sort())) return false;
+
+  return firstKeys.every((tableId) => {
+    const firstLines = first[tableId] ?? EMPTY_ORDER_LINES;
+    const secondLines = second[tableId] ?? EMPTY_ORDER_LINES;
+    return (
+      firstLines.length === secondLines.length &&
+      firstLines.every((line, index) => JSON.stringify(line) === JSON.stringify(secondLines[index]))
+    );
+  });
 }
 
 function getProductCategoryByName(name: string, products: ProductCard[]) {
@@ -212,6 +236,10 @@ function getOrderLineUnitAmount(line: OrderLine) {
   if (line.complimentary) return 0;
   if (line.isReturn) return -line.price;
   return line.price;
+}
+
+function getOrderLineGrossUnitAmount(line: OrderLine) {
+  return roundCurrency(getOrderLineUnitAmount(line) * (1 + VAT_RATE));
 }
 
 function resolveInitialStatus(status: string): TableStatus {
@@ -402,9 +430,10 @@ function extractTableNumber(tableName: string) {
 }
 
 async function sendLocalAgentPrint(printerName: string, text: string) {
+  const bytesBase64 = btoa(unescape(encodeURIComponent(text)));
   await fetchLocalAgentJson('/print', {
     method: 'POST',
-    body: { printerName, text },
+    body: { printerName, bytesBase64, source: 'order-composer:sendLocalAgentPrint' },
   });
 }
 
@@ -483,6 +512,9 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const [lastMutatedLineId, setLastMutatedLineId] = useState<string | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState<string>('Hazır');
   const [posMappingWarning, setPosMappingWarning] = useState('');
+  const [fastServiceMode, setFastServiceMode] = useState(true);
+  const [mobileWaiterMode, setMobileWaiterMode] = useState(false);
+  const [recentProductIds, setRecentProductIds] = useState<string[]>([]);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentExpanded, setPaymentExpanded] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
@@ -528,6 +560,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const [productCardComplimentaryReason, setProductCardComplimentaryReason] = useState('');
   const [productCardIsReturn, setProductCardIsReturn] = useState(false);
   const [testPrintLoading, setTestPrintLoading] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
 
   useEffect(() => {
     const refresh = () => {
@@ -565,6 +598,8 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
   const holdDelayRef = useRef<number | null>(null);
   const holdIntervalRef = useRef<number | null>(null);
+  const productSearchRef = useRef<HTMLInputElement | null>(null);
+  const lastPaymentGuardRef = useRef<{ tableId: string; total: number; at: number } | null>(null);
   const previousItemCountsRef = useRef<Record<string, number>>({});
   const seenTableCardRef = useRef<Record<string, boolean>>({});
   const paymentRequestedSet = useMemo(() => new Set(paymentRequestedTables), [paymentRequestedTables]);
@@ -605,10 +640,31 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
-      const parsed = JSON.parse(window.localStorage.getItem(RECENT_ACCOUNT_KEY) ?? '[]') as string[];
+      const parsed = JSON.parse(readRuntimeItem('tenant', RECENT_ACCOUNT_KEY) ?? '[]') as string[];
       setRecentAccountIds(Array.isArray(parsed) ? parsed : []);
     } catch {
       setRecentAccountIds([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const update = () => setIsOnline(navigator.onLine);
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const parsed = JSON.parse(readRuntimeItem('tenant', WAITER_RECENT_PRODUCT_KEY) ?? '[]') as string[];
+      setRecentProductIds(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setRecentProductIds([]);
     }
   }, []);
 
@@ -686,6 +742,18 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       .slice(0, 8);
   }, [deferredProductSearch, sourceProducts]);
 
+  const waiterFavoriteProducts = useMemo(() => {
+    const recentSet = new Set(recentProductIds);
+    const recent = recentProductIds
+      .map((id) => sourceProducts.find((product) => product.id === id))
+      .filter((product): product is ProductCard => Boolean(product));
+    const fallback = sourceProducts
+      .filter((product) => /çay|cay|ayran|su|kola|cola|lahmacun|köfte|kofte|pizza|burger|kahve/i.test(product.name))
+      .filter((product) => !recentSet.has(product.id));
+    return [...recent, ...fallback].slice(0, 12);
+  }, [recentProductIds, sourceProducts]);
+
+
   const orderSummariesByTable = useMemo(
     () =>
       Object.fromEntries(
@@ -758,7 +826,13 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     [allTables, selectedTableId],
   );
 
-  const lines = currentTable ? ordersByTable[currentTable.id] ?? [] : [];
+  const lines = currentTable ? ordersByTable[currentTable.id] ?? EMPTY_ORDER_LINES : EMPTY_ORDER_LINES;
+  const lastOrderedProduct = useMemo(() => {
+    const lastLine = [...lines].reverse().find((line) => line.productId || line.name);
+    if (!lastLine) return null;
+    return sourceProducts.find((product) => product.id === lastLine.productId || product.name === lastLine.name) ?? null;
+  }, [lines, sourceProducts]);
+  const splitSelectionLineKey = lines.map((line) => `${line.id}:${line.qty}`).join('|');
   const itemCount = useMemo(() => lines.reduce((sum, item) => sum + item.qty, 0), [lines]);
   const guestLabels = useMemo(
     () => Array.from(new Set(lines.map((line) => line.guestName?.trim()).filter((value): value is string => Boolean(value)))),
@@ -841,7 +915,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     setSplitMode('person');
     setSplitAmountInput('');
     setActivePadTarget('cash');
-    setPaymentExpanded(true);
+    setPaymentExpanded(!fastServiceMode);
     setCashReceived(discountedSettlementTotal.toFixed(2));
     setCardAmount('0');
     setSelectedAccountId(chargeAccounts[0]?.id ?? '');
@@ -850,7 +924,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     setDiscountAmountInput('0');
     setRoundingDiscountEnabled(false);
     setDiscountReason('');
-  }, [paymentOpen, discountedSettlementTotal, currentTable?.id, lines]);
+  }, [paymentOpen, discountedSettlementTotal, currentTable?.id, splitSelectionLineKey, fastServiceMode]);
 
   useEffect(() => {
     if (!currentTable) return;
@@ -909,7 +983,9 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
   useEffect(() => {
     setSplitSelection((current) => {
-      if (lines.length === 0) return {};
+      if (lines.length === 0) {
+        return Object.keys(current).length === 0 ? current : {};
+      }
 
       const next = Object.fromEntries(
         lines.map((line) => {
@@ -924,7 +1000,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
       return same ? current : next;
     });
-  }, [lines]);
+  }, [splitSelectionLineKey]);
 
   useEffect(() => {
     return () => {
@@ -935,13 +1011,43 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
   useEffect(() => {
     const syncPaymentRequested = () => {
-      setPaymentRequestedTables(getPaymentRequestedTableIds());
-      setTableMetaById(getStoredTableMeta());
+      const nextPaymentRequestedTables = getPaymentRequestedTableIds();
+      const nextTableMeta = getStoredTableMeta();
+
+      setPaymentRequestedTables((current) =>
+        areStringArraysEqual(current, nextPaymentRequestedTables) ? current : nextPaymentRequestedTables,
+      );
+      setTableMetaById((current) =>
+        JSON.stringify(current) === JSON.stringify(nextTableMeta) ? current : nextTableMeta,
+      );
+      setOrdersByTable((current) => {
+        const nextOrders = normalizeStoredOrders(
+          {
+            ...current,
+            ...getStoredOrdersByTable<OrderLine>(),
+          },
+          sourceProducts,
+        );
+
+        return areOrderMapsEqual(current, nextOrders) ? current : nextOrders;
+      });
     };
 
+    void syncTableStateFromServer().then(() => {
+      syncPaymentRequested();
+    });
+
+    const pollId = window.setInterval(() => {
+      void syncTableStateFromServer();
+    }, 2500);
+
     syncPaymentRequested();
-    return subscribeToPaymentRequestedChanges(syncPaymentRequested);
-  }, []);
+    const unsubscribe = subscribeToPaymentRequestedChanges(syncPaymentRequested);
+    return () => {
+      window.clearInterval(pollId);
+      unsubscribe();
+    };
+  }, [sourceProducts]);
 
   useEffect(() => {
     const refreshReservations = () => {
@@ -969,17 +1075,14 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   useEffect(() => {
     if (!ordersHydrated) return;
     setStoredOrdersByTable(ordersByTable);
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      Object.entries(ordersByTable).forEach(([tableId, payload]) => {
-        if (payload.length === 0) return;
-        queueOfflineOrderSnapshot({
-          tenant_id: sessionState.tenantId,
-          branch_id: sessionState.activeBranchId,
-          table_id: tableId,
-          payload,
-        });
+    Object.entries(ordersByTable).forEach(([tableId, payload]) => {
+      queueOfflineOrderSnapshot({
+        tenantId: sessionState.tenantId,
+        branchId: sessionState.activeBranchId,
+        tableId,
+        payload,
       });
-    }
+    });
   }, [ordersByTable, ordersHydrated, sessionState.activeBranchId, sessionState.tenantId]);
 
   useEffect(() => {
@@ -1299,6 +1402,92 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     setProductCardIsReturn(false);
   };
 
+  function rememberRecentProduct(productId: string) {
+    setRecentProductIds((current) => {
+      const next = [productId, ...current.filter((id) => id !== productId)].slice(0, 16);
+      writeRuntimeItem('tenant', WAITER_RECENT_PRODUCT_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  const addProductQuick = (product: ProductCard) => {
+    if (!currentTable || !hasPermission('orders.create')) return;
+    const mapping = getProductMapping(product.id, product.name);
+    const validation = validateProductMapping(mapping);
+    if (!validation.valid) {
+      const message = `${product.name} için POS PLU eşleştirmesi eksik. Ürünler > POS Mapping alanından tamamlayın.`;
+      setPosMappingWarning(message);
+      setFeedbackMessage(message);
+      return;
+    }
+
+    const storedProduct = storedSaleProducts.find((item) => item.id === product.id || item.name === product.name);
+    const resolvedUnitPrice = storedProduct
+      ? resolveSaleProductPrice(storedProduct, { at: new Date(), eventMode: eventPricingEnabled })
+      : product.price;
+    const complimentaryAllowed = storedProduct?.allowComplimentary ?? product.allowComplimentary ?? true;
+    const discountAllowed = storedProduct?.allowDiscount ?? product.allowDiscount ?? true;
+    const happyHourEligible = storedProduct?.happyHourEligible ?? product.happyHourEligible ?? false;
+
+    setPosMappingWarning('');
+    updatePaymentRequested(currentTable.id, false);
+    let touchedLineId = '';
+
+    setOrdersByTable((current) => {
+      rememberUndo(current, `${product.name} eklendi`);
+      const currentLines = current[currentTable.id] ?? [];
+      const existing = currentLines.find((line) =>
+        line.name === product.name &&
+        line.price === resolvedUnitPrice &&
+        (line.note ?? '') === '' &&
+        (line.guestName ?? '') === '' &&
+        (line.spicePreference ?? 'standart') === 'standart' &&
+        (line.cookingPreference ?? 'standart') === 'standart' &&
+        (line.extrasNote ?? '') === '' &&
+        (line.removalNote ?? '') === '' &&
+        Boolean(line.complimentary) === false &&
+        Boolean(line.isReturn) === false &&
+        (line.allowDiscount ?? true) === discountAllowed,
+      );
+
+      const newLine: OrderLine = {
+        id: `${product.id}-${Date.now()}`,
+        productId: product.id,
+        name: product.name,
+        qty: 1,
+        note: '',
+        price: resolvedUnitPrice,
+        category: product.category,
+        printCategory: storedProduct?.category ?? product.printCategory ?? product.category,
+        sentQty: 0,
+        guestName: undefined,
+        spicePreference: 'standart',
+        cookingPreference: 'standart',
+        extrasNote: undefined,
+        removalNote: undefined,
+        complimentary: false,
+        complimentaryReason: undefined,
+        isReturn: false,
+        allowDiscount: discountAllowed,
+        allowComplimentary: complimentaryAllowed,
+        happyHourEligible,
+      };
+
+      const nextLines: OrderLine[] = existing
+        ? currentLines.map((line) => (line.id === existing.id ? { ...line, qty: line.qty + 1 } : line))
+        : [...currentLines, newLine];
+
+      touchedLineId = existing ? existing.id : nextLines[nextLines.length - 1].id;
+      return { ...current, [currentTable.id]: nextLines };
+    });
+
+    setLastAddedId(product.id);
+    setLastMutatedLineId(touchedLineId);
+    rememberRecentProduct(product.id);
+    setFeedbackMessage(`${product.name} adisyona eklendi`);
+    setProductSearch('');
+  };
+
   const saveTableCard = () => {
     if (!currentTable) return;
     const now = new Date().toISOString();
@@ -1440,6 +1629,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
     setLastAddedId(productCardProduct.id);
     setLastMutatedLineId(touchedLineId);
+    rememberRecentProduct(productCardProduct.id);
     setFeedbackMessage(`${productCardProduct.name} adisyona eklendi`);
     setProductSearch('');
     closeProductCard();
@@ -1659,7 +1849,16 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       return;
     }
 
-    const groupedByPrinter = unsentLines.reduce<Record<string, Array<{ name: string; qty: number; category: string; printCategory: string }>>>((groups, line) => {
+    const groupedByPrinter = unsentLines.reduce<Record<string, Array<{
+      name: string;
+      qty: number;
+      category: string;
+      printCategory: string;
+      note?: string;
+      extrasNote?: string;
+      removalNote?: string;
+      complimentaryReason?: string;
+    }>>>((groups, line) => {
       const category = line.printCategory ?? line.category;
       const mappedPrinter = resolvePrinterNameForCategory(
         category,
@@ -1686,6 +1885,10 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         qty: line.unsentQty,
         category: line.category,
         printCategory: category,
+        note: line.note,
+        extrasNote: line.extrasNote,
+        removalNote: line.removalNote,
+        complimentaryReason: line.complimentaryReason,
       });
 
       return groups;
@@ -1719,7 +1922,17 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
               },
               order: {
                 table: tableNumber,
-                items: items.map((item) => ({ name: item.name, qty: item.qty, price: 0 })),
+                items: items
+                  .map((item) => ({
+                    name: String(item.name ?? '').trim(),
+                    qty: Math.max(0, Math.floor(Number(item.qty ?? 0))),
+                    price: 0,
+                    note: item.note ?? '',
+                    extrasNote: item.extrasNote ?? '',
+                    removalNote: item.removalNote ?? '',
+                    complimentaryReason: item.complimentaryReason ?? '',
+                  }))
+                  .filter((item) => item.qty > 0 && item.name.length > 0),
               },
             });
           } else {
@@ -1735,7 +1948,17 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
               },
               order: {
                 table: tableNumber,
-                items: items.map((item) => ({ name: item.name, qty: item.qty, price: 0 })),
+                items: items
+                  .map((item) => ({
+                    name: String(item.name ?? '').trim(),
+                    qty: Math.max(0, Math.floor(Number(item.qty ?? 0))),
+                    price: 0,
+                    note: item.note ?? '',
+                    extrasNote: item.extrasNote ?? '',
+                    removalNote: item.removalNote ?? '',
+                    complimentaryReason: item.complimentaryReason ?? '',
+                  }))
+                  .filter((item) => item.qty > 0 && item.name.length > 0),
               },
             });
           }
@@ -1756,7 +1979,17 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
                   },
                   order: {
                     table: tableNumber,
-                    items: items.map((item) => ({ name: item.name, qty: item.qty, price: 0 })),
+                    items: items
+                      .map((item) => ({
+                        name: String(item.name ?? '').trim(),
+                        qty: Math.max(0, Math.floor(Number(item.qty ?? 0))),
+                        price: 0,
+                        note: item.note ?? '',
+                        extrasNote: item.extrasNote ?? '',
+                        removalNote: item.removalNote ?? '',
+                        complimentaryReason: item.complimentaryReason ?? '',
+                      }))
+                      .filter((item) => item.qty > 0 && item.name.length > 0),
                   },
                 });
               } else {
@@ -1772,7 +2005,17 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
                   },
                   order: {
                     table: tableNumber,
-                    items: items.map((item) => ({ name: item.name, qty: item.qty, price: 0 })),
+                    items: items
+                      .map((item) => ({
+                        name: String(item.name ?? '').trim(),
+                        qty: Math.max(0, Math.floor(Number(item.qty ?? 0))),
+                        price: 0,
+                        note: item.note ?? '',
+                        extrasNote: item.extrasNote ?? '',
+                        removalNote: item.removalNote ?? '',
+                        complimentaryReason: item.complimentaryReason ?? '',
+                      }))
+                      .filter((item) => item.qty > 0 && item.name.length > 0),
                   },
                 });
               }
@@ -1809,6 +2052,20 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
     setPaymentOpen(false);
 
+    const branchIdForStock: BranchId = activeBranchId === 'kdy' || activeBranchId === 'izm' ? activeBranchId : 'mrk';
+    try {
+      recordOrderForSmartStock(
+        branchIdForStock,
+        unsentLines.map((line) => ({
+          id: line.id,
+          name: line.name,
+          qty: line.unsentQty,
+          note: [line.note, line.extrasNote, line.removalNote].filter(Boolean).join(' '),
+        })),
+      );
+    } catch {
+    }
+
     const successfulPrints = printResults.filter((result) => result.ok);
     const failedPrints = printResults.filter((result) => !result.ok);
 
@@ -1830,6 +2087,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
     setTestPrintLoading(true);
     try {
+      const runtimeCompanyState = loadCompanyState();
       const runtimeIntegrationState = loadIntegrationState();
       const runtimeTenantPrinters = resolveTenantPrinterSettings(runtimeIntegrationState);
       if (!runtimeTenantPrinters.defaultPrinter) {
@@ -1837,13 +2095,13 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         return;
       }
 
-      await printReceipt({
+      await printCustomerReceipt({
         printerName: runtimeTenantPrinters.defaultPrinter,
         settings: {
-          restaurantName: companyState.tradeName || 'Adisyum',
-          branchName: companyState.branchName || '',
-          logoUrl: companyState.logoUrl || '',
-          footerText: companyState.receiptFooter || 'Afiyet olsun',
+          restaurantName: runtimeCompanyState.tradeName || 'Adisyum',
+          branchName: runtimeCompanyState.branchName || '',
+          logoUrl: runtimeCompanyState.logoUrl || '',
+          footerText: runtimeCompanyState.receiptFooter || 'Afiyet olsun',
           paperWidth: '80mm',
         },
         order: {
@@ -1866,6 +2124,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const sendCheckToTable = async () => {
     if (!currentTable || lines.length === 0 || !hasPermission('orders.edit')) return;
 
+    const runtimeCompanyState = loadCompanyState();
     const runtimeIntegrationState = loadIntegrationState();
     const runtimeTenantPrinters = resolveTenantPrinterSettings(runtimeIntegrationState);
     if (!runtimeTenantPrinters.defaultPrinter) {
@@ -1880,59 +2139,55 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     const kitchenPrinter = runtimeTenantPrinters.kitchenPrinter;
     const primaryPrinter = kitchenPrinter || defaultPrinter;
     let printedPrinter = primaryPrinter;
+    const receiptItems = lines.map((line) => ({
+      id: line.id,
+      name: line.name,
+      qty: line.qty,
+      price: getOrderLineGrossUnitAmount(line),
+      category: line.category,
+    }));
+    const receiptTotal = roundCurrency(receiptItems.reduce((sum, item) => sum + (item.qty * item.price), 0));
 
     try {
-      await printReceipt({
+      await printCustomerReceipt({
         printerName: primaryPrinter,
         settings: {
-          restaurantName: companyState.tradeName || 'Adisyum',
-          branchName: companyState.branchName || '',
-          logoUrl: companyState.logoUrl || '',
-          footerText: companyState.receiptFooter || 'Afiyet olsun',
+          restaurantName: runtimeCompanyState.tradeName || 'Adisyum',
+          branchName: runtimeCompanyState.branchName || '',
+          logoUrl: runtimeCompanyState.logoUrl || '',
+          footerText: runtimeCompanyState.receiptFooter || 'Afiyet olsun',
           paperWidth: '80mm',
         },
         order: {
           table: tableNumber,
           createdAt: new Date(),
-          subtotal: settlementSubtotal,
+          subtotal: receiptTotal,
           discount: 0,
-          total: settlementTotal,
-          netTotal: settlementTotal,
-          items: lines.map((line) => ({
-            id: line.id,
-            name: line.name,
-            qty: line.qty,
-            price: getOrderLineUnitAmount(line),
-            category: line.category,
-          })),
+          total: receiptTotal,
+          netTotal: receiptTotal,
+          items: receiptItems,
         },
       });
     } catch {
       if (defaultPrinter && defaultPrinter !== primaryPrinter) {
         try {
-          await printReceipt({
+          await printCustomerReceipt({
             printerName: defaultPrinter,
             settings: {
-              restaurantName: companyState.tradeName || 'Adisyum',
-              branchName: companyState.branchName || '',
-              logoUrl: companyState.logoUrl || '',
-              footerText: companyState.receiptFooter || 'Afiyet olsun',
+              restaurantName: runtimeCompanyState.tradeName || 'Adisyum',
+              branchName: runtimeCompanyState.branchName || '',
+              logoUrl: runtimeCompanyState.logoUrl || '',
+              footerText: runtimeCompanyState.receiptFooter || 'Afiyet olsun',
               paperWidth: '80mm',
             },
             order: {
               table: tableNumber,
               createdAt: new Date(),
-              subtotal: settlementSubtotal,
+              subtotal: receiptTotal,
               discount: 0,
-              total: settlementTotal,
-              netTotal: settlementTotal,
-              items: lines.map((line) => ({
-                id: line.id,
-                name: line.name,
-                qty: line.qty,
-                price: getOrderLineUnitAmount(line),
-                category: line.category,
-              })),
+              total: receiptTotal,
+              netTotal: receiptTotal,
+              items: receiptItems,
             },
           });
           printedPrinter = defaultPrinter;
@@ -2028,9 +2283,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
     setRecentAccountIds((current) => {
       const next = [account.id, ...current.filter((id) => id !== account.id)].slice(0, 5);
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(RECENT_ACCOUNT_KEY, JSON.stringify(next));
-      }
+      writeRuntimeItem('tenant', RECENT_ACCOUNT_KEY, JSON.stringify(next));
       return next;
     });
   };
@@ -2156,6 +2409,16 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
   const completePayment = () => {
     if (!currentTable || lines.length === 0 || !hasPermission('payments.take')) return;
+    const duplicateGuard = lastPaymentGuardRef.current;
+    if (
+      duplicateGuard &&
+      duplicateGuard.tableId === currentTable.id &&
+      duplicateGuard.total === paymentTargetTotal &&
+      Date.now() - duplicateGuard.at < 6000
+    ) {
+      setFeedbackMessage('Aynı ödeme az önce alındı. Tekrarı engellendi.');
+      return;
+    }
     if (paymentScope === 'split' && paymentTargetTotal <= 0) {
       setFeedbackMessage('Önce bölünecek tutarı belirleyin');
       return;
@@ -2191,6 +2454,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
     const currentTableId = currentTable.id;
     const isPartialPayment = paymentScope === 'split' && paymentTargetTotal < discountedSettlementTotal;
+    lastPaymentGuardRef.current = { tableId: currentTableId, total: paymentTargetTotal, at: Date.now() };
 
     if (paymentScope === 'split' && splitMode === 'person') {
       const paidItems = lines.filter((line) => (splitSelection[line.id] ?? 0) > 0);
@@ -2201,6 +2465,26 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           paymentTargetTotal,
           `${currentTable.name} masa adisyonu - ${paidItems.length} kalem cariye işlendi`,
         );
+          queueOfflinePaymentSnapshot({
+            tenantId: sessionState.tenantId,
+            branchId: sessionState.activeBranchId,
+            tableId: currentTableId,
+            payload: {
+              tableName: currentTable.name,
+              paymentLabel,
+              paymentMethod,
+              paymentScope,
+              splitMode,
+              total: paymentTargetTotal,
+              lines: lines.map((line) => ({
+                id: line.id,
+                name: line.name,
+                qty: line.qty,
+                price: line.price,
+                sentQty: line.sentQty,
+              })),
+            },
+          });
       }
       setOrdersByTable((current) => {
         rememberUndo(current, `${paymentLabel} parcali tahsilat`);
@@ -2303,6 +2587,46 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     : paymentMethod === 'mixed' && mixedAccountEnabled && mixedAccountRemainder > 0
       ? Boolean(selectedAccount)
       : true;
+
+  useEffect(() => {
+    function isTypingTarget(target: EventTarget | null) {
+      const element = target as HTMLElement | null;
+      if (!element) return false;
+      const tagName = element.tagName.toLowerCase();
+      return tagName === 'input' || tagName === 'textarea' || tagName === 'select' || element.isContentEditable;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (isTypingTarget(event.target)) {
+        if (event.key !== 'Escape') return;
+      }
+      if (event.key === '/') {
+        event.preventDefault();
+        productSearchRef.current?.focus();
+      }
+      if (event.key.toLowerCase() === 'p') {
+        event.preventDefault();
+        startPayment();
+      }
+      if (event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        if (canSendOrder) void sendOrder();
+      }
+      if (event.key.toLowerCase() === 'r' && lastOrderedProduct) {
+        event.preventDefault();
+        addProductQuick(lastOrderedProduct);
+      }
+      if (event.key === 'Escape') {
+        setPaymentOpen(false);
+        setProductCardProduct(null);
+        setTableActionsOpen(false);
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [addProductQuick, canSendOrder, lastOrderedProduct, sendOrder, startPayment]);
+
   const productCardStoredProduct = useMemo(
     () => (productCardProduct ? storedSaleProducts.find((item) => item.id === productCardProduct.id || item.name === productCardProduct.name) ?? null : null),
     [productCardProduct, storedSaleProducts],
@@ -2353,13 +2677,48 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
                 : 'Tum hesap'}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setPaymentOpen(false)}
-            className="inline-flex h-9 items-center justify-center rounded-xl border border-white/10 bg-[#111827] px-3 text-sm font-semibold text-slate-100 transition duration-150 hover:bg-[#172033] active:scale-[0.97]"
-          >
-            Kapat
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setPaymentMethod('cash');
+                setPaymentScope('full');
+                setCashReceived(paymentTargetTotal.toFixed(2));
+                setCardAmount('0');
+                setActivePadTarget('cash');
+              }}
+              className="inline-flex h-9 items-center justify-center rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white transition hover:bg-emerald-700"
+            >
+              Hızlı nakit
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPaymentMethod('card');
+                setPaymentScope('full');
+                setCardAmount(paymentTargetTotal.toFixed(2));
+                setCashReceived('0');
+                setActivePadTarget('card');
+              }}
+              className="inline-flex h-9 items-center justify-center rounded-xl bg-sky-600 px-3 text-xs font-semibold text-white transition hover:bg-sky-700"
+            >
+              Hızlı kart
+            </button>
+            <button
+              type="button"
+              onClick={() => setPaymentExpanded((current) => !current)}
+              className="inline-flex h-9 items-center justify-center rounded-xl border border-white/10 bg-[#111827] px-3 text-xs font-semibold text-slate-100 transition duration-150 hover:bg-[#172033]"
+            >
+              {paymentExpanded ? 'Minimal' : 'Detay'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPaymentOpen(false)}
+              className="inline-flex h-9 items-center justify-center rounded-xl border border-white/10 bg-[#111827] px-3 text-sm font-semibold text-slate-100 transition duration-150 hover:bg-[#172033] active:scale-[0.97]"
+            >
+              Kapat
+            </button>
+          </div>
         </div>
       </div>
 
@@ -2457,7 +2816,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 gap-2.5 overflow-hidden px-3 py-2.5 sm:px-4 xl:grid-cols-[minmax(0,1fr)_290px]">
+      <div className={`grid min-h-0 flex-1 gap-2.5 overflow-hidden px-3 py-2.5 sm:px-4 ${paymentExpanded ? 'xl:grid-cols-[minmax(0,1fr)_290px]' : ''}`}>
         <div className="grid content-start gap-2.5">
           <div className="rounded-2xl border border-white/10 bg-[#111827] p-2.5">
             <div className="grid gap-2.5">
@@ -2766,6 +3125,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
         </div>
 
+        {paymentExpanded ? (
         <div className="grid content-start gap-2">
           <div className="rounded-2xl border border-slate-200 bg-white p-2.5">
             <p className="text-sm font-semibold text-[#0F172A]">Hızlı ödeme özeti</p>
@@ -2934,13 +3294,25 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
             </button>
           </div>
         </div>
+        ) : (
+          <div className="grid content-start gap-2">
+            <button
+              type="button"
+              onClick={completePayment}
+              disabled={!canCompleteSplit || !canCompleteAccount || paidAmount < paymentTargetTotal || paymentTargetTotal <= 0}
+              className="inline-flex h-15 w-full items-center justify-center rounded-[1rem] bg-emerald-600 px-4 text-[17px] font-bold text-white shadow-[0_16px_30px_rgba(5,150,105,0.28)] transition duration-150 hover:-translate-y-[1px] hover:bg-emerald-700 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Tahsilati tamamla
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
 
   return (
     <>
-    <div className="dark-pos grid min-h-0 gap-4 xl:grid-cols-[minmax(0,1fr)_420px] xl:h-[calc(100vh-2rem)] xl:min-h-[720px]">
+    <div className={`dark-pos grid min-h-0 gap-4 ${mobileWaiterMode ? 'xl:grid-cols-[minmax(0,1fr)_360px]' : 'xl:grid-cols-[minmax(0,1fr)_420px]'} xl:h-[calc(100vh-2rem)] xl:min-h-[720px]`}>
       <section className="app-panel pos-products-panel flex min-h-0 flex-col overflow-hidden rounded-[1.4rem]">
         {paymentOpen ? paymentPanel : (
         <>
@@ -2952,13 +3324,31 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
               </div>
             ) : null}
             <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-              <label htmlFor="product-search" className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                Hızlı ürün arama
-              </label>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <label htmlFor="product-search" className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Hızlı ürün arama
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setFastServiceMode((current) => !current)}
+                  className={fastServiceMode ? 'inline-flex h-8 items-center justify-center rounded-full bg-emerald-600 px-3 text-[11px] font-semibold text-white' : 'inline-flex h-8 items-center justify-center rounded-full border border-slate-300 bg-white px-3 text-[11px] font-semibold text-slate-700'}
+                >
+                  {fastServiceMode ? 'Garson hızlı mod' : 'Detaylı mod'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMobileWaiterMode((current) => !current)}
+                  className={mobileWaiterMode ? 'inline-flex h-8 items-center gap-1 rounded-full bg-blue-600 px-3 text-[11px] font-semibold text-white' : 'inline-flex h-8 items-center gap-1 rounded-full border border-slate-300 bg-white px-3 text-[11px] font-semibold text-slate-700'}
+                >
+                  <Smartphone className="h-3.5 w-3.5" />
+                  Mobil
+                </button>
+              </div>
               <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 focus-within:border-[#2563EB] focus-within:bg-white focus-within:shadow-[0_0_0_3px_rgba(37,99,235,0.12)]">
                 <Search className="h-4 w-4 shrink-0 text-slate-400" />
                 <input
                   id="product-search"
+                  ref={productSearchRef}
                   value={productSearch}
                   onChange={(event) => setProductSearch(event.target.value)}
                   placeholder="Ürün ara... en az 3 harf yaz"
@@ -2974,7 +3364,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
                   <button
                     key={`search-${product.id}`}
                     type="button"
-                    onClick={() => openProductCard(product)}
+                    onClick={() => (fastServiceMode ? addProductQuick(product) : openProductCard(product))}
                     disabled={!currentTable || !hasPermission('orders.create')}
                     className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 last:border-b-0"
                   >
@@ -2990,7 +3380,43 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           </div>
         </div>
 
-        <div className="border-b border-slate-200 px-5 py-5">
+        <div className="border-b border-slate-200 px-5 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Hızlı garson şeridi</p>
+              <p className="mt-0.5 text-xs text-slate-500">Sık kullanılanlar ve son eklenenler</p>
+            </div>
+            {lastOrderedProduct ? (
+              <button
+                type="button"
+                onClick={() => addProductQuick(lastOrderedProduct)}
+                disabled={!currentTable || !hasPermission('orders.create')}
+                className="inline-flex min-h-[44px] shrink-0 items-center gap-2 rounded-xl bg-slate-900 px-3 text-xs font-semibold text-white disabled:opacity-50"
+              >
+                <Repeat2 className="h-4 w-4" />
+                Tekrar
+              </button>
+            ) : null}
+          </div>
+          {waiterFavoriteProducts.length > 0 ? (
+            <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+              {waiterFavoriteProducts.map((product) => (
+                <button
+                  key={`waiter-fav-${product.id}`}
+                  type="button"
+                  onClick={() => addProductQuick(product)}
+                  disabled={!currentTable || !hasPermission('orders.create')}
+                  className="inline-flex min-h-[48px] min-w-[118px] flex-col justify-center rounded-xl border border-slate-200 bg-white px-3 text-left shadow-sm transition hover:border-blue-300 hover:bg-blue-50 disabled:opacity-50"
+                >
+                  <span className="line-clamp-1 text-xs font-bold text-[#0F172A]">{product.name}</span>
+                  <span className="mt-0.5 text-[11px] font-semibold text-blue-600">{formatGrossMoney(product.price)}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <div className={`border-b border-slate-200 px-5 ${mobileWaiterMode ? 'py-3' : 'py-5'}`}>
           <div className="flex flex-wrap gap-2.5">
             {sourceCategories.map((category) => {
               const active = selectedCategory === category.id;
@@ -3015,22 +3441,26 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto p-3">
-          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+          <div className={`grid gap-2 ${mobileWaiterMode ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-4 2xl:grid-cols-5' : 'grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6'}`}>
             {filteredProducts.map((product) => {
               const activeFlash = lastAddedId === product.id;
               return (
                 <button
                   key={product.id}
                   type="button"
-                  onClick={() => openProductCard(product)}
+                  onClick={() => (fastServiceMode ? addProductQuick(product) : openProductCard(product))}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault();
-                      openProductCard(product);
+                      if (fastServiceMode) {
+                        addProductQuick(product);
+                      } else {
+                        openProductCard(product);
+                      }
                     }
                   }}
                   disabled={!currentTable || !hasPermission('orders.create')}
-                  className={`${activeFlash ? 'border-[#60A5FA] bg-[#EFF6FF] shadow-[0_1px_2px_rgba(37,99,235,0.08),0_12px_22px_rgba(37,99,235,0.12)] pos-pop-in' : 'border-slate-200 bg-white hover:-translate-y-[1px] hover:border-slate-300 hover:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_12px_20px_rgba(15,23,42,0.08)] active:scale-[0.97]'} app-card app-card-interactive pos-product-tile flex min-h-[122px] flex-col justify-between rounded-[0.95rem] border p-3 text-left transition duration-150 disabled:cursor-not-allowed disabled:opacity-50`}
+                  className={`${activeFlash ? 'border-[#60A5FA] bg-[#EFF6FF] shadow-[0_1px_2px_rgba(37,99,235,0.08),0_12px_22px_rgba(37,99,235,0.12)] pos-pop-in' : 'border-slate-200 bg-white hover:-translate-y-[1px] hover:border-slate-300 hover:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_12px_20px_rgba(15,23,42,0.08)] active:scale-[0.97]'} app-card app-card-interactive pos-product-tile flex ${mobileWaiterMode ? 'min-h-[104px]' : 'min-h-[122px]'} flex-col justify-between rounded-[0.95rem] border p-3 text-left transition duration-150 disabled:cursor-not-allowed disabled:opacity-50`}
                   aria-label={`${product.name} ekle`}
                 >
                   <div className="space-y-1">
@@ -3092,6 +3522,11 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
               </div>
             </div>
           </div>
+          {!isOnline ? (
+            <div className="mt-2 rounded-xl border border-amber-300/40 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+              İnternet yok. Sipariş ve yazdırma kuyrukta tutulur, bağlantı gelince eşitlenir.
+            </div>
+          ) : null}
         </div>
         <div className="pos-order-middle min-h-0 flex-1 overflow-visible px-4 py-3 xl:overflow-auto">
           {tableActionsOpen && currentTable ? (

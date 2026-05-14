@@ -1,5 +1,7 @@
 'use client';
 
+import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
+
 export type DeliveryCompany = {
   id: string;
   name: string;
@@ -59,7 +61,7 @@ function emitChange() {
 export function loadDeliveryState(): DeliveryState {
   if (typeof window === 'undefined') return getDefaultDeliveryState();
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = readRuntimeItem('tenant', STORAGE_KEY);
     if (!raw) return getDefaultDeliveryState();
     const parsed = JSON.parse(raw) as Partial<DeliveryState>;
     return {
@@ -74,20 +76,17 @@ export function loadDeliveryState(): DeliveryState {
 
 export function saveDeliveryState(state: DeliveryState) {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(state));
   emitChange();
 }
 
 export function subscribeToDeliveryChanges(callback: () => void) {
   if (typeof window === 'undefined') return () => {};
-  const handleStorage = (event: StorageEvent) => {
-    if (event.key === STORAGE_KEY) callback();
-  };
   const handleCustom = () => callback();
-  window.addEventListener('storage', handleStorage);
   window.addEventListener(EVENT_NAME, handleCustom);
+  const unsubscribeRuntime = subscribeRuntimeScope('tenant', callback);
   return () => {
-    window.removeEventListener('storage', handleStorage);
     window.removeEventListener(EVENT_NAME, handleCustom);
+    unsubscribeRuntime();
   };
 }

@@ -1,6 +1,8 @@
 ﻿import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { Inter, Space_Grotesk } from 'next/font/google';
+import { QueryProvider } from '@/components/providers/query-provider';
+import { AppRuntimeProvider } from '@/components/providers/app-runtime-provider';
 import './globals.css';
 
 const inter = Inter({
@@ -33,7 +35,9 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
     <html lang="tr" suppressHydrationWarning>
       <body className={`${inter.variable} ${spaceGrotesk.variable}`}>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-        {children}
+        <QueryProvider>
+          <AppRuntimeProvider>{children}</AppRuntimeProvider>
+        </QueryProvider>
       </body>
     </html>
   );

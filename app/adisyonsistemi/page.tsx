@@ -1,134 +1,32 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { ArrowRight, LockKeyhole } from 'lucide-react';
-import { getDefaultAccessState, loadAccessState } from '@/lib/access-store';
-import { createAuthToken, findTenant, findTenantCredential, isTenantSubscriptionActive, listTenantCredentials, type TenantRecord } from '@/lib/saas-store';
-import { getDefaultSessionState, saveSessionState } from '@/lib/session-store';
-import { activateTenantRuntime } from '@/lib/tenant-runtime-store';
-
-const DEMO_TENANT: TenantRecord = {
-  id: 'ten-demo',
-  tenant_id: 'ABN-48291',
-  name: 'Adisyon Demo Bistro',
-  package_id: 'pkg-premium',
-  package_type: 'premium',
-  start_date: '2026-01-01',
-  end_date: '2027-01-01',
-  demo_enabled: true,
-  status: 'demo',
-  main_branch_id: 'mrk',
-  created_at: '2026-01-01T00:00:00.000Z',
-};
-
-const DEMO_ADMIN = {
-  id: 'usr-demo-admin',
-  name: 'Admin',
-  username: 'admin',
-  password: '1234',
-  role: 'Admin',
-  branchId: 'mrk',
-  active: true,
-  permissions: ['orders.create', 'orders.edit', 'orders.cancel', 'pricing.manage', 'payments.take', 'reports.view', 'settings.manage'],
-};
 
 export default function TenantLoginPage() {
-  const router = useRouter();
   const [tenantId, setTenantId] = useState('ABN-48291');
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('1234');
   const [error, setError] = useState('');
 
-  function completeLogin() {
+  async function completeLogin() {
     setError('');
 
-    const normalizedTenantId = tenantId.trim().toLocaleLowerCase('tr-TR');
-    const normalizedUsername = username.trim().toLocaleLowerCase('tr-TR');
-    const tenant = findTenant(tenantId) ?? (normalizedTenantId === 'abn-48291' ? DEMO_TENANT : null);
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        tenantId,
+        username,
+        password,
+      }),
+    }).catch(() => null);
 
-    if (!tenant) {
-      setError('Abone numarası bulunamadı.');
-      return;
-    }
-
-    if (!isTenantSubscriptionActive(tenant)) {
-      setError('Abonelik süresi dolduğu için giriş yapılamaz.');
-      return;
-    }
-
-    const access = loadAccessState();
-    const fallbackUsers = getDefaultAccessState().users;
-    const tenantCredentials = listTenantCredentials(tenant.tenant_id);
-    const tenantCredential = findTenantCredential(tenant.tenant_id, normalizedUsername);
-    const users = [
-      ...access.users,
-      ...fallbackUsers.filter((fallbackUser) => !access.users.some((item) => item.username === fallbackUser.username)),
-      DEMO_ADMIN,
-    ];
-
-    const user = tenantCredential
-      ? {
-          id: `tenant-admin-${tenant.tenant_id}`,
-          name: tenantCredential.name,
-          username: tenantCredential.username,
-          password: tenantCredential.password,
-          role: tenantCredential.role,
-          branchId: tenantCredential.branch_id,
-          active: tenantCredential.active,
-          permissions: ['orders.create', 'orders.edit', 'orders.cancel', 'pricing.manage', 'payments.take', 'reports.view', 'settings.manage'],
-        }
-      : users.find((item) =>
-          item.username.toLocaleLowerCase('tr-TR') === normalizedUsername &&
-          item.password === password &&
-          item.active
-        );
-
-    if (tenantCredential && tenantCredential.password !== password) {
+    if (!response?.ok) {
       setError('Kullanıcı adı veya şifre hatalı.');
       return;
     }
-
-    if (!user || (tenantCredentials.length > 0 && !tenantCredential)) {
-      setError('Kullanıcı adı veya şifre hatalı.');
-      return;
-    }
-
-    const defaults = getDefaultSessionState();
-    const activeBranch = defaults.branches.find((branch) => branch.id === user.branchId) ?? defaults.branches[1] ?? defaults.branches[0];
-
-    activateTenantRuntime(tenant.tenant_id);
-
-    createAuthToken({
-      tenant_id: tenant.tenant_id,
-      username: user.username,
-      role: user.role,
-      package_id: tenant.package_id,
-      package_type: tenant.package_type,
-      branch_id: user.branchId,
-      is_main_branch: user.branchId === tenant.main_branch_id || user.role === 'Admin',
-      expires_at: tenant.end_date,
-    });
-
-    saveSessionState({
-      ...defaults,
-      activeBranchId: user.role === 'Admin' && tenant.package_type === 'premium' ? 'all' : user.branchId,
-      tenantId: tenant.tenant_id,
-      packageType: tenant.package_type,
-      subscriptionEndDate: tenant.end_date,
-      isAuthenticated: true,
-      currentUser: {
-        ...defaults.currentUser,
-        name: user.name,
-        username: user.username,
-        role: user.role,
-        branch: activeBranch.label,
-        branchId: user.branchId,
-        tenantId: tenant.tenant_id,
-        packageType: tenant.package_type,
-      },
-    });
 
     window.location.href = '/app';
   }

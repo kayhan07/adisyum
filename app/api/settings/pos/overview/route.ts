@@ -1,15 +1,9 @@
 import { NextResponse } from 'next/server';
 import { posBackendJson } from '@/lib/server/pos-api';
+import { requireTenant, tenantAuthErrorResponse } from '@/lib/requireTenant';
+import { getTenantCache, setTenantCache, tenantCacheKey } from '@/lib/db/cache';
 
 export const dynamic = 'force-dynamic';
-
-type PosOverviewCache = {
-  key: string;
-  expiresAt: number;
-  data: unknown;
-};
-
-const globalCache = globalThis as typeof globalThis & { __posOverviewCache?: PosOverviewCache };
 
 function parseLimit(value: string | null, defaultValue: number, maxValue: number) {
   const parsed = Number(value);
@@ -28,16 +22,21 @@ type MappingIndexPayload = {
 };
 
 export async function GET(request: Request) {
+  let tenantId = '';
+  try {
+    tenantId = (await requireTenant(request)).tenantId;
+  } catch (error) {
+    return tenantAuthErrorResponse(error);
+  }
+
   const url = new URL(request.url);
   const logsLimit = parseLimit(url.searchParams.get('logsLimit'), 200, 2000);
   const productsLimit = parseLimit(url.searchParams.get('productsLimit'), 500, 5000);
   const mappingsLimit = parseLimit(url.searchParams.get('mappingsLimit'), 500, 5000);
-  const cacheKey = `${logsLimit}:${productsLimit}:${mappingsLimit}`;
+  const cacheKey = tenantCacheKey(tenantId, 'pos-overview', `${logsLimit}:${productsLimit}:${mappingsLimit}`);
 
-  const now = Date.now();
-  if (globalCache.__posOverviewCache && globalCache.__posOverviewCache.key === cacheKey && globalCache.__posOverviewCache.expiresAt > now) {
-    return NextResponse.json(globalCache.__posOverviewCache.data);
-  }
+  const cached = await getTenantCache<unknown>(cacheKey).catch(() => null);
+  if (cached) return NextResponse.json(cached);
 
   const [devicesResult, logsResult, productsResult, mappingsResult, coverageResult] = await Promise.allSettled([
     posBackendJson<DeviceIndexPayload>('/pos/devices'),
@@ -69,11 +68,7 @@ export async function GET(request: Request) {
     coverage: coverageResult.status === 'fulfilled' ? coverageResult.value : null,
   };
 
-  globalCache.__posOverviewCache = {
-    key: cacheKey,
-    expiresAt: now + 15_000,
-    data: responsePayload,
-  };
+  await setTenantCache(cacheKey, responsePayload, 15).catch(() => undefined);
 
   return NextResponse.json(responsePayload);
 }

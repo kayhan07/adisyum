@@ -1,5 +1,7 @@
 'use client';
 
+import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
+
 const STORAGE_KEY = 'adisyon-daily-cash-movements';
 const EVENT_NAME = 'adisyon-daily-cash-movements:changed';
 
@@ -34,7 +36,7 @@ export function loadDailyCashMovements() {
   }
 
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = readRuntimeItem('tenant', STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as StoredDailyCashMovement[];
     return Array.isArray(parsed) ? uniqueById(parsed) : [];
@@ -45,7 +47,7 @@ export function loadDailyCashMovements() {
 
 export function saveDailyCashMovements(movements: StoredDailyCashMovement[]) {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(uniqueById(movements)));
+  writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(uniqueById(movements)));
   emitChange();
 }
 
@@ -57,16 +59,13 @@ export function appendDailyCashMovement(movement: StoredDailyCashMovement) {
 export function subscribeToDailyCashMovementChanges(callback: () => void) {
   if (typeof window === 'undefined') return () => {};
 
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === STORAGE_KEY) callback();
-  };
   const onCustom = () => callback();
 
-  window.addEventListener('storage', onStorage);
   window.addEventListener(EVENT_NAME, onCustom);
+  const unsubscribeRuntime = subscribeRuntimeScope('tenant', callback);
 
   return () => {
-    window.removeEventListener('storage', onStorage);
     window.removeEventListener(EVENT_NAME, onCustom);
+    unsubscribeRuntime();
   };
 }

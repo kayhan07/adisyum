@@ -47,7 +47,7 @@ const quickLinks = [
 ];
 
 export default function OverviewPage() {
-  // Lazy-initialized state: all localStorage reads in one pass on mount,
+  // Lazy-initialized state: all runtime reads in one pass on mount,
   // eliminating the default-value -> useEffect -> setState double-render.
   const [pageData] = useState(() => {
     const today = new Date().toISOString().slice(0, 10);

@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Bike, Building2, Download, FileText, PackageCheck, Plus, RefreshCw, Wallet } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
-import { loadIntegrationState, subscribeToIntegrationChanges, type PartnerIntegrationRecord } from '@/lib/integration-store';
+import { fetchLocalAgentJson } from '@/lib/local-agent';
+import { loadCompanyState } from '@/lib/company-store';
+import { loadIntegrationState, subscribeToIntegrationChanges, type IntegrationState, type PartnerIntegrationRecord } from '@/lib/integration-store';
 import {
   getDefaultDeliveryState,
   loadDeliveryState,
@@ -45,8 +47,10 @@ export default function DeliveryPage() {
   const [orderCustomer, setOrderCustomer] = useState('');
   const [orderAmount, setOrderAmount] = useState('');
   const [integrations, setIntegrations] = useState<PartnerIntegrationRecord[]>([]);
+  const [integrationState, setIntegrationState] = useState<IntegrationState>(() => loadIntegrationState());
   const [syncMessage, setSyncMessage] = useState('');
   const [syncing, setSyncing] = useState(false);
+  const [printingOrderId, setPrintingOrderId] = useState('');
 
   useEffect(() => {
     const refresh = () => setState(loadDeliveryState());
@@ -55,10 +59,65 @@ export default function DeliveryPage() {
   }, []);
 
   useEffect(() => {
-    const refresh = () => setIntegrations(loadIntegrationState().partnerIntegrations);
+    const refresh = () => {
+      const loaded = loadIntegrationState();
+      setIntegrationState(loaded);
+      setIntegrations(loaded.partnerIntegrations);
+    };
     refresh();
     return subscribeToIntegrationChanges(refresh);
   }, []);
+
+  const defaultPrinterName = useMemo(() => {
+    const activeNonFiscal = integrationState.printerDevices.filter((device) => device.status !== 'Pasif' && device.deviceType !== 'fiscal_pos');
+    const first = activeNonFiscal[0]?.name ?? integrationState.printerDevices.find((device) => device.deviceType !== 'fiscal_pos')?.name ?? '';
+    if (!first) return '';
+
+    const configured = integrationState.printerSettings.defaultPrinter?.trim();
+    if (configured && activeNonFiscal.some((device) => device.name === configured)) return configured;
+    if (configured && integrationState.printerDevices.some((device) => device.name === configured && device.deviceType !== 'fiscal_pos')) return configured;
+    return first;
+  }, [integrationState]);
+
+  async function printDeliveryReceipt(order: DeliveryOrder) {
+    if (!defaultPrinterName) {
+      setSyncMessage('Paket servis için aktif bir fiş yazıcı bulunamadı.');
+      return;
+    }
+
+    const company = state.companies.find((item) => item.id === order.companyId);
+    const business = loadCompanyState();
+    const lines = [
+      business.tradeName || 'Adisyum',
+      'Paket Servis Adisyon',
+      `Sipariş: ${order.id}`,
+      `Firma: ${company?.name ?? '-'}`,
+      `Müşteri: ${order.customerName}`,
+      `Tutar: ${formatTRY(order.amount)}`,
+      `Durum: ${order.status}`,
+      `Ödeme: ${order.paymentMethod}`,
+      `Tarih/Saat: ${new Date(order.createdAt).toLocaleString('tr-TR')}`,
+      '------------------------------',
+    ];
+
+    setPrintingOrderId(order.id);
+    try {
+      const bytesBase64 = btoa(unescape(encodeURIComponent(lines.join('\n'))));
+      await fetchLocalAgentJson('/print', {
+        method: 'POST',
+        body: {
+          printerName: defaultPrinterName,
+          bytesBase64,
+          source: 'delivery:printDeliveryReceipt',
+        },
+      });
+      setSyncMessage(`Paket servis adisyonu yazdırıldı (${defaultPrinterName}).`);
+    } catch {
+      setSyncMessage('Paket servis yazdırma başarısız. Local agent veya yazıcı seçimi kontrol edilmeli.');
+    } finally {
+      setPrintingOrderId('');
+    }
+  }
 
   const totals = useMemo(() => {
     const delivered = state.orders.filter((order) => order.status !== 'cancelled');
@@ -323,13 +382,23 @@ export default function DeliveryPage() {
                         <p className="font-semibold text-white">{order.customerName}</p>
                         <p className="mt-1 text-sm text-slate-500">{company?.name ?? 'Firma'} · {formatTRY(order.amount)}</p>
                       </div>
-                      <select value={order.status} onChange={(event) => updateOrder(order.id, { status: event.target.value as DeliveryOrder['status'] })} className="h-10 rounded-xl border border-white/10 bg-[#111827] px-3 text-sm font-semibold text-white">
-                        <option value="new">Yeni</option>
-                        <option value="preparing">Hazırlanıyor</option>
-                        <option value="on_route">Yolda</option>
-                        <option value="delivered">Teslim</option>
-                        <option value="cancelled">İptal</option>
-                      </select>
+                      <div className="flex items-center gap-2">
+                        <select value={order.status} onChange={(event) => updateOrder(order.id, { status: event.target.value as DeliveryOrder['status'] })} className="h-10 rounded-xl border border-white/10 bg-[#111827] px-3 text-sm font-semibold text-white">
+                          <option value="new">Yeni</option>
+                          <option value="preparing">Hazırlanıyor</option>
+                          <option value="on_route">Yolda</option>
+                          <option value="delivered">Teslim</option>
+                          <option value="cancelled">İptal</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => void printDeliveryReceipt(order)}
+                          disabled={printingOrderId === order.id}
+                          className="h-10 rounded-xl bg-emerald-600 px-3 text-sm font-semibold text-white disabled:opacity-60"
+                        >
+                          {printingOrderId === order.id ? 'Yazdırılıyor...' : 'Adisyon Yazdır'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );

@@ -1,14 +1,13 @@
+import { Prisma } from '@prisma/client';
+import { prisma } from '@/lib/db/prisma';
 import type { PosUnitType, ProductMapping, ProductMappingStatus } from '@/lib/pos-mapping-store';
 
-type GlobalMappingDb = {
-  productMappings?: ProductMapping[];
-};
+const RUNTIME_KEY = 'product-mappings';
 
-const globalDb = globalThis as typeof globalThis & GlobalMappingDb;
-
-function getDb() {
-  if (!globalDb.productMappings) globalDb.productMappings = [];
-  return globalDb.productMappings;
+function normalizeTenantId(tenantId?: string) {
+  const normalized = tenantId?.trim();
+  if (!normalized) throw new Error('tenantId is required for product mappings.');
+  return normalized;
 }
 
 function normalizeProductKey(value: string) {
@@ -16,31 +15,49 @@ function normalizeProductKey(value: string) {
     .trim()
     .toLocaleLowerCase('tr-TR')
     .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9ığüşöçİĞÜŞÖÇ-]/gi, '');
+    .replace(/[^a-z0-9ıüğüşöçİĞÜŞÖÇ-]/gi, '');
 }
 
 function validate(mapping: Partial<ProductMapping>) {
   const errors: string[] = [];
   if (!mapping.pos_plu_code?.trim()) errors.push('POS PLU kodu zorunlu.');
-  if (![1, 10, 20].includes(Number(mapping.vat_rate))) errors.push('KDV oranı %1, %10 veya %20 olmalı.');
+  if (![1, 10, 20].includes(Number(mapping.vat_rate))) errors.push('KDV orani %1, %10 veya %20 olmali.');
   if (!mapping.unit_type) errors.push('Birim tipi zorunlu.');
   return { valid: errors.length === 0, errors };
 }
 
-export function listServerProductMappings() {
-  return getDb();
+async function readMappings(tenantId: string) {
+  const stored = await prisma.runtimeState.findUnique({
+    where: { tenantId_key: { tenantId, key: RUNTIME_KEY } },
+    select: { payload: true },
+  });
+  return Array.isArray(stored?.payload) ? stored.payload as ProductMapping[] : [];
 }
 
-export function getServerProductMapping(productId: string) {
+async function writeMappings(tenantId: string, mappings: ProductMapping[]) {
+  await prisma.runtimeState.upsert({
+    where: { tenantId_key: { tenantId, key: RUNTIME_KEY } },
+    update: { payload: JSON.parse(JSON.stringify(mappings)) as Prisma.InputJsonValue },
+    create: { tenantId, key: RUNTIME_KEY, payload: JSON.parse(JSON.stringify(mappings)) as Prisma.InputJsonValue },
+  });
+}
+
+export async function listServerProductMappings(tenantId?: string) {
+  return readMappings(normalizeTenantId(tenantId));
+}
+
+export async function getServerProductMapping(productId: string, tenantId?: string) {
+  const mappings = await readMappings(normalizeTenantId(tenantId));
   const key = normalizeProductKey(productId);
-  return getDb().find((mapping) => mapping.product_id === productId || normalizeProductKey(mapping.product_name) === key) ?? null;
+  return mappings.find((mapping) => mapping.product_id === productId || normalizeProductKey(mapping.product_name) === key) ?? null;
 }
 
-export function upsertServerProductMapping(input: Partial<ProductMapping>) {
+export async function upsertServerProductMapping(input: Partial<ProductMapping>, tenantId?: string) {
   const validation = validate(input);
-  const productName = input.product_name || input.product_id || 'Ürün';
+  const productName = input.product_name || input.product_id || 'Urun';
+  const scopedTenantId = normalizeTenantId(tenantId || input.tenant_id);
   const mapping: ProductMapping = {
-    tenant_id: input.tenant_id || 'default',
+    tenant_id: scopedTenantId,
     product_id: input.product_id || normalizeProductKey(productName),
     product_name: productName,
     pos_plu_code: (input.pos_plu_code || '').trim().toUpperCase(),
@@ -51,21 +68,48 @@ export function upsertServerProductMapping(input: Partial<ProductMapping>) {
     updated_at: new Date().toISOString(),
   };
 
-  const db = getDb();
-  const index = db.findIndex((item) => item.product_id === mapping.product_id);
-  if (index >= 0) db[index] = mapping;
-  else db.unshift(mapping);
+  const mappings = await readMappings(scopedTenantId);
+  const index = mappings.findIndex((item) => item.product_id === mapping.product_id);
+  if (index >= 0) mappings[index] = mapping;
+  else mappings.unshift(mapping);
+  await writeMappings(scopedTenantId, mappings);
   return mapping;
 }
 
-export function bulkUpsertServerProductMappings(mappings: Array<Partial<ProductMapping>>) {
-  return mappings.map((mapping) => upsertServerProductMapping(mapping));
+export async function bulkUpsertServerProductMappings(mappings: Array<Partial<ProductMapping>>, tenantId?: string) {
+  const scopedTenantId = normalizeTenantId(tenantId);
+  const current = await readMappings(scopedTenantId);
+  const next = [...current];
+  const saved: ProductMapping[] = [];
+
+  for (const input of mappings) {
+    const validation = validate(input);
+    const productName = input.product_name || input.product_id || 'Urun';
+    const mapping: ProductMapping = {
+      tenant_id: scopedTenantId,
+      product_id: input.product_id || normalizeProductKey(productName),
+      product_name: productName,
+      pos_plu_code: (input.pos_plu_code || '').trim().toUpperCase(),
+      vat_rate: Number(input.vat_rate || 10),
+      unit_type: (input.unit_type || 'adet') as PosUnitType,
+      verified: validation.valid ? Boolean(input.verified ?? true) : false,
+      status: (validation.valid ? 'valid' : 'invalid') as ProductMappingStatus,
+      updated_at: new Date().toISOString(),
+    };
+    const index = next.findIndex((item) => item.product_id === mapping.product_id);
+    if (index >= 0) next[index] = mapping;
+    else next.unshift(mapping);
+    saved.push(mapping);
+  }
+
+  await writeMappings(scopedTenantId, next);
+  return saved;
 }
 
-export function getServerProductMappingCoverage(productIds: string[] = []) {
-  const mappings = getDb();
+export async function getServerProductMappingCoverage(productIds: string[] = [], tenantId?: string) {
+  const mappings = await readMappings(normalizeTenantId(tenantId));
   const mappedCount = productIds.length
-    ? productIds.filter((productId) => Boolean(getServerProductMapping(productId))).length
+    ? productIds.filter((productId) => mappings.some((mapping) => mapping.product_id === productId)).length
     : mappings.filter((mapping) => mapping.status === 'valid').length;
 
   return {

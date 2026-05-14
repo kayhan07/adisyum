@@ -8,6 +8,17 @@ const iconv = require('iconv-lite');
 const app = express();
 const HTTP_PORT = Number(process.env.PORT || 3001);
 const HTTPS_PORT = Number(process.env.HTTPS_PORT || 3443);
+const printerQueues = new Map();
+let printJobCounter = 0;
+const ALLOWED_PRINT_SOURCES = [
+  'receipt-formatter:',
+  'proxy:',
+  'delivery:printDeliveryReceipt',
+  'order-composer:sendLocalAgentPrint',
+  'standard-mode-test',
+  'final-validation',
+  'diag-',
+];
 
 app.use(express.json({ limit: '2mb' }));
 
@@ -50,13 +61,15 @@ app.get('/printers', (req, res) => {
   );
 });
 
-function printTextToWindowsPrinter(printerName, text) {
+function printRawToWindowsPrinter(printerName, rawBuffer) {
   return new Promise((resolve, reject) => {
     const tempDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'adisyum-print-'));
     const dataPath = path.join(tempDir, 'print.bin');
     const scriptPath = path.join(tempDir, 'raw-print.ps1');
 
-    const escposBuffer = iconv.encode(String(text), 'cp857');
+    const escposBuffer = Buffer.isBuffer(rawBuffer)
+      ? rawBuffer
+      : Buffer.from(rawBuffer);
     fs.writeFileSync(dataPath, escposBuffer);
 
     const safePrinterName = String(printerName).replace(/'/g, "''");
@@ -163,27 +176,145 @@ Write-Output "RAW_PRINT_OK bytes=$($bytes.Length)"
       if (error) {
         return reject(new Error((stderr && stderr.trim()) || (stdout && stdout.trim()) || error.message || String(error)));
       }
-      resolve({ stdout, stderr, bytes: escposBuffer.length });
+      resolve({ stdout, stderr, bytes: escposBuffer.length, writeCalls: 1, printJobs: 1 });
+    });
+  });
+}
+
+function enqueuePrinterJob(printerName, worker) {
+  const queueKey = String(printerName).trim().toLowerCase();
+  const previous = printerQueues.get(queueKey) ?? Promise.resolve();
+  const next = previous
+    .catch(() => undefined)
+    .then(worker)
+    .finally(() => {
+      if (printerQueues.get(queueKey) === next) {
+        printerQueues.delete(queueKey);
+      }
+    });
+
+  printerQueues.set(queueKey, next);
+  return next;
+}
+
+function isAllowedPrintSource(source) {
+  const normalized = String(source ?? '').trim();
+  if (!normalized) return false;
+  return ALLOWED_PRINT_SOURCES.some((prefix) => normalized.startsWith(prefix));
+}
+
+function purgePrinterQueue(printerName) {
+  return new Promise((resolve, reject) => {
+    const safePrinterName = String(printerName).replace(/'/g, "''");
+    const command = `powershell -NoProfile -Command "Get-PrintJob -PrinterName '${safePrinterName}' -ErrorAction SilentlyContinue | Remove-PrintJob -ErrorAction SilentlyContinue; Write-Output 'QUEUE_PURGED'"`;
+    exec(command, (error, stdout, stderr) => {
+      if (error) {
+        return reject(new Error((stderr && stderr.trim()) || (stdout && stdout.trim()) || error.message || String(error)));
+      }
+      resolve({ stdout, stderr });
     });
   });
 }
 
 app.post('/print', (req, res) => {
   const printerName = typeof req.body?.printerName === 'string' ? req.body.printerName.trim() : '';
-  const text = typeof req.body?.text === 'string' ? req.body.text : '';
+  const bytesBase64 = typeof req.body?.bytesBase64 === 'string' ? req.body.bytesBase64 : '';
+  const source = typeof req.body?.source === 'string' ? req.body.source : 'unknown-source';
   const mode = typeof req.body?.mode === 'string' ? req.body.mode : 'raw';
 
-  if (!printerName || !text) {
-    return res.status(400).json({ error: 'printerName ve text zorunlu.' });
+  if (!isAllowedPrintSource(source)) {
+    return res.status(403).json({ error: `Geçersiz print source: ${source}` });
+  }
+
+  if (!printerName || !bytesBase64) {
+    return res.status(400).json({ error: 'printerName ve bytesBase64 zorunlu.' });
   }
 
   if (mode !== 'raw') {
     return res.status(400).json({ error: 'Sadece RAW ESC/POS desteklenir. mode="raw" gönderin.' });
   }
 
-  printTextToWindowsPrinter(printerName, text)
+  let buffer;
+  try {
+    buffer = Buffer.from(bytesBase64, 'base64');
+  } catch {
+    return res.status(400).json({ error: 'Geçersiz bytesBase64 verisi.' });
+  }
+
+  if (!buffer || buffer.length === 0) {
+    return res.status(400).json({ error: 'Yazdırılacak RAW buffer boş.' });
+  }
+
+  const jobId = `${printerName}-${Date.now()}-${++printJobCounter}`;
+
+  console.log('[adisyum-print] REQUEST_RECEIVED', {
+    jobId,
+    printerName,
+    mode,
+    source,
+    payload: 'bytesBase64',
+    byteLength: buffer.length,
+    sendCalls: 1,
+  });
+
+  enqueuePrinterJob(printerName, async () => {
+    console.log('[adisyum-print] PRINT_START', {
+      jobId,
+      printerName,
+      queueMode: 'single-job-lock',
+      queueDepth: printerQueues.size,
+    });
+
+    console.log('[adisyum-print] PRINT_EXECUTE', {
+      jobId,
+      printerName,
+      executeCalls: 1,
+    });
+
+    try {
+      await purgePrinterQueue(printerName);
+      console.log('[adisyum-print] QUEUE_PURGED', { jobId, printerName });
+    } catch (purgeError) {
+      console.log('[adisyum-print] QUEUE_PURGE_FAILED', {
+        jobId,
+        printerName,
+        error: purgeError instanceof Error ? purgeError.message : String(purgeError),
+      });
+    }
+
+    const result = await printRawToWindowsPrinter(printerName, buffer);
+    buffer.fill(0);
+
+    console.log('[adisyum-print] PRINT_END', {
+      jobId,
+      printerName,
+      bytes: result.bytes,
+      printJobs: result.printJobs,
+      writeCalls: result.writeCalls,
+      bufferCleared: true,
+    });
+
+    return result;
+  })
     .then((result) => {
-      res.json({ success: true, printerName, printed: true, mode: 'raw', bytes: result.bytes });
+      console.log('[adisyum-print] WRITE_COMPLETE', {
+        jobId,
+        printerName,
+        mode: 'raw',
+        bytes: result.bytes,
+        printJobs: result.printJobs,
+        writeCalls: result.writeCalls,
+      });
+      res.json({
+        success: true,
+        jobId,
+        printerName,
+        printed: true,
+        mode: 'raw',
+        bytes: result.bytes,
+        printJobs: result.printJobs,
+        writeCalls: result.writeCalls,
+      });
     })
     .catch((error) => {
       res.status(500).json({ error: error.message || String(error) });

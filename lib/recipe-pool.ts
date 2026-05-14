@@ -40,6 +40,8 @@ type DefaultRecipeTemplate = {
   ingredients: RecipePoolIngredientLine[];
 };
 
+import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
+
 const STORAGE_KEY = 'adisyon-recipe-pool';
 
 const DEFAULT_RECIPE_TEMPLATES: DefaultRecipeTemplate[] = [
@@ -444,7 +446,7 @@ export function loadStoredRecipePool() {
   }
 
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = readRuntimeItem('tenant', STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredRecipePoolState;
     if (!Array.isArray(parsed?.recipes) || !Array.isArray(parsed?.versions)) {
@@ -466,7 +468,7 @@ export function saveStoredRecipePool(recipes: RecipePoolRecipe[], versions: Reci
 
   try {
     const merged = mergeRecipePoolStates(loadStoredRecipePool(), { recipes, versions });
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+    writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(merged));
   } catch {
     // ignore storage errors in demo env
   }

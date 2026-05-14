@@ -1,5 +1,7 @@
 'use client';
 
+import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
+
 export type StoredFloorTableStatus = 'available' | 'occupied' | 'reserved';
 
 export type StoredFloorTable = {
@@ -63,7 +65,7 @@ export function loadTableLayoutState() {
   }
 
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = readRuntimeItem('tenant', STORAGE_KEY);
     if (!raw) {
       return getDefaultTableLayoutState();
     }
@@ -83,7 +85,7 @@ export function saveTableLayoutState(state: TableLayoutState) {
   if (typeof window === 'undefined') return;
 
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(state));
     emitChange();
   } catch {
     // ignore storage errors
@@ -93,16 +95,13 @@ export function saveTableLayoutState(state: TableLayoutState) {
 export function subscribeToTableLayoutChanges(callback: () => void) {
   if (typeof window === 'undefined') return () => {};
 
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === STORAGE_KEY) callback();
-  };
   const onCustom = () => callback();
 
-  window.addEventListener('storage', onStorage);
   window.addEventListener(EVENT_NAME, onCustom);
+  const unsubscribeRuntime = subscribeRuntimeScope('tenant', callback);
 
   return () => {
-    window.removeEventListener('storage', onStorage);
     window.removeEventListener(EVENT_NAME, onCustom);
+    unsubscribeRuntime();
   };
 }

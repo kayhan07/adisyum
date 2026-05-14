@@ -1,6 +1,7 @@
 'use client';
 
 import type { AccountTransaction, AccountTransactionType } from '@/lib/erp-engine';
+import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
 
 const FINANCE_INVOICES_KEY = 'adisyon-finance-invoices';
 const FINANCE_ACCOUNT_TX_KEY = 'adisyon-finance-account-transactions';
@@ -46,7 +47,7 @@ export function loadStoredFinanceInvoices() {
   }
 
   try {
-    const raw = window.localStorage.getItem(FINANCE_INVOICES_KEY);
+    const raw = readRuntimeItem('tenant', FINANCE_INVOICES_KEY);
     if (!raw) {
       return [];
     }
@@ -63,7 +64,8 @@ export function saveStoredFinanceInvoices(invoices: StoredFinanceInvoice[]) {
     return;
   }
 
-  window.localStorage.setItem(
+  writeRuntimeItem(
+    'tenant',
     FINANCE_INVOICES_KEY,
     JSON.stringify(uniqueById([...invoices, ...loadStoredFinanceInvoices()])),
   );
@@ -81,7 +83,7 @@ export function loadStoredFinanceAccountTransactions() {
   }
 
   try {
-    const raw = window.localStorage.getItem(FINANCE_ACCOUNT_TX_KEY);
+    const raw = readRuntimeItem('tenant', FINANCE_ACCOUNT_TX_KEY);
     if (!raw) {
       return [];
     }
@@ -98,7 +100,8 @@ export function saveStoredFinanceAccountTransactions(transactions: StoredFinance
     return;
   }
 
-  window.localStorage.setItem(
+  writeRuntimeItem(
+    'tenant',
     FINANCE_ACCOUNT_TX_KEY,
     JSON.stringify(uniqueById([...transactions, ...loadStoredFinanceAccountTransactions()])),
   );
@@ -117,7 +120,7 @@ export function removeStoredFinanceAccountTransactionIds(ids: string[]) {
 
   const blockedIds = new Set(ids);
   const next = loadStoredFinanceAccountTransactions().filter((transaction) => !blockedIds.has(transaction.id));
-  window.localStorage.setItem(FINANCE_ACCOUNT_TX_KEY, JSON.stringify(next));
+  writeRuntimeItem('tenant', FINANCE_ACCOUNT_TX_KEY, JSON.stringify(next));
   emitChange();
 }
 
@@ -126,20 +129,14 @@ export function subscribeToFinanceRuntimeChanges(callback: () => void) {
     return () => {};
   }
 
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === FINANCE_INVOICES_KEY || event.key === FINANCE_ACCOUNT_TX_KEY) {
-      callback();
-    }
-  };
-
   const onCustom = () => callback();
 
-  window.addEventListener('storage', onStorage);
   window.addEventListener(EVENT_NAME, onCustom);
+  const unsubscribeRuntime = subscribeRuntimeScope('tenant', callback);
 
   return () => {
-    window.removeEventListener('storage', onStorage);
     window.removeEventListener(EVENT_NAME, onCustom);
+    unsubscribeRuntime();
   };
 }
 

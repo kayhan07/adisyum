@@ -625,12 +625,14 @@ export function PosSettingsClient() {
         '2 x Örnek İçecek',
         '------------------------------',
       ].join('\n');
+      const bytesBase64 = btoa(unescape(encodeURIComponent(sampleReceipt)));
 
       await fetchLocalAgentJson('/print', {
         method: 'POST',
         body: {
           printerName: selectedDevice.name,
-          text: sampleReceipt,
+          bytesBase64,
+          source: 'pos-settings:printTestReceipt',
         },
       });
 

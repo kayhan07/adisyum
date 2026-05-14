@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { upsertGibIntegration, type GibProvider } from '@/lib/server/gib-integration-db';
+import { requireTenant, TenantAuthError, tenantAuthErrorResponse } from '@/lib/requireTenant';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,9 +52,10 @@ async function requestProviderToken(input: {
 
 export async function POST(request: NextRequest) {
   try {
+    const tenant = await requireTenant(request);
     const body = await request.json();
     const provider = String(body?.provider || '');
-    const tenantId = String(body?.tenantId || body?.tenant_id || 'default');
+    const tenantId = tenant.tenantId;
     const companyCode = String(body?.companyCode || '').trim();
     const username = String(body?.username || '').trim();
     const password = String(body?.password || '');
@@ -68,7 +70,7 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await requestProviderToken({ provider, companyCode, username, password, apiKey, endpoint });
-    const saved = upsertGibIntegration({
+    const saved = await upsertGibIntegration({
       tenantId,
       provider,
       companyCode,
@@ -89,6 +91,8 @@ export async function POST(request: NextRequest) {
       integration: saved,
     });
   } catch (error) {
+    if (error instanceof TenantAuthError) return tenantAuthErrorResponse(error);
+
     return NextResponse.json({
       success: false,
       status: 'error',

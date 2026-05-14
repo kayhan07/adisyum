@@ -1,6 +1,7 @@
 'use client';
 
 import { sanitizePackageModules, type PackageModuleKey } from '@/lib/package-access';
+import { readRuntimeItem } from '@/lib/client/runtime-state';
 
 export type PackageType = 'mini' | 'gold' | 'premium';
 export type TenantStatus = 'active' | 'expired' | 'demo' | 'blocked';
@@ -40,10 +41,6 @@ export type TenantAuthToken = {
   expires_at: string;
 };
 
-const TENANT_STORAGE_KEY = 'adisyon-saas-tenants';
-const TENANT_CREDENTIAL_STORAGE_KEY = 'adisyon-saas-tenant-credentials';
-const AUTH_STORAGE_KEY = 'adisyon-auth-token';
-const AUTH_COOKIE_KEY = 'adisyon_auth_token';
 const EVENT_NAME = 'adisyon-saas-tenants:changed';
 
 const DEFAULT_TENANTS: TenantRecord[] = [
@@ -80,74 +77,23 @@ type StoredPackageDefinition = {
   modules?: string[];
 };
 
-const SYSTEM_ADMIN_STORAGE_KEY = 'adisyon-system-admin-erp';
-let cachedStoredPackages: StoredPackageDefinition[] = [];
-let cachedSystemAdminRaw: string | null | undefined = undefined;
-
-function canUseStorage() {
-  return typeof window !== 'undefined' && Boolean(window.localStorage);
-}
+const SYSTEM_ADMIN_STATE_KEY = 'system-admin-state';
+let currentAuthToken: TenantAuthToken | null = null;
 
 function emitChange() {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(EVENT_NAME));
 }
 
 export function loadTenants(): TenantRecord[] {
-  if (!canUseStorage()) return DEFAULT_TENANTS;
-  try {
-    const raw = window.localStorage.getItem(TENANT_STORAGE_KEY);
-    if (!raw) {
-      window.localStorage.setItem(TENANT_STORAGE_KEY, JSON.stringify(DEFAULT_TENANTS));
-      return DEFAULT_TENANTS;
-    }
-    const parsed = JSON.parse(raw);
-    const storedTenants = Array.isArray(parsed) ? parsed : [];
-    const mergedTenants = [
-      ...DEFAULT_TENANTS.filter((defaultTenant) => !storedTenants.some((tenant) => tenant?.tenant_id === defaultTenant.tenant_id)),
-      ...storedTenants,
-    ];
-    if (mergedTenants.length !== storedTenants.length) {
-      window.localStorage.setItem(TENANT_STORAGE_KEY, JSON.stringify(mergedTenants));
-    }
-    return (mergedTenants.length > 0 ? mergedTenants : DEFAULT_TENANTS).map((tenant) => ({
-      ...tenant,
-      package_id: tenant.package_id,
-    }));
-  } catch {
-    window.localStorage.setItem(TENANT_STORAGE_KEY, JSON.stringify(DEFAULT_TENANTS));
-    return DEFAULT_TENANTS;
-  }
+  return DEFAULT_TENANTS;
 }
 
 export function loadTenantCredentials(): TenantCredential[] {
-  if (!canUseStorage()) return DEFAULT_TENANT_CREDENTIALS;
-  try {
-    const raw = window.localStorage.getItem(TENANT_CREDENTIAL_STORAGE_KEY);
-    if (!raw) {
-      window.localStorage.setItem(TENANT_CREDENTIAL_STORAGE_KEY, JSON.stringify(DEFAULT_TENANT_CREDENTIALS));
-      return DEFAULT_TENANT_CREDENTIALS;
-    }
-    const parsed = JSON.parse(raw);
-    const storedCredentials = Array.isArray(parsed) ? parsed : [];
-    const mergedCredentials = [
-      ...DEFAULT_TENANT_CREDENTIALS.filter((defaultCredential) => !storedCredentials.some(
-        (credential) => credential?.tenant_id === defaultCredential.tenant_id && credential?.username === defaultCredential.username,
-      )),
-      ...storedCredentials,
-    ];
-    if (mergedCredentials.length !== storedCredentials.length) {
-      window.localStorage.setItem(TENANT_CREDENTIAL_STORAGE_KEY, JSON.stringify(mergedCredentials));
-    }
-    return mergedCredentials;
-  } catch {
-    window.localStorage.setItem(TENANT_CREDENTIAL_STORAGE_KEY, JSON.stringify(DEFAULT_TENANT_CREDENTIALS));
-    return DEFAULT_TENANT_CREDENTIALS;
-  }
+  return DEFAULT_TENANT_CREDENTIALS;
 }
 
 export function saveTenantCredentials(credentials: TenantCredential[]) {
-  if (!canUseStorage()) return;
-  window.localStorage.setItem(TENANT_CREDENTIAL_STORAGE_KEY, JSON.stringify(credentials));
+  void credentials;
   emitChange();
 }
 
@@ -183,8 +129,7 @@ export function findTenantCredential(tenantId: string, username: string) {
 }
 
 export function saveTenants(tenants: TenantRecord[]) {
-  if (!canUseStorage()) return;
-  window.localStorage.setItem(TENANT_STORAGE_KEY, JSON.stringify(tenants));
+  void tenants;
   emitChange();
 }
 
@@ -213,30 +158,44 @@ export function isTenantSubscriptionActive(tenant: TenantRecord, now = new Date(
 }
 
 export function createAuthToken(input: TenantAuthToken) {
-  const token = btoa(unescape(encodeURIComponent(JSON.stringify(input))));
-  if (canUseStorage()) window.localStorage.setItem(AUTH_STORAGE_KEY, token);
-  if (typeof document !== 'undefined') {
-    document.cookie = `${AUTH_COOKIE_KEY}=${encodeURIComponent(token)}; path=/; max-age=2592000; SameSite=Lax`;
-  }
-  return token;
+  currentAuthToken = input;
+  emitChange();
+  return JSON.stringify(input);
 }
 
 export function loadAuthToken(): TenantAuthToken | null {
-  if (!canUseStorage()) return null;
-  try {
-    const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(decodeURIComponent(escape(atob(raw)))) as TenantAuthToken;
-  } catch {
-    return null;
-  }
+  return currentAuthToken;
 }
 
 export function clearAuthToken() {
-  if (canUseStorage()) window.localStorage.removeItem(AUTH_STORAGE_KEY);
-  if (typeof document !== 'undefined') {
-    document.cookie = `${AUTH_COOKIE_KEY}=; path=/; max-age=0; SameSite=Lax`;
-  }
+  currentAuthToken = null;
+  emitChange();
+}
+
+export function clearAuthSnapshot() {
+  clearAuthToken();
+}
+
+export function setAuthSnapshotFromSession(session: {
+  tenantId: string;
+  username?: string;
+  role: string;
+  packageType?: PackageType;
+  branchId?: string;
+  subscriptionEndDate?: string;
+} | null) {
+  currentAuthToken = session
+    ? {
+        tenant_id: session.tenantId,
+        username: session.username ?? session.tenantId,
+        role: session.role,
+        package_type: session.packageType ?? 'premium',
+        branch_id: session.branchId ?? 'mrk',
+        is_main_branch: true,
+        expires_at: session.subscriptionEndDate ?? new Date(Date.now() + 86400000).toISOString(),
+      }
+    : null;
+  emitChange();
 }
 
 export function canPackageAccessModule(packageType: PackageType, moduleId: string, packageId?: string) {
@@ -244,22 +203,12 @@ export function canPackageAccessModule(packageType: PackageType, moduleId: strin
 }
 
 function loadStoredPackages(): StoredPackageDefinition[] {
-  if (!canUseStorage()) return [];
   try {
-    const raw = window.localStorage.getItem(SYSTEM_ADMIN_STORAGE_KEY);
-    if (raw === cachedSystemAdminRaw) return cachedStoredPackages;
-    if (!raw) {
-      cachedSystemAdminRaw = raw;
-      cachedStoredPackages = [];
-      return [];
-    }
+    const raw = readRuntimeItem('system-admin', SYSTEM_ADMIN_STATE_KEY);
+    if (!raw) return [];
     const parsed = JSON.parse(raw) as { packages?: StoredPackageDefinition[] };
-    cachedSystemAdminRaw = raw;
-    cachedStoredPackages = Array.isArray(parsed?.packages) ? parsed.packages : [];
-    return cachedStoredPackages;
+    return Array.isArray(parsed?.packages) ? parsed.packages : [];
   } catch {
-    cachedSystemAdminRaw = undefined;
-    cachedStoredPackages = [];
     return [];
   }
 }
@@ -274,20 +223,9 @@ export function getPackageModules(packageType: PackageType, packageId?: string) 
 export function subscribeToTenantChanges(callback: () => void) {
   if (typeof window === 'undefined') return () => {};
   const onCustom = () => callback();
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === TENANT_STORAGE_KEY || event.key === AUTH_STORAGE_KEY || event.key === SYSTEM_ADMIN_STORAGE_KEY) {
-      if (event.key === SYSTEM_ADMIN_STORAGE_KEY) {
-        cachedSystemAdminRaw = undefined;
-        cachedStoredPackages = [];
-      }
-      callback();
-    }
-  };
   window.addEventListener(EVENT_NAME, onCustom);
-  window.addEventListener('storage', onStorage);
   return () => {
     window.removeEventListener(EVENT_NAME, onCustom);
-    window.removeEventListener('storage', onStorage);
   };
 }
 

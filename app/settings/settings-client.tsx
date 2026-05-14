@@ -43,7 +43,7 @@ const deviceTypeLabels: Record<PrinterDeviceType, string> = {
 };
 
 const printableDeviceTypeOptions: PrintableDeviceType[] = ['receipt_printer', 'kitchen_printer', 'bar_printer'];
-const AGENT_INSTALLER_VERSION = '20260512-4';
+const AGENT_INSTALLER_VERSION = '20260512-5';
 const AGENT_STATUS_RETRY_COUNT = 3;
 const AGENT_STATUS_RETRY_DELAY_MS = 500;
 const AGENT_HEARTBEAT_MS = 6000;
@@ -697,12 +697,14 @@ export default function SettingsPage() {
         '------------------------------',
         '1 x Deneme Ürünü',
       ].join('\n');
+      const bytesBase64 = btoa(unescape(encodeURIComponent(sampleText)));
 
       await fetchLocalAgentJson('/print', {
         method: 'POST',
         body: {
           printerName: printer.name,
-          text: sampleText,
+          bytesBase64,
+          source: 'settings:manualReprint',
         },
       });
     } catch {

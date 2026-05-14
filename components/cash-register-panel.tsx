@@ -26,6 +26,7 @@ import {
   loadStoredTreasuryMovements,
   subscribeToStoredTreasuryChanges,
 } from '@/lib/treasury-runtime-store';
+import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
 
 function accountIcon(type: TreasuryAccountType) {
   if (type === 'cash') return Banknote;
@@ -49,7 +50,7 @@ const CUSTOM_TREASURY_KEY = 'adisyon-custom-treasury-accounts';
 function loadCustomTreasuryAccounts(): TreasuryAccount[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = window.localStorage.getItem(CUSTOM_TREASURY_KEY);
+    const raw = readRuntimeItem('tenant', CUSTOM_TREASURY_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as TreasuryAccount[];
     return Array.isArray(parsed) ? parsed : [];
@@ -60,7 +61,7 @@ function loadCustomTreasuryAccounts(): TreasuryAccount[] {
 
 function saveCustomTreasuryAccounts(accounts: TreasuryAccount[]) {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(CUSTOM_TREASURY_KEY, JSON.stringify(accounts));
+  writeRuntimeItem('tenant', CUSTOM_TREASURY_KEY, JSON.stringify(accounts));
 }
 
 export function CashRegisterPanel() {

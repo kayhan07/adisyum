@@ -18,6 +18,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { AppShell } from '@/components/app-shell';
 import { canPackageAccessModule, loadAuthToken } from '@/lib/saas-store';
+import { secureLogout } from '@/lib/client/secure-logout';
 
 type ModuleCard = {
   moduleId: string;
@@ -48,6 +49,7 @@ export function ModuleCenter() {
   const [blockedMessage, setBlockedMessage] = useState('');
   const [packageType, setPackageType] = useState<'mini' | 'gold' | 'premium'>('premium');
   const [packageId, setPackageId] = useState<string | undefined>(undefined);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     const token = loadAuthToken();
@@ -57,8 +59,28 @@ export function ModuleCenter() {
 
   const packageLabel = useMemo(() => packageType.toUpperCase(), [packageType]);
 
+  async function handleSecureLogout() {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    await secureLogout({ reason: 'manual', scope: 'current', redirect: true });
+    setLoggingOut(false);
+  }
+
   return (
-    <AppShell title="Modül merkezi" subtitle={`Aktif paket: ${packageLabel}. Doğrudan modül seçip ilgili ekrana geçin.`}>
+    <AppShell
+      title="Modül merkezi"
+      subtitle={`Aktif paket: ${packageLabel}. Doğrudan modül seçip ilgili ekrana geçin.`}
+      actions={(
+        <button
+          type="button"
+          onClick={() => void handleSecureLogout()}
+          disabled={loggingOut}
+          className="app-chip border border-rose-300/40 bg-rose-500/15 text-rose-100 hover:bg-rose-500/30 disabled:opacity-60"
+        >
+          {loggingOut ? 'Çıkılıyor…' : 'Güvenli Çıkış'}
+        </button>
+      )}
+    >
       {blockedMessage ? (
         <div className="mb-4 rounded-2xl border border-amber-400/30 bg-amber-500/15 px-4 py-3 text-sm font-semibold text-amber-100">
           {blockedMessage}

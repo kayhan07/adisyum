@@ -2,6 +2,8 @@
 // Manages warehouses (ana depo + departmanlar), their stock levels, and
 // transfer history between warehouses.
 
+import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
+
 export type RawUnit = 'kg' | 'lt' | 'adet';
 
 export type WarehouseType = 'main' | 'department';
@@ -79,7 +81,7 @@ export function loadWarehouses(): Warehouse[] {
   if (typeof window === 'undefined') return [MAIN_WAREHOUSE];
 
   try {
-    const raw = window.localStorage.getItem(WAREHOUSES_KEY);
+    const raw = readRuntimeItem('tenant', WAREHOUSES_KEY);
     if (!raw) return [MAIN_WAREHOUSE];
     const parsed = JSON.parse(raw) as Warehouse[];
     if (!Array.isArray(parsed)) return [MAIN_WAREHOUSE];
@@ -99,7 +101,7 @@ export function saveWarehouses(warehouses: Warehouse[]): void {
       [MAIN_WAREHOUSE, ...warehouses],
       (warehouse) => warehouse.id,
     );
-    window.localStorage.setItem(WAREHOUSES_KEY, JSON.stringify(merged));
+    writeRuntimeItem('tenant', WAREHOUSES_KEY, JSON.stringify(merged));
   } catch {
     // ignore
   }
@@ -111,7 +113,7 @@ export function loadAllWarehouseStocks(): Record<string, WarehouseStockLine[]> {
   if (typeof window === 'undefined') return {};
 
   try {
-    const raw = window.localStorage.getItem(WAREHOUSE_STOCKS_KEY);
+    const raw = readRuntimeItem('tenant', WAREHOUSE_STOCKS_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return {};
@@ -125,7 +127,7 @@ export function saveAllWarehouseStocks(stocks: Record<string, WarehouseStockLine
   if (typeof window === 'undefined') return;
 
   try {
-    window.localStorage.setItem(WAREHOUSE_STOCKS_KEY, JSON.stringify(stocks));
+    writeRuntimeItem('tenant', WAREHOUSE_STOCKS_KEY, JSON.stringify(stocks));
   } catch {
     // ignore
   }
@@ -152,7 +154,7 @@ export function loadTransferRecords(): TransferRecord[] {
   if (typeof window === 'undefined') return [];
 
   try {
-    const raw = window.localStorage.getItem(WAREHOUSE_TRANSFERS_KEY);
+    const raw = readRuntimeItem('tenant', WAREHOUSE_TRANSFERS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? (parsed as TransferRecord[]) : [];
@@ -169,7 +171,7 @@ export function saveTransferRecords(records: TransferRecord[]): void {
       [...records, ...loadTransferRecords()],
       (record) => record.id,
     );
-    window.localStorage.setItem(WAREHOUSE_TRANSFERS_KEY, JSON.stringify(merged));
+    writeRuntimeItem('tenant', WAREHOUSE_TRANSFERS_KEY, JSON.stringify(merged));
   } catch {
     // ignore
   }

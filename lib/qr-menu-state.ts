@@ -1,5 +1,7 @@
 'use client';
 
+import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
+
 import {
   getPaymentRequestedTableIds,
   getStoredOrdersByTable,
@@ -75,7 +77,7 @@ export function getWaiterCallTableIds() {
     return {} as Record<string, string>;
   }
 
-  const raw = window.localStorage.getItem(WAITER_CALLS_STORAGE_KEY);
+  const raw = readRuntimeItem('tenant', WAITER_CALLS_STORAGE_KEY);
   if (!raw) {
     return {} as Record<string, string>;
   }
@@ -95,7 +97,7 @@ export function getPendingQrOrders() {
     return [] as PendingQrOrder[];
   }
 
-  const raw = window.localStorage.getItem(PENDING_QR_ORDERS_STORAGE_KEY);
+  const raw = readRuntimeItem('tenant', PENDING_QR_ORDERS_STORAGE_KEY);
   if (!raw) {
     return [] as PendingQrOrder[];
   }
@@ -113,7 +115,7 @@ function setPendingQrOrders(orders: PendingQrOrder[]) {
     return;
   }
 
-  window.localStorage.setItem(PENDING_QR_ORDERS_STORAGE_KEY, JSON.stringify(orders));
+  writeRuntimeItem('tenant', PENDING_QR_ORDERS_STORAGE_KEY, JSON.stringify(orders));
   emitQrChange();
 }
 
@@ -130,7 +132,7 @@ export function setTableWaiterRequested(tableId: string, requested: boolean) {
     delete current[tableId];
   }
 
-  window.localStorage.setItem(WAITER_CALLS_STORAGE_KEY, JSON.stringify(current));
+  writeRuntimeItem('tenant', WAITER_CALLS_STORAGE_KEY, JSON.stringify(current));
   emitQrChange();
 }
 
@@ -139,22 +141,16 @@ export function subscribeToQrMenuChanges(callback: () => void) {
     return () => {};
   }
 
-  const handleStorage = (event: StorageEvent) => {
-    if (event.key === WAITER_CALLS_STORAGE_KEY || event.key === PENDING_QR_ORDERS_STORAGE_KEY) {
-      callback();
-    }
-  };
-
   const handleCustom = () => {
     callback();
   };
 
-  window.addEventListener('storage', handleStorage);
   window.addEventListener(QR_EVENT_NAME, handleCustom);
+  const unsubscribeRuntime = subscribeRuntimeScope('tenant', callback);
 
   return () => {
-    window.removeEventListener('storage', handleStorage);
     window.removeEventListener(QR_EVENT_NAME, handleCustom);
+    unsubscribeRuntime();
   };
 }
 

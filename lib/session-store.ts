@@ -29,7 +29,6 @@ export type SessionState = {
   isAuthenticated: boolean;
 };
 
-const STORAGE_KEY = 'adisyon-session-state';
 const EVENT_NAME = 'adisyon-session-state:changed';
 
 const DEFAULT_BRANCHES: BranchOption[] = [
@@ -56,6 +55,8 @@ function emitChange() {
   window.dispatchEvent(new CustomEvent(EVENT_NAME));
 }
 
+let currentSessionState: SessionState = getDefaultSessionState();
+
 export function getDefaultSessionState(): SessionState {
   return {
     branches: DEFAULT_BRANCHES,
@@ -69,55 +70,61 @@ export function getDefaultSessionState(): SessionState {
 }
 
 export function loadSessionState() {
-  if (typeof window === 'undefined') {
-    return getDefaultSessionState();
-  }
-
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return getDefaultSessionState();
-    }
-
-    const parsed = JSON.parse(raw) as Partial<SessionState>;
-    const defaults = getDefaultSessionState();
-    const branches = Array.isArray(parsed.branches) && parsed.branches.length > 0 ? parsed.branches : defaults.branches;
-    const activeBranchId = branches.some((branch) => branch.id === parsed.activeBranchId) ? parsed.activeBranchId ?? defaults.activeBranchId : defaults.activeBranchId;
-    const activeBranch = branches.find((branch) => branch.id === activeBranchId) ?? branches[0];
-    const currentUser = parsed.currentUser
-      ? {
-          ...defaults.currentUser,
-          ...parsed.currentUser,
-          branch: parsed.currentUser.branch || activeBranch.label,
-          branchId: parsed.currentUser.branchId || activeBranch.id,
-          tenantId: parsed.currentUser.tenantId || parsed.tenantId || defaults.tenantId,
-          packageType: parsed.currentUser.packageType || parsed.packageType || defaults.packageType,
-        }
-      : { ...defaults.currentUser, branch: activeBranch.label, branchId: activeBranch.id };
-
-    return {
-      branches,
-      activeBranchId,
-      currentUser,
-      tenantId: parsed.tenantId || defaults.tenantId,
-      packageType: parsed.packageType || defaults.packageType,
-      subscriptionEndDate: parsed.subscriptionEndDate || defaults.subscriptionEndDate,
-      isAuthenticated: Boolean(parsed.isAuthenticated),
-    } satisfies SessionState;
-  } catch {
-    return getDefaultSessionState();
-  }
+  return currentSessionState;
 }
 
 export function saveSessionState(state: SessionState) {
-  if (typeof window === 'undefined') return;
+  currentSessionState = state;
+  emitChange();
+}
 
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+export function hydrateSessionStateFromAuth(session: {
+  tenantId: string;
+  role: string;
+  branchId?: string;
+  packageType?: 'mini' | 'gold' | 'premium';
+  subscriptionEndDate?: string;
+  username?: string;
+  name?: string;
+} | null) {
+  if (!session) {
+    currentSessionState = getDefaultSessionState();
     emitChange();
-  } catch {
-    // ignore storage errors
+    return currentSessionState;
   }
+
+  const defaults = getDefaultSessionState();
+  const activeBranchId = session.branchId && defaults.branches.some((branch) => branch.id === session.branchId)
+    ? session.branchId
+    : defaults.activeBranchId;
+  const activeBranch = defaults.branches.find((branch) => branch.id === activeBranchId) ?? defaults.branches[0];
+
+  currentSessionState = {
+    ...defaults,
+    activeBranchId,
+    tenantId: session.tenantId,
+    packageType: session.packageType ?? defaults.packageType,
+    subscriptionEndDate: session.subscriptionEndDate ?? defaults.subscriptionEndDate,
+    isAuthenticated: true,
+    currentUser: {
+      ...defaults.currentUser,
+      name: session.name ?? defaults.currentUser.name,
+      username: session.username ?? defaults.currentUser.username,
+      role: session.role,
+      branch: activeBranch.label,
+      branchId: activeBranch.id,
+      tenantId: session.tenantId,
+      packageType: session.packageType ?? defaults.packageType,
+    },
+  };
+
+  emitChange();
+  return currentSessionState;
+}
+
+export function clearSessionState() {
+  currentSessionState = getDefaultSessionState();
+  emitChange();
 }
 
 export function updateActiveBranch(activeBranchId: string) {
@@ -149,17 +156,10 @@ export function updateSessionUser(user: Partial<SessionUser>) {
 
 export function subscribeToSessionChanges(callback: () => void) {
   if (typeof window === 'undefined') return () => {};
-
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === STORAGE_KEY) callback();
-  };
   const onCustom = () => callback();
-
-  window.addEventListener('storage', onStorage);
   window.addEventListener(EVENT_NAME, onCustom);
 
   return () => {
-    window.removeEventListener('storage', onStorage);
     window.removeEventListener(EVENT_NAME, onCustom);
   };
 }

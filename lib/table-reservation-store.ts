@@ -1,5 +1,7 @@
 'use client';
 
+import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
+
 const STORAGE_KEY = 'adisyon-table-reservations';
 const EVENT_NAME = 'adisyon-table-reservations:changed';
 
@@ -47,7 +49,7 @@ export function loadStoredTableReservations() {
   }
 
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = readRuntimeItem('tenant', STORAGE_KEY);
     if (!raw) {
       return [];
     }
@@ -64,7 +66,7 @@ export function saveStoredTableReservations(reservations: StoredTableReservation
     return;
   }
 
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(uniqueById(reservations)));
+  writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(uniqueById(reservations)));
   emitChange();
 }
 
@@ -83,20 +85,14 @@ export function subscribeToStoredTableReservations(callback: () => void) {
     return () => {};
   }
 
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === STORAGE_KEY) {
-      callback();
-    }
-  };
-
   const onCustom = () => callback();
 
-  window.addEventListener('storage', onStorage);
   window.addEventListener(EVENT_NAME, onCustom);
+  const unsubscribeRuntime = subscribeRuntimeScope('tenant', callback);
 
   return () => {
-    window.removeEventListener('storage', onStorage);
     window.removeEventListener(EVENT_NAME, onCustom);
+    unsubscribeRuntime();
   };
 }
 

@@ -6,10 +6,18 @@ import {
   listServerProductMappings,
   upsertServerProductMapping,
 } from '@/lib/server/product-mapping-db';
+import { requireTenant, tenantAuthErrorResponse } from '@/lib/requireTenant';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  let tenantId = '';
+  try {
+    tenantId = (await requireTenant(request)).tenantId;
+  } catch (error) {
+    return tenantAuthErrorResponse(error);
+  }
+
   try {
     const [mappings, coverage] = await Promise.all([
       posBackendJson('/product-mappings', {}, 'POS mappings could not be loaded.'),
@@ -19,17 +27,19 @@ export async function GET() {
     return NextResponse.json({ mappings, coverage });
   } catch (error) {
     return NextResponse.json({
-      mappings: listServerProductMappings(),
-      coverage: getServerProductMappingCoverage(),
-      source: 'local',
-      message: error instanceof Error ? error.message : 'POS mappings local kayıttan yüklendi.',
+      mappings: await listServerProductMappings(tenantId),
+      coverage: await getServerProductMappingCoverage([], tenantId),
+      source: 'db',
+      message: error instanceof Error ? error.message : 'POS mappings DB kaydindan yuklendi.',
     });
   }
 }
 
 export async function POST(request: NextRequest) {
+  let tenantId = '';
   let body: any = null;
   try {
+    tenantId = (await requireTenant(request)).tenantId;
     body = await request.json();
     const isBulk = Array.isArray(body?.mappings);
 
@@ -42,15 +52,15 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     try {
       const mappings = Array.isArray(body?.mappings)
-        ? bulkUpsertServerProductMappings(body.mappings)
-        : [upsertServerProductMapping(body)];
+        ? await bulkUpsertServerProductMappings(body.mappings, tenantId)
+        : [await upsertServerProductMapping(body, tenantId)];
 
       return NextResponse.json({
         success: true,
-        source: 'local',
+        source: 'db',
         mappings,
-        coverage: getServerProductMappingCoverage(),
-        message: 'POS mapping yerel kayda işlendi.',
+        coverage: await getServerProductMappingCoverage([], tenantId),
+        message: 'POS mapping DB kaydina islendi.',
       }, { status: 201 });
     } catch {
       return NextResponse.json({

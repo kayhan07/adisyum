@@ -1,6 +1,7 @@
 'use client';
 
 import type { Account } from '@/lib/erp-engine';
+import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
 
 const STORAGE_KEY = 'adisyon-local-accounts';
 const EVENT_NAME = 'adisyon-local-accounts:changed';
@@ -40,7 +41,7 @@ export function loadStoredAccounts() {
   }
 
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = readRuntimeItem('tenant', STORAGE_KEY);
     if (!raw) {
       return [];
     }
@@ -68,7 +69,7 @@ export function saveStoredAccounts(accounts: Account[]) {
       return true;
     });
 
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+    writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(merged));
     emitChange();
   } catch {
     // ignore storage errors in demo env
@@ -85,19 +86,13 @@ export function subscribeToStoredAccountChanges(callback: () => void) {
     return () => {};
   }
 
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === STORAGE_KEY) {
-      callback();
-    }
-  };
-
   const onCustom = () => callback();
 
-  window.addEventListener('storage', onStorage);
   window.addEventListener(EVENT_NAME, onCustom);
+  const unsubscribeRuntime = subscribeRuntimeScope('tenant', callback);
 
   return () => {
-    window.removeEventListener('storage', onStorage);
     window.removeEventListener(EVENT_NAME, onCustom);
+    unsubscribeRuntime();
   };
 }

@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import { Prisma } from '@prisma/client';
+import { prisma } from '@/lib/db/prisma';
 
 export type GibProvider = 'Uyumsoft' | 'Foriba' | 'EDM' | 'NES';
 export type GibIntegrationStatus = 'idle' | 'connected' | 'error';
@@ -17,15 +19,8 @@ export type GibIntegrationRecord = {
   message?: string;
 };
 
-type GlobalGibDb = {
-  gibIntegrations?: GibIntegrationRecord[];
-};
-
-const globalDb = globalThis as typeof globalThis & GlobalGibDb;
-
-function getDb() {
-  if (!globalDb.gibIntegrations) globalDb.gibIntegrations = [];
-  return globalDb.gibIntegrations;
+function runtimeKey() {
+  return 'settings:gib-integration';
 }
 
 function key() {
@@ -46,17 +41,20 @@ export function maskSecret(value = '') {
   return value.length <= 4 ? '****' : `${value.slice(0, 2)}****${value.slice(-2)}`;
 }
 
-export function upsertGibIntegration(record: GibIntegrationRecord) {
-  const db = getDb();
+export async function upsertGibIntegration(record: GibIntegrationRecord) {
   const encryptedRecord = {
     ...record,
     password: record.password ? encryptSecret(record.password) : '',
     apiKey: record.apiKey ? encryptSecret(record.apiKey) : '',
     token: record.token ? encryptSecret(record.token) : '',
   };
-  const index = db.findIndex((item) => item.tenantId === record.tenantId);
-  if (index >= 0) db[index] = encryptedRecord;
-  else db.unshift(encryptedRecord);
+
+  await prisma.runtimeState.upsert({
+    where: { tenantId_key: { tenantId: record.tenantId, key: runtimeKey() } },
+    update: { payload: encryptedRecord as Prisma.InputJsonValue },
+    create: { tenantId: record.tenantId, key: runtimeKey(), payload: encryptedRecord as Prisma.InputJsonValue },
+  });
+
   return {
     ...record,
     password: maskSecret(record.password),
@@ -65,8 +63,12 @@ export function upsertGibIntegration(record: GibIntegrationRecord) {
   };
 }
 
-export function getGibIntegration(tenantId: string) {
-  const record = getDb().find((item) => item.tenantId === tenantId) ?? null;
+export async function getGibIntegration(tenantId: string) {
+  const stored = await prisma.runtimeState.findUnique({
+    where: { tenantId_key: { tenantId, key: runtimeKey() } },
+    select: { payload: true },
+  });
+  const record = stored?.payload as GibIntegrationRecord | null | undefined;
   if (!record) return null;
   return {
     ...record,

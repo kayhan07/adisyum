@@ -6,8 +6,10 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { ArrowLeft, UserCircle2 } from 'lucide-react';
 import { getDefaultSessionState, loadSessionState, subscribeToSessionChanges } from '@/lib/session-store';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { OfflinePosToolbar } from '@/components/offline-pos-toolbar';
+import { PrintResilienceToolbar } from '@/components/print-resilience-toolbar';
 import { canPackageAccessModule, loadAuthToken, subscribeToTenantChanges } from '@/lib/saas-store';
-import { activateTenantRuntime } from '@/lib/tenant-runtime-store';
+import { secureLogout } from '@/lib/client/secure-logout';
 
 type AppShellProps = {
   title: string;
@@ -44,6 +46,7 @@ export function AppShell({ title, subtitle, actions, children, immersiveMode = f
   const [authReady, setAuthReady] = useState(false);
   const [blockedByPackage, setBlockedByPackage] = useState(false);
   const [daysLeft, setDaysLeft] = useState<number | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
   const isModuleCenter = pathname === '/app';
   const resolvedBackHref = backHref ?? '/app';
   const resolvedBackLabel = backLabel ?? 'Modül merkezine dön';
@@ -65,10 +68,6 @@ export function AppShell({ title, subtitle, actions, children, immersiveMode = f
       if (!token && pathname !== '/adisyonsistemi' && pathname !== '/site' && !pathname.startsWith('/system-admin')) {
         router.replace('/adisyonsistemi');
         return;
-      }
-
-      if (token?.tenant_id) {
-        activateTenantRuntime(token.tenant_id);
       }
 
       const moduleId = pathname.split('/').filter(Boolean)[0];
@@ -109,6 +108,17 @@ export function AppShell({ title, subtitle, actions, children, immersiveMode = f
     );
   }
 
+  async function handleLogout(reason: 'manual' | 'shift_end') {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    await secureLogout({
+      reason,
+      scope: reason === 'shift_end' ? 'user' : 'current',
+      redirect: true,
+    });
+    setLoggingOut(false);
+  }
+
   return (
     <div className="app-shell-root">
       <main className="min-w-0">
@@ -125,11 +135,31 @@ export function AppShell({ title, subtitle, actions, children, immersiveMode = f
                       <div>
                         <h1 className="app-shell-title text-xl font-semibold tracking-tight">{title}</h1>
                         <p className="app-shell-subtitle mt-1 text-sm leading-5">{subtitle}</p>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void handleLogout('shift_end')}
+                            disabled={loggingOut}
+                            className="inline-flex h-9 items-center rounded-xl border border-amber-300/35 bg-amber-500/15 px-3 text-xs font-bold text-amber-100 hover:bg-amber-500/25 disabled:opacity-60"
+                          >
+                            Vardiya Kapat
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleLogout('manual')}
+                            disabled={loggingOut}
+                            className="inline-flex h-9 items-center rounded-xl border border-rose-300/40 bg-rose-500 px-3 text-xs font-bold text-white shadow-[0_8px_20px_rgba(244,63,94,0.3)] hover:bg-rose-400 disabled:opacity-60"
+                          >
+                            {loggingOut ? 'Çıkılıyor…' : 'Güvenli Çıkış'}
+                          </button>
+                        </div>
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
                       <span className="app-chip">{activeBranch.label}</span>
                       <span className="app-chip">{currentUser.role}</span>
+                      <OfflinePosToolbar />
+                      <PrintResilienceToolbar />
                       <ThemeToggle />
                       {actions}
                     </div>
@@ -156,6 +186,24 @@ export function AppShell({ title, subtitle, actions, children, immersiveMode = f
                     <div>
                       <h1 className="app-shell-title text-2xl font-semibold tracking-tight">{title}</h1>
                       <p className="app-shell-subtitle mt-1.5 text-sm leading-6">{subtitle}</p>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void handleLogout('shift_end')}
+                          disabled={loggingOut}
+                          className="inline-flex h-9 items-center rounded-xl border border-amber-300/35 bg-amber-500/15 px-3 text-xs font-bold text-amber-100 hover:bg-amber-500/25 disabled:opacity-60"
+                        >
+                          Vardiya Kapat
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleLogout('manual')}
+                          disabled={loggingOut}
+                          className="inline-flex h-9 items-center rounded-xl border border-rose-300/40 bg-rose-500 px-3 text-xs font-bold text-white shadow-[0_8px_20px_rgba(244,63,94,0.3)] hover:bg-rose-400 disabled:opacity-60"
+                        >
+                          {loggingOut ? 'Çıkılıyor…' : 'Güvenli Çıkış'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
@@ -165,6 +213,8 @@ export function AppShell({ title, subtitle, actions, children, immersiveMode = f
                       <UserCircle2 className="app-shell-userpill-icon h-4.5 w-4.5" />
                       <span className="app-shell-userpill-name font-semibold">{currentUser.name}</span>
                     </div>
+                    <OfflinePosToolbar />
+                    <PrintResilienceToolbar />
                     <ThemeToggle />
                     {actions}
                   </div>

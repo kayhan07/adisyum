@@ -1,4 +1,5 @@
 import type { ProductRecipeOverride, RecipePoolUnit } from '@/lib/recipe-pool';
+import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
 
 export type VatRate = 1 | 10 | 20;
 export type SaleUnitType = 'portion' | 'kg' | 'bottle' | 'glass';
@@ -56,6 +57,9 @@ export type StoredSaleProduct = {
   wastePercentage?: string;
   operationalCost?: string;
   source: 'seeded' | 'created';
+  imageUrl?: string;
+  thumbnailUrl?: string;
+  description?: string;
 };
 
 export type PosCatalogProduct = {
@@ -68,6 +72,9 @@ export type PosCatalogProduct = {
   allowComplimentary: boolean;
   allowDiscount: boolean;
   happyHourEligible: boolean;
+  imageUrl?: string;
+  thumbnailUrl?: string;
+  description?: string;
 };
 
 export type SalePriceContext = {
@@ -218,7 +225,7 @@ export function loadStoredSaleProducts() {
   if (typeof window === 'undefined') return null;
 
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = readRuntimeItem('tenant', STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed)
@@ -245,7 +252,7 @@ export function saveStoredSaleProducts(products: StoredSaleProduct[]) {
     const preserved = existing.filter(
       (item) => !incomingKeys.has(item.id) && !incomingKeys.has(normalizeProductKey(item.name)),
     );
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([...incoming, ...preserved]));
+    writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify([...incoming, ...preserved]));
     emitSaleProductsChange();
   } catch {
     // ignore storage errors in demo env
@@ -257,22 +264,16 @@ export function subscribeToStoredSaleProductsChanges(callback: () => void) {
     return () => {};
   }
 
-  const handleStorage = (event: StorageEvent) => {
-    if (event.key === STORAGE_KEY) {
-      callback();
-    }
-  };
-
   const handleCustom = () => {
     callback();
   };
 
-  window.addEventListener('storage', handleStorage);
   window.addEventListener(EVENT_NAME, handleCustom);
+  const unsubscribeRuntime = subscribeRuntimeScope('tenant', callback);
 
   return () => {
-    window.removeEventListener('storage', handleStorage);
     window.removeEventListener(EVENT_NAME, handleCustom);
+    unsubscribeRuntime();
   };
 }
 
@@ -289,6 +290,9 @@ export function buildPosCatalogFromStored(products: StoredSaleProduct[], context
       allowComplimentary: product.allowComplimentary,
       allowDiscount: product.allowDiscount,
       happyHourEligible: product.happyHourEligible,
+      imageUrl: product.imageUrl,
+      thumbnailUrl: product.thumbnailUrl,
+      description: product.description,
     }));
 }
 

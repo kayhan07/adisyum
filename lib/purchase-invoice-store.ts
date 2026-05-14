@@ -1,3 +1,5 @@
+import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
+
 export type StoredPurchaseInvoice = {
   invoiceNo: string;
   date: string;
@@ -28,7 +30,7 @@ export function loadStoredPurchaseInvoices(): StoredPurchaseInvoice[] {
   if (typeof window === 'undefined') return [];
 
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = readRuntimeItem('tenant', STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as StoredPurchaseInvoice[];
     return Array.isArray(parsed) ? parsed : [];
@@ -51,7 +53,7 @@ export function saveStoredPurchaseInvoices(invoices: StoredPurchaseInvoice[]) {
       seen.add(key);
       return true;
     });
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+    writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(merged));
     emitChange();
   } catch {
     // no-op
@@ -66,17 +68,14 @@ export function appendStoredPurchaseInvoice(invoice: StoredPurchaseInvoice) {
 export function subscribeToPurchaseInvoices(callback: () => void) {
   if (typeof window === 'undefined') return () => {};
 
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === STORAGE_KEY) callback();
-  };
   const onCustom = () => callback();
 
-  window.addEventListener('storage', onStorage);
   window.addEventListener(EVENT_NAME, onCustom);
+  const unsubscribeRuntime = subscribeRuntimeScope('tenant', callback);
 
   return () => {
-    window.removeEventListener('storage', onStorage);
     window.removeEventListener(EVENT_NAME, onCustom);
+    unsubscribeRuntime();
   };
 }
 

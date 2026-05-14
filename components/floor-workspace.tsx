@@ -270,6 +270,7 @@ export function FloorWorkspace() {
   const [status, setStatus] = useState<StatusFilter>('all');
   const [group, setGroup] = useState('all');
   const [search, setSearch] = useState('');
+  const [waiterMode, setWaiterMode] = useState(true);
   const [paymentRequestedIds, setPaymentRequestedIds] = useState<string[]>([]);
   const [liveTotals, setLiveTotals] = useState<Record<string, number>>({});
   const [ordersByTable, setOrdersByTable] = useState<Record<string, OrderLine[]>>({});
@@ -1651,6 +1652,27 @@ export function FloorWorkspace() {
     router.push(`/orders?tableId=${tableId}`);
   }
 
+  function handleDragMove(sourceId: string, targetId: string) {
+    if (sourceId === targetId) return;
+    const sourceTable = displayTableRows.find((table) => table.id === sourceId);
+    const targetTable = displayTableRows.find((table) => table.id === targetId);
+    if (!sourceTable || !targetTable) return;
+
+    const sourceOrders = ordersByTable[sourceId] ?? [];
+    if (sourceOrders.length === 0) {
+      setActionMessage('Sürüklenen masada taşınacak adisyon yok');
+      return;
+    }
+
+    const targetStatus = mapStatus(targetTable, reservationDateFilter);
+    if (targetStatus === 'reserved' || targetTable.total > 0) {
+      setActionMessage('Sürükle bırak ile sadece boş masaya taşıma yapılır');
+      return;
+    }
+
+    performMove(sourceId, targetId);
+  }
+
   function updateMergeLineSelection(lineId: string, checked: boolean) {
     setMergeSelectionPanel((current) => (
       current
@@ -2275,6 +2297,15 @@ export function FloorWorkspace() {
                   />
                 </div>
               </div>
+              <div className="flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => setWaiterMode((current) => !current)}
+                  className={waiterMode ? 'inline-flex h-10 items-center justify-center rounded-full bg-emerald-600 px-4 text-sm font-semibold text-white' : 'inline-flex h-10 items-center justify-center rounded-full border border-white/15 bg-[#111827] px-4 text-sm font-semibold text-slate-200 transition hover:bg-[#172033]'}
+                >
+                  {waiterMode ? 'Garson modu aktif' : 'Garson modu pasif'}
+                </button>
+              </div>
               <TableFilters
                 status={status}
                 onStatusChange={setStatus}
@@ -2435,6 +2466,8 @@ export function FloorWorkspace() {
                 onQuickNote={openQuickNote}
                 onQuickMove={(tableId) => startAction('move', tableId)}
                 onQuickMerge={(tableId) => startAction('merge', tableId)}
+                onDragMove={handleDragMove}
+                waiterMode={waiterMode}
               />
 
               <section className="rounded-2xl border border-slate-800 bg-[#111827] px-4 py-3">

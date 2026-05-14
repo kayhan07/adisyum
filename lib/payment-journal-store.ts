@@ -1,5 +1,7 @@
 'use client';
 
+import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
+
 const STORAGE_KEY = 'adisyon-payment-journal';
 const EVENT_NAME = 'adisyon-payment-journal:changed';
 
@@ -36,7 +38,7 @@ export function loadPaymentJournal() {
   }
 
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = readRuntimeItem('tenant', STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as PaymentJournalEntry[];
     return Array.isArray(parsed) ? uniqueById(parsed) : [];
@@ -47,7 +49,7 @@ export function loadPaymentJournal() {
 
 export function savePaymentJournal(entries: PaymentJournalEntry[]) {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(uniqueById(entries)));
+  writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(uniqueById(entries)));
   emitChange();
 }
 
@@ -59,16 +61,13 @@ export function appendPaymentJournalEntries(entries: PaymentJournalEntry[]) {
 export function subscribeToPaymentJournalChanges(callback: () => void) {
   if (typeof window === 'undefined') return () => {};
 
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === STORAGE_KEY) callback();
-  };
   const onCustom = () => callback();
 
-  window.addEventListener('storage', onStorage);
   window.addEventListener(EVENT_NAME, onCustom);
+  const unsubscribeRuntime = subscribeRuntimeScope('tenant', callback);
   return () => {
-    window.removeEventListener('storage', onStorage);
     window.removeEventListener(EVENT_NAME, onCustom);
+    unsubscribeRuntime();
   };
 }
 

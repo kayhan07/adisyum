@@ -1,8 +1,18 @@
+import { bootstrapRuntimeScope, persistRuntimeScope, readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
+
 const STORAGE_KEY = 'aurelia-table-payment-requested';
 const TOTALS_STORAGE_KEY = 'aurelia-table-live-totals';
 const ORDERS_STORAGE_KEY = 'aurelia-orders-by-table';
 const META_STORAGE_KEY = 'aurelia-table-meta';
 const EVENT_NAME = 'aurelia-table-payment-requested:changed';
+
+type SharedTablePaymentState = {
+  paymentRequestedTableIds: string[];
+  liveTotals: Record<string, number>;
+  ordersByTable: Record<string, unknown[]>;
+  tableMeta: Record<string, StoredTableMeta>;
+  updatedAt: string;
+};
 
 function emitChange() {
   if (typeof window === 'undefined') {
@@ -12,12 +22,55 @@ function emitChange() {
   window.dispatchEvent(new CustomEvent(EVENT_NAME));
 }
 
+function canUseStorage() {
+  return typeof window !== 'undefined';
+}
+
+function buildSnapshot(): SharedTablePaymentState {
+  return {
+    paymentRequestedTableIds: getPaymentRequestedTableIds(),
+    liveTotals: getTableLiveTotals(),
+    ordersByTable: getStoredOrdersByTable(),
+    tableMeta: getStoredTableMeta(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function applySnapshot(snapshot: Partial<SharedTablePaymentState>) {
+  if (!canUseStorage()) return;
+
+  if (Array.isArray(snapshot.paymentRequestedTableIds)) {
+    writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(snapshot.paymentRequestedTableIds), { persist: false });
+  }
+  if (snapshot.liveTotals && typeof snapshot.liveTotals === 'object') {
+    writeRuntimeItem('tenant', TOTALS_STORAGE_KEY, JSON.stringify(snapshot.liveTotals), { persist: false });
+  }
+  if (snapshot.ordersByTable && typeof snapshot.ordersByTable === 'object') {
+    writeRuntimeItem('tenant', ORDERS_STORAGE_KEY, JSON.stringify(snapshot.ordersByTable), { persist: false });
+  }
+  if (snapshot.tableMeta && typeof snapshot.tableMeta === 'object') {
+    writeRuntimeItem('tenant', META_STORAGE_KEY, JSON.stringify(snapshot.tableMeta), { persist: false });
+  }
+}
+
+export async function syncTableStateFromServer() {
+  if (typeof window === 'undefined') return null;
+  await bootstrapRuntimeScope('tenant');
+  emitChange();
+  return buildSnapshot();
+}
+
+export function publishTableState() {
+  if (!canUseStorage()) return;
+  void persistRuntimeScope('tenant');
+}
+
 export function getPaymentRequestedTableIds() {
   if (typeof window === 'undefined') {
     return [] as string[];
   }
 
-  const raw = window.localStorage.getItem(STORAGE_KEY);
+  const raw = readRuntimeItem('tenant', STORAGE_KEY);
   if (!raw) {
     return [];
   }
@@ -43,8 +96,9 @@ export function setTablePaymentRequested(tableId: string, requested: boolean) {
     current.delete(tableId);
   }
 
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify([...current]));
+  writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify([...current]));
   emitChange();
+  publishTableState();
 }
 
 export function subscribeToPaymentRequestedChanges(callback: () => void) {
@@ -52,22 +106,16 @@ export function subscribeToPaymentRequestedChanges(callback: () => void) {
     return () => {};
   }
 
-  const handleStorage = (event: StorageEvent) => {
-    if (event.key === STORAGE_KEY) {
-      callback();
-    }
-  };
-
   const handleCustom = () => {
     callback();
   };
 
-  window.addEventListener('storage', handleStorage);
   window.addEventListener(EVENT_NAME, handleCustom);
+  const unsubscribeRuntime = subscribeRuntimeScope('tenant', callback);
 
   return () => {
-    window.removeEventListener('storage', handleStorage);
     window.removeEventListener(EVENT_NAME, handleCustom);
+    unsubscribeRuntime();
   };
 }
 
@@ -76,7 +124,7 @@ export function getTableLiveTotals() {
     return {} as Record<string, number>;
   }
 
-  const raw = window.localStorage.getItem(TOTALS_STORAGE_KEY);
+  const raw = readRuntimeItem('tenant', TOTALS_STORAGE_KEY);
   if (!raw) {
     return {};
   }
@@ -96,8 +144,9 @@ export function setTableLiveTotals(totals: Record<string, number>) {
     return;
   }
 
-  window.localStorage.setItem(TOTALS_STORAGE_KEY, JSON.stringify({ ...getTableLiveTotals(), ...totals }));
+  writeRuntimeItem('tenant', TOTALS_STORAGE_KEY, JSON.stringify({ ...getTableLiveTotals(), ...totals }));
   emitChange();
+  publishTableState();
 }
 
 export function getStoredOrdersByTable<T>() {
@@ -105,7 +154,7 @@ export function getStoredOrdersByTable<T>() {
     return {} as Record<string, T[]>;
   }
 
-  const raw = window.localStorage.getItem(ORDERS_STORAGE_KEY);
+  const raw = readRuntimeItem('tenant', ORDERS_STORAGE_KEY);
   if (!raw) {
     return {} as Record<string, T[]>;
   }
@@ -125,11 +174,13 @@ export function setStoredOrdersByTable<T>(orders: Record<string, T[]>) {
     return;
   }
 
-  window.localStorage.setItem(
+  writeRuntimeItem(
+    'tenant',
     ORDERS_STORAGE_KEY,
     JSON.stringify({ ...getStoredOrdersByTable<T>(), ...orders }),
   );
   emitChange();
+  publishTableState();
 }
 
 export function subscribeToStoredOrdersChanges(callback: () => void) {
@@ -137,22 +188,16 @@ export function subscribeToStoredOrdersChanges(callback: () => void) {
     return () => {};
   }
 
-  const handleStorage = (event: StorageEvent) => {
-    if (event.key === ORDERS_STORAGE_KEY) {
-      callback();
-    }
-  };
-
   const handleCustom = () => {
     callback();
   };
 
-  window.addEventListener('storage', handleStorage);
   window.addEventListener(EVENT_NAME, handleCustom);
+  const unsubscribeRuntime = subscribeRuntimeScope('tenant', callback);
 
   return () => {
-    window.removeEventListener('storage', handleStorage);
     window.removeEventListener(EVENT_NAME, handleCustom);
+    unsubscribeRuntime();
   };
 }
 
@@ -180,7 +225,7 @@ export function getStoredTableMeta() {
     return {} as Record<string, StoredTableMeta>;
   }
 
-  const raw = window.localStorage.getItem(META_STORAGE_KEY);
+  const raw = readRuntimeItem('tenant', META_STORAGE_KEY);
   if (!raw) {
     return {} as Record<string, StoredTableMeta>;
   }
@@ -198,6 +243,7 @@ export function setStoredTableMeta(meta: Record<string, StoredTableMeta>) {
     return;
   }
 
-  window.localStorage.setItem(META_STORAGE_KEY, JSON.stringify({ ...getStoredTableMeta(), ...meta }));
+  writeRuntimeItem('tenant', META_STORAGE_KEY, JSON.stringify({ ...getStoredTableMeta(), ...meta }));
   emitChange();
+  publishTableState();
 }

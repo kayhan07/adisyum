@@ -1,3 +1,5 @@
+import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
+
 export type VatRate = 1 | 10 | 20;
 export type RawUnit = 'kg' | 'lt' | 'adet';
 
@@ -21,7 +23,7 @@ export function loadStoredRawIngredients() {
   if (typeof window === 'undefined') return [];
 
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = readRuntimeItem('tenant', STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? (parsed as StoredRawIngredient[]) : [];
@@ -39,7 +41,7 @@ export function saveStoredRawIngredients(items: StoredRawIngredient[]) {
     const preserved = existing.filter(
       (item) => !incomingKeys.has(item.id) && !incomingKeys.has(normalizeIngredientKey(item.name)),
     );
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([...items, ...preserved]));
+    writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify([...items, ...preserved]));
   } catch {
     // ignore storage errors in demo env
   }

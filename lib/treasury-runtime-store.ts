@@ -1,6 +1,7 @@
 'use client';
 
 import type { TreasuryMovement } from '@/lib/erp-engine';
+import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
 
 const STORAGE_KEY = 'adisyon-treasury-runtime-movements';
 const EVENT_NAME = 'adisyon-treasury-runtime:changed';
@@ -30,7 +31,7 @@ export function loadStoredTreasuryMovements() {
   }
 
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = readRuntimeItem('tenant', STORAGE_KEY);
     if (!raw) {
       return [];
     }
@@ -49,7 +50,7 @@ export function saveStoredTreasuryMovements(movements: TreasuryMovement[]) {
 
   try {
     const merged = uniqueById([...movements, ...loadStoredTreasuryMovements()]);
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+    writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(merged));
     emitChange();
   } catch {
     // ignore storage errors in demo env
@@ -67,7 +68,7 @@ export function removeStoredTreasuryMovementIds(ids: string[]) {
 
   const blockedIds = new Set(ids);
   const next = loadStoredTreasuryMovements().filter((movement) => !blockedIds.has(movement.id));
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(next));
   emitChange();
 }
 
@@ -76,19 +77,13 @@ export function subscribeToStoredTreasuryChanges(callback: () => void) {
     return () => {};
   }
 
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === STORAGE_KEY) {
-      callback();
-    }
-  };
-
   const onCustom = () => callback();
 
-  window.addEventListener('storage', onStorage);
   window.addEventListener(EVENT_NAME, onCustom);
+  const unsubscribeRuntime = subscribeRuntimeScope('tenant', callback);
 
   return () => {
-    window.removeEventListener('storage', onStorage);
     window.removeEventListener(EVENT_NAME, onCustom);
+    unsubscribeRuntime();
   };
 }

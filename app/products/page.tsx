@@ -89,6 +89,7 @@ import {
   type PosUnitType,
   type ProductMapping,
 } from '@/lib/pos-mapping-store';
+import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
 
 const branchId = 'mrk';
 const DEFAULT_PRODUCT_CATEGORIES = ['Kahve', 'Soğuk İçecek', 'Alkol', 'Burger', 'Et', 'Balık', 'Tavuk', 'Tatlı', 'Salata', 'Diğer'] as const;
@@ -589,7 +590,7 @@ function loadRawStockCountOverrides() {
   if (typeof window === 'undefined') return {} as Record<string, RawStockCountOverride>;
 
   try {
-    const raw = window.localStorage.getItem(RAW_STOCK_COUNT_STORAGE_KEY);
+    const raw = readRuntimeItem('tenant', RAW_STOCK_COUNT_STORAGE_KEY);
     if (!raw) return {} as Record<string, RawStockCountOverride>;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return {} as Record<string, RawStockCountOverride>;
@@ -611,7 +612,7 @@ function saveRawStockCountOverrides(overrides: Record<string, RawStockCountOverr
   if (typeof window === 'undefined') return;
 
   try {
-    window.localStorage.setItem(RAW_STOCK_COUNT_STORAGE_KEY, JSON.stringify(overrides));
+    writeRuntimeItem('tenant', RAW_STOCK_COUNT_STORAGE_KEY, JSON.stringify(overrides));
   } catch {
     // ignore storage errors in demo env
   }

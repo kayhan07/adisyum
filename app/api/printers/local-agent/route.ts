@@ -4,6 +4,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const LOCAL_AGENT_BASES = [
+  'http://127.0.0.1:4891',
+  'http://localhost:4891',
   'http://127.0.0.1:3001',
   'http://localhost:3001',
   'https://127.0.0.1:3443',

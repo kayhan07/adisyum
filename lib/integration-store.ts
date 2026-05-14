@@ -1,5 +1,7 @@
 'use client';
 
+import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
+
 export type ApiKeyRecord = {
   id: string;
   name: string;
@@ -118,26 +120,10 @@ const STORAGE_KEY = 'adisyon-integrations-state';
 const EVENT_NAME = 'adisyon-integrations-state:changed';
 
 const DEFAULT_STATE: IntegrationState = {
-  apiKeys: [
-    { id: 'api-ys', name: 'Yemeksepeti Senkron', prefix: 'ark_A1B2C3D4', status: 'Aktif', limit: '120/dk', scopes: 'orders:read, products:read' },
-    { id: 'api-getir', name: 'Getir Menü Push', prefix: 'ark_E5F6G7H8', status: 'Aktif', limit: '90/dk', scopes: 'products:read' },
-    { id: 'api-trendyol', name: 'Trendyol Sipariş Pull', prefix: 'ark_J9K0L1M2', status: 'Pasif', limit: '60/dk', scopes: 'orders:read' },
-  ],
-  apiUsageLogs: [
-    { id: 'log-1', method: 'GET', path: '/api/v2/external/orders', status: 200, actor: 'Yemeksepeti Senkron', time: '120 ms' },
-    { id: 'log-2', method: 'GET', path: '/api/v2/external/products', status: 200, actor: 'Getir Menü Push', time: '96 ms' },
-    { id: 'log-3', method: 'POST', path: '/api/v1/developer/webhooks/test', status: 201, actor: 'Merkez Admin', time: '141 ms' },
-  ],
-  webhookEvents: [
-    { id: 'wh-1', event: 'order.created', target: 'https://hooks.partner.local/orders', status: 'Kuyruklandı' },
-    { id: 'wh-2', event: 'payment.completed', target: 'https://hooks.partner.local/payments', status: 'Kuyruklandı' },
-    { id: 'wh-3', event: 'stock.updated', target: 'https://hooks.partner.local/stocks', status: 'Kuyruklandı' },
-  ],
-  partnerIntegrations: [
-    { id: 'int-ys', name: 'Yemeksepeti', type: 'Sipariş pazaryeri', status: 'Hazır adaptör', version: 'v2' },
-    { id: 'int-getir', name: 'Getir', type: 'Hızlı teslimat', status: 'Hazır adaptör', version: 'v2' },
-    { id: 'int-trendyol', name: 'Trendyol', type: 'Marketplace', status: 'Hazır adaptör', version: 'v2' },
-  ],
+  apiKeys: [],
+  apiUsageLogs: [],
+  webhookEvents: [],
+  partnerIntegrations: [],
   printerDevices: [
     { id: 'prt-mutfak-a', name: 'Sıcak Mutfak A', role: 'Mutfak', deviceType: 'kitchen_printer', ip: '192.168.1.210', port: 9100, status: 'Aktif', queue: 3, retry: '15 sn', backup: 'Sıcak Mutfak B', group: 'Mutfak hattı' },
     { id: 'prt-mutfak-b', name: 'Sıcak Mutfak B', role: 'Mutfak Yedek', deviceType: 'kitchen_printer', ip: '192.168.1.211', port: 9100, status: 'Yedek', queue: 1, retry: '15 sn', backup: 'Otomatik devralır', group: 'Mutfak hattı' },
@@ -199,100 +185,55 @@ function normalizePrinterSettings(input: Partial<TenantPrinterSettings> | undefi
   const firstReceipt = nonFiscal.find((device) => device.deviceType === 'receipt_printer')?.name ?? nonFiscal[0]?.name ?? '';
   const firstKitchen = nonFiscal.find((device) => device.deviceType === 'kitchen_printer')?.name ?? firstReceipt;
   const firstBar = nonFiscal.find((device) => device.deviceType === 'bar_printer')?.name ?? firstReceipt;
+  const availableNames = new Set(nonFiscal.map((device) => device.name));
+
+  const ensureExisting = (name: string | undefined, fallback: string) => {
+    const trimmed = name?.trim() ?? '';
+    if (!trimmed) return fallback;
+    return availableNames.has(trimmed) ? trimmed : fallback;
+  };
 
   const deviceType = input?.deviceType === 'kitchen_printer' || input?.deviceType === 'bar_printer' || input?.deviceType === 'receipt_printer'
     ? input.deviceType
     : 'receipt_printer';
 
   return {
-    defaultPrinter: input?.defaultPrinter?.trim() || firstReceipt,
-    kitchenPrinter: input?.kitchenPrinter?.trim() || firstKitchen,
-    barPrinter: input?.barPrinter?.trim() || firstBar,
+    defaultPrinter: ensureExisting(input?.defaultPrinter, firstReceipt),
+    kitchenPrinter: ensureExisting(input?.kitchenPrinter, firstKitchen),
+    barPrinter: ensureExisting(input?.barPrinter, firstBar),
     deviceType,
   };
 }
 
-function getPartnerIntegrationDefaults(id: string): Partial<PartnerIntegrationRecord> {
-  switch (id) {
-    case 'int-trendyol':
-      return {
-        authFlow: 'direct',
-        authType: 'basic',
-        method: 'GET',
-        baseUrl: 'https://apigw.trendyol.com',
-        ordersPath: '/integration/order/sellers/{sellerId}/orders',
-        apiKeyHeader: 'Authorization',
-        apiSecretHeader: '',
-        userAgent: '{sellerId} - SelfIntegration',
-        notes: 'Trendyol için API Key, API Secret, sellerId ve zorunlu User-Agent kullanılır.',
-      };
-    case 'int-getir':
-      return {
-        authFlow: 'direct',
-        authType: 'bearer',
-        method: 'GET',
-        baseUrl: '',
-        ordersPath: '',
-        apiKeyHeader: 'Authorization',
-        apiSecretHeader: '',
-        notes: 'Getir tarafında resmi açık sipariş dokümanı doğrulanamadı. Partner panelinden verilen endpoint ve token bilgilerini kullanın.',
-      };
-    case 'int-ys':
-      return {
-        authFlow: 'oauthClientCredentials',
-        authType: 'bearer',
-        method: 'GET',
-        baseUrl: 'https://yemeksepeti.partner.deliveryhero.io',
-        ordersPath: '/v2/chains/{chainId}/vendors/{vendorId}/orders',
-        tokenUrl: 'https://yemeksepeti.partner.deliveryhero.io/v2/oauth/token',
-        apiKeyHeader: 'Authorization',
-        apiSecretHeader: '',
-        notes: 'Yemeksepeti için client_id, client_secret, chain_id, vendor_id ve opsiyonel webhook bilgisi gerekir.',
-      };
-    default:
-      return {
-        authFlow: 'direct',
-        authType: 'bearer',
-        method: 'GET',
-        baseUrl: '',
-        ordersPath: '',
-        apiKeyHeader: 'Authorization',
-        apiSecretHeader: '',
-      };
-  }
-}
-
 function normalizePartnerIntegrations(partnerIntegrations: PartnerIntegrationRecord[]) {
-  return partnerIntegrations.map((integration) => {
-    const defaults = getPartnerIntegrationDefaults(integration.id);
-    return {
-      ...defaults,
+  return partnerIntegrations
+    .filter((integration) => integration.type?.toLocaleLowerCase('tr-TR').includes('yazıcı') || integration.type?.toLocaleLowerCase('tr-TR').includes('pos'))
+    .map((integration) => ({
       ...integration,
       status: integration.status === 'Pasif' ? 'Pasif' : 'Aktif',
-      autoImport: integration.autoImport ?? true,
-      lastPullAt: integration.lastPullAt ?? '',
-      username: integration.username ?? '',
-      password: integration.password ?? '',
-      apiKey: integration.apiKey ?? '',
-      apiSecret: integration.apiSecret ?? '',
-      baseUrl: integration.baseUrl ?? defaults.baseUrl ?? '',
-      ordersPath: integration.ordersPath ?? defaults.ordersPath ?? '',
-      authType: integration.authType ?? defaults.authType ?? 'bearer',
-      authFlow: integration.authFlow ?? defaults.authFlow ?? 'direct',
-      method: integration.method ?? defaults.method ?? 'GET',
-      tokenUrl: integration.tokenUrl ?? defaults.tokenUrl ?? '',
-      apiKeyHeader: integration.apiKeyHeader ?? defaults.apiKeyHeader ?? 'Authorization',
-      apiSecretHeader: integration.apiSecretHeader ?? defaults.apiSecretHeader ?? '',
-      userAgent: integration.userAgent ?? defaults.userAgent ?? '',
-      sellerId: integration.sellerId ?? '',
-      storeId: integration.storeId ?? '',
-      chainId: integration.chainId ?? '',
-      vendorId: integration.vendorId ?? '',
-      webhookUrl: integration.webhookUrl ?? '',
-      webhookSecret: integration.webhookSecret ?? '',
-      notes: integration.notes ?? defaults.notes ?? '',
-    } satisfies PartnerIntegrationRecord;
-  });
+      autoImport: false,
+      lastPullAt: '',
+      username: '',
+      password: '',
+      apiKey: '',
+      apiSecret: '',
+      baseUrl: '',
+      ordersPath: '',
+      authType: 'bearer',
+      authFlow: 'direct',
+      method: 'GET',
+      tokenUrl: '',
+      apiKeyHeader: 'Authorization',
+      apiSecretHeader: '',
+      userAgent: '',
+      sellerId: '',
+      storeId: '',
+      chainId: '',
+      vendorId: '',
+      webhookUrl: '',
+      webhookSecret: '',
+      notes: '',
+    } satisfies PartnerIntegrationRecord));
 }
 
 export function getDefaultIntegrationState() {
@@ -382,7 +323,7 @@ export function loadIntegrationState() {
   if (typeof window === 'undefined') return getDefaultIntegrationState();
 
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = readRuntimeItem('tenant', STORAGE_KEY);
     if (!raw) return getDefaultIntegrationState();
     const parsed = JSON.parse(raw) as Partial<IntegrationState>;
     const printerDevices = normalizePrinterDevices(Array.isArray(parsed.printerDevices) ? parsed.printerDevices : DEFAULT_STATE.printerDevices);
@@ -409,7 +350,7 @@ export function saveIntegrationState(state: IntegrationState) {
   try {
     const printerDevices = normalizePrinterDevices(state.printerDevices);
 
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify({
       ...state,
       partnerIntegrations: normalizePartnerIntegrations(state.partnerIntegrations),
       printerDevices,
@@ -423,14 +364,11 @@ export function saveIntegrationState(state: IntegrationState) {
 
 export function subscribeToIntegrationChanges(callback: () => void) {
   if (typeof window === 'undefined') return () => {};
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === STORAGE_KEY) callback();
-  };
   const onCustom = () => callback();
-  window.addEventListener('storage', onStorage);
   window.addEventListener(EVENT_NAME, onCustom);
+  const unsubscribeRuntime = subscribeRuntimeScope('tenant', callback);
   return () => {
-    window.removeEventListener('storage', onStorage);
     window.removeEventListener(EVENT_NAME, onCustom);
+    unsubscribeRuntime();
   };
 }

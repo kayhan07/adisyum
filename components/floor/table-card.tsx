@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import type { KeyboardEvent, MouseEvent } from 'react';
+import { useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type TouchEvent } from 'react';
 import { ArrowRightLeft, CreditCard, GitMerge, StickyNote, TimerReset, Trash2, Users, Clock3 } from 'lucide-react';
 
 export type FloorTableStatus = 'available' | 'occupied' | 'payment' | 'reserved';
@@ -28,6 +28,8 @@ type TableCardProps = {
   onQuickNote?: () => void;
   onQuickMove?: () => void;
   onQuickMerge?: () => void;
+  onDragMove?: (sourceId: string, targetId: string) => void;
+  waiterMode?: boolean;
 };
 
 const statusUi: Record<
@@ -106,11 +108,15 @@ export function TableCard({
   onQuickNote,
   onQuickMove,
   onQuickMerge,
+  onDragMove,
+  waiterMode = false,
 }: TableCardProps) {
   const ui = statusUi[status];
   const targetGlow = actionMode && isActionTargetCandidate ? 'ring-2 ring-emerald-300/70 ring-offset-1 ring-offset-transparent' : '';
   const sourceGlow = isActionSource ? 'ring-2 ring-violet-300/70 ring-offset-1 ring-offset-transparent' : '';
   const hasOrder = total > 0;
+  const swipeStartRef = useRef<{ x: number; t: number } | null>(null);
+  const [dragHover, setDragHover] = useState(false);
 
   function runQuickAction(event: MouseEvent<HTMLButtonElement>, callback?: () => void) {
     event.stopPropagation();
@@ -125,7 +131,55 @@ export function TableCard({
     }
   }
 
-  const quickButtonClass = 'inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-black/14 text-slate-100 transition hover:bg-white/12 hover:text-white disabled:cursor-not-allowed disabled:opacity-35';
+  function handleTouchStart(event: TouchEvent<HTMLDivElement>) {
+    const touch = event.changedTouches[0];
+    swipeStartRef.current = { x: touch.clientX, t: Date.now() };
+  }
+
+  function handleTouchEnd(event: TouchEvent<HTMLDivElement>) {
+    const start = swipeStartRef.current;
+    if (!start) return;
+    const touch = event.changedTouches[0];
+    const deltaX = touch.clientX - start.x;
+    const elapsed = Date.now() - start.t;
+    swipeStartRef.current = null;
+
+    if (elapsed > 420 || Math.abs(deltaX) < 50) return;
+    if (deltaX < 0 && hasOrder) {
+      onQuickPayment?.();
+      return;
+    }
+    if (deltaX > 0) {
+      onQuickNote?.();
+    }
+  }
+
+  function handleDragStart(event: DragEvent<HTMLDivElement>) {
+    event.dataTransfer.setData('text/table-id', id);
+    event.dataTransfer.effectAllowed = 'move';
+  }
+
+  function handleDragOver(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setDragHover(true);
+  }
+
+  function handleDragLeave() {
+    setDragHover(false);
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setDragHover(false);
+    const sourceId = event.dataTransfer.getData('text/table-id');
+    if (!sourceId || sourceId === id) return;
+    onDragMove?.(sourceId, id);
+  }
+
+  const quickButtonClass = waiterMode
+    ? 'inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-black/14 text-slate-100 transition hover:bg-white/12 hover:text-white disabled:cursor-not-allowed disabled:opacity-35'
+    : 'inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-black/14 text-slate-100 transition hover:bg-white/12 hover:text-white disabled:cursor-not-allowed disabled:opacity-35';
 
   return (
     <div
@@ -133,11 +187,18 @@ export function TableCard({
       tabIndex={0}
       onClick={onClick}
       onKeyDown={handleCardKeyDown}
-      className={`w-full rounded-[1.05rem] border px-2.5 py-2.5 text-left transition-all duration-[120ms] ease-out shadow-[0_6px_16px_rgba(2,6,23,0.16),0_0_8px_rgba(96,165,250,0.04)] hover:-translate-y-[2px] hover:shadow-[0_14px_28px_rgba(2,6,23,0.24),0_0_12px_rgba(96,165,250,0.06)] active:scale-[0.985] ${ui.card} ${targetGlow} ${sourceGlow} ${longOpen && status !== 'payment' ? 'shadow-[0_0_0_1px_rgba(245,158,11,0.14),0_0_16px_rgba(245,158,11,0.08)]' : ''}`}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      draggable={hasOrder}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={`w-full rounded-[1.05rem] border px-2.5 py-2.5 text-left transition-all duration-[120ms] ease-out shadow-[0_6px_16px_rgba(2,6,23,0.16),0_0_8px_rgba(96,165,250,0.04)] hover:-translate-y-[2px] hover:shadow-[0_14px_28px_rgba(2,6,23,0.24),0_0_12px_rgba(96,165,250,0.06)] active:scale-[0.985] ${ui.card} ${targetGlow} ${sourceGlow} ${dragHover ? 'ring-2 ring-sky-300/70' : ''} ${longOpen && status !== 'payment' ? 'shadow-[0_0_0_1px_rgba(245,158,11,0.14),0_0_16px_rgba(245,158,11,0.08)]' : ''}`}
       aria-label={`${name} masasını aç`}
       data-table-id={id}
     >
-      <div className="flex min-h-[116px] flex-col justify-between gap-2">
+      <div className={`flex ${waiterMode ? 'min-h-[126px]' : 'min-h-[116px]'} flex-col justify-between gap-2`}>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="truncate text-[1.14rem] font-bold tracking-tight text-white">{name}</p>
@@ -206,6 +267,11 @@ export function TableCard({
               </span>
             )}
           </div>
+          {waiterMode ? (
+            <p className={`text-[9px] ${ui.meta}`}>
+              Sağa kaydır: Not · Sola kaydır: Ödeme · Sürükle-bırak: Masa taşı
+            </p>
+          ) : null}
         </div>
       </div>
     </div>

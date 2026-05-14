@@ -1,8 +1,8 @@
 'use client';
 
 import { getDefaultModulesForPackageType, sanitizePackageModules, type PackageModuleKey } from '@/lib/package-access';
-import { createTenantId, upsertTenant, upsertTenantCredential, type PackageType } from '@/lib/saas-store';
-import { initializeTenantRuntimeData } from '@/lib/tenant-runtime-store';
+import { createTenantId, type PackageType } from '@/lib/saas-store';
+import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
 
 export type AdminPackage = {
   id: string;
@@ -185,10 +185,6 @@ const defaultState: SystemAdminState = {
   renewals: [],
 };
 
-function canUseStorage() {
-  return typeof window !== 'undefined' && Boolean(window.localStorage);
-}
-
 function emitChange() {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(EVENT_NAME));
 }
@@ -226,76 +222,39 @@ function mergeDefaultState(state: Partial<SystemAdminState>): SystemAdminState {
 }
 
 export function loadSystemAdminState(): SystemAdminState {
-  if (!canUseStorage()) return defaultState;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultState));
-      syncTenantsToLogin(defaultState);
-      return defaultState;
-    }
+    const raw = readRuntimeItem('system-admin', STORAGE_KEY);
+    if (!raw) return defaultState;
     const parsed = mergeDefaultState(JSON.parse(raw));
     const hasDemo = parsed.tenants.some((tenant) => tenant.tenant_id === 'ABN-48291');
-    const next = hasDemo ? parsed : { ...parsed, tenants: [...defaultState.tenants, ...parsed.tenants] };
-    if (!hasDemo) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    syncTenantsToLogin(next);
-    return next;
+    return hasDemo ? parsed : { ...parsed, tenants: [...defaultState.tenants, ...parsed.tenants] };
   } catch {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultState));
-    syncTenantsToLogin(defaultState);
     return defaultState;
   }
 }
 
 export function saveSystemAdminState(state: SystemAdminState) {
-  if (!canUseStorage()) return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  syncTenantsToLogin(state);
+  writeRuntimeItem('system-admin', STORAGE_KEY, JSON.stringify(state));
   emitChange();
 }
 
 export function createEmptyTenantDataStructure(tenantId: string) {
-  if (!canUseStorage()) return;
-  const key = `adisyon-tenant-data:${tenantId}`;
-  if (!window.localStorage.getItem(key)) {
-    window.localStorage.setItem(key, JSON.stringify({
-      tenant_id: tenantId,
-      products: [],
-      customers: [],
-      orders: [],
-      finance: [],
-      settings: {},
-      created_at: new Date().toISOString(),
-    }));
-  }
-  initializeTenantRuntimeData(tenantId);
+  void tenantId;
 }
 
 export function syncTenantsToLogin(state: SystemAdminState) {
-  state.tenants.forEach((tenant) => {
-    upsertTenant({
-      id: tenant.id,
-      tenant_id: tenant.tenant_id,
-      name: tenant.company_name,
-      package_id: tenant.package_id,
-      package_type: tenant.package_type,
-      start_date: tenant.start_date,
-      end_date: tenant.end_date,
-      demo_enabled: tenant.demo_enabled,
-      status: tenant.status,
-      main_branch_id: 'mrk',
-      created_at: tenant.created_at,
-    });
-    upsertTenantCredential({
-      tenant_id: tenant.tenant_id,
-      username: tenant.admin_username,
-      password: tenant.admin_password,
-      role: 'Admin',
-      name: `${tenant.company_name} Admin`,
-      branch_id: 'mrk',
-      active: true,
-    });
-  });
+  void state;
+}
+
+export function subscribeToSystemAdminChanges(callback: () => void) {
+  if (typeof window === 'undefined') return () => {};
+  const onCustom = () => callback();
+  window.addEventListener(EVENT_NAME, onCustom);
+  const unsubscribeRuntime = subscribeRuntimeScope('system-admin', callback);
+  return () => {
+    window.removeEventListener(EVENT_NAME, onCustom);
+    unsubscribeRuntime();
+  };
 }
 
 export function createAdminTenantDraft() {

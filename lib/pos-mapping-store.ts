@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { DEFAULT_SALE_PRODUCT_BASE } from '@/lib/sale-product-catalog';
+import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
 
 export type PosUnitType = 'adet' | 'kg' | 'lt' | 'gr' | 'ml' | 'porsiyon' | 'sise' | 'bardak';
 export type ProductMappingStatus = 'missing' | 'valid' | 'invalid';
@@ -81,7 +82,7 @@ const STORAGE_KEY = 'adisyon-product-mappings';
 const DEFAULT_TENANT_ID = 'default';
 
 function canUseStorage() {
-  return typeof window !== 'undefined' && Boolean(window.localStorage);
+  return typeof window !== 'undefined';
 }
 
 function normalizeProductKey(value: string) {
@@ -139,11 +140,11 @@ export function loadProductMappings(): ProductMapping[] {
   if (!canUseStorage()) return [];
 
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = readRuntimeItem('tenant', STORAGE_KEY);
     if (!raw) {
       const seeded = buildDefaultMappings();
       if (seeded.length > 0) {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
+        writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(seeded));
       }
       return seeded;
     }
@@ -152,14 +153,14 @@ export function loadProductMappings(): ProductMapping[] {
     if (parsed.length > 0) {
       const merged = mergeWithDefaultMappings(parsed as ProductMapping[]);
       if (merged.length !== parsed.length) {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+        writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(merged));
       }
       return merged;
     }
 
     const seeded = buildDefaultMappings();
     if (seeded.length > 0) {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
+      writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(seeded));
     }
     return seeded;
   } catch {
@@ -169,7 +170,7 @@ export function loadProductMappings(): ProductMapping[] {
 
 export function saveProductMappings(mappings: ProductMapping[]) {
   if (!canUseStorage()) return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(mappings));
+  writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(mappings));
   window.dispatchEvent(new CustomEvent('adisyon-product-mappings-change'));
 }
 

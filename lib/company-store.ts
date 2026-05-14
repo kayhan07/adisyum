@@ -1,5 +1,7 @@
 'use client';
 
+import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
+
 export type CompanyState = {
   tradeName: string;
   branchName: string;
@@ -40,7 +42,7 @@ export function loadCompanyState(): CompanyState {
   }
 
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = readRuntimeItem('tenant', STORAGE_KEY);
     if (!raw) return getDefaultCompanyState();
     return {
       ...getDefaultCompanyState(),
@@ -53,7 +55,7 @@ export function loadCompanyState(): CompanyState {
 
 export function saveCompanyState(state: CompanyState) {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(state));
   emitChange();
 }
 
@@ -62,15 +64,12 @@ export function subscribeToCompanyChanges(callback: () => void) {
     return () => {};
   }
 
-  const handleStorage = (event: StorageEvent) => {
-    if (event.key === STORAGE_KEY) callback();
-  };
   const handleCustom = () => callback();
 
-  window.addEventListener('storage', handleStorage);
   window.addEventListener(EVENT_NAME, handleCustom);
+  const unsubscribeRuntime = subscribeRuntimeScope('tenant', callback);
   return () => {
-    window.removeEventListener('storage', handleStorage);
     window.removeEventListener(EVENT_NAME, handleCustom);
+    unsubscribeRuntime();
   };
 }

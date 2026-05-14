@@ -9,7 +9,50 @@ declare global {
   }
 }
 
+export type KdsConnectionState = {
+  state: string;
+  connected: boolean;
+  at: string;
+  error?: string;
+};
+
 let echoInstance: Echo<any> | null = null;
+let connectionBound = false;
+const connectionListeners = new Set<(state: KdsConnectionState) => void>();
+
+function emitConnectionState(state: KdsConnectionState) {
+  connectionListeners.forEach((listener) => listener(state));
+}
+
+function bindConnectionEvents() {
+  if (!echoInstance || connectionBound) return;
+  const pusher = (echoInstance as any)?.connector?.pusher;
+  const connection = pusher?.connection;
+  if (!connection) return;
+
+  connectionBound = true;
+
+  connection.bind('connected', () => {
+    emitConnectionState({ state: 'connected', connected: true, at: new Date().toISOString() });
+  });
+  connection.bind('disconnected', () => {
+    emitConnectionState({ state: 'disconnected', connected: false, at: new Date().toISOString() });
+  });
+  connection.bind('unavailable', () => {
+    emitConnectionState({ state: 'unavailable', connected: false, at: new Date().toISOString() });
+  });
+  connection.bind('error', (err: { message?: string } | undefined) => {
+    emitConnectionState({ state: 'error', connected: false, at: new Date().toISOString(), error: err?.message ?? 'WS error' });
+  });
+  connection.bind('state_change', (t: { previous: string; current: string }) => {
+    emitConnectionState({ state: t.current, connected: t.current === 'connected', at: new Date().toISOString() });
+  });
+}
+
+export function subscribeKdsConnectionState(callback: (state: KdsConnectionState) => void) {
+  connectionListeners.add(callback);
+  return () => connectionListeners.delete(callback);
+}
 
 export function getKdsEcho(): Echo<any> | null {
   if (typeof window === 'undefined') {
@@ -45,6 +88,7 @@ export function getKdsEcho(): Echo<any> | null {
     });
   }
 
+  bindConnectionEvents();
   return echoInstance;
 }
 

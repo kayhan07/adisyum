@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
 import { Bell, ChevronLeft, Minus, Plus, Receipt, Search, ShoppingBag, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import { loadTableLayoutState, subscribeToTableLayoutChanges, type StoredFloorTable } from '@/lib/table-layout-store';
@@ -13,6 +14,7 @@ import {
   setTableWaiterRequested,
 } from '@/lib/qr-menu-state';
 import { setTablePaymentRequested, subscribeToPaymentRequestedChanges } from '@/lib/table-payment-state';
+import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
 
 type QrCustomerMenuProps = {
   tableId: string;
@@ -65,7 +67,7 @@ export function QrCustomerMenu({ tableId }: QrCustomerMenuProps) {
     }
 
     try {
-      const raw = window.localStorage.getItem(getCartStorageKey(tableId));
+      const raw = readRuntimeItem('tenant', getCartStorageKey(tableId));
       if (raw) {
         const parsed = JSON.parse(raw) as Record<string, unknown>;
         setCart(
@@ -84,7 +86,7 @@ export function QrCustomerMenu({ tableId }: QrCustomerMenuProps) {
       return;
     }
 
-    window.localStorage.setItem(getCartStorageKey(tableId), JSON.stringify(cart));
+    writeRuntimeItem('tenant', getCartStorageKey(tableId), JSON.stringify(cart));
   }, [cart, tableId]);
 
   useEffect(() => {
@@ -304,27 +306,46 @@ export function QrCustomerMenu({ tableId }: QrCustomerMenuProps) {
                 key={product.id}
                 className="overflow-hidden rounded-[1.6rem] border border-white/10 bg-[#111827]/96 shadow-[0_18px_48px_rgba(8,15,30,0.28)]"
               >
-                <div className={`h-28 bg-gradient-to-br ${getCategoryAccent(product.category)} p-[1px]`}>
-                  <div className="flex h-full items-end rounded-[1.55rem] bg-[linear-gradient(180deg,rgba(15,23,42,0.14),rgba(15,23,42,0.68))] p-4">
-                    <div>
-                      <div className="inline-flex rounded-full bg-black/30 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/85">
-                        {formatQrCategoryLabel(product.category)}
-                      </div>
-                      <h2 className="mt-3 text-2xl font-semibold tracking-tight text-white">{product.name}</h2>
+                {/* Hero image or gradient fallback */}
+                <div className={`relative h-44 w-full overflow-hidden ${!product.imageUrl ? `bg-gradient-to-br ${getCategoryAccent(product.category)}` : 'bg-slate-900'}`}>
+                  {product.imageUrl ? (
+                    <Image
+                      src={product.thumbnailUrl ?? product.imageUrl}
+                      alt={product.name}
+                      fill
+                      className="object-cover transition duration-500"
+                      sizes="(max-width: 480px) 100vw, 440px"
+                      loading="lazy"
+                      placeholder="blur"
+                      blurDataURL="data:image/webp;base64,UklGRlYAAABXRUJQVlA4IEoAAADQAQCdASoIAAYAAUAmJYgCdAEO/hmIAAD++3P/wCJrR1ZJXAAAAAA="
+                    />
+                  ) : null}
+                  {/* Overlay gradient */}
+                  <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.08),rgba(15,23,42,0.72))]" />
+                  <div className="absolute bottom-0 left-0 p-4">
+                    <div className="inline-flex rounded-full bg-black/35 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/85 backdrop-blur-sm">
+                      {formatQrCategoryLabel(product.category)}
                     </div>
+                    <h2 className="mt-2 text-[1.35rem] font-bold leading-tight tracking-tight text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.55)]">
+                      {product.name}
+                    </h2>
                   </div>
                 </div>
+                {/* Bottom row */}
                 <div className="flex items-center justify-between gap-3 px-4 py-4">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Fiyat</p>
-                    <p className="mt-2 text-2xl font-semibold text-white">{formatMoney(product.price)}</p>
+                    <p className="mt-1.5 text-2xl font-bold text-white">{formatMoney(product.price)}</p>
+                    {product.description ? (
+                      <p className="mt-1 max-w-[180px] text-[11px] leading-4 text-slate-400 line-clamp-2">{product.description}</p>
+                    ) : null}
                   </div>
 
                   {qty === 0 ? (
                     <button
                       type="button"
                       onClick={() => changeQty(product.id, 1)}
-                      className="rounded-full bg-sky-600 px-4 py-3 text-sm font-semibold text-white shadow-[0_16px_32px_rgba(14,165,233,0.28)] transition hover:-translate-y-0.5 hover:bg-sky-500"
+                      className="rounded-full bg-sky-600 px-4 py-3 text-sm font-semibold text-white shadow-[0_16px_32px_rgba(14,165,233,0.28)] transition hover:-translate-y-0.5 hover:bg-sky-500 active:scale-95"
                     >
                       Sepete ekle
                     </button>
@@ -333,7 +354,7 @@ export function QrCustomerMenu({ tableId }: QrCustomerMenuProps) {
                       <button
                         type="button"
                         onClick={() => changeQty(product.id, -1)}
-                        className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-800 text-white"
+                        className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-800 text-white transition active:scale-90"
                       >
                         <Minus className="h-4 w-4" />
                       </button>
@@ -341,7 +362,7 @@ export function QrCustomerMenu({ tableId }: QrCustomerMenuProps) {
                       <button
                         type="button"
                         onClick={() => changeQty(product.id, 1)}
-                        className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-600 text-white"
+                        className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-600 text-white transition active:scale-90"
                       >
                         <Plus className="h-4 w-4" />
                       </button>
@@ -351,6 +372,11 @@ export function QrCustomerMenu({ tableId }: QrCustomerMenuProps) {
               </article>
             );
           })}
+          {filteredProducts.length === 0 && (
+            <div className="rounded-[1.6rem] border border-white/10 bg-[#111827]/80 px-6 py-10 text-center">
+              <p className="text-sm text-slate-400">Bu kategoride ürün bulunamadı.</p>
+            </div>
+          )}
         </section>
       </div>
 

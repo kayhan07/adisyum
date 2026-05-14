@@ -1,0 +1,578 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TenantStatus {
+  active
+  suspended
+  expired
+  trial
+  demo
+  blocked
+}
+
+enum OrderStatus {
+  open
+  preparing
+  ready
+  served
+  paid
+  cancelled
+}
+
+enum PaymentStatus {
+  pending
+  paid
+  failed
+  voided
+  refunded
+}
+
+enum SyncStatus {
+  pending
+  applied
+  conflicted
+  failed
+}
+
+model Tenant {
+  id           String       @id @default(uuid()) @db.Uuid
+  tenantId     String       @unique @map("tenant_id") @db.VarChar(64)
+  name         String       @db.VarChar(180)
+  packageType  String       @default("mini") @map("package_type") @db.VarChar(32)
+  status       TenantStatus @default(trial)
+  mainBranchId String?      @map("main_branch_id") @db.VarChar(64)
+  metadata     Json         @default("{}")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("tenants")
+}
+
+model Subscription {
+  id          String       @id @default(uuid()) @db.Uuid
+  tenantId    String       @map("tenant_id") @db.VarChar(64)
+  packageType String       @map("package_type") @db.VarChar(32)
+  status      TenantStatus @default(trial)
+  startsAt    DateTime     @map("starts_at")
+  endsAt      DateTime     @map("ends_at")
+  metadata    Json         @default("{}")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, endsAt])
+  @@map("subscriptions")
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.VarChar(64)
+  username     String   @db.VarChar(120)
+  name         String   @db.VarChar(180)
+  passwordHash String   @map("password_hash")
+  role         String   @db.VarChar(64)
+  branchId     String?  @map("branch_id") @db.VarChar(64)
+  active       Boolean  @default(true)
+  permissions  Json     @default("[]")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, username])
+  @@index([tenantId])
+  @@index([tenantId, active])
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.VarChar(64)
+  name        String   @db.VarChar(100)
+  permissions Json     @default("[]")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.VarChar(64)
+  key         String   @db.VarChar(140)
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("permissions")
+}
+
+model TableGroup {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.VarChar(64)
+  name      String   @db.VarChar(120)
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("table_groups")
+}
+
+model PosTable {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.VarChar(64)
+  groupId   String?  @map("group_id") @db.Uuid
+  name      String   @db.VarChar(120)
+  status    String   @default("available") @db.VarChar(32)
+  seats     Int      @default(0)
+  position  Json     @default("{}")
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("tables")
+}
+
+model ProductCategory {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.VarChar(64)
+  name         String   @db.VarChar(140)
+  parentId     String?  @map("parent_id") @db.Uuid
+  sortOrder    Int      @default(0) @map("sort_order")
+  imageUrl     String?  @map("image_url") @db.VarChar(500)
+  thumbnailUrl String?  @map("thumbnail_url") @db.VarChar(500)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("product_categories")
+}
+
+model Product {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.VarChar(64)
+  categoryId   String?  @map("category_id") @db.Uuid
+  name         String   @db.VarChar(180)
+  sku          String?  @db.VarChar(80)
+  barcode      String?  @db.VarChar(80)
+  price        Decimal  @default(0) @db.Decimal(12, 2)
+  vatRate      Int      @default(10) @map("vat_rate")
+  unitType     String   @default("adet") @map("unit_type") @db.VarChar(32)
+  active       Boolean  @default(true)
+  imageUrl     String?  @map("image_url") @db.VarChar(500)
+  thumbnailUrl String?  @map("thumbnail_url") @db.VarChar(500)
+  description  String?  @db.VarChar(600)
+  metadata     Json     @default("{}")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, active])
+  @@map("products")
+}
+
+model MediaAsset {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.VarChar(64)
+  entityType       String   @map("entity_type") @db.VarChar(40)
+  entityId         String   @map("entity_id") @db.VarChar(64)
+  url              String   @db.VarChar(500)
+  thumbnailUrl     String?  @map("thumbnail_url") @db.VarChar(500)
+  webpUrl          String?  @map("webp_url") @db.VarChar(500)
+  mimeType         String   @map("mime_type") @db.VarChar(80)
+  originalName     String   @map("original_name") @db.VarChar(255)
+  sizeBytes        Int      @map("size_bytes")
+  width            Int?
+  height           Int?
+  thumbWidth       Int?     @map("thumb_width")
+  thumbHeight      Int?     @map("thumb_height")
+  optimizedSizeBytes Int?   @map("optimized_size_bytes")
+  sortOrder        Int      @default(0) @map("sort_order")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@index([tenantId, entityType, entityId])
+  @@map("media_assets")
+}
+
+model ProductVariant {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.VarChar(64)
+  productId String   @map("product_id") @db.Uuid
+  name      String   @db.VarChar(140)
+  price     Decimal  @default(0) @db.Decimal(12, 2)
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@index([tenantId, productId])
+  @@map("product_variants")
+}
+
+model Order {
+  id         String      @id @default(uuid()) @db.Uuid
+  tenantId   String      @map("tenant_id") @db.VarChar(64)
+  tableId    String?     @map("table_id") @db.Uuid
+  customerId String?     @map("customer_id") @db.Uuid
+  orderNo    String      @map("order_no") @db.VarChar(80)
+  status     OrderStatus @default(open)
+  subtotal   Decimal     @default(0) @db.Decimal(12, 2)
+  discount   Decimal     @default(0) @db.Decimal(12, 2)
+  taxTotal   Decimal     @default(0) @map("tax_total") @db.Decimal(12, 2)
+  total      Decimal     @default(0) @db.Decimal(12, 2)
+  metadata   Json        @default("{}")
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+
+  @@unique([tenantId, orderNo])
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.VarChar(64)
+  orderId   String   @map("order_id") @db.Uuid
+  productId String?  @map("product_id") @db.Uuid
+  name      String   @db.VarChar(180)
+  quantity  Decimal  @default(1) @db.Decimal(12, 3)
+  unitPrice Decimal  @default(0) @map("unit_price") @db.Decimal(12, 2)
+  total     Decimal  @default(0) @db.Decimal(12, 2)
+  notes     String?
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@index([tenantId, orderId])
+  @@map("order_items")
+}
+
+model Payment {
+  id        String        @id @default(uuid()) @db.Uuid
+  tenantId  String        @map("tenant_id") @db.VarChar(64)
+  orderId   String?       @map("order_id") @db.Uuid
+  method    String        @db.VarChar(32)
+  status    PaymentStatus @default(pending)
+  amount    Decimal       @default(0) @db.Decimal(12, 2)
+  metadata  Json          @default("{}")
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status])
+  @@map("payments")
+}
+
+model Customer {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.VarChar(64)
+  name      String   @db.VarChar(180)
+  phone     String?  @db.VarChar(40)
+  email     String?  @db.VarChar(180)
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("customers")
+}
+
+model Supplier {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.VarChar(64)
+  name      String   @db.VarChar(180)
+  phone     String?  @db.VarChar(40)
+  email     String?  @db.VarChar(180)
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("suppliers")
+}
+
+model Warehouse {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.VarChar(64)
+  name      String   @db.VarChar(140)
+  type      String   @default("main") @db.VarChar(32)
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("warehouses")
+}
+
+model StockItem {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.VarChar(64)
+  name      String   @db.VarChar(180)
+  unit      String   @db.VarChar(32)
+  quantity  Decimal  @default(0) @db.Decimal(14, 3)
+  minLevel  Decimal  @default(0) @map("min_level") @db.Decimal(14, 3)
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("stock_items")
+}
+
+model StockMovement {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.VarChar(64)
+  stockItemId String?  @map("stock_item_id") @db.Uuid
+  warehouseId String?  @map("warehouse_id") @db.Uuid
+  type        String   @db.VarChar(40)
+  quantity    Decimal  @default(0) @db.Decimal(14, 3)
+  reason      String?
+  metadata    Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@map("stock_movements")
+}
+
+model CashRegister {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.VarChar(64)
+  name      String   @db.VarChar(140)
+  active    Boolean  @default(true)
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("cash_registers")
+}
+
+model CashTransaction {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.VarChar(64)
+  cashRegisterId String?  @map("cash_register_id") @db.Uuid
+  type           String   @db.VarChar(40)
+  amount         Decimal  @default(0) @db.Decimal(12, 2)
+  note           String?
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@map("cash_transactions")
+}
+
+model Printer {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.VarChar(64)
+  groupId   String?  @map("group_id") @db.Uuid
+  name      String   @db.VarChar(140)
+  type      String   @db.VarChar(60)
+  endpoint  String?
+  active    Boolean  @default(true)
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("printers")
+}
+
+model PrinterGroup {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.VarChar(64)
+  name      String   @db.VarChar(140)
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("printer_groups")
+}
+
+model Recipe {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.VarChar(64)
+  productId        String?  @map("product_id") @db.Uuid
+  sourceTemplateId String?  @map("source_template_id") @db.Uuid
+  name             String   @db.VarChar(180)
+  yieldQuantity    Decimal  @default(1) @map("yield_quantity") @db.Decimal(12, 3)
+  unit             String   @default("adet") @db.VarChar(32)
+  metadata         Json     @default("{}")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@index([tenantId, productId])
+  @@map("recipes")
+}
+
+model RecipeItem {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.VarChar(64)
+  recipeId    String   @map("recipe_id") @db.Uuid
+  stockItemId String?  @map("stock_item_id") @db.Uuid
+  name        String   @db.VarChar(180)
+  quantity    Decimal  @default(0) @db.Decimal(12, 3)
+  unit        String   @db.VarChar(32)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@index([tenantId, recipeId])
+  @@map("recipe_items")
+}
+
+model RecipeTemplate {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String   @db.VarChar(180)
+  category      String?  @db.VarChar(120)
+  yieldQuantity Decimal  @default(1) @map("yield_quantity") @db.Decimal(12, 3)
+  unit          String   @default("adet") @db.VarChar(32)
+  metadata      Json     @default("{}")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([category])
+  @@map("recipe_templates")
+}
+
+model RecipeTemplateItem {
+  id         String   @id @default(uuid()) @db.Uuid
+  templateId String   @map("template_id") @db.Uuid
+  name       String   @db.VarChar(180)
+  quantity   Decimal  @default(0) @db.Decimal(12, 3)
+  unit       String   @db.VarChar(32)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([templateId])
+  @@map("recipe_template_items")
+}
+
+model Expense {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.VarChar(64)
+  category  String   @db.VarChar(120)
+  amount    Decimal  @default(0) @db.Decimal(12, 2)
+  note      String?
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@map("expenses")
+}
+
+model Shift {
+  id        String    @id @default(uuid()) @db.Uuid
+  tenantId  String    @map("tenant_id") @db.VarChar(64)
+  userId    String?   @map("user_id") @db.Uuid
+  status    String    @default("open") @db.VarChar(32)
+  openedAt  DateTime  @default(now()) @map("opened_at")
+  closedAt  DateTime? @map("closed_at")
+  metadata  Json      @default("{}")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("shifts")
+}
+
+model Report {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.VarChar(64)
+  type      String   @db.VarChar(80)
+  params    Json     @default("{}")
+  result    Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@map("reports")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String?  @map("tenant_id") @db.VarChar(64)
+  userId    String?  @map("user_id") @db.VarChar(80)
+  action    String   @db.VarChar(120)
+  entity    String?  @db.VarChar(120)
+  entityId  String?  @map("entity_id") @db.VarChar(80)
+  ip        String?  @db.VarChar(80)
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+model SyncQueue {
+  id        String     @id @default(uuid()) @db.Uuid
+  tenantId  String     @map("tenant_id") @db.VarChar(64)
+  deviceId  String?    @map("device_id") @db.VarChar(120)
+  eventType String     @map("event_type") @db.VarChar(120)
+  payload   Json
+  status    SyncStatus @default(pending)
+  error     String?
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+  @@map("sync_queue")
+}
+
+model OfflineEvent {
+  id        String     @id @default(uuid()) @db.Uuid
+  tenantId  String     @map("tenant_id") @db.VarChar(64)
+  deviceId  String?    @map("device_id") @db.VarChar(120)
+  eventId   String     @map("event_id") @db.VarChar(160)
+  eventType String     @map("event_type") @db.VarChar(120)
+  payload   Json
+  status    SyncStatus @default(pending)
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  @@unique([tenantId, eventId])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("offline_events")
+}
+
+model RuntimeState {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.VarChar(64)
+  key       String   @db.VarChar(120)
+  payload   Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("runtime_states")
+}
