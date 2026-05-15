@@ -561,18 +561,36 @@ validate_nginx() {
   systemctl reload nginx
 }
 
-wait_for_200() {
+is_healthy_http_status() {
+  local code="$1"
+  case "${code}" in
+    200|201|204|301|302|303|307|308) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+wait_for_healthy_route() {
   local url="$1"
-  local code=""
+  local code="" final_code="" final_url=""
   for _ in $(seq 1 45); do
     code="$(curl -ksS -o /dev/null -w '%{http_code}' --max-time 8 "${url}" || true)"
-    if [[ "${code}" == "200" ]]; then
-      log "${url} HTTP 200"
-      return 0
+    if is_healthy_http_status "${code}"; then
+      final_code="$(curl -kLsS -o /dev/null -w '%{http_code}' --max-time 15 "${url}" || true)"
+      final_url="$(curl -kLsS -o /dev/null -w '%{url_effective}' --max-time 15 "${url}" || true)"
+
+      if [[ "${code}" =~ ^30[12378]$ ]]; then
+        if is_healthy_http_status "${final_code}"; then
+          log "${url} HTTP ${code}; redirect target healthy (${final_code}) ${final_url}"
+          return 0
+        fi
+      else
+        log "${url} HTTP ${code}"
+        return 0
+      fi
     fi
     sleep 2
   done
-  fail "${url} expected HTTP 200, got ${code:-none}"
+  fail "${url} expected healthy HTTP 2xx/3xx, got initial=${code:-none} final=${final_code:-none} final_url=${final_url:-unknown}"
 }
 
 validate_runtime_routes() {
@@ -582,14 +600,14 @@ validate_runtime_routes() {
     fail "Port 3020 is listening"
   fi
 
-  wait_for_200 "http://127.0.0.1:${ROOT_PORT}"
-  wait_for_200 "http://127.0.0.1:${ROOT_PORT}/app"
-  wait_for_200 "http://127.0.0.1:${ROOT_PORT}/system-admin"
-  wait_for_200 "http://127.0.0.1:${WEBSITE_PORT}"
+  wait_for_healthy_route "http://127.0.0.1:${ROOT_PORT}"
+  wait_for_healthy_route "http://127.0.0.1:${ROOT_PORT}/app"
+  wait_for_healthy_route "http://127.0.0.1:${ROOT_PORT}/system-admin"
+  wait_for_healthy_route "http://127.0.0.1:${WEBSITE_PORT}"
 
-  wait_for_200 "https://${DOMAIN}"
-  wait_for_200 "https://${DOMAIN}/app"
-  wait_for_200 "https://${DOMAIN}/system-admin"
+  wait_for_healthy_route "https://${DOMAIN}"
+  wait_for_healthy_route "https://${DOMAIN}/app"
+  wait_for_healthy_route "https://${DOMAIN}/system-admin"
 }
 
 print_final_state() {
