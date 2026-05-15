@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type TouchEvent } from 'react';
+import { useState, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react';
 import { ArrowRightLeft, CreditCard, GitMerge, StickyNote, TimerReset, Trash2, Users, Clock3 } from 'lucide-react';
 
 export type FloorTableStatus = 'available' | 'occupied' | 'payment' | 'reserved';
@@ -29,7 +29,6 @@ type TableCardProps = {
   onQuickMove?: () => void;
   onQuickMerge?: () => void;
   onDragMove?: (sourceId: string, targetId: string) => void;
-  waiterMode?: boolean;
 };
 
 const statusUi: Record<
@@ -109,13 +108,11 @@ export function TableCard({
   onQuickMove,
   onQuickMerge,
   onDragMove,
-  waiterMode = false,
 }: TableCardProps) {
   const ui = statusUi[status];
   const targetGlow = actionMode && isActionTargetCandidate ? 'ring-2 ring-emerald-300/70 ring-offset-1 ring-offset-transparent' : '';
   const sourceGlow = isActionSource ? 'ring-2 ring-violet-300/70 ring-offset-1 ring-offset-transparent' : '';
   const hasOrder = total > 0;
-  const swipeStartRef = useRef<{ x: number; t: number } | null>(null);
   const [dragHover, setDragHover] = useState(false);
 
   function runQuickAction(event: MouseEvent<HTMLButtonElement>, callback?: () => void) {
@@ -128,29 +125,6 @@ export function TableCard({
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       onClick?.();
-    }
-  }
-
-  function handleTouchStart(event: TouchEvent<HTMLDivElement>) {
-    const touch = event.changedTouches[0];
-    swipeStartRef.current = { x: touch.clientX, t: Date.now() };
-  }
-
-  function handleTouchEnd(event: TouchEvent<HTMLDivElement>) {
-    const start = swipeStartRef.current;
-    if (!start) return;
-    const touch = event.changedTouches[0];
-    const deltaX = touch.clientX - start.x;
-    const elapsed = Date.now() - start.t;
-    swipeStartRef.current = null;
-
-    if (elapsed > 420 || Math.abs(deltaX) < 50) return;
-    if (deltaX < 0 && hasOrder) {
-      onQuickPayment?.();
-      return;
-    }
-    if (deltaX > 0) {
-      onQuickNote?.();
     }
   }
 
@@ -177,9 +151,7 @@ export function TableCard({
     onDragMove?.(sourceId, id);
   }
 
-  const quickButtonClass = waiterMode
-    ? 'inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-black/14 text-slate-100 transition hover:bg-white/12 hover:text-white disabled:cursor-not-allowed disabled:opacity-35'
-    : 'inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-black/14 text-slate-100 transition hover:bg-white/12 hover:text-white disabled:cursor-not-allowed disabled:opacity-35';
+  const quickButtonClass = 'inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-black/14 text-slate-100 transition hover:bg-white/12 hover:text-white disabled:cursor-not-allowed disabled:opacity-35';
 
   return (
     <div
@@ -187,8 +159,6 @@ export function TableCard({
       tabIndex={0}
       onClick={onClick}
       onKeyDown={handleCardKeyDown}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
       draggable={hasOrder}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
@@ -198,7 +168,7 @@ export function TableCard({
       aria-label={`${name} masasını aç`}
       data-table-id={id}
     >
-      <div className={`flex ${waiterMode ? 'min-h-[126px]' : 'min-h-[116px]'} flex-col justify-between gap-2`}>
+      <div className="flex min-h-[116px] flex-col justify-between gap-2">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="truncate text-[1.14rem] font-bold tracking-tight text-white">{name}</p>
@@ -267,11 +237,6 @@ export function TableCard({
               </span>
             )}
           </div>
-          {waiterMode ? (
-            <p className={`text-[9px] ${ui.meta}`}>
-              Sağa kaydır: Not · Sola kaydır: Ödeme · Sürükle-bırak: Masa taşı
-            </p>
-          ) : null}
         </div>
       </div>
     </div>

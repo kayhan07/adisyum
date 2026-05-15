@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowRightLeft, BarChart3, Clock3, GitMerge, NotebookPen, Receipt, ShieldCheck, Sparkles, TrendingUp, UsersRound, Wallet, X } from 'lucide-react';
+import { ArrowRightLeft, BarChart3, Clock3, GitMerge, NotebookPen, Receipt, ShieldCheck, TrendingUp, UsersRound, Wallet, X } from 'lucide-react';
 import { TableFilters, type StatusFilter } from '@/components/floor/table-filters';
 import { TableSetupPanel } from '@/components/floor/table-setup-panel';
 import { TablesGrid } from '@/components/floor/tables-grid';
@@ -224,6 +224,11 @@ function formatReservationTimeInput(value: string) {
   return `${digits.slice(0, 2)}:${digits.slice(2)}`;
 }
 
+function logFloorFlow(event: string, payload: Record<string, unknown>) {
+  if (typeof window === 'undefined') return;
+  console.info(`[masa-flow] ${event}`, payload);
+}
+
 function minutesSince(iso?: string, fallback = 0) {
   if (!iso) return fallback;
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
@@ -270,7 +275,6 @@ export function FloorWorkspace() {
   const [status, setStatus] = useState<StatusFilter>('all');
   const [group, setGroup] = useState('all');
   const [search, setSearch] = useState('');
-  const [waiterMode, setWaiterMode] = useState(true);
   const [paymentRequestedIds, setPaymentRequestedIds] = useState<string[]>([]);
   const [liveTotals, setLiveTotals] = useState<Record<string, number>>({});
   const [ordersByTable, setOrdersByTable] = useState<Record<string, OrderLine[]>>({});
@@ -1149,6 +1153,10 @@ export function FloorWorkspace() {
   }
 
   function persistOrders(nextOrders: Record<string, OrderLine[]>) {
+    logFloorFlow('orders-persisted', {
+      tableCount: Object.keys(nextOrders).length,
+      activeOrderTables: Object.entries(nextOrders).filter(([, lines]) => lines.length > 0).map(([tableId]) => tableId),
+    });
     setOrdersByTable(nextOrders);
     setStoredOrdersByTable(nextOrders);
   }
@@ -1649,6 +1657,14 @@ export function FloorWorkspace() {
       return;
     }
 
+    const target = displayTableRows.find((table) => table.id === tableId);
+    logFloorFlow('table-selected', {
+      selectedTableId: tableId,
+      tableName: target?.name,
+      activeOrderId: tableId,
+      lineCount: ordersByTable[tableId]?.length ?? 0,
+      total: target?.total ?? 0,
+    });
     router.push(`/orders?tableId=${tableId}`);
   }
 
@@ -2297,15 +2313,6 @@ export function FloorWorkspace() {
                   />
                 </div>
               </div>
-              <div className="flex items-center justify-end">
-                <button
-                  type="button"
-                  onClick={() => setWaiterMode((current) => !current)}
-                  className={waiterMode ? 'inline-flex h-10 items-center justify-center rounded-full bg-emerald-600 px-4 text-sm font-semibold text-white' : 'inline-flex h-10 items-center justify-center rounded-full border border-white/15 bg-[#111827] px-4 text-sm font-semibold text-slate-200 transition hover:bg-[#172033]'}
-                >
-                  {waiterMode ? 'Garson modu aktif' : 'Garson modu pasif'}
-                </button>
-              </div>
               <TableFilters
                 status={status}
                 onStatusChange={setStatus}
@@ -2467,7 +2474,6 @@ export function FloorWorkspace() {
                 onQuickMove={(tableId) => startAction('move', tableId)}
                 onQuickMerge={(tableId) => startAction('merge', tableId)}
                 onDragMove={handleDragMove}
-                waiterMode={waiterMode}
               />
 
               <section className="rounded-2xl border border-slate-800 bg-[#111827] px-4 py-3">

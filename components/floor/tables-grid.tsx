@@ -31,7 +31,6 @@ type TablesGridProps = {
   onQuickMove?: (tableId: string) => void;
   onQuickMerge?: (tableId: string) => void;
   onDragMove?: (sourceId: string, targetId: string) => void;
-  waiterMode?: boolean;
 };
 
 export function TablesGrid({
@@ -46,7 +45,6 @@ export function TablesGrid({
   onQuickMove,
   onQuickMerge,
   onDragMove,
-  waiterMode = false,
 }: TablesGridProps) {
   const pageSize = 84;
   const [visibleCount, setVisibleCount] = useState(pageSize);
@@ -87,7 +85,6 @@ export function TablesGrid({
             onQuickMove={() => onQuickMove?.(table.id)}
             onQuickMerge={() => onQuickMerge?.(table.id)}
             onDragMove={onDragMove}
-            waiterMode={waiterMode}
           />
         ))}
       </div>

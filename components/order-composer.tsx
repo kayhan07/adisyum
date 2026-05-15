@@ -2,7 +2,7 @@
 
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, ChevronUp, CreditCard, Minus, Plus, Repeat2, RotateCcw, Search, Send, Smartphone, Zap, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, CreditCard, Minus, Plus, RotateCcw, Search, Send, Zap, X } from 'lucide-react';
 import {
   appendStoredAccount,
   loadStoredAccounts,
@@ -130,7 +130,6 @@ const categories: Category[] = [
 ];
 const VAT_RATE = 0.1;
 const RECENT_ACCOUNT_KEY = 'adisyon-recent-charge-accounts';
-const WAITER_RECENT_PRODUCT_KEY = 'adisyon-waiter-recent-products';
 const EMPTY_ORDER_LINES: OrderLine[] = [];
 
 function formatMoney(value: number) {
@@ -190,6 +189,11 @@ function areOrderMapsEqual(first: Record<string, OrderLine[]>, second: Record<st
       firstLines.every((line, index) => JSON.stringify(line) === JSON.stringify(secondLines[index]))
     );
   });
+}
+
+function logOrderFlow(event: string, payload: Record<string, unknown>) {
+  if (typeof window === 'undefined') return;
+  console.info(`[adisyon-flow] ${event}`, payload);
 }
 
 function getProductCategoryByName(name: string, products: ProductCard[]) {
@@ -512,9 +516,6 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const [lastMutatedLineId, setLastMutatedLineId] = useState<string | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState<string>('Hazır');
   const [posMappingWarning, setPosMappingWarning] = useState('');
-  const [fastServiceMode, setFastServiceMode] = useState(true);
-  const [mobileWaiterMode, setMobileWaiterMode] = useState(false);
-  const [recentProductIds, setRecentProductIds] = useState<string[]>([]);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentExpanded, setPaymentExpanded] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
@@ -602,6 +603,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const lastPaymentGuardRef = useRef<{ tableId: string; total: number; at: number } | null>(null);
   const previousItemCountsRef = useRef<Record<string, number>>({});
   const seenTableCardRef = useRef<Record<string, boolean>>({});
+  const orderMutationGuardRef = useRef<{ tableId: string; at: number; source: string } | null>(null);
   const paymentRequestedSet = useMemo(() => new Set(paymentRequestedTables), [paymentRequestedTables]);
   const chargeAccounts = useMemo(
     () => [...erpAccounts, ...storedAccounts].filter((account) => account.type === 'customer' || account.type === 'partner'),
@@ -656,16 +658,6 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       window.removeEventListener('online', update);
       window.removeEventListener('offline', update);
     };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const parsed = JSON.parse(readRuntimeItem('tenant', WAITER_RECENT_PRODUCT_KEY) ?? '[]') as string[];
-      setRecentProductIds(Array.isArray(parsed) ? parsed : []);
-    } catch {
-      setRecentProductIds([]);
-    }
   }, []);
 
   useEffect(() => {
@@ -742,18 +734,6 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       .slice(0, 8);
   }, [deferredProductSearch, sourceProducts]);
 
-  const waiterFavoriteProducts = useMemo(() => {
-    const recentSet = new Set(recentProductIds);
-    const recent = recentProductIds
-      .map((id) => sourceProducts.find((product) => product.id === id))
-      .filter((product): product is ProductCard => Boolean(product));
-    const fallback = sourceProducts
-      .filter((product) => /çay|cay|ayran|su|kola|cola|lahmacun|köfte|kofte|pizza|burger|kahve/i.test(product.name))
-      .filter((product) => !recentSet.has(product.id));
-    return [...recent, ...fallback].slice(0, 12);
-  }, [recentProductIds, sourceProducts]);
-
-
   const orderSummariesByTable = useMemo(
     () =>
       Object.fromEntries(
@@ -827,11 +807,6 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   );
 
   const lines = currentTable ? ordersByTable[currentTable.id] ?? EMPTY_ORDER_LINES : EMPTY_ORDER_LINES;
-  const lastOrderedProduct = useMemo(() => {
-    const lastLine = [...lines].reverse().find((line) => line.productId || line.name);
-    if (!lastLine) return null;
-    return sourceProducts.find((product) => product.id === lastLine.productId || product.name === lastLine.name) ?? null;
-  }, [lines, sourceProducts]);
   const splitSelectionLineKey = lines.map((line) => `${line.id}:${line.qty}`).join('|');
   const itemCount = useMemo(() => lines.reduce((sum, item) => sum + item.qty, 0), [lines]);
   const guestLabels = useMemo(
@@ -915,7 +890,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     setSplitMode('person');
     setSplitAmountInput('');
     setActivePadTarget('cash');
-    setPaymentExpanded(!fastServiceMode);
+    setPaymentExpanded(true);
     setCashReceived(discountedSettlementTotal.toFixed(2));
     setCardAmount('0');
     setSelectedAccountId(chargeAccounts[0]?.id ?? '');
@@ -924,7 +899,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     setDiscountAmountInput('0');
     setRoundingDiscountEnabled(false);
     setDiscountReason('');
-  }, [paymentOpen, discountedSettlementTotal, currentTable?.id, splitSelectionLineKey, fastServiceMode]);
+  }, [paymentOpen, discountedSettlementTotal, currentTable?.id, splitSelectionLineKey]);
 
   useEffect(() => {
     if (!currentTable) return;
@@ -1021,6 +996,16 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         JSON.stringify(current) === JSON.stringify(nextTableMeta) ? current : nextTableMeta,
       );
       setOrdersByTable((current) => {
+        const guard = orderMutationGuardRef.current;
+        if (guard && Date.now() - guard.at < 1200) {
+          logOrderFlow('external-sync-skipped-after-local-mutation', {
+            source: guard.source,
+            tableId: guard.tableId,
+            ageMs: Date.now() - guard.at,
+          });
+          return current;
+        }
+
         const nextOrders = normalizeStoredOrders(
           {
             ...current,
@@ -1029,7 +1014,12 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           sourceProducts,
         );
 
-        return areOrderMapsEqual(current, nextOrders) ? current : nextOrders;
+        if (areOrderMapsEqual(current, nextOrders)) return current;
+        logOrderFlow('external-sync-applied', {
+          tableCount: Object.keys(nextOrders).length,
+          source: 'runtime-storage',
+        });
+        return nextOrders;
       });
     };
 
@@ -1074,6 +1064,12 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
   useEffect(() => {
     if (!ordersHydrated) return;
+    logOrderFlow('orders-persisted', {
+      selectedTableId,
+      activeOrderId: currentTable?.id ?? null,
+      currentLineCount: currentTable ? ordersByTable[currentTable.id]?.length ?? 0 : 0,
+      tableCount: Object.keys(ordersByTable).length,
+    });
     setStoredOrdersByTable(ordersByTable);
     Object.entries(ordersByTable).forEach(([tableId, payload]) => {
       queueOfflineOrderSnapshot({
@@ -1083,7 +1079,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         payload,
       });
     });
-  }, [ordersByTable, ordersHydrated, sessionState.activeBranchId, sessionState.tenantId]);
+  }, [currentTable?.id, ordersByTable, ordersHydrated, selectedTableId, sessionState.activeBranchId, sessionState.tenantId]);
 
   useEffect(() => {
     const sync = () => void syncOfflineOrders();
@@ -1402,22 +1398,41 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     setProductCardIsReturn(false);
   };
 
-  function rememberRecentProduct(productId: string) {
-    setRecentProductIds((current) => {
-      const next = [productId, ...current.filter((id) => id !== productId)].slice(0, 16);
-      writeRuntimeItem('tenant', WAITER_RECENT_PRODUCT_KEY, JSON.stringify(next));
-      return next;
-    });
-  }
-
-  const addProductQuick = (product: ProductCard) => {
-    if (!currentTable || !hasPermission('orders.create')) return;
+  const addProductToOrder = (product: ProductCard, source: 'product-grid' | 'search' = 'product-grid') => {
+    if (!currentTable) {
+      logOrderFlow('add-product-blocked', {
+        source,
+        reason: 'missing-table',
+        productId: product.id,
+        productName: product.name,
+        selectedTableId,
+      });
+      setFeedbackMessage('Ürün eklemek için önce masa seçin');
+      return;
+    }
+    if (!hasPermission('orders.create')) {
+      logOrderFlow('add-product-blocked', {
+        source,
+        reason: 'permission-denied',
+        productId: product.id,
+        productName: product.name,
+        tableId: currentTable.id,
+      });
+      return;
+    }
     const mapping = getProductMapping(product.id, product.name);
     const validation = validateProductMapping(mapping);
     if (!validation.valid) {
       const message = `${product.name} için POS PLU eşleştirmesi eksik. Ürünler > POS Mapping alanından tamamlayın.`;
       setPosMappingWarning(message);
       setFeedbackMessage(message);
+      logOrderFlow('add-product-blocked', {
+        source,
+        reason: 'missing-pos-mapping',
+        productId: product.id,
+        productName: product.name,
+        tableId: currentTable.id,
+      });
       return;
     }
 
@@ -1430,8 +1445,10 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     const happyHourEligible = storedProduct?.happyHourEligible ?? product.happyHourEligible ?? false;
 
     setPosMappingWarning('');
+    orderMutationGuardRef.current = { tableId: currentTable.id, at: Date.now(), source };
     updatePaymentRequested(currentTable.id, false);
     let touchedLineId = '';
+    let nextQuantity = 1;
 
     setOrdersByTable((current) => {
       rememberUndo(current, `${product.name} eklendi`);
@@ -1478,12 +1495,24 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         : [...currentLines, newLine];
 
       touchedLineId = existing ? existing.id : nextLines[nextLines.length - 1].id;
+      nextQuantity = nextLines.find((line) => line.id === touchedLineId)?.qty ?? 1;
+      logOrderFlow('add-product-state-transition', {
+        source,
+        tableId: currentTable.id,
+        activeOrderId: currentTable.id,
+        productId: product.id,
+        productName: product.name,
+        lineId: touchedLineId,
+        previousLineCount: currentLines.length,
+        nextLineCount: nextLines.length,
+        quantity: nextQuantity,
+        mergedExisting: Boolean(existing),
+      });
       return { ...current, [currentTable.id]: nextLines };
     });
 
     setLastAddedId(product.id);
     setLastMutatedLineId(touchedLineId);
-    rememberRecentProduct(product.id);
     setFeedbackMessage(`${product.name} adisyona eklendi`);
     setProductSearch('');
   };
@@ -1563,6 +1592,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       return;
     }
     setPosMappingWarning('');
+    orderMutationGuardRef.current = { tableId: currentTable.id, at: Date.now(), source: 'product-card' };
     updatePaymentRequested(currentTable.id, false);
 
     const qtyToAdd = Math.max(Number(productCardQuantity) || 1, 1);
@@ -1624,12 +1654,23 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           ];
 
       touchedLineId = existing ? existing.id : nextLines[nextLines.length - 1].id;
+      logOrderFlow('add-product-state-transition', {
+        source: 'product-card',
+        tableId: currentTable.id,
+        activeOrderId: currentTable.id,
+        productId: productCardProduct.id,
+        productName: productCardProduct.name,
+        lineId: touchedLineId,
+        previousLineCount: currentLines.length,
+        nextLineCount: nextLines.length,
+        quantity: nextLines.find((line) => line.id === touchedLineId)?.qty ?? qtyToAdd,
+        mergedExisting: Boolean(existing),
+      });
       return { ...current, [currentTable.id]: nextLines };
     });
 
     setLastAddedId(productCardProduct.id);
     setLastMutatedLineId(touchedLineId);
-    rememberRecentProduct(productCardProduct.id);
     setFeedbackMessage(`${productCardProduct.name} adisyona eklendi`);
     setProductSearch('');
     closeProductCard();
@@ -2612,10 +2653,6 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         event.preventDefault();
         if (canSendOrder) void sendOrder();
       }
-      if (event.key.toLowerCase() === 'r' && lastOrderedProduct) {
-        event.preventDefault();
-        addProductQuick(lastOrderedProduct);
-      }
       if (event.key === 'Escape') {
         setPaymentOpen(false);
         setProductCardProduct(null);
@@ -2625,7 +2662,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [addProductQuick, canSendOrder, lastOrderedProduct, sendOrder, startPayment]);
+  }, [canSendOrder, sendOrder, startPayment]);
 
   const productCardStoredProduct = useMemo(
     () => (productCardProduct ? storedSaleProducts.find((item) => item.id === productCardProduct.id || item.name === productCardProduct.name) ?? null : null),
@@ -3312,7 +3349,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
   return (
     <>
-    <div className={`dark-pos grid min-h-0 gap-4 ${mobileWaiterMode ? 'xl:grid-cols-[minmax(0,1fr)_360px]' : 'xl:grid-cols-[minmax(0,1fr)_420px]'} xl:h-[calc(100vh-2rem)] xl:min-h-[720px]`}>
+    <div className="dark-pos grid min-h-0 gap-4 xl:grid-cols-[minmax(0,1fr)_420px] xl:h-[calc(100vh-2rem)] xl:min-h-[720px]">
       <section className="app-panel pos-products-panel flex min-h-0 flex-col overflow-hidden rounded-[1.4rem]">
         {paymentOpen ? paymentPanel : (
         <>
@@ -3328,21 +3365,6 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
                 <label htmlFor="product-search" className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                   Hızlı ürün arama
                 </label>
-                <button
-                  type="button"
-                  onClick={() => setFastServiceMode((current) => !current)}
-                  className={fastServiceMode ? 'inline-flex h-8 items-center justify-center rounded-full bg-emerald-600 px-3 text-[11px] font-semibold text-white' : 'inline-flex h-8 items-center justify-center rounded-full border border-slate-300 bg-white px-3 text-[11px] font-semibold text-slate-700'}
-                >
-                  {fastServiceMode ? 'Garson hızlı mod' : 'Detaylı mod'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMobileWaiterMode((current) => !current)}
-                  className={mobileWaiterMode ? 'inline-flex h-8 items-center gap-1 rounded-full bg-blue-600 px-3 text-[11px] font-semibold text-white' : 'inline-flex h-8 items-center gap-1 rounded-full border border-slate-300 bg-white px-3 text-[11px] font-semibold text-slate-700'}
-                >
-                  <Smartphone className="h-3.5 w-3.5" />
-                  Mobil
-                </button>
               </div>
               <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 focus-within:border-[#2563EB] focus-within:bg-white focus-within:shadow-[0_0_0_3px_rgba(37,99,235,0.12)]">
                 <Search className="h-4 w-4 shrink-0 text-slate-400" />
@@ -3364,7 +3386,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
                   <button
                     key={`search-${product.id}`}
                     type="button"
-                    onClick={() => (fastServiceMode ? addProductQuick(product) : openProductCard(product))}
+                    onClick={() => addProductToOrder(product, 'search')}
                     disabled={!currentTable || !hasPermission('orders.create')}
                     className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 last:border-b-0"
                   >
@@ -3380,43 +3402,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           </div>
         </div>
 
-        <div className="border-b border-slate-200 px-5 py-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Hızlı garson şeridi</p>
-              <p className="mt-0.5 text-xs text-slate-500">Sık kullanılanlar ve son eklenenler</p>
-            </div>
-            {lastOrderedProduct ? (
-              <button
-                type="button"
-                onClick={() => addProductQuick(lastOrderedProduct)}
-                disabled={!currentTable || !hasPermission('orders.create')}
-                className="inline-flex min-h-[44px] shrink-0 items-center gap-2 rounded-xl bg-slate-900 px-3 text-xs font-semibold text-white disabled:opacity-50"
-              >
-                <Repeat2 className="h-4 w-4" />
-                Tekrar
-              </button>
-            ) : null}
-          </div>
-          {waiterFavoriteProducts.length > 0 ? (
-            <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-              {waiterFavoriteProducts.map((product) => (
-                <button
-                  key={`waiter-fav-${product.id}`}
-                  type="button"
-                  onClick={() => addProductQuick(product)}
-                  disabled={!currentTable || !hasPermission('orders.create')}
-                  className="inline-flex min-h-[48px] min-w-[118px] flex-col justify-center rounded-xl border border-slate-200 bg-white px-3 text-left shadow-sm transition hover:border-blue-300 hover:bg-blue-50 disabled:opacity-50"
-                >
-                  <span className="line-clamp-1 text-xs font-bold text-[#0F172A]">{product.name}</span>
-                  <span className="mt-0.5 text-[11px] font-semibold text-blue-600">{formatGrossMoney(product.price)}</span>
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-
-        <div className={`border-b border-slate-200 px-5 ${mobileWaiterMode ? 'py-3' : 'py-5'}`}>
+        <div className="border-b border-slate-200 px-5 py-5">
           <div className="flex flex-wrap gap-2.5">
             {sourceCategories.map((category) => {
               const active = selectedCategory === category.id;
@@ -3441,26 +3427,22 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto p-3">
-          <div className={`grid gap-2 ${mobileWaiterMode ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-4 2xl:grid-cols-5' : 'grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6'}`}>
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
             {filteredProducts.map((product) => {
               const activeFlash = lastAddedId === product.id;
               return (
                 <button
                   key={product.id}
                   type="button"
-                  onClick={() => (fastServiceMode ? addProductQuick(product) : openProductCard(product))}
+                  onClick={() => addProductToOrder(product, 'product-grid')}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault();
-                      if (fastServiceMode) {
-                        addProductQuick(product);
-                      } else {
-                        openProductCard(product);
-                      }
+                      addProductToOrder(product, 'product-grid');
                     }
                   }}
                   disabled={!currentTable || !hasPermission('orders.create')}
-                  className={`${activeFlash ? 'border-[#60A5FA] bg-[#EFF6FF] shadow-[0_1px_2px_rgba(37,99,235,0.08),0_12px_22px_rgba(37,99,235,0.12)] pos-pop-in' : 'border-slate-200 bg-white hover:-translate-y-[1px] hover:border-slate-300 hover:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_12px_20px_rgba(15,23,42,0.08)] active:scale-[0.97]'} app-card app-card-interactive pos-product-tile flex ${mobileWaiterMode ? 'min-h-[104px]' : 'min-h-[122px]'} flex-col justify-between rounded-[0.95rem] border p-3 text-left transition duration-150 disabled:cursor-not-allowed disabled:opacity-50`}
+                  className={`${activeFlash ? 'border-[#60A5FA] bg-[#EFF6FF] shadow-[0_1px_2px_rgba(37,99,235,0.08),0_12px_22px_rgba(37,99,235,0.12)] pos-pop-in' : 'border-slate-200 bg-white hover:-translate-y-[1px] hover:border-slate-300 hover:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_12px_20px_rgba(15,23,42,0.08)] active:scale-[0.97]'} app-card app-card-interactive pos-product-tile flex min-h-[122px] flex-col justify-between rounded-[0.95rem] border p-3 text-left transition duration-150 disabled:cursor-not-allowed disabled:opacity-50`}
                   aria-label={`${product.name} ekle`}
                 >
                   <div className="space-y-1">
