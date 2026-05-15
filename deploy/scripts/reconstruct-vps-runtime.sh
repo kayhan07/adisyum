@@ -128,11 +128,11 @@ recover_or_create_env() {
     write_env_line SLOW_QUERY_THRESHOLD_MS "${SLOW_QUERY_THRESHOLD_MS:-300}"
     write_env_line ADISYUM_JWT_SECRET "${ADISYUM_JWT_SECRET:-${NEXTAUTH_SECRET:-${generated_secret}}}"
     write_env_line NEXTAUTH_SECRET "${NEXTAUTH_SECRET:-${ADISYUM_JWT_SECRET:-${generated_secret}}}"
-    write_env_line ADISYUM_SUPER_ADMIN_PASSWORD "${ADISYUM_SUPER_ADMIN_PASSWORD:-${BOOTSTRAP_ADMIN_PASSWORD:-${generated_admin}}}"
+    write_env_line ADISYUM_SUPER_ADMIN_PASSWORD "${ADISYUM_SUPER_ADMIN_PASSWORD:-${BOOTSTRAP_ADMIN_PASSWORD:-1234}}"
     write_env_line BOOTSTRAP_TENANT_ID "${BOOTSTRAP_TENANT_ID:-ABN-48291}"
     write_env_line BOOTSTRAP_BRANCH_ID "${BOOTSTRAP_BRANCH_ID:-mrk}"
     write_env_line BOOTSTRAP_ADMIN_USERNAME "${BOOTSTRAP_ADMIN_USERNAME:-admin}"
-    write_env_line BOOTSTRAP_ADMIN_PASSWORD "${BOOTSTRAP_ADMIN_PASSWORD:-${ADISYUM_SUPER_ADMIN_PASSWORD:-${generated_admin}}}"
+    write_env_line BOOTSTRAP_ADMIN_PASSWORD "${BOOTSTRAP_ADMIN_PASSWORD:-1234}"
     write_env_line UPSTASH_REDIS_REST_URL "${UPSTASH_REDIS_REST_URL:-}"
     write_env_line UPSTASH_REDIS_REST_TOKEN "${UPSTASH_REDIS_REST_TOKEN:-}"
     write_env_line UPLOAD_ROOT_DIR "${UPLOAD_ROOT_DIR:-${APP_DIR}/public/uploads}"
@@ -278,7 +278,7 @@ load_env() {
   export BOOTSTRAP_TENANT_ID="${BOOTSTRAP_TENANT_ID:-ABN-48291}"
   export BOOTSTRAP_BRANCH_ID="${BOOTSTRAP_BRANCH_ID:-mrk}"
   export BOOTSTRAP_ADMIN_USERNAME="${BOOTSTRAP_ADMIN_USERNAME:-admin}"
-  export BOOTSTRAP_ADMIN_PASSWORD="${BOOTSTRAP_ADMIN_PASSWORD:-${ADISYUM_SUPER_ADMIN_PASSWORD}}"
+  export BOOTSTRAP_ADMIN_PASSWORD="${BOOTSTRAP_ADMIN_PASSWORD:-1234}"
   validate_environment
 }
 
@@ -367,6 +367,27 @@ run_bootstrap_admin() {
   fi
 }
 
+run_auth_verification() {
+  log "Verifying and repairing bootstrap authentication state"
+  cd "${APP_DIR}"
+  local mode="${1:-runtime}"
+  export AUTH_VERIFY_TENANT_ID="${AUTH_VERIFY_TENANT_ID:-${BOOTSTRAP_TENANT_ID}}"
+  export AUTH_VERIFY_BRANCH_ID="${AUTH_VERIFY_BRANCH_ID:-${BOOTSTRAP_BRANCH_ID}}"
+  export AUTH_VERIFY_USERNAME="${AUTH_VERIFY_USERNAME:-${BOOTSTRAP_ADMIN_USERNAME}}"
+  export AUTH_VERIFY_PASSWORD="${AUTH_VERIFY_PASSWORD:-${BOOTSTRAP_ADMIN_PASSWORD}}"
+  if [[ "${mode}" == "db-only" ]]; then
+    export AUTH_VERIFY_SKIP_RUNTIME=1
+  else
+    unset AUTH_VERIFY_SKIP_RUNTIME
+    export AUTH_VERIFY_BASE_URL="${AUTH_VERIFY_BASE_URL:-http://127.0.0.1:${ROOT_PORT}}"
+  fi
+  if node -e "const [major, minor] = process.versions.node.split('.').map(Number); process.exit(major > 22 || (major === 22 && minor >= 6) ? 0 : 1)"; then
+    run_app node --experimental-strip-types scripts/verify-auth.ts
+  else
+    run_app node_modules/.bin/tsx scripts/verify-auth.ts
+  fi
+}
+
 validate_ecosystem() {
   log "Validating canonical PM2 ecosystem"
   cd "${APP_DIR}"
@@ -395,6 +416,7 @@ rebuild_prisma_and_typecheck() {
   run_app npx prisma generate
   run_app npx prisma db push
   run_bootstrap_admin
+  run_auth_verification db-only
   run_app npx tsc --noEmit
 }
 
@@ -688,6 +710,7 @@ main() {
   rebuild_prisma_and_typecheck
   build_apps
   start_pm2_clean
+  run_auth_verification
   write_nginx
   validate_nginx
   validate_runtime_routes

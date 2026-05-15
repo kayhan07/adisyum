@@ -66,6 +66,18 @@ export async function POST(request: Request) {
     : { valid: false, needsRehash: false };
 
   if (!tenant || !['active', 'trial', 'demo'].includes(tenant.status) || !subscription || !user || !passwordResult.valid) {
+    console.warn('[auth/login] failed login diagnostic', {
+      tenantId,
+      username,
+      tenantFound: Boolean(tenant),
+      tenantStatus: tenant?.status ?? null,
+      subscriptionFound: Boolean(subscription),
+      userFound: Boolean(user),
+      passwordHashPresent: Boolean(user?.passwordHash),
+      passwordValid: passwordResult.valid,
+      needsRehash: passwordResult.needsRehash,
+    });
+
     await writeAuditLog({
       tenantId,
       userId: user?.id ?? username,

@@ -1,8 +1,12 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import nextEnv from '@next/env';
 import { Pool } from 'pg';
 import { branchTenantBranchKey, roleTenantKey, subscriptionTenantIdKey, userTenantUsernameKey } from '../lib/db/compound-keys.ts';
 import { hashPassword } from '../lib/auth/password.ts';
+
+const { loadEnvConfig } = nextEnv;
+loadEnvConfig(process.cwd(), true);
 
 const DEFAULT_TENANT_ID = process.env.BOOTSTRAP_TENANT_ID || 'ABN-48291';
 const DEFAULT_USERNAME = process.env.BOOTSTRAP_ADMIN_USERNAME || 'admin';
@@ -25,6 +29,14 @@ function requireDatabaseUrl() {
 const pool = new Pool({ connectionString: requireDatabaseUrl() });
 const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 
+function log(message: string, detail?: unknown) {
+  if (detail === undefined) {
+    console.log(`[bootstrap-admin] ${message}`);
+    return;
+  }
+  console.log(`[bootstrap-admin] ${message}`, JSON.stringify(detail));
+}
+
 async function ensureTenant(input: {
   tenantId: string;
   name: string;
@@ -32,7 +44,7 @@ async function ensureTenant(input: {
   branchName: string;
   system?: boolean;
 }) {
-  await prisma.tenant.upsert({
+  const tenant = await prisma.tenant.upsert({
     where: { tenantId: input.tenantId },
     update: {
       status: 'active',
@@ -47,9 +59,11 @@ async function ensureTenant(input: {
       mainBranchId: null,
       metadata: { bootstrap: true, system: Boolean(input.system) },
     },
+    select: { tenantId: true, status: true, packageType: true, mainBranchId: true },
   });
+  log('tenant ready', tenant);
 
-  await prisma.branch.upsert({
+  const branch = await prisma.branch.upsert({
     where: branchTenantBranchKey(input.tenantId, input.branchId),
     update: {
       name: input.branchName,
@@ -64,7 +78,9 @@ async function ensureTenant(input: {
       active: true,
       metadata: { bootstrap: true, system: Boolean(input.system) },
     },
+    select: { tenantId: true, branchId: true, active: true },
   });
+  log('branch ready', branch);
 
   await prisma.tenant.update({
     where: { tenantId: input.tenantId },
@@ -84,7 +100,7 @@ async function ensureSubscription(tenantId: string, years = 1) {
   });
 
   if (existing) {
-    return prisma.subscription.update({
+    const subscription = await prisma.subscription.update({
       where: subscriptionTenantIdKey(tenantId, existing.id),
       data: {
         status: 'active',
@@ -94,10 +110,13 @@ async function ensureSubscription(tenantId: string, years = 1) {
         branchLimit: 10,
         deletedAt: null,
       },
+      select: { id: true, tenantId: true, status: true, packageType: true, endsAt: true },
     });
+    log('subscription updated', subscription);
+    return subscription;
   }
 
-  return prisma.subscription.create({
+  const subscription = await prisma.subscription.create({
     data: {
       tenantId,
       packageType: 'premium',
@@ -108,13 +127,16 @@ async function ensureSubscription(tenantId: string, years = 1) {
       branchLimit: 10,
       metadata: { bootstrap: true },
     },
+    select: { id: true, tenantId: true, status: true, packageType: true, endsAt: true },
   });
+  log('subscription created', subscription);
+  return subscription;
 }
 
 async function ensureRole(input: { tenantId: string; key: string; name: string; system?: boolean }) {
   const permissions = ['*'] satisfies Prisma.InputJsonArray;
 
-  return prisma.role.upsert({
+  const role = await prisma.role.upsert({
     where: roleTenantKey(input.tenantId, input.key),
     update: {
       name: input.name,
@@ -130,7 +152,10 @@ async function ensureRole(input: { tenantId: string; key: string; name: string; 
       system: Boolean(input.system),
       metadata: { bootstrap: true },
     },
+    select: { tenantId: true, key: true, system: true },
   });
+  log('role ready', role);
+  return role;
 }
 
 async function ensureUser(input: {
@@ -165,11 +190,22 @@ async function ensureUser(input: {
     metadata: { bootstrap: true, system: Boolean(input.system) },
   } satisfies Prisma.UserUncheckedCreateInput;
 
-  return prisma.user.upsert({
+  const user = await prisma.user.upsert({
     where: userTenantUsernameKey(input.tenantId, input.username),
     update,
     create,
+    select: { id: true, tenantId: true, username: true, role: true, branchId: true, active: true, passwordHash: true },
   });
+  log('user ready', {
+    id: user.id,
+    tenantId: user.tenantId,
+    username: user.username,
+    role: user.role,
+    branchId: user.branchId,
+    active: user.active,
+    passwordHashPrefix: user.passwordHash.split('$').slice(0, 2).join('$'),
+  });
+  return user;
 }
 
 async function main() {

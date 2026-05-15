@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "bootstrap:admin": "node --experimental-strip-types scripts/bootstrap-admin.ts",
+    "auth:verify": "node --experimental-strip-types scripts/verify-auth.ts",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",

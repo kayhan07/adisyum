@@ -154,6 +154,16 @@ export async function POST(request: Request) {
   }
 
   if (!passwordResult.valid && !envFallbackValid) {
+    console.warn('[auth/system-admin] failed login diagnostic', {
+      username,
+      userFound: Boolean(user),
+      subscriptionFound: Boolean(subscription),
+      passwordHashPresent: Boolean(user?.passwordHash),
+      passwordValid: passwordResult.valid,
+      needsRehash: passwordResult.needsRehash,
+      envFallbackConfigured: Boolean(envPassword),
+    });
+
     await writeAuditLog({
       tenantId: SYSTEM_TENANT_ID,
       userId: username,
