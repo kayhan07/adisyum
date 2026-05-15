@@ -1,11 +1,12 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-import nextEnv from '@next/env';
+import { createRequire } from 'node:module';
 import { Pool } from 'pg';
 import { branchTenantBranchKey, roleTenantKey, subscriptionTenantIdKey, userTenantUsernameKey } from '../lib/db/compound-keys.ts';
 import { hashPassword } from '../lib/auth/password.ts';
 
-const { loadEnvConfig } = nextEnv;
+const require = createRequire(import.meta.url);
+const { loadEnvConfig } = require('@next/env') as typeof import('@next/env');
 loadEnvConfig(process.cwd(), true);
 
 const DEFAULT_TENANT_ID = process.env.BOOTSTRAP_TENANT_ID || 'ABN-48291';
