@@ -38,7 +38,7 @@ run_app() {
   if [[ "$(id -un)" == "${APP_USER}" ]]; then
     run "$@"
   else
-    run sudo -E -H -u "${APP_USER}" "$@"
+    run sudo -E -H -u "${APP_USER}" env "PATH=${PATH}" "NVM_DIR=${NVM_DIR:-}" "$@"
   fi
 }
 
@@ -48,6 +48,104 @@ require_root() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"
+}
+
+user_home() {
+  local user="$1"
+  getent passwd "${user}" 2>/dev/null | cut -d: -f6 || true
+}
+
+prepend_path() {
+  local dir="$1"
+  [[ -d "${dir}" ]] || return 0
+  case ":${PATH}:" in
+    *":${dir}:"*) ;;
+    *) export PATH="${dir}:${PATH}" ;;
+  esac
+}
+
+source_nvm_if_present() {
+  local dir="$1"
+  [[ -n "${dir}" && -s "${dir}/nvm.sh" ]] || return 1
+  export NVM_DIR="${dir}"
+  # shellcheck disable=SC1090
+  source "${NVM_DIR}/nvm.sh"
+  return 0
+}
+
+prepend_latest_nvm_node_bin() {
+  local nvm_dir="$1"
+  local latest=""
+  [[ -d "${nvm_dir}/versions/node" ]] || return 0
+  latest="$(find "${nvm_dir}/versions/node" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -V | tail -n 1 || true)"
+  [[ -n "${latest}" ]] || return 0
+  prepend_path "${latest}/bin"
+}
+
+bootstrap_node_toolchain() {
+  log "Bootstrapping Node/npm/npx/pm2 toolchain for sudo/NVM environment"
+
+  local current_home app_home candidate
+  current_home="${HOME:-}"
+  app_home="$(user_home "${APP_USER}")"
+
+  export PATH="${PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}"
+  prepend_path "/usr/local/bin"
+  prepend_path "/usr/bin"
+  prepend_path "/bin"
+
+  for candidate in \
+    "${NVM_DIR:-}" \
+    "${current_home}/.nvm" \
+    "${app_home}/.nvm" \
+    "/root/.nvm"; do
+    if source_nvm_if_present "${candidate}"; then
+      log "Loaded NVM from ${candidate}"
+      break
+    fi
+  done
+
+  if command -v nvm >/dev/null 2>&1; then
+    if [[ -f "${APP_DIR}/.nvmrc" ]]; then
+      (cd "${APP_DIR}" && nvm use --silent) || true
+    fi
+    nvm use --silent default >/dev/null 2>&1 || true
+    nvm use --silent node >/dev/null 2>&1 || true
+  fi
+
+  for candidate in \
+    "${NVM_DIR:-}" \
+    "${current_home}/.nvm" \
+    "${app_home}/.nvm" \
+    "/root/.nvm"; do
+    prepend_latest_nvm_node_bin "${candidate}"
+  done
+
+  hash -r
+
+  log "PATH=${PATH}"
+  log "node=$(command -v node || true)"
+  log "npm=$(command -v npm || true)"
+  log "npx=$(command -v npx || true)"
+  log "pm2=$(command -v pm2 || true)"
+  node -v 2>/dev/null | sed 's/^/[node-version] /' || true
+  npm -v 2>/dev/null | sed 's/^/[npm-version] /' || true
+
+  command -v node >/dev/null 2>&1 || fail "Missing required command after NVM bootstrap: node"
+  command -v npm >/dev/null 2>&1 || fail "Missing required command after NVM bootstrap: npm"
+  command -v npx >/dev/null 2>&1 || fail "Missing required command after NVM bootstrap: npx"
+}
+
+ensure_pm2_toolchain() {
+  if ! command -v pm2 >/dev/null 2>&1; then
+    log "PM2 not found in repaired PATH; installing PM2 with resolved npm"
+    npm install -g pm2
+    hash -r
+  fi
+
+  command -v pm2 >/dev/null 2>&1 || fail "Missing required command after PM2 install: pm2"
+  log "pm2=$(command -v pm2)"
+  pm2 -v 2>/dev/null | sed 's/^/[pm2-version] /' || true
 }
 
 require_layout() {
@@ -685,14 +783,16 @@ EOF
 main() {
   require_root
   require_command openssl
+  require_command getent
+  bootstrap_node_toolchain
   require_command node
   require_command npm
   require_command npx
+  ensure_pm2_toolchain
   require_command pm2
   require_command nginx
   require_command curl
   require_command grep
-  require_command getent
   require_command ss
   require_command systemctl
   require_layout
