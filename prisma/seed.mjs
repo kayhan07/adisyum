@@ -1,14 +1,11 @@
 import { pbkdf2Sync, randomBytes } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { Pool } from 'pg';
 
 if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL is required.');
 }
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
+const prisma = new PrismaClient();
 
 const tenantId = process.env.SEED_TENANT_ID || 'ABN-48291';
 
@@ -121,5 +118,4 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
-    await pool.end();
   });

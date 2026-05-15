@@ -1,11 +1,8 @@
 import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { Pool } from 'pg';
 import { recordSlowQuery } from '@/lib/observability/metrics-store';
 import { logError, logWarn } from '@/lib/observability/structured-logger';
 
 type PrismaGlobal = typeof globalThis & {
-  __adisyumPgPool?: Pool;
   __adisyumPrisma?: PrismaClient;
   __adisyumPrismaEventsAttached?: boolean;
 };
@@ -13,36 +10,8 @@ type PrismaGlobal = typeof globalThis & {
 const globalForPrisma = globalThis as PrismaGlobal;
 const slowQueryThreshold = Number(process.env.SLOW_QUERY_THRESHOLD_MS ?? '300');
 
-function getDatabaseUrl() {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
-    throw new Error('DATABASE_URL is required to initialize Prisma.');
-  }
-  return databaseUrl;
-}
-
-function getPool() {
-  if (globalForPrisma.__adisyumPgPool) return globalForPrisma.__adisyumPgPool;
-
-  const pool = new Pool({
-    connectionString: getDatabaseUrl(),
-    max: Number(process.env.POSTGRES_POOL_MAX ?? '10'),
-    idleTimeoutMillis: Number(process.env.POSTGRES_IDLE_TIMEOUT_MS ?? '30000'),
-    connectionTimeoutMillis: Number(process.env.POSTGRES_CONNECT_TIMEOUT_MS ?? '10000'),
-  });
-
-  pool.on('error', (error) => {
-    logError({ service: 'postgres', message: error.message, context: { code: (error as { code?: string }).code } });
-  });
-
-  globalForPrisma.__adisyumPgPool = pool;
-  return pool;
-}
-
 function createPrismaClient() {
-  const adapter = new PrismaPg(getPool());
   return new PrismaClient({
-    adapter,
     log: [
       { emit: 'event', level: 'error' },
       { emit: 'event', level: 'warn' },

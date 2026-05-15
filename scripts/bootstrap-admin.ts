@@ -1,7 +1,5 @@
 import { Prisma, PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
 import { createRequire } from 'node:module';
-import { Pool } from 'pg';
 import { branchTenantBranchKey, roleTenantKey, subscriptionTenantIdKey, userTenantUsernameKey } from '../lib/db/compound-keys.ts';
 import { hashPassword } from '../lib/auth/password.ts';
 
@@ -27,8 +25,8 @@ function requireDatabaseUrl() {
   return databaseUrl;
 }
 
-const pool = new Pool({ connectionString: requireDatabaseUrl() });
-const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
+requireDatabaseUrl();
+const prisma = new PrismaClient();
 
 function log(message: string, detail?: unknown) {
   if (detail === undefined) {
@@ -256,5 +254,4 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
-    await pool.end();
   });
