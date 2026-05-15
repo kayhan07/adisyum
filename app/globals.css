@@ -1,4 +1,4 @@
-﻿@tailwind base;
+@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
@@ -54,7 +54,7 @@ body {
     linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 20%),
     var(--canvas);
   color: var(--ink);
-  font-family: var(--font-sans), sans-serif;
+  font-family: var(--font-sans), Inter, system-ui, Arial, sans-serif;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -127,7 +127,7 @@ select:focus-visible {
 }
 
 .font-display {
-  font-family: var(--font-display), var(--font-sans), sans-serif;
+  font-family: var(--font-display), var(--font-sans), Inter, system-ui, Arial, sans-serif;
 }
 
 .app-panel,

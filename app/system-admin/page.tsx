@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Activity, BarChart3, Building2, CreditCard, FileText, HandCoins, LayoutDashboard, Package, Plus, ReceiptText, RefreshCw, ShieldCheck, Trash2, Users } from 'lucide-react';
@@ -30,8 +30,8 @@ const modules: Array<{ id: AdminModule; label: string; icon: typeof LayoutDashbo
   { id: 'tenants', label: 'Aboneler', icon: Building2 },
   { id: 'packages', label: 'Paketler', icon: Package },
   { id: 'dealers', label: 'Bayi / Temsilci', icon: HandCoins },
-  { id: 'sales', label: 'Sat─▒┼ş Takibi', icon: Users },
-  { id: 'payments', label: '├ûdeme / Yenileme', icon: RefreshCw },
+  { id: 'sales', label: 'Satış Takibi', icon: Users },
+  { id: 'payments', label: 'Ödeme / Yenileme', icon: RefreshCw },
   { id: 'finance', label: 'Finans', icon: CreditCard },
   { id: 'invoices', label: 'Faturalar', icon: FileText },
   { id: 'reports', label: 'Raporlar', icon: BarChart3 },
@@ -82,7 +82,7 @@ function LoginCard({ onLogin }: { onLogin: () => void }) {
 
     setLoading(false);
     if (!response?.ok) {
-      setError('Admin kullan─▒c─▒ ad─▒ veya ┼şifre hatal─▒.');
+      setError('Admin kullanıcı adı veya şifre hatalı.');
       return;
     }
 
@@ -96,7 +96,7 @@ function LoginCard({ onLogin }: { onLogin: () => void }) {
           <ShieldCheck className="h-7 w-7 text-blue-300" />
           <div>
             <h1 className="text-2xl font-semibold">System Admin ERP</h1>
-            <p className="mt-1 text-sm text-slate-300">Sat─▒┼ş, fatura ve abonelik kontrol paneli.</p>
+            <p className="mt-1 text-sm text-slate-300">Satış, fatura ve abonelik kontrol paneli.</p>
           </div>
         </div>
         <div className="mt-6 grid gap-3">
@@ -104,7 +104,7 @@ function LoginCard({ onLogin }: { onLogin: () => void }) {
           <input type="password" value={adminPass} onChange={(event) => setAdminPass(event.target.value)} placeholder="admin123" className="h-12 rounded-2xl border border-white/10 bg-[#0B1220] px-4 font-semibold text-white outline-none" />
         </div>
         {error ? <p className="mt-3 rounded-2xl bg-rose-500/15 px-4 py-3 text-sm font-semibold text-rose-100">{error}</p> : null}
-        <button type="button" onClick={() => void login()} className="mt-5 h-12 w-full rounded-2xl bg-blue-600 text-sm font-semibold text-white disabled:opacity-60" disabled={loading}>{loading ? 'Giriş yapılıyor…' : 'Giri┼ş yap'}</button>
+        <button type="button" onClick={() => void login()} className="mt-5 h-12 w-full rounded-2xl bg-blue-600 text-sm font-semibold text-white disabled:opacity-60" disabled={loading}>{loading ? 'Giriş yapılıyor…' : 'Giriş yap'}</button>
       </section>
     </main>
   );
@@ -118,9 +118,9 @@ export default function SystemAdminPage() {
   const [tenantDraft, setTenantDraft] = useState<TenantDraft>(() => createAdminTenantDraft());
   const [dealerDraft, setDealerDraft] = useState<Omit<AdminDealer, 'id'>>({ name: '', type: 'dealer', commission_rate: 20, phone: '', email: '', active: true });
   const [packageDraft, setPackageDraft] = useState<AdminPackage>(() => createPackageDraft());
-  const [financeDraft, setFinanceDraft] = useState<Omit<AdminFinanceTransaction, 'id'>>({ type: 'income', source: 'Abonelik tahsilat─▒', tenant_id: '', amount: 0, date: today(), note: '' });
+  const [financeDraft, setFinanceDraft] = useState<Omit<AdminFinanceTransaction, 'id'>>({ type: 'income', source: 'Abonelik tahsilatı', tenant_id: '', amount: 0, date: today(), note: '' });
   const [invoiceDraft, setInvoiceDraft] = useState<Omit<AdminInvoice, 'id' | 'invoice_no'>>({ tenant_id: '', type: 'subscription', amount: 0, status: 'draft', issue_date: today(), due_date: today() });
-  const [saleDraft, setSaleDraft] = useState<Omit<AdminSale, 'id' | 'commission_amount' | 'commission_status'>>({ tenant_id: '', package_id: 'pkg-mini', seller: 'Merkez Sat─▒┼ş', dealer_id: 'dealer-center', amount: 0, commission_rate: 0, date: today() });
+  const [saleDraft, setSaleDraft] = useState<Omit<AdminSale, 'id' | 'commission_amount' | 'commission_status'>>({ tenant_id: '', package_id: 'pkg-mini', seller: 'Merkez Satış', dealer_id: 'dealer-center', amount: 0, commission_rate: 0, date: today() });
   const [paymentDraft, setPaymentDraft] = useState<Omit<AdminPayment, 'id' | 'status' | 'transaction_id' | 'date'>>({ tenant_id: '', invoice_id: '', amount: 0, provider: 'manual' });
 
   useEffect(() => {
@@ -237,7 +237,7 @@ export default function SystemAdminPage() {
     const sale: AdminSale = { id: saleId, ...saleDraft, dealer_id: dealer?.id, seller: dealer?.name ?? saleDraft.seller, commission_rate: commissionRate, commission_amount: commissionAmount, commission_status: commissionAmount > 0 ? 'pending' : 'paid' };
     const commission = { id: `com-${Date.now()}`, sale_id: saleId, dealer_id: dealer?.id ?? '', tenant_id: sale.tenant_id, amount: commissionAmount, rate: commissionRate, status: sale.commission_status, due_date: addDays(today(), 7) } as const;
     commit({ ...state, sales: [sale, ...state.sales], commissions: [commission, ...state.commissions] });
-    setSaleDraft({ tenant_id: '', package_id: 'pkg-mini', seller: 'Merkez Sat─▒┼ş', dealer_id: 'dealer-center', amount: 0, commission_rate: 0, date: today() });
+    setSaleDraft({ tenant_id: '', package_id: 'pkg-mini', seller: 'Merkez Satış', dealer_id: 'dealer-center', amount: 0, commission_rate: 0, date: today() });
   }
 
   function processPayment(success: boolean) {
@@ -249,7 +249,7 @@ export default function SystemAdminPage() {
       status: success ? 'success' : 'failed',
       transaction_id: `${paymentDraft.provider.toUpperCase()}-${Date.now()}`,
       date: today(),
-      error: success ? undefined : '├ûdeme sa─şlay─▒c─▒ ba┼şar─▒s─▒z yan─▒t d├Ând├╝rd├╝.',
+      error: success ? undefined : 'Ödeme sağlayıcı başarısız yanıt döndürdü.',
     };
 
     let nextState: SystemAdminState = {
@@ -275,7 +275,7 @@ export default function SystemAdminPage() {
       nextState = {
         ...nextState,
         invoices: [invoice, ...state.invoices.map((item) => item.id === payment.invoice_id ? { ...item, status: 'paid' as const } : item)],
-        finance: [{ id: `fin-${Date.now()}`, type: 'income', source: 'Online ├Âdeme', tenant_id: payment.tenant_id, amount: payment.amount, date: today(), note: payment.transaction_id }, ...state.finance],
+        finance: [{ id: `fin-${Date.now()}`, type: 'income', source: 'Online ödeme', tenant_id: payment.tenant_id, amount: payment.amount, date: today(), note: payment.transaction_id }, ...state.finance],
         renewals: tenant ? [{ id: `ren-${Date.now()}`, tenant_id: tenant.tenant_id, old_end_date: oldEndDate, new_end_date: newEndDate, payment_id: payment.id, status: 'completed', completed_at: today() }, ...state.renewals] : state.renewals,
         tenants: tenant ? state.tenants.map((item) => item.tenant_id === tenant.tenant_id ? { ...item, end_date: newEndDate, status: item.demo_enabled ? 'demo' : 'active' } : item) : state.tenants,
       };
@@ -288,7 +288,7 @@ export default function SystemAdminPage() {
   function addFinanceTransaction() {
     if (!financeDraft.source.trim() || financeDraft.amount <= 0) return;
     commit({ ...state, finance: [{ id: `fin-${Date.now()}`, ...financeDraft }, ...state.finance] });
-    setFinanceDraft({ type: 'income', source: 'Abonelik tahsilat─▒', tenant_id: '', amount: 0, date: today(), note: '' });
+    setFinanceDraft({ type: 'income', source: 'Abonelik tahsilatı', tenant_id: '', amount: 0, date: today(), note: '' });
   }
 
   function addInvoice() {
@@ -305,7 +305,7 @@ export default function SystemAdminPage() {
         <aside className="border-r border-white/10 bg-[#111827] p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-blue-200">System Admin</p>
           <h1 className="mt-2 text-2xl font-semibold">SaaS ERP</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-400">Sat─▒┼ş, fatura, bayi ve abonelik sistemi.</p>
+          <p className="mt-2 text-sm leading-6 text-slate-400">Satış, fatura, bayi ve abonelik sistemi.</p>
           <nav className="mt-8 grid gap-2">
             {modules.map((module) => {
               const Icon = module.icon;
@@ -328,7 +328,7 @@ export default function SystemAdminPage() {
             </div>
             <div className="flex items-center gap-3">
               <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-slate-200">
-                Tenant verisi ayr─▒, system-admin gelir verisi ayr─▒ saklan─▒r.
+                Tenant verisi ayrı, system-admin gelir verisi ayrı saklanır.
               </div>
               <button
                 type="button"
@@ -365,11 +365,11 @@ function Dashboard({ dashboard, state }: { dashboard: any; state: SystemAdminSta
           ['Toplam gelir', formatAdminMoney(dashboard.revenue)],
           ['Aktif abonelik', dashboard.activeSubscriptions],
           ['Komisyon', formatAdminMoney(dashboard.commissions)],
-          ['Bekleyen ├Âdeme', formatAdminMoney(dashboard.pendingPayments)],
-          ['Bekleyen hak edi┼ş', formatAdminMoney(dashboard.pendingCommissions)],
+          ['Bekleyen ödeme', formatAdminMoney(dashboard.pendingPayments)],
+          ['Bekleyen hak ediş', formatAdminMoney(dashboard.pendingCommissions)],
         ].map(([label, value]) => <Metric key={label} label={String(label)} value={String(value)} />)}
       </div>
-      <DataTable headers={['Abone', 'Biti┼ş', 'Yenileme', 'Uyar─▒']} rows={state.tenants.map((tenant) => [tenant.company_name, tenant.end_date, tenant.auto_renew ? 'Otomatik' : 'Manuel', createRenewalNotice(tenant)])} />
+      <DataTable headers={['Abone', 'Bitiş', 'Yenileme', 'Uyarı']} rows={state.tenants.map((tenant) => [tenant.company_name, tenant.end_date, tenant.auto_renew ? 'Otomatik' : 'Manuel', createRenewalNotice(tenant)])} />
     </div>
   );
 }
@@ -422,10 +422,10 @@ function TenantsModule({ state, tenantDraft, setTenantDraft, selectedPackage, sa
   return (
     <div className="mt-6 grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
       <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
-        <h3 className="text-xl font-semibold">Yeni abone olu┼ştur</h3>
+        <h3 className="text-xl font-semibold">Yeni abone oluştur</h3>
         <div className="mt-5 grid gap-3">
           <input value={tenantDraft.tenant_id} onChange={(e) => setTenantDraft((c: TenantDraft) => ({ ...c, tenant_id: e.target.value }))} className="input-dark" />
-          <input value={tenantDraft.company_name} onChange={(e) => setTenantDraft((c: TenantDraft) => ({ ...c, company_name: e.target.value }))} placeholder="Firma ad─▒" className="input-dark" />
+          <input value={tenantDraft.company_name} onChange={(e) => setTenantDraft((c: TenantDraft) => ({ ...c, company_name: e.target.value }))} placeholder="Firma adı" className="input-dark" />
           <select value={tenantDraft.package_id} onChange={(e) => { const pkg = selectedPackage(e.target.value); setTenantDraft((c: TenantDraft) => ({ ...c, package_id: pkg.id, end_date: addDays(c.start_date, pkg.duration_days) })); }} className="input-dark">
             {state.packages.map((pkg: AdminPackage) => <option key={pkg.id} value={pkg.id}>{pkg.name} - {formatAdminMoney(pkg.price)}</option>)}
           </select>
@@ -438,17 +438,17 @@ function TenantsModule({ state, tenantDraft, setTenantDraft, selectedPackage, sa
             <input type="date" value={tenantDraft.end_date} onChange={(e) => setTenantDraft((c: TenantDraft) => ({ ...c, end_date: e.target.value }))} className="input-dark" />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <input value={tenantDraft.admin_username} onChange={(e) => setTenantDraft((c: TenantDraft) => ({ ...c, admin_username: e.target.value }))} placeholder="─░lk kullan─▒c─▒ ad─▒" className="input-dark" />
-            <input type="password" value={tenantDraft.admin_password} onChange={(e) => setTenantDraft((c: TenantDraft) => ({ ...c, admin_password: e.target.value }))} placeholder="─░lk ┼şifre" className="input-dark" />
+            <input value={tenantDraft.admin_username} onChange={(e) => setTenantDraft((c: TenantDraft) => ({ ...c, admin_username: e.target.value }))} placeholder="İlk kullanıcı adı" className="input-dark" />
+            <input type="password" value={tenantDraft.admin_password} onChange={(e) => setTenantDraft((c: TenantDraft) => ({ ...c, admin_password: e.target.value }))} placeholder="İlk şifre" className="input-dark" />
           </div>
           <label className="check-row">Otomatik yenileme <input type="checkbox" checked={tenantDraft.auto_renew} onChange={(e) => setTenantDraft((c: TenantDraft) => ({ ...c, auto_renew: e.target.checked }))} /></label>
           <label className="check-row">Demo abonelik <input type="checkbox" checked={tenantDraft.demo_enabled} onChange={(e) => setTenantDraft((c: TenantDraft) => ({ ...c, demo_enabled: e.target.checked }))} /></label>
         </div>
-        <button type="button" onClick={saveTenant} className="btn-green"><Plus className="h-4 w-4" /> Abone olu┼ştur</button>
-        <p className="mt-3 text-xs leading-5 text-slate-400">Yeni abone i├ğin bo┼ş tenant veri alan─▒ a├ğ─▒l─▒r. Varsay─▒lan ├╝r├╝n veya m├╝┼şteri eklenmez.</p>
+        <button type="button" onClick={saveTenant} className="btn-green"><Plus className="h-4 w-4" /> Abone oluştur</button>
+        <p className="mt-3 text-xs leading-5 text-slate-400">Yeni abone için boş tenant veri alanı açılır. Varsayılan ürün veya müşteri eklenmez.</p>
       </article>
       <div className="grid gap-4">
-        <DataTable headers={['Firma', 'Kullan─▒c─▒', 'Paket', 'Bayi', 'Tarih', 'Yenileme', '']} rows={state.tenants.map((tenant: AdminTenant) => [
+        <DataTable headers={['Firma', 'Kullanıcı', 'Paket', 'Bayi', 'Tarih', 'Yenileme', '']} rows={state.tenants.map((tenant: AdminTenant) => [
         <button key="firm" type="button" onClick={() => setSelectedTenantId(tenant.tenant_id)} className={`w-full rounded-xl px-3 py-2 text-left transition ${selectedTenantId === tenant.tenant_id ? 'bg-blue-600/20 ring-1 ring-blue-400/40' : 'bg-white/0 hover:bg-white/5'}`}><p className="font-semibold">{tenant.company_name}</p><p className="text-xs text-slate-400">{tenant.tenant_id}</p></button>,
         tenant.admin_username,
         selectedPackage(tenant.package_id)?.name ?? tenant.package_type,
@@ -462,26 +462,26 @@ function TenantsModule({ state, tenantDraft, setTenantDraft, selectedPackage, sa
           <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Abone d├╝zenle</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Abone düzenle</p>
                 <h3 className="mt-2 text-2xl font-semibold">{editDraft.company_name || editDraft.tenant_id}</h3>
               </div>
               <button type="button" onClick={saveEditDraft} className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${editSaved ? 'bg-emerald-600' : 'bg-blue-600 hover:bg-blue-500'}`}>
-                {editSaved ? 'Ô£ô Kaydedildi' : 'Kaydet'}
+                {editSaved ? 'Kaydedildi' : 'Kaydet'}
               </button>
             </div>
             <div className="mt-5 grid gap-3">
               <label className="grid gap-1">
-                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Firma ad─▒</span>
+                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Firma adı</span>
                 <input value={editDraft.company_name} onChange={(e) => setEditDraft((c) => c ? { ...c, company_name: e.target.value } : c)} className="input-dark" />
               </label>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="grid gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Kullan─▒c─▒ ad─▒</span>
+                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Kullanıcı adı</span>
                   <input value={editDraft.admin_username} onChange={(e) => setEditDraft((c) => c ? { ...c, admin_username: e.target.value } : c)} className="input-dark" />
                 </label>
                 <label className="grid gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">┼Şifre</span>
-                  <input type="password" value={editDraft.admin_password} onChange={(e) => setEditDraft((c) => c ? { ...c, admin_password: e.target.value } : c)} placeholder="ÔÇóÔÇóÔÇóÔÇóÔÇóÔÇóÔÇóÔÇó" className="input-dark" />
+                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Şifre</span>
+                  <input type="password" value={editDraft.admin_password} onChange={(e) => setEditDraft((c) => c ? { ...c, admin_password: e.target.value } : c)} placeholder="********" className="input-dark" />
                 </label>
               </div>
               <label className="grid gap-1">
@@ -501,18 +501,18 @@ function TenantsModule({ state, tenantDraft, setTenantDraft, selectedPackage, sa
                 <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Durum</span>
                 <select value={editDraft.status} onChange={(e) => setEditDraft((c) => c ? { ...c, status: e.target.value as AdminTenant['status'] } : c)} className="input-dark">
                   <option value="active">Aktif</option>
-                  <option value="suspended">Ask─▒ya al─▒nd─▒</option>
-                  <option value="cancelled">─░ptal edildi</option>
+                  <option value="suspended">Askıya alındı</option>
+                  <option value="cancelled">İptal edildi</option>
                   <option value="trial">Deneme</option>
                 </select>
               </label>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="grid gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Ba┼şlang─▒├ğ</span>
+                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Başlangıç</span>
                   <input type="date" value={editDraft.start_date} onChange={(e) => setEditDraft((c) => c ? { ...c, start_date: e.target.value } : c)} className="input-dark" />
                 </label>
                 <label className="grid gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Biti┼ş</span>
+                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Bitiş</span>
                   <input type="date" value={editDraft.end_date} onChange={(e) => setEditDraft((c) => c ? { ...c, end_date: e.target.value } : c)} className="input-dark" />
                 </label>
               </div>
@@ -525,7 +525,7 @@ function TenantsModule({ state, tenantDraft, setTenantDraft, selectedPackage, sa
                 <p className="mt-1 text-sm font-semibold text-slate-300">{editDraft.tenant_id}</p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Olu┼şturulma</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Oluşturulma</p>
                 <p className="mt-1 text-sm font-semibold text-slate-300">{new Date(editDraft.created_at).toLocaleString('tr-TR')}</p>
               </div>
             </div>
@@ -553,16 +553,16 @@ function PackagesModule({ state, packageDraft, setPackageDraft, savePackage, edi
     <div className="mt-6 grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
       <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-xl font-semibold">{isEditing ? 'Paket d├╝zenle' : 'Paket olu┼ştur'}</h3>
+          <h3 className="text-xl font-semibold">{isEditing ? 'Paket düzenle' : 'Paket oluştur'}</h3>
           {isEditing ? <button type="button" onClick={resetPackageDraft} className="rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold text-slate-100">Yeni paket</button> : null}
         </div>
         <div className="mt-5 grid gap-3">
-          <input value={packageDraft.name} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, name: e.target.value }))} placeholder="Paket ad─▒" className="input-dark" />
+          <input value={packageDraft.name} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, name: e.target.value }))} placeholder="Paket adı" className="input-dark" />
           <select value={packageDraft.package_type} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, package_type: e.target.value as PackageType, modules: getDefaultModulesForPackageType(e.target.value as PackageType) }))} className="input-dark"><option value="mini">Mini</option><option value="gold">Gold</option><option value="premium">Premium</option></select>
-          <input type="number" value={packageDraft.price} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, price: Number(e.target.value) }))} placeholder="Ayl─▒k fiyat" className="input-dark" />
-          <input type="number" value={packageDraft.duration_days} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, duration_days: Number(e.target.value) }))} placeholder="S├╝re / g├╝n" className="input-dark" />
+          <input type="number" value={packageDraft.price} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, price: Number(e.target.value) }))} placeholder="Aylık fiyat" className="input-dark" />
+          <input type="number" value={packageDraft.duration_days} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, duration_days: Number(e.target.value) }))} placeholder="Süre / gün" className="input-dark" />
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Pakete dahil mod├╝ller</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Pakete dahil modüller</p>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {PACKAGE_MODULE_OPTIONS.map((module) => (
                 <label key={module.key} className="flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/40 px-3 py-3 text-sm text-slate-200">
@@ -575,13 +575,13 @@ function PackagesModule({ state, packageDraft, setPackageDraft, savePackage, edi
               ))}
             </div>
           </div>
-          <textarea value={packageDraft.features.join('\n')} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, features: e.target.value.split(/\r?\n/).filter(Boolean) }))} placeholder="├ûzellikler" className="input-dark min-h-28 py-3" />
+          <textarea value={packageDraft.features.join('\n')} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, features: e.target.value.split(/\r?\n/).filter(Boolean) }))} placeholder="Özellikler" className="input-dark min-h-28 py-3" />
         </div>
-        <button type="button" onClick={savePackage} className="btn-blue">{isEditing ? 'De─şi┼şiklikleri kaydet' : 'Paketi kaydet'}</button>
+        <button type="button" onClick={savePackage} className="btn-blue">{isEditing ? 'Değişiklikleri kaydet' : 'Paketi kaydet'}</button>
       </article>
       <div className="grid gap-4 md:grid-cols-3">{state.packages.map((pkg: AdminPackage) => {
         const usageCount = state.tenants.filter((tenant: AdminTenant) => tenant.package_id === pkg.id).length;
-        return <article key={pkg.id} className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5"><p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-200">{pkg.package_type}</p><h3 className="mt-2 text-2xl font-semibold">{pkg.name}</h3><p className="mt-2 text-sm text-slate-400">Paket fiyat─▒</p><p className="mt-1 text-3xl font-semibold">{formatAdminMoney(pkg.price)}</p><p className="mt-1 text-sm text-slate-400">{pkg.duration_days} g├╝n</p><div className="mt-3 text-xs font-semibold text-slate-400">Ba─şl─▒ abone: {usageCount}</div><div className="mt-4 flex flex-wrap gap-2">{pkg.modules.map((module) => <span key={module} className="rounded-full bg-blue-500/15 px-3 py-1 text-xs font-semibold text-blue-100">{PACKAGE_MODULE_OPTIONS.find((item) => item.key === module)?.label ?? module}</span>)}</div><div className="mt-4 space-y-2">{pkg.features.map((f) => <p key={f} className="rounded-xl bg-white/5 px-3 py-2 text-sm text-slate-300">{f}</p>)}</div><div className="mt-4 grid grid-cols-2 gap-2"><button type="button" onClick={() => editPackage(pkg)} className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white">D├╝zenle</button><button type="button" onClick={() => deletePackage(pkg.id)} disabled={usageCount > 0} className={`rounded-xl px-3 py-2 text-xs font-semibold text-white ${usageCount > 0 ? 'bg-slate-700/60 cursor-not-allowed' : 'bg-rose-600'}`}>Sil</button></div>{usageCount > 0 ? <p className="mt-2 text-xs text-amber-200">Bu paket kullan─▒mda oldu─şu i├ğin silinemez.</p> : null}</article>;
+        return <article key={pkg.id} className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5"><p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-200">{pkg.package_type}</p><h3 className="mt-2 text-2xl font-semibold">{pkg.name}</h3><p className="mt-2 text-sm text-slate-400">Paket fiyatı</p><p className="mt-1 text-3xl font-semibold">{formatAdminMoney(pkg.price)}</p><p className="mt-1 text-sm text-slate-400">{pkg.duration_days} gün</p><div className="mt-3 text-xs font-semibold text-slate-400">Bağlı abone: {usageCount}</div><div className="mt-4 flex flex-wrap gap-2">{pkg.modules.map((module) => <span key={module} className="rounded-full bg-blue-500/15 px-3 py-1 text-xs font-semibold text-blue-100">{PACKAGE_MODULE_OPTIONS.find((item) => item.key === module)?.label ?? module}</span>)}</div><div className="mt-4 space-y-2">{pkg.features.map((f) => <p key={f} className="rounded-xl bg-white/5 px-3 py-2 text-sm text-slate-300">{f}</p>)}</div><div className="mt-4 grid grid-cols-2 gap-2"><button type="button" onClick={() => editPackage(pkg)} className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white">Düzenle</button><button type="button" onClick={() => deletePackage(pkg.id)} disabled={usageCount > 0} className={`rounded-xl px-3 py-2 text-xs font-semibold text-white ${usageCount > 0 ? 'bg-slate-700/60 cursor-not-allowed' : 'bg-rose-600'}`}>Sil</button></div>{usageCount > 0 ? <p className="mt-2 text-xs text-amber-200">Bu paket kullanımda olduğu için silinemez.</p> : null}</article>;
       })}</div>
     </div>
   );
@@ -591,26 +591,26 @@ function DealersModule({ state, dealerDraft, setDealerDraft, saveDealer, commit 
   return (
     <div className="mt-6 grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
       <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
-        <h3 className="text-xl font-semibold">Bayi / temsilci olu┼ştur</h3>
+        <h3 className="text-xl font-semibold">Bayi / temsilci oluştur</h3>
         <div className="mt-5 grid gap-3">
           <input value={dealerDraft.name} onChange={(e) => setDealerDraft((c: any) => ({ ...c, name: e.target.value }))} placeholder="Ad / firma" className="input-dark" />
-          <select value={dealerDraft.type} onChange={(e) => setDealerDraft((c: any) => ({ ...c, type: e.target.value }))} className="input-dark"><option value="dealer">Bayi</option><option value="representative">Sat─▒┼ş temsilcisi</option></select>
+          <select value={dealerDraft.type} onChange={(e) => setDealerDraft((c: any) => ({ ...c, type: e.target.value }))} className="input-dark"><option value="dealer">Bayi</option><option value="representative">Satış temsilcisi</option></select>
           <input type="number" value={dealerDraft.commission_rate} onChange={(e) => setDealerDraft((c: any) => ({ ...c, commission_rate: Number(e.target.value) }))} placeholder="Komisyon %" className="input-dark" />
           <input value={dealerDraft.phone} onChange={(e) => setDealerDraft((c: any) => ({ ...c, phone: e.target.value }))} placeholder="Telefon" className="input-dark" />
           <input value={dealerDraft.email} onChange={(e) => setDealerDraft((c: any) => ({ ...c, email: e.target.value }))} placeholder="E-posta" className="input-dark" />
         </div>
         <button type="button" onClick={saveDealer} className="btn-blue">Kaydet</button>
       </article>
-      <DataTable headers={['Ad', 'Tip', 'Komisyon', 'Bekleyen hak edi┼ş', 'Durum']} rows={state.dealers.map((dealer: AdminDealer) => {
+      <DataTable headers={['Ad', 'Tip', 'Komisyon', 'Bekleyen hak ediş', 'Durum']} rows={state.dealers.map((dealer: AdminDealer) => {
         const pending = state.commissions.filter((item: any) => item.dealer_id === dealer.id && item.status === 'pending').reduce((sum: number, item: any) => sum + item.amount, 0);
         return [dealer.name, dealer.type === 'dealer' ? 'Bayi' : 'Temsilci', `%${dealer.commission_rate}`, formatAdminMoney(pending), dealer.active ? 'Aktif' : 'Pasif'];
       })} />
-      <DataTable headers={['Sat─▒┼ş', 'Bayi', 'Abone', 'Hak edi┼ş', 'Durum']} rows={state.commissions.map((item: any) => [
+      <DataTable headers={['Satış', 'Bayi', 'Abone', 'Hak ediş', 'Durum']} rows={state.commissions.map((item: any) => [
         item.sale_id,
         state.dealers.find((dealer: AdminDealer) => dealer.id === item.dealer_id)?.name ?? '-',
         item.tenant_id,
         formatAdminMoney(item.amount),
-        <button key={item.id} type="button" onClick={() => commit({ ...state, commissions: state.commissions.map((com: any) => com.id === item.id ? { ...com, status: 'paid', paid_at: today() } : com), sales: state.sales.map((sale: AdminSale) => sale.id === item.sale_id ? { ...sale, commission_status: 'paid' } : sale) })} className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold">{item.status === 'paid' ? '├ûdendi' : '├ûde'}</button>,
+        <button key={item.id} type="button" onClick={() => commit({ ...state, commissions: state.commissions.map((com: any) => com.id === item.id ? { ...com, status: 'paid', paid_at: today() } : com), sales: state.sales.map((sale: AdminSale) => sale.id === item.sale_id ? { ...sale, commission_status: 'paid' } : sale) })} className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold">{item.status === 'paid' ? 'Ödendi' : 'Öde'}</button>,
       ])} />
     </div>
   );
@@ -620,7 +620,7 @@ function SalesModule({ state, saleDraft, setSaleDraft, addSale }: any) {
   return (
     <div className="mt-6 grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
       <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
-        <h3 className="text-xl font-semibold">Sat─▒┼ş kayd─▒</h3>
+        <h3 className="text-xl font-semibold">Satış kaydı</h3>
         <div className="mt-5 grid gap-3">
           <SelectTenant state={state} value={saleDraft.tenant_id} onChange={(value) => setSaleDraft((c: any) => ({ ...c, tenant_id: value }))} />
           <select value={saleDraft.package_id} onChange={(e) => setSaleDraft((c: any) => ({ ...c, package_id: e.target.value, amount: state.packages.find((pkg: AdminPackage) => pkg.id === e.target.value)?.price ?? c.amount }))} className="input-dark">{state.packages.map((pkg: AdminPackage) => <option key={pkg.id} value={pkg.id}>{pkg.name}</option>)}</select>
@@ -629,9 +629,9 @@ function SalesModule({ state, saleDraft, setSaleDraft, addSale }: any) {
           <input type="number" value={saleDraft.commission_rate} onChange={(e) => setSaleDraft((c: any) => ({ ...c, commission_rate: Number(e.target.value) }))} placeholder="Komisyon %" className="input-dark" />
           <input type="date" value={saleDraft.date} onChange={(e) => setSaleDraft((c: any) => ({ ...c, date: e.target.value }))} className="input-dark" />
         </div>
-        <button type="button" onClick={addSale} className="btn-violet">Sat─▒┼ş ekle ve komisyon olu┼ştur</button>
+        <button type="button" onClick={addSale} className="btn-violet">Satış ekle ve komisyon oluştur</button>
       </article>
-      <DataTable headers={['Abone', 'Paket', 'Sat─▒┼ş├ğ─▒', 'Tutar', 'Komisyon', 'Durum']} rows={state.sales.map((item: AdminSale) => [item.tenant_id, item.package_id, item.seller, formatAdminMoney(item.amount), formatAdminMoney(item.commission_amount), item.commission_status])} />
+      <DataTable headers={['Abone', 'Paket', 'Satışçı', 'Tutar', 'Komisyon', 'Durum']} rows={state.sales.map((item: AdminSale) => [item.tenant_id, item.package_id, item.seller, formatAdminMoney(item.amount), formatAdminMoney(item.commission_amount), item.commission_status])} />
     </div>
   );
 }
@@ -640,25 +640,25 @@ function PaymentsModule({ state, paymentDraft, setPaymentDraft, processPayment }
   return (
     <div className="mt-6 grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
       <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
-        <h3 className="text-xl font-semibold">├ûdeme ve yenileme</h3>
+        <h3 className="text-xl font-semibold">Ödeme ve yenileme</h3>
         <div className="mt-5 grid gap-3">
           <SelectTenant state={state} value={paymentDraft.tenant_id} onChange={(value) => {
             const tenant = state.tenants.find((item: AdminTenant) => item.tenant_id === value);
             const pkg = state.packages.find((item: AdminPackage) => item.id === tenant?.package_id);
             setPaymentDraft((c: any) => ({ ...c, tenant_id: value, amount: pkg?.price ?? c.amount }));
           }} />
-          <select value={paymentDraft.invoice_id ?? ''} onChange={(e) => setPaymentDraft((c: any) => ({ ...c, invoice_id: e.target.value }))} className="input-dark"><option value="">Fatura se├ğme</option>{state.invoices.map((inv: AdminInvoice) => <option key={inv.id} value={inv.id}>{inv.invoice_no} - {formatAdminMoney(inv.amount)}</option>)}</select>
+          <select value={paymentDraft.invoice_id ?? ''} onChange={(e) => setPaymentDraft((c: any) => ({ ...c, invoice_id: e.target.value }))} className="input-dark"><option value="">Fatura seçme</option>{state.invoices.map((inv: AdminInvoice) => <option key={inv.id} value={inv.id}>{inv.invoice_no} - {formatAdminMoney(inv.amount)}</option>)}</select>
           <select value={paymentDraft.provider} onChange={(e) => setPaymentDraft((c: any) => ({ ...c, provider: e.target.value }))} className="input-dark"><option value="manual">Manuel</option><option value="iyzico">Iyzico</option><option value="paytr">PayTR</option></select>
           <input type="number" value={paymentDraft.amount} onChange={(e) => setPaymentDraft((c: any) => ({ ...c, amount: Number(e.target.value) }))} placeholder="Tutar" className="input-dark" />
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <button type="button" onClick={() => processPayment(true)} className="btn-green">Ba┼şar─▒l─▒ ├Âdeme</button>
-          <button type="button" onClick={() => processPayment(false)} className="h-12 rounded-2xl bg-rose-600 text-sm font-semibold">Ba┼şar─▒s─▒z ├Âdeme</button>
+          <button type="button" onClick={() => processPayment(true)} className="btn-green">Başarılı ödeme</button>
+          <button type="button" onClick={() => processPayment(false)} className="h-12 rounded-2xl bg-rose-600 text-sm font-semibold">Başarısız ödeme</button>
         </div>
-        <p className="mt-3 text-xs text-slate-400">Ba┼şar─▒l─▒ ├Âdeme aboneli─şi otomatik uzat─▒r, fatura ve gelir kayd─▒ olu┼şturur.</p>
+        <p className="mt-3 text-xs text-slate-400">Başarılı ödeme aboneliği otomatik uzatır, fatura ve gelir kaydı oluşturur.</p>
       </article>
-      <DataTable headers={['Abone', 'Sa─şlay─▒c─▒', 'Tutar', 'Durum', '─░┼şlem No']} rows={state.payments.map((item: AdminPayment) => [item.tenant_id, item.provider, formatAdminMoney(item.amount), item.status, item.transaction_id])} />
-      <DataTable headers={['Abone', 'Eski biti┼ş', 'Yeni biti┼ş', 'Durum']} rows={state.renewals.map((item: any) => [item.tenant_id, item.old_end_date, item.new_end_date, item.status])} />
+      <DataTable headers={['Abone', 'Sağlayıcı', 'Tutar', 'Durum', 'İşlem No']} rows={state.payments.map((item: AdminPayment) => [item.tenant_id, item.provider, formatAdminMoney(item.amount), item.status, item.transaction_id])} />
+      <DataTable headers={['Abone', 'Eski bitiş', 'Yeni bitiş', 'Durum']} rows={state.renewals.map((item: any) => [item.tenant_id, item.old_end_date, item.new_end_date, item.status])} />
     </div>
   );
 }
@@ -675,7 +675,7 @@ function FinanceModule({ state, financeDraft, setFinanceDraft, addFinanceTransac
 function InvoiceModule({ state, invoiceDraft, setInvoiceDraft, addInvoice }: any) {
   return (
     <div className="mt-6 grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
-      <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5"><h3 className="text-xl font-semibold">Fatura olu┼ştur</h3><div className="mt-5 grid gap-3"><SelectTenant state={state} value={invoiceDraft.tenant_id} onChange={(value) => setInvoiceDraft((c: any) => ({ ...c, tenant_id: value }))} /><select value={invoiceDraft.type} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, type: e.target.value }))} className="input-dark"><option value="subscription">Abonelik</option><option value="payment">Tahsilat</option></select><input type="number" value={invoiceDraft.amount} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, amount: Number(e.target.value) }))} placeholder="Tutar" className="input-dark" /><select value={invoiceDraft.status} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, status: e.target.value }))} className="input-dark"><option value="draft">Taslak</option><option value="issued">Kesildi</option><option value="paid">├ûdendi</option><option value="cancelled">─░ptal</option></select><input type="date" value={invoiceDraft.issue_date} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, issue_date: e.target.value }))} className="input-dark" /><input type="date" value={invoiceDraft.due_date} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, due_date: e.target.value }))} className="input-dark" /></div><button type="button" onClick={addInvoice} className="btn-blue">Fatura ekle</button></article>
+      <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5"><h3 className="text-xl font-semibold">Fatura oluştur</h3><div className="mt-5 grid gap-3"><SelectTenant state={state} value={invoiceDraft.tenant_id} onChange={(value) => setInvoiceDraft((c: any) => ({ ...c, tenant_id: value }))} /><select value={invoiceDraft.type} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, type: e.target.value }))} className="input-dark"><option value="subscription">Abonelik</option><option value="payment">Tahsilat</option></select><input type="number" value={invoiceDraft.amount} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, amount: Number(e.target.value) }))} placeholder="Tutar" className="input-dark" /><select value={invoiceDraft.status} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, status: e.target.value }))} className="input-dark"><option value="draft">Taslak</option><option value="issued">Kesildi</option><option value="paid">Ödendi</option><option value="cancelled">İptal</option></select><input type="date" value={invoiceDraft.issue_date} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, issue_date: e.target.value }))} className="input-dark" /><input type="date" value={invoiceDraft.due_date} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, due_date: e.target.value }))} className="input-dark" /></div><button type="button" onClick={addInvoice} className="btn-blue">Fatura ekle</button></article>
       <DataTable headers={['No', 'Tenant', 'Tip', 'Tutar', 'Durum']} rows={state.invoices.map((item: AdminInvoice) => [item.invoice_no, item.tenant_id, item.type, formatAdminMoney(item.amount), item.status])} />
     </div>
   );
@@ -690,17 +690,17 @@ function ReportsModule({ state, dashboard }: { state: SystemAdminState; dashboar
   });
   return (
     <div className="mt-6 grid gap-5">
-      <div className="grid gap-4 md:grid-cols-3"><Metric label="Net k├ór" value={formatAdminMoney(dashboard.net)} /><Metric label="A├ğ─▒k fatura" value={formatAdminMoney(dashboard.unpaidInvoices)} /><Metric label="Bekleyen hak edi┼ş" value={formatAdminMoney(dashboard.pendingCommissions)} /></div>
-      <DataTable headers={['Bayi / temsilci', 'Tip', 'Sat─▒┼ş adedi', 'Sat─▒┼ş tutar─▒', 'Hak edi┼ş']} rows={dealerRows} />
+      <div className="grid gap-4 md:grid-cols-3"><Metric label="Net kâr" value={formatAdminMoney(dashboard.net)} /><Metric label="Açık fatura" value={formatAdminMoney(dashboard.unpaidInvoices)} /><Metric label="Bekleyen hak ediş" value={formatAdminMoney(dashboard.pendingCommissions)} /></div>
+      <DataTable headers={['Bayi / temsilci', 'Tip', 'Satış adedi', 'Satış tutarı', 'Hak ediş']} rows={dealerRows} />
     </div>
   );
 }
 
 function SelectTenant({ state, value, onChange, allowEmpty = false }: { state: SystemAdminState; value: string; onChange: (value: string) => void; allowEmpty?: boolean }) {
-  return <select value={value} onChange={(e) => onChange(e.target.value)} className="input-dark">{allowEmpty ? <option value="">Tenant yok / genel</option> : <option value="">Abone sec</option>}{state.tenants.map((tenant) => <option key={tenant.tenant_id} value={tenant.tenant_id}>{tenant.company_name}</option>)}</select>;
+  return <select value={value} onChange={(e) => onChange(e.target.value)} className="input-dark">{allowEmpty ? <option value="">Tenant yok / genel</option> : <option value="">Abone seç</option>}{state.tenants.map((tenant) => <option key={tenant.tenant_id} value={tenant.tenant_id}>{tenant.company_name}</option>)}</select>;
 }
 
-// ─── Monitoring Module ──────────────────────────────────────────────────────
+// Monitoring Module
 
 type MonTabId = 'overview' | 'commercial' | 'pilot' | 'release' | 'incidents' | 'health' | 'anomalies' | 'security' | 'queues' | 'advisor' | 'healing' | 'resilience' | 'audit' | 'logs';
 

@@ -1,4 +1,4 @@
-﻿import type { Config } from 'tailwindcss';
+import type { Config } from 'tailwindcss';
 
 const config: Config = {
   content: [
@@ -26,6 +26,10 @@ const config: Config = {
       },
       borderRadius: {
         '4xl': '2rem',
+      },
+      fontFamily: {
+        sans: ['var(--font-sans)', 'Inter', 'system-ui', 'Arial', 'sans-serif'],
+        display: ['var(--font-display)', 'var(--font-sans)', 'Inter', 'system-ui', 'Arial', 'sans-serif'],
       },
     },
   },
