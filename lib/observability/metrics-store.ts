@@ -28,6 +28,30 @@ type TenantMetricState = {
   syncPending: number;
   lastSyncError?: string;
   failedSyncEvents: number;
+  releaseVersion?: string;
+  releaseChannel?: string;
+  rolloutTrack?: string;
+  updateStatus?: string;
+  updateLatencyMs?: number;
+  rollbackCount?: number;
+  outdated?: boolean;
+  releaseTarget?: string;
+  releaseSource?: string;
+  updatedAt: string;
+};
+
+type ReleaseMetricRow = {
+  tenantId: string;
+  companyName: string;
+  releaseVersion: string;
+  releaseChannel: string;
+  rolloutTrack: string;
+  updateStatus: string;
+  updateLatencyMs: number;
+  rollbackCount: number;
+  outdated: boolean;
+  releaseTarget?: string;
+  releaseSource?: string;
   updatedAt: string;
 };
 
@@ -133,6 +157,15 @@ function ensureTenantMetric(tenantId: string): TenantMetricState {
     syncFailures: 0,
     syncPending: 0,
     failedSyncEvents: 0,
+    releaseVersion: undefined,
+    releaseChannel: undefined,
+    rolloutTrack: undefined,
+    updateStatus: undefined,
+    updateLatencyMs: undefined,
+    rollbackCount: 0,
+    outdated: false,
+    releaseTarget: undefined,
+    releaseSource: undefined,
     updatedAt: nowIso(),
   };
   state.tenantMetrics[tenantId] = seeded;
@@ -251,6 +284,32 @@ export function recordTenantRealtimeHealth(input: {
   tenant.updatedAt = nowIso();
 }
 
+export function recordReleaseTelemetry(input: {
+  tenantId?: string;
+  releaseVersion?: string;
+  releaseChannel?: string;
+  rolloutTrack?: string;
+  updateStatus?: string;
+  updateLatencyMs?: number;
+  rollbackCount?: number;
+  outdated?: boolean;
+  releaseTarget?: string;
+  releaseSource?: string;
+}) {
+  if (!input.tenantId) return;
+  const tenant = ensureTenantMetric(input.tenantId);
+  tenant.releaseVersion = input.releaseVersion ?? tenant.releaseVersion;
+  tenant.releaseChannel = input.releaseChannel ?? tenant.releaseChannel;
+  tenant.rolloutTrack = input.rolloutTrack ?? tenant.rolloutTrack;
+  tenant.updateStatus = input.updateStatus ?? tenant.updateStatus;
+  tenant.updateLatencyMs = typeof input.updateLatencyMs === 'number' ? Math.max(0, input.updateLatencyMs) : tenant.updateLatencyMs;
+  tenant.rollbackCount = Math.max(input.rollbackCount ?? tenant.rollbackCount ?? 0, 0);
+  tenant.outdated = typeof input.outdated === 'boolean' ? input.outdated : tenant.outdated;
+  tenant.releaseTarget = input.releaseTarget ?? tenant.releaseTarget;
+  tenant.releaseSource = input.releaseSource ?? tenant.releaseSource;
+  tenant.updatedAt = nowIso();
+}
+
 export function buildTenantObservabilityRows() {
   const state = getState();
   const adminState = loadSystemAdminState();
@@ -323,6 +382,52 @@ export function buildServerMetricSnapshot(input: {
     failedSyncs: {
       totalFailedEvents: failedSyncs,
     },
+  };
+}
+
+export function buildReleaseTelemetryRows(): ReleaseMetricRow[] {
+  const state = getState();
+  const adminState = loadSystemAdminState();
+
+  return Object.values(state.tenantMetrics)
+    .filter((metric) => metric.releaseVersion || metric.releaseChannel || metric.updateStatus || metric.rollbackCount || metric.outdated)
+    .map((metric) => {
+      const company = adminState.tenants.find((tenant) => tenant.tenant_id === metric.tenantId)?.company_name ?? metric.tenantId;
+      return {
+        tenantId: metric.tenantId,
+        companyName: company,
+        releaseVersion: metric.releaseVersion ?? 'unknown',
+        releaseChannel: metric.releaseChannel ?? 'stable',
+        rolloutTrack: metric.rolloutTrack ?? metric.releaseChannel ?? 'stable',
+        updateStatus: metric.updateStatus ?? 'unknown',
+        updateLatencyMs: metric.updateLatencyMs ?? 0,
+        rollbackCount: metric.rollbackCount ?? 0,
+        outdated: Boolean(metric.outdated),
+        releaseTarget: metric.releaseTarget,
+        releaseSource: metric.releaseSource,
+        updatedAt: metric.updatedAt,
+      };
+    });
+}
+
+export function getReleaseTelemetrySummary(rows = buildReleaseTelemetryRows()) {
+  const total = rows.length;
+  const failedUpdates = rows.filter((row) => ['failed', 'rollback', 'error'].includes(row.updateStatus.toLowerCase())).length;
+  const outdatedTenants = rows.filter((row) => row.outdated).length;
+  const rollbackEvents = rows.reduce((sum, row) => sum + row.rollbackCount, 0);
+  const avgUpdateLatencyMs = total > 0 ? rows.reduce((sum, row) => sum + row.updateLatencyMs, 0) / total : 0;
+  const byChannel = rows.reduce<Record<string, number>>((acc, row) => {
+    acc[row.releaseChannel] = (acc[row.releaseChannel] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  return {
+    total,
+    failedUpdates,
+    outdatedTenants,
+    rollbackEvents,
+    avgUpdateLatencyMs,
+    byChannel,
   };
 }
 

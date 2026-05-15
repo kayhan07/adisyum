@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
+import { runtimeStateTenantKey } from '@/lib/db/compound-keys';
 import { prisma } from '@/lib/db/prisma';
 import { requireTenant, tenantAuthErrorResponse } from '@/lib/requireTenant';
 import { getSessionFromRequest, forbiddenResponse } from '@/lib/session';
@@ -56,7 +57,7 @@ export async function GET(request: Request, context: { params: Promise<{ scope: 
     const target = await resolveScope(request, scope);
     tenantId = target.tenantId;
     const stored = await prisma.runtimeState.findUnique({
-      where: { tenantId_key: { tenantId: target.tenantId, key: target.key } },
+      where: runtimeStateTenantKey(target.tenantId, target.key),
       select: { payload: true },
     });
 
@@ -103,7 +104,7 @@ export async function POST(request: Request, context: { params: Promise<{ scope:
     const state = normalizeSnapshot(body?.state);
 
     await prisma.runtimeState.upsert({
-      where: { tenantId_key: { tenantId: target.tenantId, key: target.key } },
+      where: runtimeStateTenantKey(target.tenantId, target.key),
       update: { payload: JSON.parse(JSON.stringify(state)) as Prisma.InputJsonValue },
       create: { tenantId: target.tenantId, key: target.key, payload: JSON.parse(JSON.stringify(state)) as Prisma.InputJsonValue },
     });
@@ -142,7 +143,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ scop
     const target = await resolveScope(request, scope);
     tenantId = target.tenantId;
     await prisma.runtimeState.delete({
-      where: { tenantId_key: { tenantId: target.tenantId, key: target.key } },
+      where: runtimeStateTenantKey(target.tenantId, target.key),
     }).catch(() => undefined);
 
     recordRequestMetric({

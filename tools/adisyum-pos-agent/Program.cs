@@ -10,6 +10,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Reflection;
 
 namespace AdisyumPosAgent
 {
@@ -1286,14 +1287,18 @@ namespace AdisyumPosAgent
     {
         public static object GetStatus()
         {
+            var release = ReleaseMetadata.Load();
             return new
             {
                 ok = true,
                 serviceModeReady = true,
                 serviceName = "AdisyumDesktopBridge",
+                runtimeVersion = release.RuntimeVersion,
+                releaseChannel = release.Channel,
                 watchdog = true,
                 autoRestart = true,
                 crashRecovery = true,
+                releaseTrack = release.Track,
                 installCommand = "sc create AdisyumDesktopBridge binPath= \"<install-path>\\AdisyumPosAgent.exe\" start= auto",
             };
         }
@@ -1303,16 +1308,130 @@ namespace AdisyumPosAgent
     {
         public static object GetStatus()
         {
+            var release = ReleaseMetadata.Load();
+            var state = ReleaseUpdateState.Load();
             return new
             {
                 ok = true,
-                channel = "stable",
+                channel = release.Channel,
+                version = release.RuntimeVersion,
+                build = release.BuildNumber,
+                manifest = release.ManifestPath,
                 signedUpdates = true,
                 stagedRollout = true,
                 rollback = true,
                 integrityVerification = "sha256 + publisher signature",
+                updateStatus = state.LastStatus,
+                updateError = state.LastError,
+                updateLatencyMs = state.LastLatencyMs,
+                lastUpdateAt = state.UpdatedAt,
+                rollout = new
+                {
+                    enabled = true,
+                    track = release.Track,
+                    tenantTargets = release.TargetTenants,
+                },
                 lastCheckAt = DateTimeOffset.UtcNow,
             };
+        }
+    }
+
+    internal sealed class ReleaseMetadata
+    {
+        public string Channel { get; set; } = "stable";
+        public string RuntimeVersion { get; set; } = GetRuntimeVersion();
+        public string BuildNumber { get; set; } = Environment.GetEnvironmentVariable("ADISYUM_BUILD_NUMBER") ?? DateTimeOffset.UtcNow.ToString("yyyyMMddHHmm");
+        public string Track { get; set; } = "stable";
+        public string ManifestPath { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Adisyum", "DesktopBridge", "release-manifest.json");
+        public string[] TargetTenants { get; set; } = Array.Empty<string>();
+
+        public static ReleaseMetadata Load()
+        {
+            var fallback = new ReleaseMetadata
+            {
+                Channel = Normalize(Environment.GetEnvironmentVariable("ADISYUM_RELEASE_CHANNEL")) ?? "stable",
+                Track = Normalize(Environment.GetEnvironmentVariable("ADISYUM_RELEASE_TRACK")) ?? Normalize(Environment.GetEnvironmentVariable("ADISYUM_RELEASE_CHANNEL")) ?? "stable",
+            };
+
+            var manifestPath = fallback.ManifestPath;
+            try
+            {
+                if (File.Exists(manifestPath))
+                {
+                    var json = File.ReadAllText(manifestPath);
+                    var manifest = JsonSerializer.Deserialize<ReleaseManifest>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    if (manifest != null)
+                    {
+                        fallback.Channel = Normalize(manifest.channel) ?? fallback.Channel;
+                        fallback.Track = Normalize(manifest.track) ?? fallback.Track;
+                        fallback.RuntimeVersion = Normalize(manifest.runtimeVersion) ?? fallback.RuntimeVersion;
+                        fallback.BuildNumber = Normalize(manifest.buildNumber) ?? fallback.BuildNumber;
+                        fallback.TargetTenants = manifest.targetTenants?.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t.Trim()).ToArray() ?? Array.Empty<string>();
+                    }
+                }
+            }
+            catch
+            {
+                // release metadata should never block runtime boot
+            }
+
+            return fallback;
+        }
+
+        private static string Normalize(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        }
+
+        private static string GetRuntimeVersion()
+        {
+            var info = Assembly.GetExecutingAssembly().GetName().Version;
+            return info == null ? "1.0.0" : $"{info.Major}.{info.Minor}.{info.Build}";
+        }
+    }
+
+    internal sealed class ReleaseManifest
+    {
+        public string version { get; set; }
+        public string runtimeVersion { get; set; }
+        public string buildNumber { get; set; }
+        public string channel { get; set; }
+        public string track { get; set; }
+        public string changelog { get; set; }
+        public string downloadUrl { get; set; }
+        public string checksum { get; set; }
+        public string signature { get; set; }
+        public decimal stagedRolloutPercent { get; set; }
+        public string minimumBridgeVersion { get; set; }
+        public string minimumTrayVersion { get; set; }
+        public string[] targetTenants { get; set; }
+    }
+
+    internal sealed class ReleaseUpdateState
+    {
+        public string Version { get; set; }
+        public string Channel { get; set; }
+        public string Track { get; set; }
+        public string DownloadUrl { get; set; }
+        public string SnapshotPath { get; set; }
+        public string LastStatus { get; set; } = "unknown";
+        public string LastError { get; set; }
+        public int LastLatencyMs { get; set; }
+        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+        public static ReleaseUpdateState Load()
+        {
+            try
+            {
+                var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Adisyum", "DesktopBridge", "release-state.json");
+                if (!File.Exists(path)) return new ReleaseUpdateState();
+                var json = File.ReadAllText(path);
+                return JsonSerializer.Deserialize<ReleaseUpdateState>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new ReleaseUpdateState();
+            }
+            catch
+            {
+                return new ReleaseUpdateState();
+            }
         }
     }
 

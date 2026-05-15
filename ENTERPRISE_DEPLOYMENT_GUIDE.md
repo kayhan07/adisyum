@@ -713,7 +713,7 @@ curl http://localhost:9090/api/v1/rules | jq '.data.groups[].rules[] | select(.s
 npm run build
 
 # 2. Start with PM2 cluster
-pm2 start ecosystem.config.js --env production
+pm2 start ecosystem.config.cjs --env production
 
 # 3. Verify deployment
 curl https://api.adisyum.com/api/health

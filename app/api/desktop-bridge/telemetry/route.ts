@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { logInfo, logWarn } from '@/lib/observability/structured-logger';
-import { recordTenantError, recordTenantRealtimeHealth } from '@/lib/observability/metrics-store';
+import { recordReleaseTelemetry, recordTenantError, recordTenantRealtimeHealth } from '@/lib/observability/metrics-store';
 import { getSessionFromRequest, unauthorizedResponse } from '@/lib/session';
 import { ingestPilotDiagnostics } from '@/lib/pilot-field/field-validation';
 import { isSessionActive } from '@/lib/server/session-guard';
+import { trackUpdateSecurityEvent } from '@/lib/security/security-telemetry';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -49,6 +50,17 @@ type DesktopBridgeTelemetryPayload = {
   resources?: {
     memoryMb?: number;
     cpuPercent?: number;
+  };
+  release?: {
+    version?: string;
+    channel?: string;
+    track?: string;
+    updateStatus?: string;
+    latencyMs?: number;
+    rollbackCount?: number;
+    outdated?: boolean;
+    target?: string;
+    source?: string;
   };
   error?: {
     message?: string;
@@ -102,6 +114,44 @@ export async function POST(request: Request) {
     lastSyncError: body?.sync?.lastError,
   });
 
+  if (body?.release) {
+    recordReleaseTelemetry({
+      tenantId,
+      releaseVersion: body.release.version,
+      releaseChannel: body.release.channel,
+      rolloutTrack: body.release.track,
+      updateStatus: body.release.updateStatus,
+      updateLatencyMs: body.release.latencyMs,
+      rollbackCount: body.release.rollbackCount,
+      outdated: body.release.outdated,
+      releaseTarget: body.release.target,
+      releaseSource: body.release.source,
+    });
+
+    const updateStatus = (body.release.updateStatus ?? '').toLowerCase();
+    if (['failed-signature', 'corrupted-manifest', 'corrupted-package', 'suspicious-source', 'blocked'].includes(updateStatus)) {
+      void trackUpdateSecurityEvent(
+        updateStatus === 'failed-signature'
+          ? 'failed_signature_validation'
+          : updateStatus === 'corrupted-manifest'
+            ? 'corrupted_manifest'
+            : updateStatus === 'corrupted-package'
+              ? 'corrupted_update_package'
+              : 'suspicious_update_source',
+        tenantId,
+        `Update trust violation reported by desktop bridge: ${updateStatus}`,
+        {
+          version: body.release.version,
+          channel: body.release.channel,
+          track: body.release.track,
+          latencyMs: body.release.latencyMs,
+          source: body.release.source,
+          target: body.release.target,
+        },
+      );
+    }
+  }
+
   if (body?.error?.message) {
     recordTenantError({
       tenantId,
@@ -136,6 +186,7 @@ export async function POST(request: Request) {
       version: body?.version,
       healthScore,
       resources: body?.resources,
+      release: body?.release,
       devices: deviceTelemetry,
     },
   };

@@ -1,35 +1,82 @@
+import { pbkdf2Sync, randomBytes } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { Pool } from 'pg';
 
-const prisma = new PrismaClient();
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL is required.');
+}
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 
 const tenantId = process.env.SEED_TENANT_ID || 'ABN-48291';
 
+function hashPassword(password) {
+  const iterations = 210000;
+  const salt = randomBytes(16).toString('base64url');
+  const hash = pbkdf2Sync(password, salt, iterations, 32, 'sha256').toString('base64url');
+  return `pbkdf2_sha256$${iterations}$${salt}$${hash}`;
+}
+
 async function main() {
+  const now = new Date();
+  const subscriptionEnd = new Date(now);
+  subscriptionEnd.setFullYear(subscriptionEnd.getFullYear() + 1);
+
   await prisma.tenant.upsert({
     where: { tenantId },
     update: {
       status: 'demo',
       packageType: 'premium',
-      updatedAt: new Date(),
+      mainBranchId: null,
     },
     create: {
       tenantId,
       name: 'Adisyon Demo Bistro',
       packageType: 'premium',
       status: 'demo',
-      mainBranchId: 'mrk',
+      mainBranchId: null,
     },
   });
 
-  await prisma.subscription.create({
-    data: {
-      tenantId,
-      packageType: 'premium',
-      status: 'demo',
-      startsAt: new Date('2026-01-01T00:00:00.000Z'),
-      endsAt: new Date('2027-01-01T00:00:00.000Z'),
-    },
+  await prisma.branch.upsert({
+    where: { tenantId_branchId: { tenantId, branchId: 'mrk' } },
+    update: { name: 'Merkez', active: true },
+    create: { tenantId, branchId: 'mrk', name: 'Merkez', code: 'mrk', active: true },
   });
+
+  await prisma.tenant.update({
+    where: { tenantId },
+    data: { mainBranchId: 'mrk' },
+  });
+
+  const existingSubscription = await prisma.subscription.findFirst({
+    where: { tenantId, status: { in: ['active', 'trial', 'demo'] }, endsAt: { gte: now } },
+    orderBy: { endsAt: 'desc' },
+    select: { id: true },
+  });
+
+  if (existingSubscription) {
+    await prisma.subscription.update({
+      where: { tenantId_id: { tenantId, id: existingSubscription.id } },
+      data: {
+        packageType: 'premium',
+        status: 'demo',
+        endsAt: subscriptionEnd,
+      },
+    });
+  } else {
+    await prisma.subscription.create({
+      data: {
+        tenantId,
+        packageType: 'premium',
+        status: 'demo',
+        startsAt: now,
+        endsAt: subscriptionEnd,
+      },
+    });
+  }
 
   await prisma.user.upsert({
     where: { tenantId_username: { tenantId, username: 'admin' } },
@@ -43,7 +90,7 @@ async function main() {
       tenantId,
       username: 'admin',
       name: 'Admin',
-      passwordHash: 'demo-change-me',
+      passwordHash: hashPassword(process.env.SEED_ADMIN_PASSWORD || '1234'),
       role: 'Admin',
       branchId: 'mrk',
       permissions: ['*'],
@@ -51,15 +98,15 @@ async function main() {
   });
 
   await prisma.role.upsert({
-    where: { tenantId_name: { tenantId, name: 'Admin' } },
-    update: { permissions: ['*'] },
-    create: { tenantId, name: 'Admin', permissions: ['*'] },
+    where: { tenantId_key: { tenantId, key: 'Admin' } },
+    update: { name: 'Admin', permissions: ['*'] },
+    create: { tenantId, key: 'Admin', name: 'Admin', permissions: ['*'] },
   });
 
   await prisma.recipeTemplate.createMany({
     data: [
       { name: 'Sezar Salata', category: 'Salata', yieldQuantity: 1, unit: 'porsiyon' },
-      { name: 'Hamburger Köftesi', category: 'Ana Yemek', yieldQuantity: 1, unit: 'porsiyon' },
+      { name: 'Hamburger Koftesi', category: 'Ana Yemek', yieldQuantity: 1, unit: 'porsiyon' },
     ],
     skipDuplicates: true,
   });
@@ -74,5 +121,5 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
+    await pool.end();
   });
-

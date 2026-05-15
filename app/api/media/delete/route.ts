@@ -26,7 +26,7 @@ export async function DELETE(req: NextRequest) {
     // Delete physical files
     deleteMediaFiles([asset.url, asset.thumbnailUrl ?? '', asset.webpUrl ?? ''].filter(Boolean));
 
-    await prisma.mediaAsset.delete({ where: { id: assetId } });
+    await prisma.mediaAsset.deleteMany({ where: { id: assetId, tenantId: tenant.tenantId } });
 
     return NextResponse.json({ ok: true });
   } catch {

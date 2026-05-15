@@ -702,7 +702,7 @@ function SelectTenant({ state, value, onChange, allowEmpty = false }: { state: S
 
 // ─── Monitoring Module ──────────────────────────────────────────────────────
 
-type MonTabId = 'overview' | 'commercial' | 'pilot' | 'incidents' | 'health' | 'anomalies' | 'security' | 'queues' | 'advisor' | 'healing' | 'resilience' | 'audit' | 'logs';
+type MonTabId = 'overview' | 'commercial' | 'pilot' | 'release' | 'incidents' | 'health' | 'anomalies' | 'security' | 'queues' | 'advisor' | 'healing' | 'resilience' | 'audit' | 'logs';
 
 type ObsServerSnapshot = { uptimeSeconds: number; nodeVersion: string; memUsedMb: number; memTotalMb: number; pm2Instance: string | null; redisStatus: string; postgresStatus: string; postgresConnections: number; wsConfigured: boolean; generatedAt: string };
 type ObsTenantRow = { tenantId: string; companyName: string; requestCount: number; errorCount: number; errorRate: string; avgResponseMs: string; lastResponseMs: number; websocketHealth: string; printerHealth: string; syncFailures: number; printerOnlineCount?: number; printerTotalCount?: number };
@@ -768,6 +768,21 @@ type ObsCommercialOps = {
   scores: { commercializationReadinessScore: number; supportMaturityScore: number; deploymentReadinessScore: number; resellerReadinessScore: number; fieldOperationsMaturityScore: number };
 } | null;
 
+type ObsReleaseRow = {
+  tenantId: string;
+  companyName: string;
+  releaseVersion: string;
+  releaseChannel: string;
+  rolloutTrack: string;
+  updateStatus: string;
+  updateLatencyMs: number;
+  rollbackCount: number;
+  outdated: boolean;
+  releaseTarget?: string;
+  releaseSource?: string;
+  updatedAt: string;
+};
+
 type ObsPayload = {
   server: ObsServerSnapshot;
   tenants: ObsTenantRow[];
@@ -799,6 +814,8 @@ type ObsPayload = {
   playbookRuns?: ObsPlaybookRun[];
   pilotField?: ObsPilotField;
   commercialOps?: ObsCommercialOps;
+  releases?: ObsReleaseRow[];
+  releaseSummary?: { total: number; failedUpdates: number; outdatedTenants: number; rollbackEvents: number; avgUpdateLatencyMs: number; byChannel: Record<string, number> } | null;
   generatedAt: string;
 };
 
@@ -872,6 +889,7 @@ function MonitoringModule() {
     { id: 'overview', label: 'Genel Bakis', badge: openIncidents.length > 0 ? openIncidents.length : undefined },
     { id: 'commercial', label: 'Commercial Ops', badge: data.commercialOps?.expiringLicenses || undefined },
     { id: 'pilot', label: 'Pilot Saha', badge: data.pilotField?.unhealthyRestaurants || undefined },
+    { id: 'release', label: 'Release', badge: data.releaseSummary?.outdatedTenants || undefined },
     { id: 'incidents', label: 'Incidents', badge: openIncidents.length },
     { id: 'health', label: 'Health Score' },
     { id: 'anomalies', label: 'Anomaliler', badge: unresolvedAnomalies.filter((a) => a.severity === 'high').length || undefined },
@@ -883,6 +901,7 @@ function MonitoringModule() {
     { id: 'audit', label: 'Audit Trail' },
     { id: 'logs', label: 'Loglar' },
   ];
+  const selectedTab: MonTabId = activeTab;
 
   return (
     <div className="mt-6 grid gap-4">
@@ -999,6 +1018,42 @@ function MonitoringModule() {
                         <span className="ml-auto text-slate-400">{new Date(license.expiresAt).toLocaleDateString('tr-TR')}</span>
                       </div>
                     ))}
+
+                    {selectedTab === 'release' && (
+                      <div className="grid gap-5">
+                        <SectionTitle>Release Lifecycle</SectionTitle>
+                        {!data.releases ? (
+                          <p className="rounded-2xl border border-white/8 bg-white/4 px-5 py-4 text-sm text-slate-400">Release telemetry henuz gelmedi.</p>
+                        ) : (
+                          <>
+                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                              <StatCard label="Runtime" value={data.releaseSummary?.total ?? 0} sub="release telemetry" />
+                              <StatCard label="Failed" value={data.releaseSummary?.failedUpdates ?? 0} sub="update failure" />
+                              <StatCard label="Outdated" value={data.releaseSummary?.outdatedTenants ?? 0} sub="legacy tenants" />
+                              <StatCard label="Rollbacks" value={data.releaseSummary?.rollbackEvents ?? 0} sub="tenant rollbacks" />
+                              <StatCard label="Latency" value={Math.round(data.releaseSummary?.avgUpdateLatencyMs ?? 0) + ' ms'} sub="avg update time" />
+                            </div>
+                            <div className="overflow-x-auto rounded-2xl border border-white/8">
+                              <table className="w-full text-xs">
+                                <thead className="border-b border-white/8 bg-white/4"><tr>{['Tenant','Version','Channel','Track','Status','Latency','Rollback','Outdated'].map((h) => <th key={h} className="px-4 py-3 text-left font-semibold text-slate-400">{h}</th>)}</tr></thead>
+                                <tbody>{data.releases.slice(0, 20).map((row) => (
+                                  <tr key={row.tenantId} className="border-b border-white/5 hover:bg-white/4">
+                                    <td className="px-4 py-3 font-semibold text-white">{row.companyName}</td>
+                                    <td className="px-4 py-3 text-slate-300">{row.releaseVersion}</td>
+                                    <td className="px-4 py-3">{statusBadge(row.releaseChannel, ['stable', 'beta', 'pilot', 'internal', 'hotfix'])}</td>
+                                    <td className="px-4 py-3 text-slate-300">{row.rolloutTrack}</td>
+                                    <td className="px-4 py-3">{statusBadge(row.updateStatus, ['completed', 'success', 'stable'])}</td>
+                                    <td className="px-4 py-3 text-slate-300">{Math.round(row.updateLatencyMs)} ms</td>
+                                    <td className="px-4 py-3 text-slate-300">{row.rollbackCount}</td>
+                                    <td className="px-4 py-3">{row.outdated ? statusBadge('outdated', [], ['outdated']) : statusBadge('current', ['current'])}</td>
+                                  </tr>
+                                ))}</tbody>
+                              </table>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="rounded-2xl border border-white/8 bg-white/4 px-5 py-4">

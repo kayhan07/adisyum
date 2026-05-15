@@ -1,0 +1,24 @@
+{
+  "serviceName": "AdisyumUpdater",
+  "displayName": "Adisyum Update Service",
+  "startMode": "auto",
+  "restartPolicy": "always",
+  "updateWindow": "02:00-06:00",
+  "tenantSafeRollout": true,
+  "rollbackSnapshot": true,
+  "partialDownloadRecovery": true,
+  "signatureRequired": true,
+  "checksumRequired": true,
+  "manifestDigestRequired": true,
+  "publisherRequired": true,
+  "timestampRequired": true,
+  "allowedChannels": ["internal", "pilot", "stable", "hotfix"],
+  "requiredApprovals": ["release", "pilot", "stagedRollout"],
+  "securityTelemetry": {
+    "unsignedRuntimeDetection": true,
+    "failedSignatureValidation": true,
+    "updateTampering": true,
+    "corruptedManifest": true,
+    "suspiciousUpdateSource": true
+  }
+}

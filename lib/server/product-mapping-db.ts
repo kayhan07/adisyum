@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { runtimeStateTenantKey } from '@/lib/db/compound-keys';
 import { prisma } from '@/lib/db/prisma';
 import type { PosUnitType, ProductMapping, ProductMappingStatus } from '@/lib/pos-mapping-store';
 
@@ -28,7 +29,7 @@ function validate(mapping: Partial<ProductMapping>) {
 
 async function readMappings(tenantId: string) {
   const stored = await prisma.runtimeState.findUnique({
-    where: { tenantId_key: { tenantId, key: RUNTIME_KEY } },
+    where: runtimeStateTenantKey(tenantId, RUNTIME_KEY),
     select: { payload: true },
   });
   return Array.isArray(stored?.payload) ? stored.payload as ProductMapping[] : [];
@@ -36,7 +37,7 @@ async function readMappings(tenantId: string) {
 
 async function writeMappings(tenantId: string, mappings: ProductMapping[]) {
   await prisma.runtimeState.upsert({
-    where: { tenantId_key: { tenantId, key: RUNTIME_KEY } },
+    where: runtimeStateTenantKey(tenantId, RUNTIME_KEY),
     update: { payload: JSON.parse(JSON.stringify(mappings)) as Prisma.InputJsonValue },
     create: { tenantId, key: RUNTIME_KEY, payload: JSON.parse(JSON.stringify(mappings)) as Prisma.InputJsonValue },
   });

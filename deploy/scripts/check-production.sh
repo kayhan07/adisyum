@@ -2,7 +2,7 @@
 set -u
 
 DOMAIN="${DOMAIN:-adisyum.com}"
-APP_NAME="${APP_NAME:-adisyum}"
+APP_NAME="${APP_NAME:-adisyum-root-app}"
 LOG_DIR="${LOG_DIR:-./deploy/logs}"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 LOG_FILE="${LOG_DIR}/production-check-${TIMESTAMP}.log"
@@ -51,11 +51,15 @@ echo "APP_NAME=${APP_NAME}" | tee -a "${LOG_FILE}"
 run_check "NGINX STATUS" systemctl is-active nginx
 run_check "PM2 LIST" pm2 list
 run_check "PM2 LOGS LAST 100" pm2 logs "${APP_NAME}" --lines 100 --nostream
+run_check "PORT 3010" sudo lsof -i :3010
 run_check "PORT 3000" sudo lsof -i :3000
+run_check "NO PORT 3020" bash -lc "! sudo lsof -i :3020"
 run_check "PORT 443" sudo lsof -i :443
 run_check "PORT 80" sudo lsof -i :80
 run_check "NGINX CONFIG TEST" sudo nginx -t
 run_check "HTTPS TEST" curl -IL "https://${DOMAIN}"
+run_check "ROOT APP /app TEST" curl -IL "https://${DOMAIN}/app"
+run_check "ROOT APP /system-admin TEST" curl -IL "https://${DOMAIN}/system-admin"
 run_check "HTTP REDIRECT TEST" curl -IL "http://${DOMAIN}"
 run_check "CLOUDFLARE HEADERS" bash -lc "curl -I 'https://${DOMAIN}' | grep -Ei 'cloudflare|cf-ray|cf-cache-status|server:'"
 run_check "SERVER HEADER" bash -lc "curl -I 'https://${DOMAIN}' | grep -i '^server:'"
@@ -63,12 +67,16 @@ run_check "WEBSOCKET NGINX HEADERS" bash -lc "sudo nginx -T 2>/dev/null | grep -
 run_check "SECURITY HEADERS" bash -lc "curl -I 'https://${DOMAIN}' | grep -Ei 'strict-transport|x-frame-options|x-content-type-options|referrer-policy|permissions-policy'"
 
 HTTPS_STATUS="$(curl -ILs -o /dev/null -w '%{http_code}' "https://${DOMAIN}")"
+APP_STATUS="$(curl -ILs -o /dev/null -w '%{http_code}' "https://${DOMAIN}/app")"
+ADMIN_STATUS="$(curl -ILs -o /dev/null -w '%{http_code}' "https://${DOMAIN}/system-admin")"
 HTTP_REDIRECT="$(curl -ILs -o /dev/null -w '%{http_code} %{url_effective}' "http://${DOMAIN}")"
 CF_SERVER="$(curl -Is "https://${DOMAIN}" | awk 'BEGIN{IGNORECASE=1} /^server:/{print $0; exit}')"
 NGINX_ACTIVE="$(systemctl is-active nginx 2>/dev/null || true)"
 
 print_result "SUMMARY NGINX" "active" "${NGINX_ACTIVE}"
 print_result "SUMMARY HTTPS" "200, 301, 304, or app-specific success" "${HTTPS_STATUS}"
+print_result "SUMMARY /app" "200, 301, 307, 308, 401, or 403" "${APP_STATUS}"
+print_result "SUMMARY /system-admin" "200, 301, 307, 308, 401, or 403" "${ADMIN_STATUS}"
 print_result "SUMMARY HTTP REDIRECT" "final URL starts with https://${DOMAIN}" "${HTTP_REDIRECT}"
 print_result "SUMMARY CLOUDFLARE" "server: cloudflare" "${CF_SERVER}"
 

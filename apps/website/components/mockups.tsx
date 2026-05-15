@@ -10,7 +10,7 @@ export function PosDashboardMockup() {
         <span className="h-3 w-3 rounded-full bg-amber-500/80" />
         <span className="h-3 w-3 rounded-full bg-emerald-500/80" />
         <div className="mx-auto flex h-5 w-48 items-center justify-center rounded-full bg-white/5 text-[10px] text-slate-500">
-          app.adisyum.com
+          adisyum.com/app
         </div>
       </div>
 

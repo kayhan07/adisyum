@@ -36,7 +36,7 @@ A comprehensive enterprise-grade testing infrastructure has been built to valida
 |------|---------|-----------|
 | `docker-compose.staging.yml` | Complete staging environment | PostgreSQL, Redis, Prometheus, Grafana, Nginx, Node.js |
 | `Dockerfile.staging` | Container build for app | Alpine Linux, Node 20 |
-| `ecosystem.config.js` | PM2 clustering config | 4+ worker processes, auto-restart |
+| `ecosystem.config.cjs` | PM2 clustering config | website, app, system-admin processes, auto-restart |
 | `deploy/nginx/staging.conf` | Reverse proxy & security | SSL/TLS, rate limiting, WebSocket support |
 
 **Services started**:
@@ -386,7 +386,7 @@ adisyum/
 ├── .env.production          # Production environment config
 ├── docker-compose.staging.yml   # Docker infrastructure
 ├── Dockerfile.staging       # Container build
-├── ecosystem.config.js      # PM2 configuration
+├── ecosystem.config.cjs     # PM2 configuration
 ├── package.json             # Updated with 18 new scripts
 │
 ├── deploy/

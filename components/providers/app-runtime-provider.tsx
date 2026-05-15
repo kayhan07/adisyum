@@ -117,10 +117,44 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
       ingestObservability(tenantId, { websocket: { connected: state.connected, state: state.state } });
     });
 
+    const ingestBridgeRelease = async () => {
+      try {
+        const response = await fetch('http://127.0.0.1:3001/health', {
+          cache: 'no-store',
+          mode: 'cors',
+        });
+        if (!response.ok) return;
+        const health = await response.json().catch(() => null) as {
+          updater?: { version?: string; channel?: string; build?: string; rollout?: { track?: string }; updateStatus?: string; updateError?: string; updateLatencyMs?: number };
+          serviceRuntime?: { runtimeVersion?: string; releaseChannel?: string };
+        } | null;
+        if (!health) return;
+
+        const updateStatus = health.updater?.updateStatus ?? 'healthy';
+
+        ingestObservability(tenantId, {
+          release: {
+            version: health.updater?.version ?? health.serviceRuntime?.runtimeVersion,
+            channel: health.updater?.channel ?? health.serviceRuntime?.releaseChannel,
+            track: health.updater?.rollout?.track ?? health.updater?.channel ?? health.serviceRuntime?.releaseChannel,
+            updateStatus,
+            latencyMs: health.updater?.updateLatencyMs ?? 0,
+            rollbackCount: 0,
+            outdated: updateStatus !== 'healthy' && updateStatus !== 'installed',
+            source: 'local-bridge',
+            target: tenantId,
+          },
+        });
+      } catch {
+        // Local bridge may not be installed yet.
+      }
+    };
+
     if (typeof navigator !== 'undefined' && navigator.onLine) {
       reconnectTenantRealtime(tenantId);
       syncNow();
       void runPrinterHeartbeat({ tenantId });
+      void ingestBridgeRelease();
     } else {
       connectTenantRealtime(null);
     }
@@ -135,6 +169,11 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
       }
     }, 30000);
 
+    const releaseHeartbeat = window.setInterval(() => {
+      if (cancelled || typeof navigator !== 'undefined' && !navigator.onLine) return;
+      void ingestBridgeRelease();
+    }, 300000);
+
     return () => {
       cancelled = true;
       unsubscribeWs();
@@ -143,6 +182,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibility);
       window.clearInterval(heartbeat);
+      window.clearInterval(releaseHeartbeat);
     };
   }, [data, isFetched]);
 

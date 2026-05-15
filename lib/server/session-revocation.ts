@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { runtimeStateTenantKey } from '@/lib/db/compound-keys';
 import { prisma } from '@/lib/db/prisma';
 import type { SessionPayload } from '@/lib/auth';
 
@@ -136,7 +137,7 @@ function pruneState(state: RevocationState) {
 
 async function readState(tenantId: string) {
   const row = await prisma.runtimeState.findUnique({
-    where: { tenantId_key: { tenantId, key: REVOCATION_KEY } },
+    where: runtimeStateTenantKey(tenantId, REVOCATION_KEY),
     select: { payload: true },
   }).catch(() => null);
 
@@ -148,7 +149,7 @@ async function readState(tenantId: string) {
 async function writeState(tenantId: string, state: RevocationState) {
   pruneState(state);
   await prisma.runtimeState.upsert({
-    where: { tenantId_key: { tenantId, key: REVOCATION_KEY } },
+    where: runtimeStateTenantKey(tenantId, REVOCATION_KEY),
     update: { payload: JSON.parse(JSON.stringify(state)) as Prisma.InputJsonValue },
     create: {
       tenantId,

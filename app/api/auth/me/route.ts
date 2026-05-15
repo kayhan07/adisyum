@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSessionFromRequest } from '@/lib/session';
 import { clearSessionCookie } from '@/lib/session';
 import { prisma } from '@/lib/db/prisma';
+import { userTenantIdKey } from '@/lib/db/compound-keys';
 import { isSessionActive } from '@/lib/server/session-guard';
 
 export const dynamic = 'force-dynamic';
@@ -17,8 +18,8 @@ export async function GET(request: Request) {
   const [user, tenant, subscription] = session.role === 'super_admin'
     ? [null, null, null]
     : await Promise.all([
-        prisma.user.findFirst({
-          where: { tenantId: session.tenantId, id: session.userId },
+        prisma.user.findUnique({
+          where: userTenantIdKey(session.tenantId, session.userId),
           select: { username: true, name: true },
         }).catch(() => null),
         prisma.tenant.findUnique({

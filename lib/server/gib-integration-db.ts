@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { Prisma } from '@prisma/client';
+import { runtimeStateTenantKey } from '@/lib/db/compound-keys';
 import { prisma } from '@/lib/db/prisma';
 
 export type GibProvider = 'Uyumsoft' | 'Foriba' | 'EDM' | 'NES';
@@ -50,7 +51,7 @@ export async function upsertGibIntegration(record: GibIntegrationRecord) {
   };
 
   await prisma.runtimeState.upsert({
-    where: { tenantId_key: { tenantId: record.tenantId, key: runtimeKey() } },
+    where: runtimeStateTenantKey(record.tenantId, runtimeKey()),
     update: { payload: encryptedRecord as Prisma.InputJsonValue },
     create: { tenantId: record.tenantId, key: runtimeKey(), payload: encryptedRecord as Prisma.InputJsonValue },
   });
@@ -65,7 +66,7 @@ export async function upsertGibIntegration(record: GibIntegrationRecord) {
 
 export async function getGibIntegration(tenantId: string) {
   const stored = await prisma.runtimeState.findUnique({
-    where: { tenantId_key: { tenantId, key: runtimeKey() } },
+    where: runtimeStateTenantKey(tenantId, runtimeKey()),
     select: { payload: true },
   });
   const record = stored?.payload as GibIntegrationRecord | null | undefined;

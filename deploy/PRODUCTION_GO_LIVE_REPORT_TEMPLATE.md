@@ -1,4 +1,4 @@
-# ADISYUM Production Go-Live Report (Isolated Architecture)
+# Adisyum Production Go-Live Report
 
 Date:
 Operator:
@@ -13,94 +13,75 @@ Environment: Production
 - Nginx reload status:
 - PM2 startup status:
 
-## 2) Domain Routing Status
+## 2) Canonical Routing Status
 
-- adisyum.com -> 3010 (marketing):
-- www.adisyum.com -> 3010 (marketing):
-- app.adisyum.com -> 3000 (POS):
-- admin.adisyum.com -> 3020 (admin):
+- `adisyum.com` -> website app `127.0.0.1:3010`:
+- `www.adisyum.com` -> website app `127.0.0.1:3010`:
+- `adisyum.com/app` -> root app `127.0.0.1:3000/app`:
+- `adisyum.com/system-admin` -> root app `127.0.0.1:3000/system-admin`:
+- No `app.adisyum.com` active vhost:
+- No `admin.adisyum.com` active vhost:
+- No port `3020` listener:
 
-## 3) WebSocket / Realtime Health
+## 3) PM2 Runtime Health
 
-- Nginx Upgrade headers active:
-- app.adisyum.com WS handshake (101):
-- Table realtime:
-- Kitchen realtime:
-- Monitoring realtime:
-- Desktop bridge realtime:
-- Telemetry realtime:
-
-## 4) SSL / Cloudflare Health
-
-- Cloudflare SSL mode (Full strict):
-- Root SSL valid:
-- App SSL valid:
-- Admin SSL valid:
-- Redirect loop check:
-- Mixed-content check:
-
-## 5) PM2 Runtime Health
-
-- adisyum-website:
-- adisyum-pos-app:
-- adisyum-system-admin:
-- Persisted with pm2 save/startup:
+- `adisyum-website`:
+- `adisyum-root-app`:
+- Only two PM2 apps present:
+- Restart loops absent:
+- Persisted with `pm2 save/startup`:
 - Memory/CPU summary:
 
-## 6) POS Smoke Test
+## 4) Build Health
 
+- Root `.next/BUILD_ID`:
+- Root `.next/server`:
+- Root `.next/static`:
+- Website `.next/BUILD_ID`:
+- Prisma Client generated:
+- Bootstrap admin completed:
+
+## 5) POS Smoke Test
+
+- `/app` opens:
 - Login:
-- Masa aç:
-- Ürün ekle:
-- Sipariş oluştur:
-- Ödeme al:
-- Mutfak fişi:
-- Websocket update:
-- Monitoring event:
-- QR menu:
+- Table open:
+- Product add:
+- Order create:
+- Payment:
+- Kitchen ticket:
+- Realtime update:
 
-## 7) Admin Validation
+## 6) System Admin Validation
 
-- system-admin login:
-- tenant provisioning:
-- observability dashboard:
-- monitoring tabs:
-- commercial ops:
-- pilot field metrics:
+- `/system-admin` opens:
+- System admin login:
+- Tenant provisioning:
+- Observability dashboard:
+- Commercial ops:
+- Pilot field metrics:
 
-## 8) Website Validation
+## 7) Website Validation
 
-- homepage:
-- pricing:
+- Homepage:
+- Pricing:
 - CTA:
-- mobile responsiveness:
+- Mobile responsiveness:
 - SEO metadata:
-- performance:
-- animations:
-- forms/buttons:
+- Forms/buttons:
 
-## 9) Infrastructure Health
+## 8) Infrastructure Health
 
-- Nginx workers:
-- Redis health:
-- PostgreSQL connections:
-- WebSocket connection count:
+- `nginx -t`:
+- Cloudflare SSL mode Full strict:
+- PostgreSQL:
+- Redis:
+- WebSocket upgrade headers:
 
-## 10) Production Readiness Verdict
+## 9) Production Readiness Verdict
 
 - Status: GO / NO-GO
 - Known risks:
 - Action items:
 - Owner:
 - ETA:
-
-## 11) Rollback Readiness
-
-- Snapshot verified:
-- Rollback tested:
-- Rollback ETA:
-- Command:
-
-```bash
-sudo APP_USER=<app-user> SNAP_ROOT=/var/backups/adisyum-cutover bash deploy/scripts/rollback-isolated.sh latest
-```

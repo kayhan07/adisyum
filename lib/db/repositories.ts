@@ -1,4 +1,5 @@
 import { OrderStatus, PaymentStatus, Prisma, type PrismaClient } from '@prisma/client';
+import { runtimeStateTenantKey } from '@/lib/db/compound-keys';
 import { prisma } from '@/lib/db/prisma';
 import type { TenantContext } from '@/lib/tenant';
 
@@ -303,13 +304,13 @@ export class SettingsRepository {
 
   get(tenant: TenantContext, key: string) {
     return this.db.runtimeState.findUnique({
-      where: { tenantId_key: { tenantId: tenant.tenantId, key: `settings:${key}` } },
+      where: runtimeStateTenantKey(tenant.tenantId, `settings:${key}`),
     });
   }
 
   set(tenant: TenantContext, key: string, payload: Prisma.InputJsonValue) {
     return this.db.runtimeState.upsert({
-      where: { tenantId_key: { tenantId: tenant.tenantId, key: `settings:${key}` } },
+      where: runtimeStateTenantKey(tenant.tenantId, `settings:${key}`),
       update: { payload },
       create: { tenantId: tenant.tenantId, key: `settings:${key}`, payload },
     });

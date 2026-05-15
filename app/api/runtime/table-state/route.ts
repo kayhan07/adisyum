@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { requireTenant, tenantAuthErrorResponse } from '@/lib/requireTenant';
+import { runtimeStateTenantKey } from '@/lib/db/compound-keys';
 import { prisma } from '@/lib/db/prisma';
 
 export const runtime = 'nodejs';
@@ -30,7 +31,7 @@ export async function GET(request: Request) {
   try {
     const tenant = await requireTenant(request);
     const stored = await prisma.runtimeState.findUnique({
-      where: { tenantId_key: { tenantId: tenant.tenantId, key: TABLE_STATE_KEY } },
+      where: runtimeStateTenantKey(tenant.tenantId, TABLE_STATE_KEY),
       select: { payload: true },
     }).catch(() => null);
 
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
   }
 
   const stored = await prisma.runtimeState.findUnique({
-    where: { tenantId_key: { tenantId, key: TABLE_STATE_KEY } },
+    where: runtimeStateTenantKey(tenantId, TABLE_STATE_KEY),
     select: { payload: true },
   });
   const current = stored?.payload && typeof stored.payload === 'object'
@@ -82,7 +83,7 @@ export async function POST(request: Request) {
   const persistedState = JSON.parse(JSON.stringify(nextState)) as Prisma.InputJsonValue;
 
   await prisma.runtimeState.upsert({
-    where: { tenantId_key: { tenantId, key: TABLE_STATE_KEY } },
+    where: runtimeStateTenantKey(tenantId, TABLE_STATE_KEY),
     update: { payload: persistedState },
     create: { tenantId, key: TABLE_STATE_KEY, payload: persistedState },
   }).catch(() => undefined);

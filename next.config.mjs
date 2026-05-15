@@ -7,6 +7,7 @@ const appDir = path.dirname(fileURLToPath(import.meta.url));
 const nextConfig = {
   outputFileTracingRoot: appDir,
   generateBuildId: async () => `adisyon-${Date.now()}`,
+  assetPrefix: process.env.ADISYUM_ROOT_ASSET_PREFIX || '',
   images: {
     formats: ['image/webp'],
     deviceSizes: [430, 640, 768, 1080, 1280],

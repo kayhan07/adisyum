@@ -15,6 +15,16 @@ enum TenantStatus {
   blocked
 }
 
+enum SubscriptionStatus {
+  active
+  trial
+  demo
+  past_due
+  canceled
+  expired
+  suspended
+}
+
 enum OrderStatus {
   open
   preparing
@@ -40,80 +50,279 @@ enum SyncStatus {
 }
 
 model Tenant {
-  id           String       @id @default(uuid()) @db.Uuid
-  tenantId     String       @unique @map("tenant_id") @db.VarChar(64)
-  name         String       @db.VarChar(180)
-  packageType  String       @default("mini") @map("package_type") @db.VarChar(32)
-  status       TenantStatus @default(trial)
-  mainBranchId String?      @map("main_branch_id") @db.VarChar(64)
-  metadata     Json         @default("{}")
-  createdAt    DateTime     @default(now()) @map("created_at")
-  updatedAt    DateTime     @updatedAt @map("updated_at")
+  id            String         @id @default(uuid()) @db.Uuid
+  tenantId      String         @unique @map("tenant_id") @db.VarChar(64)
+  name          String         @db.VarChar(180)
+  legalName     String?        @map("legal_name") @db.VarChar(220)
+  taxNumber     String?        @map("tax_number") @db.VarChar(64)
+  packageType   String         @default("mini") @map("package_type") @db.VarChar(32)
+  status        TenantStatus   @default(trial)
+  mainBranchId  String?        @map("main_branch_id") @db.VarChar(64)
+  settings      Json           @default("{}")
+  metadata      Json           @default("{}")
+  deletedAt     DateTime?      @map("deleted_at")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
 
-  @@index([tenantId])
+  branches      Branch[]
+  users         User[]
+  roles         Role[]
+  permissions   Permission[]
+  subscriptions Subscription[]
+  sessions      Session[]
+  auditLogs     AuditLog[]
+  mainBranch    Branch?        @relation("TenantMainBranch", fields: [tenantId, mainBranchId], references: [tenantId, branchId], onDelete: NoAction, onUpdate: Cascade)
+
   @@index([status])
+  @@index([deletedAt])
   @@map("tenants")
 }
 
-model Subscription {
-  id          String       @id @default(uuid()) @db.Uuid
-  tenantId    String       @map("tenant_id") @db.VarChar(64)
-  packageType String       @map("package_type") @db.VarChar(32)
-  status      TenantStatus @default(trial)
-  startsAt    DateTime     @map("starts_at")
-  endsAt      DateTime     @map("ends_at")
-  metadata    Json         @default("{}")
-  createdAt   DateTime     @default(now()) @map("created_at")
-  updatedAt   DateTime     @updatedAt @map("updated_at")
+model Branch {
+  id             String      @id @default(uuid()) @db.Uuid
+  tenantId       String      @map("tenant_id") @db.VarChar(64)
+  branchId       String      @map("branch_id") @db.VarChar(64)
+  name           String      @db.VarChar(160)
+  code           String?     @db.VarChar(64)
+  type           String      @default("standard") @db.VarChar(32)
+  timezone       String      @default("Europe/Istanbul") @db.VarChar(80)
+  active         Boolean     @default(true)
+  metadata       Json        @default("{}")
+  deletedAt      DateTime?   @map("deleted_at")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
 
+  tenant         Tenant      @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade, onUpdate: Cascade)
+  mainForTenants Tenant[]    @relation("TenantMainBranch")
+  users          User[]
+  sessions       Session[]
+  auditLogs      AuditLog[]
+
+  @@unique([tenantId, branchId], name: "tenantId_branchId", map: "branches_tenant_id_branch_id_key")
+  @@unique([tenantId, id], name: "tenantId_id", map: "branches_tenant_id_id_key")
+  @@index([tenantId, active])
+  @@index([tenantId, deletedAt])
+  @@map("branches")
+}
+
+model PackagePlan {
+  id             String         @id @default(uuid()) @db.Uuid
+  code           String         @unique @db.VarChar(32)
+  name           String         @db.VarChar(140)
+  description    String?
+  priceMonthly   Decimal        @default(0) @map("price_monthly") @db.Decimal(12, 2)
+  currency       String         @default("TRY") @db.VarChar(3)
+  maxBranches    Int?           @map("max_branches")
+  maxUsers       Int?           @map("max_users")
+  features       Json           @default("[]")
+  limits         Json           @default("{}")
+  active         Boolean        @default(true)
+  metadata       Json           @default("{}")
+  deletedAt      DateTime?      @map("deleted_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  subscriptions  Subscription[]
+
+  @@index([active])
+  @@index([deletedAt])
+  @@map("package_plans")
+}
+
+model Subscription {
+  id             String             @id @default(uuid()) @db.Uuid
+  tenantId       String             @map("tenant_id") @db.VarChar(64)
+  packageId      String?            @map("package_id") @db.Uuid
+  packageType    String             @map("package_type") @db.VarChar(32)
+  status         SubscriptionStatus @default(trial)
+  billingPeriod  String             @default("monthly") @map("billing_period") @db.VarChar(32)
+  startsAt       DateTime           @map("starts_at")
+  trialEndsAt    DateTime?          @map("trial_ends_at")
+  endsAt         DateTime           @map("ends_at")
+  canceledAt     DateTime?          @map("canceled_at")
+  seats          Int                @default(1)
+  branchLimit    Int?               @map("branch_limit")
+  metadata       Json               @default("{}")
+  deletedAt      DateTime?          @map("deleted_at")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+
+  tenant         Tenant             @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade, onUpdate: Cascade)
+  package        PackagePlan?       @relation(fields: [packageId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  sessions       Session[]
+
+  @@unique([tenantId, id], name: "tenantId_id", map: "subscriptions_tenant_id_id_key")
   @@index([tenantId])
   @@index([tenantId, status])
   @@index([tenantId, endsAt])
+  @@index([tenantId, deletedAt])
   @@map("subscriptions")
 }
 
 model User {
-  id           String   @id @default(uuid()) @db.Uuid
-  tenantId     String   @map("tenant_id") @db.VarChar(64)
-  username     String   @db.VarChar(120)
-  name         String   @db.VarChar(180)
-  passwordHash String   @map("password_hash")
-  role         String   @db.VarChar(64)
-  branchId     String?  @map("branch_id") @db.VarChar(64)
-  active       Boolean  @default(true)
-  permissions  Json     @default("[]")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id              String           @id @default(uuid()) @db.Uuid
+  tenantId        String           @map("tenant_id") @db.VarChar(64)
+  branchId        String?          @map("branch_id") @db.VarChar(64)
+  username        String           @db.VarChar(120)
+  email           String?          @db.VarChar(180)
+  name            String           @db.VarChar(180)
+  passwordHash    String           @map("password_hash")
+  role            String           @default("staff") @db.VarChar(64)
+  permissions     Json             @default("[]")
+  active          Boolean          @default(true)
+  emailVerifiedAt DateTime?        @map("email_verified_at")
+  lastLoginAt     DateTime?        @map("last_login_at")
+  metadata        Json             @default("{}")
+  deletedAt       DateTime?        @map("deleted_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
 
-  @@unique([tenantId, username])
+  tenant          Tenant           @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade, onUpdate: Cascade)
+  branch          Branch?          @relation(fields: [tenantId, branchId], references: [tenantId, branchId], onDelete: NoAction, onUpdate: Cascade)
+  userRoles       UserRole[]
+  userPermissions UserPermission[]
+  sessions        Session[]
+  auditLogs       AuditLog[]       @relation("AuditLogActor")
+
+  @@unique([tenantId, id], name: "tenantId_id", map: "users_tenant_id_id_key")
+  @@unique([tenantId, username], name: "tenantId_username", map: "users_tenant_id_username_key")
+  @@unique([tenantId, email], name: "tenantId_email", map: "users_tenant_id_email_key")
   @@index([tenantId])
+  @@index([tenantId, branchId])
   @@index([tenantId, active])
+  @@index([tenantId, deletedAt])
   @@map("users")
 }
 
 model Role {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String   @map("tenant_id") @db.VarChar(64)
-  name        String   @db.VarChar(100)
-  permissions Json     @default("[]")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id              String           @id @default(uuid()) @db.Uuid
+  tenantId        String           @map("tenant_id") @db.VarChar(64)
+  key             String           @db.VarChar(100)
+  name            String           @db.VarChar(100)
+  description     String?
+  permissions     Json             @default("[]")
+  system          Boolean          @default(false)
+  metadata        Json             @default("{}")
+  deletedAt       DateTime?        @map("deleted_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
 
-  @@unique([tenantId, name])
+  tenant          Tenant           @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade, onUpdate: Cascade)
+  users           UserRole[]
+  rolePermissions RolePermission[]
+
+  @@unique([tenantId, id], name: "tenantId_id", map: "roles_tenant_id_id_key")
+  @@unique([tenantId, key], name: "tenantId_key", map: "roles_tenant_id_key_key")
+  @@unique([tenantId, name], name: "tenantId_name", map: "roles_tenant_id_name_key")
   @@index([tenantId])
+  @@index([tenantId, deletedAt])
   @@map("roles")
 }
 
 model Permission {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String   @map("tenant_id") @db.VarChar(64)
-  key         String   @db.VarChar(140)
-  description String?
-  createdAt   DateTime @default(now()) @map("created_at")
+  id              String           @id @default(uuid()) @db.Uuid
+  tenantId        String           @map("tenant_id") @db.VarChar(64)
+  key             String           @db.VarChar(140)
+  name            String?          @db.VarChar(140)
+  description     String?
+  scope           String           @default("tenant") @db.VarChar(40)
+  metadata        Json             @default("{}")
+  deletedAt       DateTime?        @map("deleted_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
 
-  @@unique([tenantId, key])
+  tenant          Tenant           @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade, onUpdate: Cascade)
+  roles           RolePermission[]
+  users           UserPermission[]
+
+  @@unique([tenantId, id], name: "tenantId_id", map: "permissions_tenant_id_id_key")
+  @@unique([tenantId, key], name: "tenantId_key", map: "permissions_tenant_id_key_key")
   @@index([tenantId])
+  @@index([tenantId, deletedAt])
   @@map("permissions")
+}
+
+model UserRole {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.VarChar(64)
+  userId    String   @map("user_id") @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+  role      Role     @relation(fields: [tenantId, roleId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([tenantId, userId, roleId], name: "tenantId_userId_roleId", map: "user_roles_tenant_id_user_id_role_id_key")
+  @@index([tenantId, userId])
+  @@index([tenantId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  id           String     @id @default(uuid()) @db.Uuid
+  tenantId     String     @map("tenant_id") @db.VarChar(64)
+  roleId       String     @map("role_id") @db.Uuid
+  permissionId String     @map("permission_id") @db.Uuid
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  role         Role       @relation(fields: [tenantId, roleId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+  permission   Permission @relation(fields: [tenantId, permissionId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([tenantId, roleId, permissionId], name: "tenantId_roleId_permissionId", map: "role_permissions_tenant_id_role_id_permission_id_key")
+  @@index([tenantId, roleId])
+  @@index([tenantId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserPermission {
+  id           String     @id @default(uuid()) @db.Uuid
+  tenantId     String     @map("tenant_id") @db.VarChar(64)
+  userId       String     @map("user_id") @db.Uuid
+  permissionId String     @map("permission_id") @db.Uuid
+  effect       String     @default("allow") @db.VarChar(16)
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  user         User       @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+  permission   Permission @relation(fields: [tenantId, permissionId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([tenantId, userId, permissionId], name: "tenantId_userId_permissionId", map: "user_permissions_tenant_id_user_id_permission_id_key")
+  @@index([tenantId, userId])
+  @@index([tenantId, permissionId])
+  @@map("user_permissions")
+}
+
+model Session {
+  id               String        @id @default(uuid()) @db.Uuid
+  tenantId         String        @map("tenant_id") @db.VarChar(64)
+  userId           String        @map("user_id") @db.Uuid
+  branchId         String?       @map("branch_id") @db.VarChar(64)
+  subscriptionId   String?       @map("subscription_id") @db.Uuid
+  tokenHash        String        @unique @map("token_hash") @db.VarChar(255)
+  refreshTokenHash String?       @unique @map("refresh_token_hash") @db.VarChar(255)
+  ip               String?       @db.VarChar(80)
+  userAgent        String?       @map("user_agent") @db.VarChar(500)
+  deviceId         String?       @map("device_id") @db.VarChar(120)
+  revokedAt        DateTime?     @map("revoked_at")
+  expiresAt        DateTime      @map("expires_at")
+  lastSeenAt       DateTime      @default(now()) @map("last_seen_at")
+  metadata         Json          @default("{}")
+  deletedAt        DateTime?     @map("deleted_at")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  tenant           Tenant        @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade, onUpdate: Cascade)
+  user             User          @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: Cascade, onUpdate: Cascade)
+  branch           Branch?       @relation(fields: [tenantId, branchId], references: [tenantId, branchId], onDelete: NoAction, onUpdate: Cascade)
+  subscription     Subscription? @relation(fields: [tenantId, subscriptionId], references: [tenantId, id], onDelete: NoAction, onUpdate: Cascade)
+  auditLogs        AuditLog[]
+
+  @@index([tenantId])
+  @@index([tenantId, userId])
+  @@index([tenantId, branchId])
+  @@index([tenantId, expiresAt])
+  @@index([tenantId, revokedAt])
+  @@index([tenantId, deletedAt])
+  @@map("sessions")
 }
 
 model TableGroup {
@@ -238,7 +447,7 @@ model Order {
   createdAt  DateTime    @default(now()) @map("created_at")
   updatedAt  DateTime    @updatedAt @map("updated_at")
 
-  @@unique([tenantId, orderNo])
+  @@unique([tenantId, orderNo], name: "tenantId_orderNo", map: "orders_tenant_id_order_no_key")
   @@index([tenantId])
   @@index([tenantId, createdAt])
   @@index([tenantId, status])
@@ -514,18 +723,34 @@ model Report {
 }
 
 model AuditLog {
-  id        String   @id @default(uuid()) @db.Uuid
-  tenantId  String?  @map("tenant_id") @db.VarChar(64)
-  userId    String?  @map("user_id") @db.VarChar(80)
-  action    String   @db.VarChar(120)
-  entity    String?  @db.VarChar(120)
-  entityId  String?  @map("entity_id") @db.VarChar(80)
-  ip        String?  @db.VarChar(80)
-  metadata  Json     @default("{}")
-  createdAt DateTime @default(now()) @map("created_at")
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String?   @map("tenant_id") @db.VarChar(64)
+  branchId    String?   @map("branch_id") @db.VarChar(64)
+  userId      String?   @map("user_id") @db.VarChar(80)
+  actorId     String?   @map("actor_id") @db.Uuid
+  sessionId   String?   @map("session_id") @db.Uuid
+  action      String    @db.VarChar(120)
+  entity      String?   @db.VarChar(120)
+  entityId    String?   @map("entity_id") @db.VarChar(80)
+  ip          String?   @db.VarChar(80)
+  userAgent   String?   @map("user_agent") @db.VarChar(500)
+  requestId   String?   @map("request_id") @db.VarChar(120)
+  before      Json?
+  after       Json?
+  metadata    Json      @default("{}")
+  deletedAt   DateTime? @map("deleted_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
 
-  @@index([tenantId])
+  tenant      Tenant?   @relation(fields: [tenantId], references: [tenantId], onDelete: SetNull, onUpdate: Cascade)
+  branch      Branch?   @relation(fields: [tenantId, branchId], references: [tenantId, branchId], onDelete: SetNull, onUpdate: Cascade)
+  actor       User?     @relation("AuditLogActor", fields: [actorId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  session     Session?  @relation(fields: [sessionId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
   @@index([tenantId, createdAt])
+  @@index([tenantId, branchId])
+  @@index([tenantId, actorId])
+  @@index([tenantId, sessionId])
+  @@index([tenantId, deletedAt])
   @@index([action])
   @@map("audit_logs")
 }
@@ -558,7 +783,7 @@ model OfflineEvent {
   createdAt DateTime   @default(now()) @map("created_at")
   updatedAt DateTime   @updatedAt @map("updated_at")
 
-  @@unique([tenantId, eventId])
+  @@unique([tenantId, eventId], name: "tenantId_eventId", map: "offline_events_tenant_id_event_id_key")
   @@index([tenantId])
   @@index([tenantId, status])
   @@map("offline_events")
@@ -572,7 +797,7 @@ model RuntimeState {
   updatedAt DateTime @updatedAt @map("updated_at")
   createdAt DateTime @default(now()) @map("created_at")
 
-  @@unique([tenantId, key])
+  @@unique([tenantId, key], name: "tenantId_key", map: "runtime_states_tenant_id_key_key")
   @@index([tenantId])
   @@map("runtime_states")
 }

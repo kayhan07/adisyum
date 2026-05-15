@@ -56,7 +56,7 @@ export function Navbar() {
 
         {/* CTAs */}
         <div className="hidden items-center gap-3 lg:flex">
-          <a href="https://app.adisyum.com" className="text-sm font-semibold text-slate-300 hover:text-white transition">
+          <a href="/app" className="text-sm font-semibold text-slate-300 hover:text-white transition">
             Giriş Yap
           </a>
           <a
@@ -101,7 +101,7 @@ export function Navbar() {
             ))}
           </ul>
           <div className="grid gap-2">
-            <a href="https://app.adisyum.com" className="rounded-xl border border-white/10 px-4 py-3 text-center text-sm font-semibold text-slate-200">Giriş Yap</a>
+            <a href="/app" className="rounded-xl border border-white/10 px-4 py-3 text-center text-sm font-semibold text-slate-200">Giriş Yap</a>
             <a href="#demo" onClick={() => setMenuOpen(false)} className="rounded-xl bg-brand-500 px-4 py-3 text-center text-sm font-semibold text-white">Ücretsiz Demo →</a>
           </div>
         </div>

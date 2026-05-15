@@ -32,8 +32,8 @@ const NAV = [
     links: [
       { label: 'Yardım Merkezi', href: '#' },
       { label: 'Durum Sayfası', href: '#' },
-      { label: 'POS Arayüzü', href: 'https://app.adisyum.com' },
-      { label: 'Admin Paneli', href: 'https://app.adisyum.com/app' },
+      { label: 'POS Arayüzü', href: '/app' },
+      { label: 'Admin Paneli', href: '/system-admin' },
     ],
   },
 ];

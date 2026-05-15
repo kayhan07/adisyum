@@ -6,8 +6,10 @@ import { isSessionActive } from '@/lib/server/session-guard';
 import {
   buildServerMetricSnapshot,
   buildTenantObservabilityRows,
+  buildReleaseTelemetryRows,
   getRecentObservabilityLogs,
   getRecentSlowQueries,
+  getReleaseTelemetrySummary,
 } from '@/lib/observability/metrics-store';
 import { getOpenIncidents, getIncidentStats } from '@/lib/incidents/incident-engine';
 import { getRecentAlerts, getAlertStats } from '@/lib/alerts/alert-engine';
@@ -129,6 +131,8 @@ export async function GET(request: Request) {
   const [postgres, redis] = await Promise.all([getPostgresMetrics(), getRedisMetrics()]);
   const server = buildServerMetricSnapshot({ postgres, redis });
   const tenants = buildTenantObservabilityRows();
+  const releases = buildReleaseTelemetryRows();
+  const releaseSummary = getReleaseTelemetrySummary(releases);
   const logs = getRecentObservabilityLogs(250);
   const slowQueries = getRecentSlowQueries(80);
 
@@ -242,6 +246,8 @@ export async function GET(request: Request) {
     playbookRuns,
     pilotField,
     commercialOps,
+    releases,
+    releaseSummary,
     generatedAt: new Date().toISOString(),
   });
 }

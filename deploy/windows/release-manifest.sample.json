@@ -1,0 +1,44 @@
+{
+  "version": "1.4.2",
+  "runtimeVersion": "1.4.2",
+  "buildNumber": "202605141230",
+  "channel": "stable",
+  "track": "stable",
+  "changelog": "Printer reconnect hardening, tray health improvements, and rollback safety.",
+  "downloadUrl": "https://downloads.adisyum.com/windows/AdisyumSetup-1.4.2.exe",
+  "checksum": "sha256:REPLACE_ME",
+  "signature": "base64-signature-placeholder",
+  "manifestDigest": "sha256-of-release-governance-payload",
+  "publisher": "CN=Adisyum, O=Adisyum",
+  "publisherThumbprint": "REPLACE_WITH_THUMBPRINT",
+  "timestampServer": "http://timestamp.digicert.com",
+  "signedInstaller": true,
+  "signedBinaries": true,
+  "signedUpdater": true,
+  "safeUpdateWindow": "02:00-06:00",
+  "tenantSafeRollout": true,
+  "rollbackSnapshot": true,
+  "partialDownloadRecovery": true,
+  "stagedRolloutPercent": 100,
+  "minimumBridgeVersion": "1.4.2",
+  "minimumTrayVersion": "1.4.2",
+  "releaseApproval": {
+    "required": true,
+    "approved": true,
+    "approvedBy": "release-manager@adisyum.com",
+    "approvedAt": "2026-05-14T12:30:00Z"
+  },
+  "pilotApproval": {
+    "required": true,
+    "approved": true,
+    "approvedBy": "pilot-ops@adisyum.com",
+    "approvedAt": "2026-05-14T12:35:00Z"
+  },
+  "stagedRolloutApproval": {
+    "required": true,
+    "approved": true,
+    "approvedBy": "sre@adisyum.com",
+    "approvedAt": "2026-05-14T12:40:00Z"
+  },
+  "targetTenants": []
+}

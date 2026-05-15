@@ -16,7 +16,12 @@ export type SecurityEventType =
   | 'excessive_failed_auth'
   | 'abnormal_admin_action'
   | 'rate_limit_exceeded'
-  | 'unusual_ip_access';
+  | 'unusual_ip_access'
+  | 'failed_signature_validation'
+  | 'corrupted_manifest'
+  | 'corrupted_update_package'
+  | 'suspicious_update_source'
+  | 'unsigned_runtime';
 
 export type SecurityEvent = {
   id: string;
@@ -224,6 +229,23 @@ export async function trackTokenAbuse(token: string, ip: string, tenantId?: stri
     blocked: false,
     description: `Invalid/abused token from ${ip}: ${reason}`,
     context: { tokenPrefix: token.slice(0, 12) + '…', reason },
+  });
+}
+
+export async function trackUpdateSecurityEvent(
+  type: Extract<SecurityEventType, 'failed_signature_validation' | 'corrupted_manifest' | 'corrupted_update_package' | 'suspicious_update_source' | 'unsigned_runtime'>,
+  tenantId?: string,
+  description?: string,
+  context?: Record<string, unknown>,
+) {
+  const severity = type === 'unsigned_runtime' || type === 'suspicious_update_source' ? 'high' : 'critical';
+  await recordSecurityEvent({
+    type,
+    tenantId,
+    severity,
+    blocked: true,
+    description: description ?? `Update trust violation detected: ${type}`,
+    context,
   });
 }
 

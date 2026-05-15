@@ -1,24 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME="${APP_NAME:-adisyum}"
 APP_DIR="${APP_DIR:-/var/www/adisyum}"
-DOMAIN="${DOMAIN:-adisyum.com}"
 APP_USER="${APP_USER:-${SUDO_USER:-www-data}}"
-NGINX_SITE="/etc/nginx/sites-available/${APP_NAME}"
-NGINX_ENABLED="/etc/nginx/sites-enabled/${APP_NAME}"
+DOMAIN="${DOMAIN:-adisyum.com}"
 SSL_DIR="/etc/ssl/cloudflare"
 ORIGIN_PEM="${SSL_DIR}/origin.pem"
 ORIGIN_KEY="${SSL_DIR}/origin.key"
 
 if [[ "${EUID}" -ne 0 ]]; then
-  echo "Run with sudo: sudo bash deploy/scripts/setup-ubuntu-production.sh"
+  echo "Run with sudo: sudo APP_DIR=/root/adisyum APP_USER=root bash deploy/scripts/setup-ubuntu-production.sh"
   exit 1
 fi
 
-echo "==> Installing nginx"
+if [[ ! -d "${APP_DIR}" ]]; then
+  echo "APP_DIR not found: ${APP_DIR}"
+  exit 1
+fi
+
+echo "==> Installing system packages"
 apt update
-apt install -y nginx
+apt install -y nginx curl lsof
 
 echo "==> Configuring firewall"
 ufw allow 22/tcp
@@ -53,41 +55,37 @@ fi
 chmod 644 "${ORIGIN_PEM}"
 chmod 600 "${ORIGIN_KEY}"
 
-echo "==> Installing Cloudflare real IP config"
-install -m 644 deploy/nginx/cloudflare-real-ip.conf /etc/nginx/conf.d/cloudflare-real-ip.conf
-install -m 644 deploy/nginx/websocket-map.conf /etc/nginx/conf.d/websocket-map.conf
-
-echo "==> Installing nginx site"
-install -m 644 deploy/nginx/adisyum.conf "${NGINX_SITE}"
-ln -sfn "${NGINX_SITE}" "${NGINX_ENABLED}"
-rm -f /etc/nginx/sites-enabled/default
-
-echo "==> Testing nginx"
-nginx -t
-systemctl enable nginx
-systemctl restart nginx
-
-echo "==> Building Next.js app"
-cd "${APP_DIR}"
 if ! command -v pm2 >/dev/null 2>&1; then
+  echo "==> Installing PM2"
   npm install -g pm2
 fi
-sudo -H -u "${APP_USER}" bash -lc "cd '${APP_DIR}' && npm ci && npm run build"
 
-echo "==> Starting PM2 process as ${APP_USER}"
-if sudo -H -u "${APP_USER}" bash -lc "pm2 describe '${APP_NAME}' >/dev/null 2>&1"; then
-  sudo -H -u "${APP_USER}" bash -lc "cd '${APP_DIR}' && pm2 restart '${APP_NAME}' --update-env"
-else
-  sudo -H -u "${APP_USER}" bash -lc "cd '${APP_DIR}' && pm2 start npm --name '${APP_NAME}' -- start"
-fi
-sudo -H -u "${APP_USER}" bash -lc "pm2 save"
+cd "${APP_DIR}"
+
+echo "==> Running canonical production deployment"
+APP_DIR="${APP_DIR}" \
+APP_USER="${APP_USER}" \
+DOMAIN_ROOT="https://${DOMAIN}" \
+DOMAIN_APP="https://${DOMAIN}/app" \
+DOMAIN_ADMIN="https://${DOMAIN}/system-admin" \
+bash deploy-production.sh
 
 echo "==> Configuring PM2 startup"
 USER_HOME="$(eval echo "~${APP_USER}")"
 env PATH="${PATH}" pm2 startup systemd -u "${APP_USER}" --hp "${USER_HOME}" || true
 
-echo "==> Done"
-echo "Check:"
-echo "curl -I http://${DOMAIN}"
-echo "curl -I https://${DOMAIN}"
-echo "pm2 list"
+cat <<EOF
+
+Setup completed with canonical architecture:
+- adisyum.com -> website app on 3010
+- adisyum.com/app -> root app on 3000
+- adisyum.com/system-admin -> root app on 3000
+
+There is no app.adisyum.com, admin.adisyum.com, or port 3020 runtime in this architecture.
+
+Check:
+curl -I https://${DOMAIN}
+curl -I https://${DOMAIN}/app
+curl -I https://${DOMAIN}/system-admin
+pm2 list
+EOF

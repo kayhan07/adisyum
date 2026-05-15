@@ -63,59 +63,8 @@ function withSecurityHeaders(response: NextResponse) {
   return response;
 }
 
-function normalizeHost(host: string | null) {
-  return (host ?? '').trim().toLowerCase().split(':')[0];
-}
-
-function isRootMarketingHost(host: string) {
-  return host === 'adisyum.com' || host === 'www.adisyum.com';
-}
-
-function isAppHost(host: string) {
-  return host === 'app.adisyum.com';
-}
-
-function isAdminHost(host: string) {
-  return host === 'admin.adisyum.com';
-}
-
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const host = normalizeHost(request.headers.get('host'));
-
-  if (isRootMarketingHost(host)) {
-    if (pathname === '/' || pathname === '/site') {
-      const rewriteUrl = request.nextUrl.clone();
-      rewriteUrl.pathname = '/site';
-      return withSecurityHeaders(NextResponse.rewrite(rewriteUrl));
-    }
-
-    if (pathname.startsWith('/app') || pathname.startsWith('/dashboard') || pathname.startsWith('/orders') || pathname.startsWith('/products') || pathname.startsWith('/warehouse') || pathname.startsWith('/reports') || pathname.startsWith('/finance') || pathname.startsWith('/settings') || pathname.startsWith('/pos')) {
-      const redirectUrl = request.nextUrl.clone();
-      redirectUrl.host = 'app.adisyum.com';
-      redirectUrl.protocol = 'https:';
-      return withSecurityHeaders(NextResponse.redirect(redirectUrl));
-    }
-
-    if (pathname.startsWith('/system-admin')) {
-      const redirectUrl = request.nextUrl.clone();
-      redirectUrl.host = 'admin.adisyum.com';
-      redirectUrl.protocol = 'https:';
-      return withSecurityHeaders(NextResponse.redirect(redirectUrl));
-    }
-  }
-
-  if (isAppHost(host) && pathname === '/') {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = '/app';
-    return withSecurityHeaders(NextResponse.redirect(redirectUrl));
-  }
-
-  if (isAdminHost(host) && pathname === '/') {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = '/system-admin';
-    return withSecurityHeaders(NextResponse.redirect(redirectUrl));
-  }
 
   if (isPublicPath(pathname) || !isProtectedPath(pathname)) return withSecurityHeaders(NextResponse.next());
 

@@ -3,8 +3,10 @@ import { verifySessionToken } from '@/lib/auth';
 import { createSessionToken, setSessionCookie, clearSessionCookie } from '@/lib/session';
 import { prisma } from '@/lib/db/prisma';
 import { writeAuditLog } from '@/lib/db/audit';
+import { userTenantIdKey } from '@/lib/db/compound-keys';
 import { registerActiveSession, revokeCurrentSession, revokeTenantSessions, revokeUserSessions } from '@/lib/server/session-revocation';
 import { getSessionFromRequest, getRawSessionTokenFromRequest } from '@/lib/session';
+import { createDbSession } from '@/lib/server/auth-session-db';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,8 +17,24 @@ type LoginPayload = {
   branchId?: string;
 };
 
+function normalizePermissions(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function normalizePackageType(value: string | null | undefined) {
+  return value === 'gold' || value === 'premium' ? value : 'mini';
+}
+
+function getRequestIp(request: Request) {
+  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || request.headers.get('x-real-ip')
+    || null;
+}
+
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as LoginPayload | null;
+  const ip = getRequestIp(request);
+  const userAgent = request.headers.get('user-agent');
   if (!body?.userId || !body.tenantId || !body.role) {
     return NextResponse.json({ ok: false, error: 'Gecersiz oturum payload.' }, { status: 400 });
   }
@@ -35,19 +53,22 @@ export async function POST(request: Request) {
       orderBy: { endsAt: 'desc' },
       select: { id: true, packageType: true },
     }),
-    prisma.user.findFirst({
-      where: { tenantId: body.tenantId, id: body.userId, active: true },
-      select: { id: true, permissions: true },
+    prisma.user.findUnique({
+      where: userTenantIdKey(body.tenantId, body.userId),
+      select: { id: true, role: true, branchId: true, permissions: true, active: true },
     }),
   ]);
 
-  if (!tenant || !['active', 'trial', 'demo'].includes(tenant.status) || !subscription || !user) {
+  if (!tenant || !['active', 'trial', 'demo'].includes(tenant.status) || !subscription || !user || !user.active) {
     await writeAuditLog({
       tenantId: body.tenantId,
       userId: body.userId,
       action: 'failed_login',
       entity: 'user',
       entityId: body.userId,
+      actorId: body.userId,
+      ip,
+      userAgent,
       metadata: { reason: 'inactive_tenant_subscription_or_user' },
     }).catch(() => undefined);
     return NextResponse.json({ ok: false, error: 'Tenant, abonelik veya kullanici aktif degil.' }, { status: 403 });
@@ -56,12 +77,17 @@ export async function POST(request: Request) {
   const token = await createSessionToken({
     userId: body.userId,
     tenantId: body.tenantId,
-    role: body.role,
+    role: user.role || body.role,
     subscriptionId: subscription.id,
-    permissions: Array.isArray(user.permissions) ? user.permissions.filter((item): item is string => typeof item === 'string') : [],
-    packageType: (subscription.packageType || tenant.packageType) as 'mini' | 'gold' | 'premium',
-    branchId: body.branchId,
+    permissions: normalizePermissions(user.permissions),
+    packageType: normalizePackageType(subscription.packageType || tenant.packageType),
+    branchId: user.branchId ?? body.branchId,
   });
+
+  const verified = await verifySessionToken(token);
+  const dbSession = verified
+    ? await createDbSession({ token, session: verified, ip, userAgent }).catch(() => null)
+    : null;
 
   await writeAuditLog({
     tenantId: body.tenantId,
@@ -69,9 +95,13 @@ export async function POST(request: Request) {
     action: 'login',
     entity: 'user',
     entityId: body.userId,
+    actorId: body.userId,
+    sessionId: dbSession?.id,
+    branchId: user.branchId ?? body.branchId ?? null,
+    ip,
+    userAgent,
   }).catch(() => undefined);
 
-  const verified = await verifySessionToken(token);
   if (verified) {
     await registerActiveSession(verified).catch(() => undefined);
   }
@@ -120,6 +150,8 @@ export async function DELETE(request: Request) {
       action: 'logout',
       entity: 'user',
       entityId: session.userId,
+      actorId: session.userId,
+      branchId: session.branchId ?? null,
       metadata: {
         reason,
         scope,
