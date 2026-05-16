@@ -131,6 +131,7 @@ const categories: Category[] = [
 const VAT_RATE = 0.1;
 const RECENT_ACCOUNT_KEY = 'adisyon-recent-charge-accounts';
 const EMPTY_ORDER_LINES: OrderLine[] = [];
+let orderRuntimePersistCounter = 0;
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat('tr-TR', {
@@ -322,9 +323,12 @@ function persistOrderMutationSnapshot(
   context: Record<string, unknown>,
 ) {
   const total = getOrderGross(nextLines);
+  const persistCount = orderRuntimePersistCounter + 1;
   const persist = () => {
+    orderRuntimePersistCounter = persistCount;
     logOrderFlow('order-runtime-persist-start', {
       ...context,
+      persistCount,
       tableId,
       lineCount: nextLines.length,
       total,
@@ -333,6 +337,7 @@ function persistOrderMutationSnapshot(
     setTableLiveTotals({ [tableId]: total });
     logOrderFlow('order-runtime-persist-complete', {
       ...context,
+      persistCount,
       tableId,
       lineCount: nextLines.length,
       total,

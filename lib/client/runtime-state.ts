@@ -23,6 +23,13 @@ const lastLocalWriteAt: Record<RuntimeScope, number> = {
 	'system-admin': 0,
 };
 
+function areSnapshotsEqual(first: RuntimeSnapshot, second: RuntimeSnapshot) {
+	const firstKeys = Object.keys(first);
+	const secondKeys = Object.keys(second);
+	if (firstKeys.length !== secondKeys.length) return false;
+	return firstKeys.every((key) => first[key] === second[key]);
+}
+
 function emit(scope: RuntimeScope) {
 	listeners[scope].forEach((listener) => listener());
 }
@@ -94,6 +101,14 @@ export function readRuntimeItem(scope: RuntimeScope, key: string) {
 }
 
 export function writeRuntimeItem(scope: RuntimeScope, key: string, value: string | null | undefined, options: { persist?: boolean } = {}) {
+	const previous = snapshots[scope][key];
+	if ((value === null || value === undefined) && previous === undefined) {
+		return;
+	}
+	if (typeof value === 'string' && previous === value) {
+		return;
+	}
+
 	if (value === null || value === undefined) {
 		delete snapshots[scope][key];
 	} else {
@@ -149,7 +164,7 @@ export async function persistRuntimeScope(scope: RuntimeScope) {
 	if (typeof window === 'undefined') return snapshots[scope];
 	try {
 		const next = await requestSnapshot(scope, 'POST', snapshots[scope]);
-		if (Date.now() - lastLocalWriteAt[scope] >= 750) {
+		if (Date.now() - lastLocalWriteAt[scope] >= 750 && !areSnapshotsEqual(snapshots[scope], next)) {
 			snapshots[scope] = next;
 			emit(scope);
 			broadcast(scope);

@@ -6,6 +6,7 @@ const ORDERS_STORAGE_KEY = 'aurelia-orders-by-table';
 const META_STORAGE_KEY = 'aurelia-table-meta';
 const EVENT_NAME = 'aurelia-table-payment-requested:changed';
 let serverBootstrapCompleted = false;
+let tableStateWriteCounter = 0;
 
 type SharedTablePaymentState = {
   paymentRequestedTableIds: string[];
@@ -27,6 +28,28 @@ function canUseStorage() {
   return typeof window !== 'undefined';
 }
 
+function stableJson(value: unknown) {
+  return JSON.stringify(value);
+}
+
+function writeRuntimeJsonIfChanged(key: string, value: unknown, options: { persist?: boolean } = {}) {
+  const next = stableJson(value);
+  if (readRuntimeItem('tenant', key) === next) {
+    return false;
+  }
+
+  writeRuntimeItem('tenant', key, next, options);
+  tableStateWriteCounter += 1;
+  if (typeof window !== 'undefined') {
+    console.info('[adisyon-flow] table-runtime-write', {
+      key,
+      writeCount: tableStateWriteCounter,
+      persist: options.persist !== false,
+    });
+  }
+  return true;
+}
+
 function buildSnapshot(): SharedTablePaymentState {
   return {
     paymentRequestedTableIds: getPaymentRequestedTableIds(),
@@ -41,16 +64,16 @@ function applySnapshot(snapshot: Partial<SharedTablePaymentState>) {
   if (!canUseStorage()) return;
 
   if (Array.isArray(snapshot.paymentRequestedTableIds)) {
-    writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(snapshot.paymentRequestedTableIds), { persist: false });
+    writeRuntimeJsonIfChanged(STORAGE_KEY, snapshot.paymentRequestedTableIds, { persist: false });
   }
   if (snapshot.liveTotals && typeof snapshot.liveTotals === 'object') {
-    writeRuntimeItem('tenant', TOTALS_STORAGE_KEY, JSON.stringify(snapshot.liveTotals), { persist: false });
+    writeRuntimeJsonIfChanged(TOTALS_STORAGE_KEY, snapshot.liveTotals, { persist: false });
   }
   if (snapshot.ordersByTable && typeof snapshot.ordersByTable === 'object') {
-    writeRuntimeItem('tenant', ORDERS_STORAGE_KEY, JSON.stringify(snapshot.ordersByTable), { persist: false });
+    writeRuntimeJsonIfChanged(ORDERS_STORAGE_KEY, snapshot.ordersByTable, { persist: false });
   }
   if (snapshot.tableMeta && typeof snapshot.tableMeta === 'object') {
-    writeRuntimeItem('tenant', META_STORAGE_KEY, JSON.stringify(snapshot.tableMeta), { persist: false });
+    writeRuntimeJsonIfChanged(META_STORAGE_KEY, snapshot.tableMeta, { persist: false });
   }
 }
 
@@ -100,7 +123,7 @@ export function setTablePaymentRequested(tableId: string, requested: boolean) {
     current.delete(tableId);
   }
 
-  writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify([...current]));
+  if (!writeRuntimeJsonIfChanged(STORAGE_KEY, [...current])) return;
   emitChange();
   publishTableState();
 }
@@ -148,7 +171,7 @@ export function setTableLiveTotals(totals: Record<string, number>) {
     return;
   }
 
-  writeRuntimeItem('tenant', TOTALS_STORAGE_KEY, JSON.stringify({ ...getTableLiveTotals(), ...totals }));
+  if (!writeRuntimeJsonIfChanged(TOTALS_STORAGE_KEY, { ...getTableLiveTotals(), ...totals })) return;
   emitChange();
   publishTableState();
 }
@@ -178,11 +201,7 @@ export function setStoredOrdersByTable<T>(orders: Record<string, T[]>) {
     return;
   }
 
-  writeRuntimeItem(
-    'tenant',
-    ORDERS_STORAGE_KEY,
-    JSON.stringify({ ...getStoredOrdersByTable<T>(), ...orders }),
-  );
+  if (!writeRuntimeJsonIfChanged(ORDERS_STORAGE_KEY, { ...getStoredOrdersByTable<T>(), ...orders })) return;
   emitChange();
   publishTableState();
 }
