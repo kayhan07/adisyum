@@ -123,6 +123,14 @@ function defaultTenantSettings(packageType: PackageType, modules: PackageModuleK
   });
 }
 
+function logProvisioningStep(step: string, payload: Record<string, unknown>) {
+  console.info('[tenant-provisioning]', {
+    timestamp: new Date().toISOString(),
+    step,
+    ...payload,
+  });
+}
+
 export async function provisionTenant(input: ProvisionTenantInput) {
   const packageType = input.packageType ?? 'gold';
   const trialDays = Math.max(0, Number(input.trialDays ?? 14));
@@ -152,7 +160,7 @@ export async function provisionTenant(input: ProvisionTenantInput) {
         taxNumber: input.taxNumber?.trim() || null,
         packageType,
         status,
-        mainBranchId: branchId,
+        mainBranchId: null,
         settings: defaultTenantSettings(packageType, modules),
         metadata: compactJson({
           provisionedBy: input.createdBy,
@@ -164,6 +172,7 @@ export async function provisionTenant(input: ProvisionTenantInput) {
         }),
       },
     });
+    logProvisioningStep('tenant-created', { tenantId, mainBranchId: tenant.mainBranchId });
 
     const branch = await tx.branch.create({
       data: {
@@ -179,10 +188,50 @@ export async function provisionTenant(input: ProvisionTenantInput) {
         }),
       },
     });
+    logProvisioningStep('branch-created', { tenantId, branchId: branch.branchId, branchRecordId: branch.id });
 
-    await tx.tenant.update({
+    const createdBranch = await tx.branch.findUnique({
+      where: branchTenantBranchKey(tenantId, branch.branchId),
+      select: { tenantId: true, branchId: true },
+    });
+    if (!createdBranch) {
+      throw new Error(`Ana sube olusturulamadi: ${tenantId}/${branch.branchId}`);
+    }
+
+    const tenantWithMainBranch = await tx.tenant.update({
       where: { tenantId },
       data: { mainBranchId: branch.branchId },
+    });
+    logProvisioningStep('tenant-main-branch-updated', {
+      tenantId,
+      mainBranchId: tenantWithMainBranch.mainBranchId,
+    });
+
+    const subscription = await tx.subscription.create({
+      data: {
+        tenantId,
+        packageType,
+        status: subscriptionStatus,
+        billingPeriod: input.billingPeriod ?? 'monthly',
+        startsAt: now,
+        trialEndsAt: trialDays > 0 ? addDays(now, trialDays) : null,
+        endsAt,
+        seats: input.seats ?? limits.userLimit,
+        branchLimit: input.branchLimit ?? limits.branchLimit,
+        metadata: compactJson({
+          modules,
+          initialBalance: input.initialBalance ?? 0,
+          kontorBalance: input.kontorBalance ?? 0,
+          printerLimit: limits.printerLimit,
+          provisionedBy: input.createdBy,
+          source: 'system-admin-control-center',
+        }),
+      },
+    });
+    logProvisioningStep('subscription-created', {
+      tenantId,
+      subscriptionId: subscription.id,
+      subscriptionStatus: subscription.status,
     });
 
     const roles = await Promise.all(
@@ -200,6 +249,7 @@ export async function provisionTenant(input: ProvisionTenantInput) {
         }),
       ),
     );
+    logProvisioningStep('roles-created', { tenantId, roleKeys: roles.map((role) => role.key) });
 
     const adminUser = await tx.user.upsert({
       where: userTenantUsernameKey(tenantId, adminUsername),
@@ -224,6 +274,12 @@ export async function provisionTenant(input: ProvisionTenantInput) {
         metadata: compactJson({ provisionedAt: new Date().toISOString(), resetRequired: true }),
       },
     });
+    logProvisioningStep('admin-user-created', {
+      tenantId,
+      userId: adminUser.id,
+      username: adminUsername,
+      branchId,
+    });
 
     const tenantAdminRole = roles.find((role) => role.key === 'tenant_admin');
     if (tenantAdminRole) {
@@ -235,28 +291,6 @@ export async function provisionTenant(input: ProvisionTenantInput) {
         },
       });
     }
-
-    const subscription = await tx.subscription.create({
-      data: {
-        tenantId,
-        packageType,
-        status: subscriptionStatus,
-        billingPeriod: input.billingPeriod ?? 'monthly',
-        startsAt: now,
-        trialEndsAt: trialDays > 0 ? addDays(now, trialDays) : null,
-        endsAt,
-        seats: input.seats ?? limits.userLimit,
-        branchLimit: input.branchLimit ?? limits.branchLimit,
-        metadata: compactJson({
-          modules,
-          initialBalance: input.initialBalance ?? 0,
-          kontorBalance: input.kontorBalance ?? 0,
-          printerLimit: limits.printerLimit,
-          provisionedBy: input.createdBy,
-          source: 'system-admin-control-center',
-        }),
-      },
-    });
 
     await tx.runtimeState.upsert({
       where: { tenantId_key: { tenantId, key: 'client-runtime:tenant' } },
