@@ -193,14 +193,26 @@ function logOrderFlow(event: string, payload: Record<string, unknown>) {
   console.info(`[adisyon-flow] ${event}`, payload);
 }
 
+async function readJsonResponse(response: Response) {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return { raw: text };
+  }
+}
+
 async function fetchAuthoritativeTableOrders() {
   const response = await fetch('/api/pos/table-orders', {
     method: 'GET',
     cache: 'no-store',
     credentials: 'include',
   });
-  if (!response.ok) throw new Error(`Authoritative order fetch failed with ${response.status}`);
-  const payload = await response.json() as { ordersByTable?: Record<string, OrderLine[]> };
+  const payload = await readJsonResponse(response) as { ordersByTable?: Record<string, OrderLine[]>; message?: string; error?: string; traceId?: string };
+  if (!response.ok) {
+    throw new Error(`Authoritative order fetch failed with ${response.status}: ${payload.message ?? payload.error ?? 'unknown error'}${payload.traceId ? ` (${payload.traceId})` : ''}`);
+  }
   return payload.ordersByTable ?? {};
 }
 
@@ -228,6 +240,14 @@ async function addProductToAuthoritativeOrder(input: {
     happyHourEligible?: boolean;
   };
 }) {
+  logOrderFlow('add-product-fetch-dispatch', {
+    mutationId: input.mutationId,
+    tableId: input.tableId,
+    productId: input.product.id,
+    productName: input.product.name,
+    quantity: input.product.quantity ?? 1,
+    price: input.product.price,
+  });
   const response = await fetch('/api/pos/table-orders', {
     method: 'POST',
     cache: 'no-store',
@@ -235,8 +255,28 @@ async function addProductToAuthoritativeOrder(input: {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(input),
   });
-  if (!response.ok) throw new Error(`Authoritative product mutation failed with ${response.status}`);
-  const payload = await response.json() as { ordersByTable?: Record<string, OrderLine[]>; mutationId?: string };
+  const payload = await readJsonResponse(response) as {
+    ordersByTable?: Record<string, OrderLine[]>;
+    mutationId?: string;
+    message?: string;
+    error?: string;
+    traceId?: string;
+  };
+  logOrderFlow('add-product-fetch-response', {
+    mutationId: input.mutationId,
+    tableId: input.tableId,
+    status: response.status,
+    ok: response.ok,
+    responseMutationId: payload.mutationId,
+    traceId: payload.traceId,
+    tableCount: payload.ordersByTable ? Object.keys(payload.ordersByTable).length : 0,
+    activeLineCount: payload.ordersByTable?.[input.tableId]?.length ?? 0,
+    error: payload.error,
+    message: payload.message,
+  });
+  if (!response.ok) {
+    throw new Error(`Authoritative product mutation failed with ${response.status}: ${payload.message ?? payload.error ?? 'unknown error'}${payload.traceId ? ` (${payload.traceId})` : ''}`);
+  }
   return {
     ordersByTable: payload.ordersByTable ?? {},
     mutationId: payload.mutationId ?? input.mutationId,

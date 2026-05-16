@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
-import { requireTenant, tenantAuthErrorResponse } from '@/lib/requireTenant';
+import { requireTenant, TenantAuthError, tenantAuthErrorResponse } from '@/lib/requireTenant';
 import { publishTenantEvent } from '@/lib/realtime/tenant-events';
 
 export const runtime = 'nodejs';
@@ -36,6 +36,39 @@ function tableOrderNo(tableId: string) {
   return `TABLE-${tableId}`;
 }
 
+function mutationTraceId(mutationId?: string) {
+  return mutationId || `pos-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function logTableOrderEvent(event: string, payload: Record<string, unknown>) {
+  console.info(`[pos-table-orders] ${event}`, {
+    timestamp: new Date().toISOString(),
+    ...payload,
+  });
+}
+
+function mutationErrorResponse(error: unknown, traceId: string, tenantId: string, tableId?: string) {
+  if (error instanceof TenantAuthError) return tenantAuthErrorResponse(error);
+
+  const message = error instanceof Error ? error.message : String(error);
+  console.error('[pos-table-orders] mutation failed', {
+    timestamp: new Date().toISOString(),
+    traceId,
+    tenantId,
+    tableId,
+    error,
+  });
+  return NextResponse.json(
+    {
+      ok: false,
+      error: 'POS order mutation failed.',
+      message,
+      traceId,
+    },
+    { status: 500 },
+  );
+}
+
 function decimalToNumber(value: Prisma.Decimal | number | string | null | undefined) {
   if (value == null) return 0;
   return Number(value);
@@ -51,6 +84,12 @@ function normalizeMetadata(input: Prisma.JsonValue | null | undefined) {
   return input && typeof input === 'object' && !Array.isArray(input)
     ? input as Record<string, unknown>
     : {};
+}
+
+function compactJsonObject(input: Record<string, unknown>): Prisma.InputJsonObject {
+  return Object.fromEntries(
+    Object.entries(input).filter(([, value]) => value !== undefined),
+  ) as Prisma.InputJsonObject;
 }
 
 function itemToLine(item: {
@@ -150,9 +189,18 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   let tenantId = '';
+  let tableId = '';
+  let traceId = mutationTraceId();
   try {
+    logTableOrderEvent('request-entry', { traceId, method: 'POST' });
     const tenant = await requireTenant(request);
     tenantId = tenant.tenantId;
+    logTableOrderEvent('tenant-validated', {
+      traceId,
+      tenantId,
+      branchId: tenant.branchId,
+      userId: tenant.userId,
+    });
     const body = (await request.json().catch(() => null)) as {
       tableId?: string;
       mutationId?: string;
@@ -178,14 +226,33 @@ export async function POST(request: Request) {
       };
     } | null;
 
-    const tableId = body?.tableId?.trim();
+    traceId = mutationTraceId(body?.mutationId?.trim());
+    tableId = body?.tableId?.trim() ?? '';
     const product = body?.product;
     const productName = product?.name?.trim();
     const price = Number(product?.price ?? 0);
     const quantityToAdd = Math.max(1, Number(product?.quantity ?? 1) || 1);
 
+    logTableOrderEvent('payload-received', {
+      traceId,
+      tenantId,
+      tableId,
+      productId: product?.id,
+      productName,
+      price,
+      quantityToAdd,
+    });
+
     if (!tableId || !productName || !Number.isFinite(price) || price < 0 || !Number.isFinite(quantityToAdd)) {
-      return NextResponse.json({ ok: false, error: 'Invalid product mutation payload.' }, { status: 400 });
+      return NextResponse.json({
+        ok: false,
+        error: 'Invalid product mutation payload.',
+        traceId,
+        tableId,
+        productName,
+        price,
+        quantityToAdd,
+      }, { status: 400 });
     }
 
     const productInput = {
@@ -210,6 +277,14 @@ export async function POST(request: Request) {
     const mutationId = body?.mutationId?.trim() || `${tableId}-${Date.now()}`;
     const orderNo = tableOrderNo(tableId);
 
+    logTableOrderEvent('transaction-start', {
+      traceId,
+      tenantId,
+      tableId,
+      orderNo,
+      mutationId,
+    });
+
     await prisma.$transaction(async (tx) => {
       const order = await tx.order.upsert({
         where: { tenantId_orderNo: { tenantId, orderNo } },
@@ -220,7 +295,7 @@ export async function POST(request: Request) {
             source: 'pos-table-orders',
             lastMutationId: mutationId,
             updatedAtMs: Date.now(),
-          } satisfies Prisma.InputJsonObject,
+          },
         },
         create: {
           tenantId,
@@ -235,8 +310,15 @@ export async function POST(request: Request) {
             source: 'pos-table-orders',
             lastMutationId: mutationId,
             updatedAtMs: Date.now(),
-          } satisfies Prisma.InputJsonObject,
+          },
         },
+      });
+      logTableOrderEvent('order-upserted', {
+        traceId,
+        tenantId,
+        tableId,
+        orderId: order.id,
+        orderNo,
       });
 
       const existingItems = await tx.orderItem.findMany({
@@ -272,7 +354,7 @@ export async function POST(request: Request) {
               complimentary: productInput.complimentary,
               isReturn: productInput.isReturn,
             }),
-            metadata: {
+            metadata: compactJsonObject({
               ...normalizeMetadata(matching.metadata),
               productKey: productInput.id,
               category: productInput.category,
@@ -287,11 +369,19 @@ export async function POST(request: Request) {
               isReturn: productInput.isReturn,
               mutationId,
               updatedAtMs: Date.now(),
-            } satisfies Prisma.InputJsonObject,
+            }),
           },
         });
+        logTableOrderEvent('order-item-updated', {
+          traceId,
+          tenantId,
+          tableId,
+          orderId: order.id,
+          orderItemId: matching.id,
+          nextQty,
+        });
       } else {
-        await tx.orderItem.create({
+        const createdItem = await tx.orderItem.create({
           data: {
             tenantId,
             orderId: order.id,
@@ -306,7 +396,7 @@ export async function POST(request: Request) {
               isReturn: productInput.isReturn,
             }),
             notes: productInput.note || null,
-            metadata: {
+            metadata: compactJsonObject({
               productKey: productInput.id,
               category: productInput.category,
               printCategory: productInput.printCategory,
@@ -324,8 +414,16 @@ export async function POST(request: Request) {
               happyHourEligible: productInput.happyHourEligible,
               mutationId,
               updatedAtMs: Date.now(),
-            } satisfies Prisma.InputJsonObject,
+            }),
           },
+        });
+        logTableOrderEvent('order-item-created', {
+          traceId,
+          tenantId,
+          tableId,
+          orderId: order.id,
+          orderItemId: createdItem.id,
+          quantity: quantityToAdd,
         });
       }
 
@@ -354,9 +452,26 @@ export async function POST(request: Request) {
             tableKey: tableId,
             lastMutationId: mutationId,
             updatedAtMs: Date.now(),
-          } satisfies Prisma.InputJsonObject,
+          },
         },
       });
+      logTableOrderEvent('totals-updated', {
+        traceId,
+        tenantId,
+        tableId,
+        orderId: order.id,
+        itemCount: nextItems.length,
+        subtotal,
+        taxTotal,
+        total: Number((subtotal + taxTotal).toFixed(2)),
+      });
+    });
+
+    logTableOrderEvent('transaction-committed', {
+      traceId,
+      tenantId,
+      tableId,
+      mutationId,
     });
 
     await publishTenantEvent(tenantId, 'orders', {
@@ -366,11 +481,16 @@ export async function POST(request: Request) {
     }).catch(() => undefined);
 
     const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId);
+    logTableOrderEvent('response-ready', {
+      traceId,
+      tenantId,
+      tableId,
+      mutationId,
+      tableCount: Object.keys(ordersByTable).length,
+      activeLineCount: ordersByTable[tableId]?.length ?? 0,
+    });
     return NextResponse.json({ ok: true, source: 'db', mutationId, ordersByTable });
   } catch (error) {
-    if (tenantId) {
-      console.error('[pos-table-orders] mutation failed', { tenantId, error });
-    }
-    return tenantAuthErrorResponse(error);
+    return mutationErrorResponse(error, traceId, tenantId, tableId);
   }
 }
