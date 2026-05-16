@@ -131,6 +131,7 @@ const categories: Category[] = [
 const VAT_RATE = 0.1;
 const RECENT_ACCOUNT_KEY = 'adisyon-recent-charge-accounts';
 const EMPTY_ORDER_LINES: OrderLine[] = [];
+const LOCAL_ORDER_MUTATION_GUARD_MS = 8000;
 let orderRuntimePersistCounter = 0;
 
 function formatMoney(value: number) {
@@ -1043,19 +1044,25 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       );
       setOrdersByTable((current) => {
         const guard = orderMutationGuardRef.current;
-        if (guard && Date.now() - guard.at < 1200) {
+        if (guard && Date.now() - guard.at < LOCAL_ORDER_MUTATION_GUARD_MS) {
+          const storedLines = getStoredOrdersByTable<OrderLine>()[guard.tableId] ?? EMPTY_ORDER_LINES;
+          const currentLines = current[guard.tableId] ?? EMPTY_ORDER_LINES;
           logOrderFlow('external-sync-skipped-after-local-mutation', {
             source: guard.source,
             tableId: guard.tableId,
             ageMs: Date.now() - guard.at,
+            currentLineCount: currentLines.length,
+            storedLineCount: storedLines.length,
+            guardMs: LOCAL_ORDER_MUTATION_GUARD_MS,
           });
           return current;
         }
 
+        const storedOrders = getStoredOrdersByTable<OrderLine>();
         const nextOrders = normalizeStoredOrders(
           {
             ...current,
-            ...getStoredOrdersByTable<OrderLine>(),
+            ...storedOrders,
           },
           sourceProducts,
         );
@@ -1064,6 +1071,10 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         logOrderFlow('external-sync-applied', {
           tableCount: Object.keys(nextOrders).length,
           source: 'runtime-storage',
+          activeOrderId: currentTable?.id ?? selectedTableId,
+          beforeLineCount: (current[(currentTable?.id ?? selectedTableId) || ''] ?? EMPTY_ORDER_LINES).length,
+          afterLineCount: (nextOrders[(currentTable?.id ?? selectedTableId) || ''] ?? EMPTY_ORDER_LINES).length,
+          storedActiveLineCount: (storedOrders[(currentTable?.id ?? selectedTableId) || ''] ?? EMPTY_ORDER_LINES).length,
         });
         return nextOrders;
       });

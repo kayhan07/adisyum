@@ -18,9 +18,18 @@ const listeners: Record<RuntimeScope, Set<RuntimeListener>> = {
 const pendingFlushes = new Map<RuntimeScope, ReturnType<typeof globalThis.setTimeout>>();
 const bootstrapPromises = new Map<RuntimeScope, Promise<Record<string, string>>>();
 const channels = new Map<RuntimeScope, BroadcastChannel>();
+const LOCAL_WRITE_REFRESH_GRACE_MS = 8000;
 const lastLocalWriteAt: Record<RuntimeScope, number> = {
 	tenant: 0,
 	'system-admin': 0,
+};
+const dirtyScopes: Record<RuntimeScope, boolean> = {
+	tenant: false,
+	'system-admin': false,
+};
+const persistInFlight: Record<RuntimeScope, boolean> = {
+	tenant: false,
+	'system-admin': false,
 };
 
 function areSnapshotsEqual(first: RuntimeSnapshot, second: RuntimeSnapshot) {
@@ -42,7 +51,16 @@ function getChannel(scope: RuntimeScope) {
 	const channel = new BroadcastChannel(`adisyum-runtime:${scope}`);
 	channel.onmessage = (event: MessageEvent<{ snapshot?: RuntimeSnapshot }>) => {
 		if (!event.data?.snapshot || typeof event.data.snapshot !== 'object') return;
-		if (Date.now() - lastLocalWriteAt[scope] < 750) return;
+		if (dirtyScopes[scope] || persistInFlight[scope] || Date.now() - lastLocalWriteAt[scope] < LOCAL_WRITE_REFRESH_GRACE_MS) {
+			console.info('[runtime-state] broadcast snapshot ignored during local mutation', {
+				scope,
+				dirty: dirtyScopes[scope],
+				persistInFlight: persistInFlight[scope],
+				ageMs: Date.now() - lastLocalWriteAt[scope],
+			});
+			return;
+		}
+		if (areSnapshotsEqual(snapshots[scope], event.data.snapshot)) return;
 		snapshots[scope] = { ...event.data.snapshot };
 		emit(scope);
 	};
@@ -115,6 +133,9 @@ export function writeRuntimeItem(scope: RuntimeScope, key: string, value: string
 		snapshots[scope][key] = value;
 	}
 	lastLocalWriteAt[scope] = Date.now();
+	if (options.persist !== false) {
+		dirtyScopes[scope] = true;
+	}
 
 	emit(scope);
 	broadcast(scope);
@@ -142,7 +163,15 @@ export async function bootstrapRuntimeScope(scope: RuntimeScope) {
 
 	const promise = requestSnapshot(scope, 'GET')
 		.then((snapshot) => {
-			if (Date.now() - lastLocalWriteAt[scope] < 750) return snapshots[scope];
+			if (dirtyScopes[scope] || persistInFlight[scope] || Date.now() - lastLocalWriteAt[scope] < LOCAL_WRITE_REFRESH_GRACE_MS) {
+				console.info('[runtime-state] bootstrap snapshot ignored during local mutation', {
+					scope,
+					dirty: dirtyScopes[scope],
+					persistInFlight: persistInFlight[scope],
+					ageMs: Date.now() - lastLocalWriteAt[scope],
+				});
+				return snapshots[scope];
+			}
 			if (areSnapshotsEqual(snapshots[scope], snapshot)) return snapshots[scope];
 			snapshots[scope] = snapshot;
 			emit(scope);
@@ -163,9 +192,19 @@ export async function bootstrapRuntimeScope(scope: RuntimeScope) {
 
 export async function refreshRuntimeScope(scope: RuntimeScope) {
 	if (typeof window === 'undefined') return snapshots[scope];
+	if (dirtyScopes[scope] || persistInFlight[scope] || pendingFlushes.has(scope) || Date.now() - lastLocalWriteAt[scope] < LOCAL_WRITE_REFRESH_GRACE_MS) {
+		console.info('[runtime-state] refresh skipped during local mutation', {
+			scope,
+			dirty: dirtyScopes[scope],
+			persistInFlight: persistInFlight[scope],
+			pendingFlush: pendingFlushes.has(scope),
+			ageMs: Date.now() - lastLocalWriteAt[scope],
+		});
+		return snapshots[scope];
+	}
 	try {
 		const snapshot = await requestSnapshot(scope, 'GET');
-		if (Date.now() - lastLocalWriteAt[scope] < 750) return snapshots[scope];
+		if (dirtyScopes[scope] || persistInFlight[scope] || Date.now() - lastLocalWriteAt[scope] < LOCAL_WRITE_REFRESH_GRACE_MS) return snapshots[scope];
 		if (areSnapshotsEqual(snapshots[scope], snapshot)) return snapshots[scope];
 		snapshots[scope] = snapshot;
 		emit(scope);
@@ -179,22 +218,28 @@ export async function refreshRuntimeScope(scope: RuntimeScope) {
 
 export async function persistRuntimeScope(scope: RuntimeScope) {
 	if (typeof window === 'undefined') return snapshots[scope];
+	persistInFlight[scope] = true;
 	try {
 		const next = await requestSnapshot(scope, 'POST', snapshots[scope]);
-		if (Date.now() - lastLocalWriteAt[scope] >= 750 && !areSnapshotsEqual(snapshots[scope], next)) {
+		dirtyScopes[scope] = false;
+		if (Date.now() - lastLocalWriteAt[scope] >= LOCAL_WRITE_REFRESH_GRACE_MS && !areSnapshotsEqual(snapshots[scope], next)) {
 			snapshots[scope] = next;
 			emit(scope);
 			broadcast(scope);
 		}
 		return snapshots[scope];
 	} catch (error) {
+		dirtyScopes[scope] = true;
 		console.warn('[runtime-state] persist failed; keeping local snapshot', { scope, error });
 		return snapshots[scope];
+	} finally {
+		persistInFlight[scope] = false;
 	}
 }
 
 export async function clearRuntimeScope(scope: RuntimeScope) {
 	snapshots[scope] = {};
+	dirtyScopes[scope] = false;
 	emit(scope);
 	broadcast(scope);
 
