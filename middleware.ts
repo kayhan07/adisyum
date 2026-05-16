@@ -186,7 +186,8 @@ export async function middleware(request: NextRequest) {
     return withSecurityHeaders(NextResponse.redirect(url));
   }
 
-  if (pathname.startsWith('/system-admin') && !isSuperAdmin(session)) {
+  const isSystemAdminPath = pathname.startsWith('/system-admin') || pathname.startsWith('/api/system-admin/');
+  if (isSystemAdminPath && (!isSuperAdmin(session) || session.tenantId !== 'system')) {
     if (isApiPath(pathname)) {
       console.warn('[middleware-auth] system-admin api forbidden', {
         timestamp: new Date().toISOString(),

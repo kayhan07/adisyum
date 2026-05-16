@@ -53,10 +53,16 @@ type SaasSummary = {
 };
 type TemplatePoolRow = {
   id: string;
+  key: string;
   name: string;
   restaurantType: string;
   defaultPrice: string | number;
   version: number;
+  categoryTemplateId?: string | null;
+  vatRate?: number;
+  unitType?: string;
+  active?: boolean;
+  deprecated?: boolean;
   printerGroupName?: string | null;
   preparationGroup?: string | null;
 };
@@ -66,13 +72,20 @@ type TemplateImportStat = {
 };
 type TemplatePackRow = {
   id: string;
+  key: string;
   name: string;
   restaurantType: string;
   scale: string;
   version: number;
   active: boolean;
   deprecated: boolean;
+  description?: string | null;
 };
+type RecipeTemplateRow = { id: string; productTemplateId?: string | null; name: string; category?: string | null; yieldQuantity: string | number; unit: string };
+type RecipeTemplateItemRow = { id: string; templateId: string; stockTemplateId?: string | null; name: string; quantity: string | number; unit: string };
+type StockTemplateRow = { id: string; key: string; name: string; stockUnit: string; recipeUnit: string; purchaseUnit: string; minLevel: string | number };
+type CategoryTemplateRow = { id: string; key: string; name: string; sortOrder: number };
+type TemplatePackItemRow = { id: string; packId: string; productTemplateId: string; sortOrder: number };
 
 const modules: Array<{ id: AdminModule; label: string; icon: typeof LayoutDashboard }> = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -171,6 +184,11 @@ export default function SystemAdminPage() {
   const [provisioningLoading, setProvisioningLoading] = useState(false);
   const [templatePool, setTemplatePool] = useState<TemplatePoolRow[]>([]);
   const [templatePacks, setTemplatePacks] = useState<TemplatePackRow[]>([]);
+  const [recipeTemplates, setRecipeTemplates] = useState<RecipeTemplateRow[]>([]);
+  const [recipeTemplateItems, setRecipeTemplateItems] = useState<RecipeTemplateItemRow[]>([]);
+  const [stockTemplates, setStockTemplates] = useState<StockTemplateRow[]>([]);
+  const [categoryTemplates, setCategoryTemplates] = useState<CategoryTemplateRow[]>([]);
+  const [templatePackItems, setTemplatePackItems] = useState<TemplatePackItemRow[]>([]);
   const [templateImportStats, setTemplateImportStats] = useState<TemplateImportStat[]>([]);
   const [tenantDraft, setTenantDraft] = useState<TenantDraft>(() => createAdminTenantDraft());
   const [dealerDraft, setDealerDraft] = useState<Omit<AdminDealer, 'id'>>({ name: '', type: 'dealer', commission_rate: 20, phone: '', email: '', active: true });
@@ -250,9 +268,23 @@ export default function SystemAdminPage() {
 
   async function loadTemplatePool() {
     const response = await fetch('/api/system-admin/templates', { credentials: 'include', cache: 'no-store' }).catch(() => null);
-    const payload = response && response.ok ? await response.json().catch(() => null) as { templates?: TemplatePoolRow[]; packs?: TemplatePackRow[]; importStats?: TemplateImportStat[] } | null : null;
+    const payload = response && response.ok ? await response.json().catch(() => null) as {
+      templates?: TemplatePoolRow[];
+      packs?: TemplatePackRow[];
+      recipes?: RecipeTemplateRow[];
+      recipeItems?: RecipeTemplateItemRow[];
+      stocks?: StockTemplateRow[];
+      categories?: CategoryTemplateRow[];
+      packItems?: TemplatePackItemRow[];
+      importStats?: TemplateImportStat[];
+    } | null : null;
     setTemplatePool(payload?.templates ?? []);
     setTemplatePacks(payload?.packs ?? []);
+    setRecipeTemplates(payload?.recipes ?? []);
+    setRecipeTemplateItems(payload?.recipeItems ?? []);
+    setStockTemplates(payload?.stocks ?? []);
+    setCategoryTemplates(payload?.categories ?? []);
+    setTemplatePackItems(payload?.packItems ?? []);
     setTemplateImportStats(payload?.importStats ?? []);
   }
 
@@ -418,7 +450,18 @@ export default function SystemAdminPage() {
     setInvoiceDraft({ tenant_id: '', type: 'subscription', amount: 0, status: 'draft', issue_date: today(), due_date: today() });
   }
 
-  if (!adminLoggedIn) return <LoginCard onLogin={() => setAdminLoggedIn(true)} />;
+  async function handleSystemAdminLogin() {
+    const response = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' }).catch(() => null);
+    const payload = response && response.ok ? await response.json().catch(() => null) as { session?: { tenantId?: string; role?: string } } | null : null;
+    if (payload?.session?.tenantId !== 'system' || payload.session.role !== 'super_admin') {
+      setAdminLoggedIn(false);
+      return;
+    }
+    setAdminLoggedIn(true);
+    await Promise.all([loadSaasTenants(), loadTemplatePool()]);
+  }
+
+  if (!adminLoggedIn) return <LoginCard onLogin={() => void handleSystemAdminLogin()} />;
 
   return (
     <main className="min-h-screen bg-[#0B1220] text-white">
@@ -464,7 +507,7 @@ export default function SystemAdminPage() {
 
           {activeModule === 'dashboard' ? <Dashboard dashboard={dashboard} state={state} saasSummary={saasSummary} /> : null}
           {activeModule === 'tenants' ? <TenantsModule state={state} saasTenants={saasTenants} tenantDraft={tenantDraft} setTenantDraft={setTenantDraft} selectedPackage={selectedPackage} saveTenant={saveTenant} commit={commit} provisioningLoading={provisioningLoading} provisioningMessage={provisioningMessage} /> : null}
-          {activeModule === 'templates' ? <TemplatesModule templates={templatePool} packs={templatePacks} importStats={templateImportStats} /> : null}
+          {activeModule === 'templates' ? <TemplatesModule templates={templatePool} packs={templatePacks} recipes={recipeTemplates} recipeItems={recipeTemplateItems} stocks={stockTemplates} categories={categoryTemplates} packItems={templatePackItems} importStats={templateImportStats} reload={loadTemplatePool} /> : null}
           {activeModule === 'packages' ? <PackagesModule state={state} packageDraft={packageDraft} setPackageDraft={setPackageDraft} savePackage={savePackage} editPackage={editPackage} resetPackageDraft={resetPackageDraft} deletePackage={deletePackage} /> : null}
           {activeModule === 'dealers' ? <DealersModule state={state} dealerDraft={dealerDraft} setDealerDraft={setDealerDraft} saveDealer={saveDealer} commit={commit} /> : null}
           {activeModule === 'sales' ? <SalesModule state={state} saleDraft={saleDraft} setSaleDraft={setSaleDraft} addSale={addSale} /> : null}
@@ -680,8 +723,35 @@ function TenantsModule({ state, saasTenants, tenantDraft, setTenantDraft, select
   );
 }
 
-function TemplatesModule({ templates, packs, importStats }: { templates: TemplatePoolRow[]; packs: TemplatePackRow[]; importStats: TemplateImportStat[] }) {
+function TemplatesModule({ templates, packs, recipes, recipeItems, stocks, categories, packItems, importStats, reload }: {
+  templates: TemplatePoolRow[];
+  packs: TemplatePackRow[];
+  recipes: RecipeTemplateRow[];
+  recipeItems: RecipeTemplateItemRow[];
+  stocks: StockTemplateRow[];
+  categories: CategoryTemplateRow[];
+  packItems: TemplatePackItemRow[];
+  importStats: TemplateImportStat[];
+  reload: () => Promise<void>;
+}) {
   const importCountByTemplate = new Map(importStats.map((item) => [item.template?.id, item.importCount]));
+  const [productDraft, setProductDraft] = useState({ id: '', key: '', name: '', restaurantType: 'Cafe', categoryTemplateId: '', defaultPrice: 0, vatRate: 10, unitType: 'adet', printerGroupName: '', preparationGroup: '', version: 1 });
+  const [packDraft, setPackDraft] = useState({ id: '', key: '', name: '', restaurantType: 'Cafe', scale: 'small', version: 1, description: '', productTemplateIds: [] as string[] });
+  const [categoryDraft, setCategoryDraft] = useState({ id: '', key: '', name: '', sortOrder: 0 });
+  const [stockDraft, setStockDraft] = useState({ id: '', key: '', name: '', stockUnit: 'kg', recipeUnit: 'gr', purchaseUnit: 'kg', minLevel: 0 });
+  const [recipeDraft, setRecipeDraft] = useState({ id: '', productTemplateId: '', name: '', category: '', yieldQuantity: 1, unit: 'adet', items: [] as Array<{ stockTemplateId: string; name: string; quantity: number; unit: string }> });
+  const [message, setMessage] = useState('');
+  async function save(kind: string, payload: Record<string, unknown>) {
+    const response = await fetch('/api/system-admin/templates', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind, ...payload }) });
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    setMessage(response.ok ? 'Kaydedildi.' : body?.error ?? 'Kaydetme basarisiz.');
+    if (response.ok) await reload();
+  }
+  async function removeProduct(id: string) {
+    const response = await fetch(`/api/system-admin/templates?kind=product&id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' });
+    setMessage(response.ok ? 'Sablon silindi veya deprecated yapildi.' : 'Silme basarisiz.');
+    if (response.ok) await reload();
+  }
   return (
     <div className="mt-6 grid gap-5">
       <div className="grid gap-4 md:grid-cols-4">
@@ -689,6 +759,67 @@ function TemplatesModule({ templates, packs, importStats }: { templates: Templat
         <Metric label="Paket sayısı" value={String(packs.length)} />
         <Metric label="Restoran tipi" value={String(new Set(templates.map((template) => template.restaurantType)).size)} />
         <Metric label="Toplam import" value={String(importStats.reduce((sum, item) => sum + item.importCount, 0))} />
+      </div>
+      <div className="grid gap-5 xl:grid-cols-3">
+        <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
+          <h3 className="text-xl font-semibold">Kategori</h3>
+          <div className="mt-4 grid gap-3">
+            <input value={categoryDraft.key} onChange={(e) => setCategoryDraft((c) => ({ ...c, key: e.target.value }))} placeholder="kategori anahtari" className="input-dark" />
+            <input value={categoryDraft.name} onChange={(e) => setCategoryDraft((c) => ({ ...c, name: e.target.value }))} placeholder="kategori adi" className="input-dark" />
+          </div>
+          <button type="button" onClick={() => void save('category', categoryDraft)} className="btn-blue">Kategoriyi kaydet</button>
+        </article>
+        <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
+          <h3 className="text-xl font-semibold">Ham madde</h3>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <input value={stockDraft.key} onChange={(e) => setStockDraft((c) => ({ ...c, key: e.target.value }))} placeholder="stok anahtari" className="input-dark" />
+            <input value={stockDraft.name} onChange={(e) => setStockDraft((c) => ({ ...c, name: e.target.value }))} placeholder="stok adi" className="input-dark" />
+            <input value={stockDraft.stockUnit} onChange={(e) => setStockDraft((c) => ({ ...c, stockUnit: e.target.value }))} placeholder="stok birimi" className="input-dark" />
+            <input value={stockDraft.recipeUnit} onChange={(e) => setStockDraft((c) => ({ ...c, recipeUnit: e.target.value }))} placeholder="recete birimi" className="input-dark" />
+          </div>
+          <button type="button" onClick={() => void save('stock', stockDraft)} className="btn-blue">Ham maddeyi kaydet</button>
+        </article>
+        <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
+          <h3 className="text-xl font-semibold">Recete</h3>
+          <div className="mt-4 grid gap-3">
+            <select value={recipeDraft.productTemplateId} onChange={(e) => setRecipeDraft((c) => ({ ...c, productTemplateId: e.target.value }))} className="input-dark"><option value="">Urun sec</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select>
+            <input value={recipeDraft.name} onChange={(e) => setRecipeDraft((c) => ({ ...c, name: e.target.value }))} placeholder="recete adi" className="input-dark" />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">{stocks.map((stock) => <button key={stock.id} type="button" onClick={() => setRecipeDraft((c) => ({ ...c, items: [...c.items, { stockTemplateId: stock.id, name: stock.name, quantity: 1, unit: stock.recipeUnit }] }))} className="rounded-full bg-white/10 px-3 py-1 text-xs">{stock.name}</button>)}</div>
+          <button type="button" onClick={() => void save('recipe', recipeDraft)} className="btn-blue">Receteyi kaydet</button>
+        </article>
+      </div>
+      {message ? <p className="rounded-2xl border border-blue-400/20 bg-blue-500/10 px-4 py-3 text-sm font-semibold text-blue-100">{message}</p> : null}
+      <div className="grid gap-5 xl:grid-cols-2">
+        <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
+          <h3 className="text-xl font-semibold">Urun sablonu</h3>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <input value={productDraft.key} onChange={(e) => setProductDraft((c) => ({ ...c, key: e.target.value }))} placeholder="anahtar" className="input-dark" />
+            <input value={productDraft.name} onChange={(e) => setProductDraft((c) => ({ ...c, name: e.target.value }))} placeholder="urun adi" className="input-dark" />
+            <input value={productDraft.restaurantType} onChange={(e) => setProductDraft((c) => ({ ...c, restaurantType: e.target.value }))} placeholder="restoran tipi" className="input-dark" />
+            <select value={productDraft.categoryTemplateId} onChange={(e) => setProductDraft((c) => ({ ...c, categoryTemplateId: e.target.value }))} className="input-dark"><option value="">Kategori yok</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
+            <input type="number" value={productDraft.defaultPrice} onChange={(e) => setProductDraft((c) => ({ ...c, defaultPrice: Number(e.target.value) }))} placeholder="fiyat" className="input-dark" />
+            <input value={productDraft.printerGroupName} onChange={(e) => setProductDraft((c) => ({ ...c, printerGroupName: e.target.value }))} placeholder="yazici grubu" className="input-dark" />
+          </div>
+          <button type="button" onClick={() => void save('product', productDraft)} className="btn-blue">Urun sablonunu kaydet</button>
+        </article>
+        <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
+          <h3 className="text-xl font-semibold">Paket olusturucu</h3>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <input value={packDraft.key} onChange={(e) => setPackDraft((c) => ({ ...c, key: e.target.value }))} placeholder="paket anahtari" className="input-dark" />
+            <input value={packDraft.name} onChange={(e) => setPackDraft((c) => ({ ...c, name: e.target.value }))} placeholder="paket adi" className="input-dark" />
+            <input value={packDraft.restaurantType} onChange={(e) => setPackDraft((c) => ({ ...c, restaurantType: e.target.value }))} placeholder="restoran tipi" className="input-dark" />
+            <select value={packDraft.scale} onChange={(e) => setPackDraft((c) => ({ ...c, scale: e.target.value }))} className="input-dark"><option value="small">small</option><option value="medium">medium</option><option value="large">large</option></select>
+          </div>
+          <div className="mt-4 grid max-h-52 gap-2 overflow-auto rounded-2xl border border-white/10 p-3 sm:grid-cols-2">{templates.map((template) => <label key={template.id} className="flex gap-2 text-sm"><input type="checkbox" checked={packDraft.productTemplateIds.includes(template.id)} onChange={() => setPackDraft((c) => ({ ...c, productTemplateIds: c.productTemplateIds.includes(template.id) ? c.productTemplateIds.filter((id) => id !== template.id) : [...c.productTemplateIds, template.id] }))} />{template.name}</label>)}</div>
+          <button type="button" onClick={() => void save('pack', packDraft)} className="btn-blue">Paketi kaydet</button>
+        </article>
+      </div>
+      <div className="grid gap-4 md:grid-cols-4">
+        <Metric label="Recete" value={String(recipes.length)} />
+        <Metric label="Ham madde" value={String(stocks.length)} />
+        <Metric label="Paket atamasi" value={String(packItems.length)} />
+        <Metric label="Recete satiri" value={String(recipeItems.length)} />
       </div>
       <DataTable
         headers={['Paket', 'Tip', 'Ölçek', 'Versiyon', 'Durum']}

@@ -1,5 +1,5 @@
 import { getSessionFromRequest, forbiddenResponse, unauthorizedResponse } from '@/lib/session';
-import { isSuperAdmin, type TenantContext } from '@/lib/tenant';
+import { type TenantContext } from '@/lib/tenant';
 import { isSessionActive } from '@/lib/server/session-guard';
 
 export async function requireSystemAdmin(request: Request): Promise<TenantContext> {
@@ -12,7 +12,14 @@ export async function requireSystemAdmin(request: Request): Promise<TenantContex
     throw unauthorizedResponse('System-admin oturumu sonlandirildi.');
   }
 
-  if (!isSuperAdmin(session)) {
+  if (session.tenantId !== 'system' || session.role !== 'super_admin') {
+    console.warn('[system-admin-auth] forbidden', {
+      path: new URL(request.url).pathname,
+      tenantId: session.tenantId,
+      role: session.role,
+      userId: session.userId,
+      branchId: session.branchId,
+    });
     throw forbiddenResponse('Bu islem super_admin yetkisi gerektirir.');
   }
 
