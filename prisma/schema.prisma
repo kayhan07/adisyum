@@ -358,6 +358,7 @@ model PosTable {
 model ProductCategory {
   id           String   @id @default(uuid()) @db.Uuid
   tenantId     String   @map("tenant_id") @db.VarChar(64)
+  sourceTemplateId String? @map("source_template_id") @db.Uuid
   name         String   @db.VarChar(140)
   parentId     String?  @map("parent_id") @db.Uuid
   sortOrder    Int      @default(0) @map("sort_order")
@@ -367,6 +368,7 @@ model ProductCategory {
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@index([tenantId])
+  @@index([tenantId, sourceTemplateId])
   @@map("product_categories")
 }
 
@@ -374,6 +376,7 @@ model Product {
   id           String   @id @default(uuid()) @db.Uuid
   tenantId     String   @map("tenant_id") @db.VarChar(64)
   categoryId   String?  @map("category_id") @db.Uuid
+  sourceTemplateId String? @map("source_template_id") @db.Uuid
   name         String   @db.VarChar(180)
   sku          String?  @db.VarChar(80)
   barcode      String?  @db.VarChar(80)
@@ -389,6 +392,7 @@ model Product {
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@index([tenantId])
+  @@index([tenantId, sourceTemplateId])
   @@index([tenantId, createdAt])
   @@index([tenantId, active])
   @@map("products")
@@ -536,6 +540,7 @@ model StockItem {
   id        String   @id @default(uuid()) @db.Uuid
   tenantId  String   @map("tenant_id") @db.VarChar(64)
   name      String   @db.VarChar(180)
+  sourceTemplateId String? @map("source_template_id") @db.Uuid
   unit      String   @db.VarChar(32)
   quantity  Decimal  @default(0) @db.Decimal(14, 3)
   minLevel  Decimal  @default(0) @map("min_level") @db.Decimal(14, 3)
@@ -544,6 +549,7 @@ model StockItem {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([tenantId])
+  @@index([tenantId, sourceTemplateId])
   @@map("stock_items")
 }
 
@@ -654,6 +660,8 @@ model RecipeItem {
 
 model RecipeTemplate {
   id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @default("system") @map("tenant_id") @db.VarChar(64)
+  productTemplateId String? @map("product_template_id") @db.Uuid
   name          String   @db.VarChar(180)
   category      String?  @db.VarChar(120)
   yieldQuantity Decimal  @default(1) @map("yield_quantity") @db.Decimal(12, 3)
@@ -663,12 +671,15 @@ model RecipeTemplate {
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   @@index([category])
+  @@index([tenantId])
+  @@index([productTemplateId])
   @@map("recipe_templates")
 }
 
 model RecipeTemplateItem {
   id         String   @id @default(uuid()) @db.Uuid
   templateId String   @map("template_id") @db.Uuid
+  stockTemplateId String? @map("stock_template_id") @db.Uuid
   name       String   @db.VarChar(180)
   quantity   Decimal  @default(0) @db.Decimal(12, 3)
   unit       String   @db.VarChar(32)
@@ -676,7 +687,82 @@ model RecipeTemplateItem {
   updatedAt  DateTime @updatedAt @map("updated_at")
 
   @@index([templateId])
+  @@index([stockTemplateId])
   @@map("recipe_template_items")
+}
+
+model CategoryTemplate {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @default("system") @map("tenant_id") @db.VarChar(64)
+  key          String   @db.VarChar(120)
+  name         String   @db.VarChar(140)
+  sortOrder    Int      @default(0) @map("sort_order")
+  metadata     Json     @default("{}")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, key], name: "tenantId_key", map: "category_templates_tenant_id_key_key")
+  @@index([tenantId])
+  @@map("category_templates")
+}
+
+model StockTemplate {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @default("system") @map("tenant_id") @db.VarChar(64)
+  key          String   @db.VarChar(120)
+  name         String   @db.VarChar(180)
+  stockUnit    String   @map("stock_unit") @db.VarChar(32)
+  recipeUnit   String   @map("recipe_unit") @db.VarChar(32)
+  purchaseUnit String   @map("purchase_unit") @db.VarChar(32)
+  minLevel     Decimal  @default(0) @map("min_level") @db.Decimal(14, 3)
+  metadata     Json     @default("{}")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, key], name: "tenantId_key", map: "stock_templates_tenant_id_key_key")
+  @@index([tenantId])
+  @@map("stock_templates")
+}
+
+model ProductTemplate {
+  id                 String   @id @default(uuid()) @db.Uuid
+  tenantId           String   @default("system") @map("tenant_id") @db.VarChar(64)
+  key                String   @db.VarChar(120)
+  restaurantType     String   @map("restaurant_type") @db.VarChar(80)
+  categoryTemplateId String?  @map("category_template_id") @db.Uuid
+  name               String   @db.VarChar(180)
+  defaultPrice       Decimal  @default(0) @map("default_price") @db.Decimal(12, 2)
+  vatRate            Int      @default(10) @map("vat_rate")
+  unitType           String   @default("adet") @map("unit_type") @db.VarChar(32)
+  printerGroupName   String?  @map("printer_group_name") @db.VarChar(140)
+  preparationGroup   String?  @map("preparation_group") @db.VarChar(120)
+  active             Boolean  @default(true)
+  version            Int      @default(1)
+  metadata           Json     @default("{}")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, key], name: "tenantId_key", map: "product_templates_tenant_id_key_key")
+  @@index([tenantId])
+  @@index([restaurantType])
+  @@index([categoryTemplateId])
+  @@map("product_templates")
+}
+
+model TemplateImport {
+  id                String   @id @default(uuid()) @db.Uuid
+  tenantId          String   @map("tenant_id") @db.VarChar(64)
+  productTemplateId String   @map("product_template_id") @db.Uuid
+  productId         String?  @map("product_id") @db.Uuid
+  recipeId          String?  @map("recipe_id") @db.Uuid
+  importedBy        String?  @map("imported_by") @db.Uuid
+  metadata          Json     @default("{}")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, productTemplateId], name: "tenantId_productTemplateId", map: "template_imports_tenant_id_product_template_id_key")
+  @@index([tenantId])
+  @@index([productTemplateId])
+  @@map("template_imports")
 }
 
 model Expense {

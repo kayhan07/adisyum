@@ -3442,6 +3442,9 @@ export default function ProductsPage() {
               <button type="button" onClick={() => changeActiveWindow('recipe')} className="inline-flex items-center gap-2 rounded-full bg-violet-600 px-5 py-3 text-sm font-semibold text-white shadow-[0_0_24px_rgba(139,92,246,0.25)] transition hover:bg-violet-500 active:scale-[0.98]">
                 <Layers3 className="h-4 w-4" /> Reçete havuzundan ürün ekle
               </button>
+              <a href="/products/templates" className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10">
+                <Sparkles className="h-4 w-4" /> Global şablon havuzu
+              </a>
             </>
           ) : null}
           {quickCreateEnabled ? (

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Activity, BarChart3, Building2, CreditCard, FileText, HandCoins, LayoutDashboard, Package, Plus, ReceiptText, RefreshCw, ShieldCheck, Trash2, Users } from 'lucide-react';
+import { Activity, BarChart3, Building2, CreditCard, FileText, HandCoins, LayoutDashboard, Package, Plus, ReceiptText, RefreshCw, ShieldCheck, Sparkles, Trash2, Users } from 'lucide-react';
 import { getDefaultModulesForPackageType, PACKAGE_MODULE_OPTIONS, type PackageModuleKey } from '@/lib/package-access';
 import { secureLogout } from '@/lib/client/secure-logout';
 import {
@@ -21,7 +21,7 @@ import {
 } from '@/lib/system-admin-store';
 import type { PackageType } from '@/lib/saas-store';
 
-type AdminModule = 'dashboard' | 'tenants' | 'packages' | 'dealers' | 'sales' | 'payments' | 'finance' | 'invoices' | 'reports' | 'monitoring';
+type AdminModule = 'dashboard' | 'tenants' | 'templates' | 'packages' | 'dealers' | 'sales' | 'payments' | 'finance' | 'invoices' | 'reports' | 'monitoring';
 type TenantDraft = ReturnType<typeof createAdminTenantDraft>;
 type SaasTenantRow = {
   tenantId: string;
@@ -51,10 +51,24 @@ type SaasSummary = {
   dailyOrders: number;
   liveRevenue: number;
 };
+type TemplatePoolRow = {
+  id: string;
+  name: string;
+  restaurantType: string;
+  defaultPrice: string | number;
+  version: number;
+  printerGroupName?: string | null;
+  preparationGroup?: string | null;
+};
+type TemplateImportStat = {
+  template: { id: string; name: string; restaurantType: string; version: number } | null;
+  importCount: number;
+};
 
 const modules: Array<{ id: AdminModule; label: string; icon: typeof LayoutDashboard }> = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'tenants', label: 'Aboneler', icon: Building2 },
+  { id: 'templates', label: 'Şablon Havuzu', icon: Sparkles },
   { id: 'packages', label: 'Paketler', icon: Package },
   { id: 'dealers', label: 'Bayi / Temsilci', icon: HandCoins },
   { id: 'sales', label: 'Satış Takibi', icon: Users },
@@ -146,6 +160,8 @@ export default function SystemAdminPage() {
   const [saasSummary, setSaasSummary] = useState<SaasSummary | null>(null);
   const [provisioningMessage, setProvisioningMessage] = useState('');
   const [provisioningLoading, setProvisioningLoading] = useState(false);
+  const [templatePool, setTemplatePool] = useState<TemplatePoolRow[]>([]);
+  const [templateImportStats, setTemplateImportStats] = useState<TemplateImportStat[]>([]);
   const [tenantDraft, setTenantDraft] = useState<TenantDraft>(() => createAdminTenantDraft());
   const [dealerDraft, setDealerDraft] = useState<Omit<AdminDealer, 'id'>>({ name: '', type: 'dealer', commission_rate: 20, phone: '', email: '', active: true });
   const [packageDraft, setPackageDraft] = useState<AdminPackage>(() => createPackageDraft());
@@ -163,6 +179,7 @@ export default function SystemAdminPage() {
       if (payload?.ok && payload?.session?.role === 'super_admin') {
         setAdminLoggedIn(true);
         void loadSaasTenants();
+        void loadTemplatePool();
       }
       setState(loadSystemAdminState());
     };
@@ -219,6 +236,13 @@ export default function SystemAdminPage() {
       saveSystemAdminState(next);
       return next;
     });
+  }
+
+  async function loadTemplatePool() {
+    const response = await fetch('/api/system-admin/templates', { credentials: 'include', cache: 'no-store' }).catch(() => null);
+    const payload = response && response.ok ? await response.json().catch(() => null) as { templates?: TemplatePoolRow[]; importStats?: TemplateImportStat[] } | null : null;
+    setTemplatePool(payload?.templates ?? []);
+    setTemplateImportStats(payload?.importStats ?? []);
   }
 
   function selectedPackage(packageId: string) {
@@ -429,6 +453,7 @@ export default function SystemAdminPage() {
 
           {activeModule === 'dashboard' ? <Dashboard dashboard={dashboard} state={state} saasSummary={saasSummary} /> : null}
           {activeModule === 'tenants' ? <TenantsModule state={state} saasTenants={saasTenants} tenantDraft={tenantDraft} setTenantDraft={setTenantDraft} selectedPackage={selectedPackage} saveTenant={saveTenant} commit={commit} provisioningLoading={provisioningLoading} provisioningMessage={provisioningMessage} /> : null}
+          {activeModule === 'templates' ? <TemplatesModule templates={templatePool} importStats={templateImportStats} /> : null}
           {activeModule === 'packages' ? <PackagesModule state={state} packageDraft={packageDraft} setPackageDraft={setPackageDraft} savePackage={savePackage} editPackage={editPackage} resetPackageDraft={resetPackageDraft} deletePackage={deletePackage} /> : null}
           {activeModule === 'dealers' ? <DealersModule state={state} dealerDraft={dealerDraft} setDealerDraft={setDealerDraft} saveDealer={saveDealer} commit={commit} /> : null}
           {activeModule === 'sales' ? <SalesModule state={state} saleDraft={saleDraft} setSaleDraft={setSaleDraft} addSale={addSale} /> : null}
@@ -640,6 +665,31 @@ function TenantsModule({ state, saasTenants, tenantDraft, setTenantDraft, select
           </article>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function TemplatesModule({ templates, importStats }: { templates: TemplatePoolRow[]; importStats: TemplateImportStat[] }) {
+  const importCountByTemplate = new Map(importStats.map((item) => [item.template?.id, item.importCount]));
+  return (
+    <div className="mt-6 grid gap-5">
+      <div className="grid gap-4 md:grid-cols-3">
+        <Metric label="Şablon sayısı" value={String(templates.length)} />
+        <Metric label="Restoran tipi" value={String(new Set(templates.map((template) => template.restaurantType)).size)} />
+        <Metric label="Toplam import" value={String(importStats.reduce((sum, item) => sum + item.importCount, 0))} />
+      </div>
+      <DataTable
+        headers={['Şablon', 'Tip', 'Varsayılan fiyat', 'Hazırlık', 'Yazıcı', 'Versiyon', 'Import']}
+        rows={templates.map((template) => [
+          template.name,
+          template.restaurantType,
+          formatAdminMoney(Number(template.defaultPrice)),
+          template.preparationGroup ?? '-',
+          template.printerGroupName ?? '-',
+          `v${template.version}`,
+          importCountByTemplate.get(template.id) ?? 0,
+        ])}
+      />
     </div>
   );
 }

@@ -114,7 +114,9 @@ function defaultTenantSettings(packageType: PackageType, modules: PackageModuleK
       tenantCreated: true,
       branchCreated: true,
       adminUserCreated: true,
-      defaultsSeeded: true,
+      defaultsSeeded: false,
+      templatePoolAvailable: true,
+      importedTemplateCount: 0,
       desktopBridgeInstalled: false,
       fiscalValidationCompleted: false,
     },
@@ -261,17 +263,6 @@ export async function provisionTenant(input: ProvisionTenantInput) {
       update: {
         payload: compactJson({
           'adisyon-company-state': JSON.stringify({ name: tenant.name, legalName: tenant.legalName, taxNumber: tenant.taxNumber }),
-          'adisyon-table-layout': JSON.stringify({
-            tables: Array.from({ length: 12 }, (_, index) => ({
-              id: `tbl-salon-${String(index + 1).padStart(2, '0')}`,
-              name: `Salon ${String(index + 1).padStart(2, '0')}`,
-              group: 'Salon',
-              branchId,
-              status: 'available',
-              total: 0,
-              paymentRequested: false,
-            })),
-          }),
         }),
       },
       create: {
@@ -279,17 +270,6 @@ export async function provisionTenant(input: ProvisionTenantInput) {
         key: 'client-runtime:tenant',
         payload: compactJson({
           'adisyon-company-state': JSON.stringify({ name: tenant.name, legalName: tenant.legalName, taxNumber: tenant.taxNumber }),
-          'adisyon-table-layout': JSON.stringify({
-            tables: Array.from({ length: 12 }, (_, index) => ({
-              id: `tbl-salon-${String(index + 1).padStart(2, '0')}`,
-              name: `Salon ${String(index + 1).padStart(2, '0')}`,
-              group: 'Salon',
-              branchId,
-              status: 'available',
-              total: 0,
-              paymentRequested: false,
-            })),
-          }),
         }),
       },
     });
