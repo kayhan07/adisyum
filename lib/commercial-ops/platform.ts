@@ -152,7 +152,7 @@ export function provisionRestaurant(input: {
       { step: 'staff_training', status: 'pending' },
     ],
     defaults: {
-      roles: ['owner', 'manager', 'waiter', 'cashier', 'kitchen'],
+      roles: ['owner', 'manager', 'service', 'cashier', 'kitchen'],
       tables: Array.from({ length: 12 }, (_, index) => ({ id: `T${index + 1}`, name: `Masa ${index + 1}`, area: index < 8 ? 'Salon' : 'Bahce' })),
       printers: [
         { role: 'cashier', name: 'Kasa Yazici', protocol: 'escpos' },

@@ -1,4 +1,4 @@
-export type SessionRole = 'super_admin' | 'Admin' | 'Manager' | 'Cashier' | 'Waiter' | string;
+export type SessionRole = 'super_admin' | 'Admin' | 'Manager' | 'Cashier' | 'Service' | string;
 
 export type SessionPayload = {
   sid?: string;

@@ -33,7 +33,7 @@ export const currentPermissions = ['orders.create', 'orders.edit', 'payments.tak
 export const permissionMatrix = [
   { role: 'Admin', create: true, cancel: true, pricing: true, payment: true, reports: true },
   { role: 'Y\u00f6netici', create: true, cancel: true, pricing: true, payment: true, reports: true },
-  { role: 'Garson', create: true, cancel: false, pricing: false, payment: true, reports: false },
+  { role: 'Servis', create: true, cancel: false, pricing: false, payment: true, reports: false },
   { role: 'Muhasebe', create: false, cancel: false, pricing: false, payment: true, reports: true },
 ];
 

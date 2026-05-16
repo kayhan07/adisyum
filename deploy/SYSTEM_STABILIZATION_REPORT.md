@@ -3,22 +3,22 @@
 ## Current Stabilization Pass
 
 - Scope: POS masa/adisyon product insertion flow.
-- Decision applied: removed the alternate "Hızlı Garson Modu" path and normalized product clicks to one canonical add-to-adisyon mutation.
+- Decision applied: removed the alternate fast-service path and normalized product clicks to one canonical add-to-adisyon mutation.
 - Runtime/auth/deployment/nginx/PM2 layers were intentionally left untouched.
 
 ## Root Cause Area
 
 - The adisyon UI had multiple product insertion paths:
-  - fast waiter direct add
+  - fast-service direct add
   - detailed product card add
-  - recent/favorite waiter strip add
+  - recent/favorite strip add
   - keyboard repeat add
-- The floor screen had a separate waiter-mode toggle and swipe shortcuts on table cards.
+- The floor screen had a separate service-mode toggle and swipe shortcuts on table cards.
 - Runtime storage sync could refresh the order map immediately after a local mutation, creating a window where an older persisted snapshot could overwrite the just-added product.
 
 ## Fixes Applied
 
-- Removed waiter-mode state, toggles, favorite strip, recent-product storage, mobile waiter layout toggle, and repeat keyboard shortcut.
+- Removed alternate service-mode state, toggles, favorite strip, recent-product storage, mobile layout toggle, and repeat keyboard shortcut.
 - Product search and product tiles now use one canonical `addProductToOrder` mutation.
 - Added order-flow diagnostics for:
   - selected table
@@ -29,7 +29,7 @@
   - runtime sync source
   - order persistence
 - Added a short local mutation guard so external runtime refreshes do not overwrite a fresh product add before it is persisted.
-- Removed table-card swipe shortcuts that were previously tied to waiter-mode behavior.
+- Removed table-card swipe shortcuts that were previously tied to alternate service behavior.
 
 ## Canonical POS Flow
 
@@ -53,6 +53,6 @@
 
 ## Production Blockers Found In This Pass
 
-- Fast waiter mode introduced multiple inconsistent order insertion branches.
+- Alternate service mode introduced multiple inconsistent order insertion branches.
 - Immediate external runtime refresh could race a local add-product mutation.
 - Swipe shortcuts could trigger note/payment actions from table cards without entering the canonical adisyon flow.

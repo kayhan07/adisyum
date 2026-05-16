@@ -6,7 +6,7 @@ const TESTIMONIALS = [
     avatar: 'KA',
     color: 'from-brand-600 to-brand-800',
     quote:
-      'Adisyum\'a geçtiğimizden bu yana mutfak koordinasyonu %40 iyileşti. Garsonlarımız artık masadan masaya koşmak yerine müşteriye odaklanıyor.',
+      'Adisyum\'a geçtiğimizden bu yana mutfak koordinasyonu %40 iyileşti. Servis ekibimiz artık masadan masaya koşmak yerine müşteriye odaklanıyor.',
   },
   {
     name: 'Selin Karataş',

@@ -189,7 +189,7 @@ export function ingestPilotDiagnostics(input: {
     orderCreationSpeedSec?: number;
     paymentCompletionSpeedSec?: number;
     tableSwitchFrequency?: number;
-    waiterInteractionFlowScore?: number;
+    serviceInteractionFlowScore?: number;
     touchInteractionLatencyMs?: number;
     peakHourResponseMs?: number;
     userErrorRate?: number;

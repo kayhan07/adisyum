@@ -43,7 +43,7 @@ const DEFAULT_STATE: AccessState = {
   permissionMatrix: [
     { role: 'Admin', create: true, cancel: true, pricing: true, payment: true, reports: true },
     { role: 'Yönetici', create: true, cancel: true, pricing: true, payment: true, reports: true },
-    { role: 'Garson', create: true, cancel: false, pricing: false, payment: true, reports: false },
+    { role: 'Servis', create: true, cancel: false, pricing: false, payment: true, reports: false },
     { role: 'Muhasebe', create: false, cancel: false, pricing: false, payment: true, reports: true },
   ],
   customRoles: [
@@ -66,7 +66,7 @@ const DEFAULT_STATE: AccessState = {
       name: 'Kasa Kullanıcısı',
       username: 'kasiyer',
       password: '1234',
-      role: 'Garson',
+      role: 'Servis',
       branchId: 'mrk',
       active: true,
       permissions: ['orders.create', 'orders.edit', 'payments.take'],

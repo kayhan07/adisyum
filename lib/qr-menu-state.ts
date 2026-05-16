@@ -18,7 +18,6 @@ import {
   type PosCatalogProduct,
 } from '@/lib/sale-product-catalog';
 
-const WAITER_CALLS_STORAGE_KEY = 'aurelia-qr-waiter-calls';
 const PENDING_QR_ORDERS_STORAGE_KEY = 'aurelia-qr-pending-orders';
 const QR_EVENT_NAME = 'aurelia-qr-menu:changed';
 const VAT_RATE = 0.1;
@@ -72,26 +71,6 @@ export function getQrCodeImageUrl(url: string, size = 220) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(url)}`;
 }
 
-export function getWaiterCallTableIds() {
-  if (typeof window === 'undefined') {
-    return {} as Record<string, string>;
-  }
-
-  const raw = readRuntimeItem('tenant', WAITER_CALLS_STORAGE_KEY);
-  if (!raw) {
-    return {} as Record<string, string>;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    return Object.fromEntries(
-      Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-    );
-  } catch {
-    return {} as Record<string, string>;
-  }
-}
-
 export function getPendingQrOrders() {
   if (typeof window === 'undefined') {
     return [] as PendingQrOrder[];
@@ -119,23 +98,6 @@ function setPendingQrOrders(orders: PendingQrOrder[]) {
   emitQrChange();
 }
 
-export function setTableWaiterRequested(tableId: string, requested: boolean) {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  const current = { ...getWaiterCallTableIds() };
-
-  if (requested) {
-    current[tableId] = new Date().toISOString();
-  } else {
-    delete current[tableId];
-  }
-
-  writeRuntimeItem('tenant', WAITER_CALLS_STORAGE_KEY, JSON.stringify(current));
-  emitQrChange();
-}
-
 export function subscribeToQrMenuChanges(callback: () => void) {
   if (typeof window === 'undefined') {
     return () => {};
@@ -160,14 +122,12 @@ export function getPosCatalogSnapshot() {
 }
 
 export function getTableQrStatus(tableId: string) {
-  const waiterCalls = getWaiterCallTableIds();
   const billRequests = new Set(getPaymentRequestedTableIds());
   const totals = getTableLiveTotals();
   const meta = getStoredTableMeta();
   const pendingOrders = getPendingQrOrders().filter((order) => order.tableId === tableId);
 
   return {
-    waiterRequestedAt: waiterCalls[tableId] ?? null,
     billRequested: billRequests.has(tableId),
     total: totals[tableId] ?? 0,
     meta: meta[tableId] ?? {},

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
-import { Bell, ChevronLeft, Minus, Plus, Receipt, Search, ShoppingBag, Wallet } from 'lucide-react';
+import { ChevronLeft, Minus, Plus, Receipt, Search, ShoppingBag, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import { loadTableLayoutState, subscribeToTableLayoutChanges, type StoredFloorTable } from '@/lib/table-layout-store';
 import {
@@ -11,7 +11,6 @@ import {
   getPosCatalogSnapshot,
   getTableQrStatus,
   queueQrOrderForApproval,
-  setTableWaiterRequested,
 } from '@/lib/qr-menu-state';
 import { setTablePaymentRequested, subscribeToPaymentRequestedChanges } from '@/lib/table-payment-state';
 import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
@@ -42,7 +41,6 @@ export function QrCustomerMenu({ tableId }: QrCustomerMenuProps) {
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<CartMap>({});
   const [notice, setNotice] = useState<string | null>(null);
-  const [waiterRequested, setWaiterRequested] = useState(false);
   const [billRequested, setBillRequested] = useState(false);
 
   useEffect(() => {
@@ -92,7 +90,6 @@ export function QrCustomerMenu({ tableId }: QrCustomerMenuProps) {
   useEffect(() => {
     const refresh = () => {
       const status = getTableQrStatus(tableId);
-      setWaiterRequested(Boolean(status.waiterRequestedAt));
       setBillRequested(status.billRequested);
     };
 
@@ -186,16 +183,6 @@ export function QrCustomerMenu({ tableId }: QrCustomerMenuProps) {
     setNotice('Siparişiniz masaya iletildi.');
   }
 
-  function requestWaiter() {
-    if (!table) {
-      return;
-    }
-
-    setTableWaiterRequested(table.id, true);
-    setWaiterRequested(true);
-    setNotice('Garson çağrısı gönderildi.');
-  }
-
   function requestBill() {
     if (!table) {
       return;
@@ -240,19 +227,7 @@ export function QrCustomerMenu({ tableId }: QrCustomerMenuProps) {
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={requestWaiter}
-              className={`rounded-[1.1rem] border px-3 py-3 text-left text-sm font-semibold transition ${
-                waiterRequested
-                  ? 'border-emerald-400/30 bg-emerald-500/15 text-emerald-100'
-                  : 'border-white/10 bg-slate-950/40 text-white hover:border-emerald-400/40'
-              }`}
-            >
-              <Bell className="mb-2 h-4 w-4" />
-              {waiterRequested ? 'Garson çağrıldı' : 'Garson çağır'}
-            </button>
+          <div className="mt-4">
             <button
               type="button"
               onClick={requestBill}

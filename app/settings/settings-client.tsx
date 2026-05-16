@@ -118,7 +118,7 @@ export default function SettingsPage() {
     name: '',
     username: '',
     password: '',
-    role: 'Garson',
+    role: 'Servis',
     branchId: 'mrk',
   });
   const [selectedPrinterId, setSelectedPrinterId] = useState('');
@@ -582,7 +582,7 @@ export default function SettingsPage() {
       return;
     }
 
-    const role = roleOptions.includes(userDraft.role) ? userDraft.role : roleOptions[0] ?? 'Garson';
+    const role = roleOptions.includes(userDraft.role) ? userDraft.role : roleOptions[0] ?? 'Servis';
     const nextUser: AccessUser = {
       id: `usr-${Date.now()}`,
       name: trimmedName,
@@ -603,7 +603,7 @@ export default function SettingsPage() {
       name: '',
       username: '',
       password: '',
-      role: 'Garson',
+      role: 'Servis',
       branchId: branchOptions[0]?.id ?? 'mrk',
     });
     setMessage(`${nextUser.name} kullanıcısı oluşturuldu.`);

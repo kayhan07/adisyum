@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Bell, Copy, ExternalLink, QrCode, Receipt, ScanLine, Sparkles } from 'lucide-react';
+import { Copy, ExternalLink, QrCode, Receipt, ScanLine, Sparkles } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { loadTableLayoutState, subscribeToTableLayoutChanges, type StoredFloorTable } from '@/lib/table-layout-store';
 import {
@@ -12,8 +12,6 @@ import {
   getQrCodeImageUrl,
   rejectPendingQrOrder,
   getTableQrStatus,
-  getWaiterCallTableIds,
-  setTableWaiterRequested,
   subscribeToQrMenuChanges,
 } from '@/lib/qr-menu-state';
 import {
@@ -26,7 +24,6 @@ type AdminTableCard = {
   id: string;
   name: string;
   total: number;
-  waiterRequestedAt: string | null;
   billRequested: boolean;
   pendingOrderCount: number;
   pendingOrderIds: string[];
@@ -40,22 +37,6 @@ function formatMoney(value: number) {
     currency: 'TRY',
     maximumFractionDigits: 2,
   }).format(value);
-}
-
-function formatRelativeTime(value: string | null) {
-  if (!value) {
-    return '';
-  }
-
-  const diffMs = Date.now() - new Date(value).getTime();
-  const diffMin = Math.max(1, Math.round(diffMs / 60000));
-
-  if (diffMin < 60) {
-    return `${diffMin} dk önce`;
-  }
-
-  const hours = Math.round(diffMin / 60);
-  return `${hours} sa önce`;
 }
 
 export function QrAdmin() {
@@ -93,7 +74,6 @@ export function QrAdmin() {
             id: table.id,
             name: table.name,
             total: status.total,
-            waiterRequestedAt: status.waiterRequestedAt,
             billRequested: status.billRequested,
             pendingOrderCount: status.pendingOrders.length,
             pendingOrderIds: status.pendingOrders.map((order) => order.id),
@@ -114,11 +94,6 @@ export function QrAdmin() {
       unsubTable();
     };
   }, [tables]);
-
-  const waiterCount = useMemo(
-    () => Object.keys(getWaiterCallTableIds()).length,
-    [rows],
-  );
 
   const billCount = useMemo(
     () => getPaymentRequestedTableIds().length,
@@ -145,7 +120,7 @@ export function QrAdmin() {
       title="QR Menü"
       subtitle="Masa bazlı müşteri menüsü, QR bağlantısı ve çağrı yönetimi."
     >
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <div className="rounded-[1.4rem] border border-white/10 bg-[#111827] p-4">
           <div className="flex items-center gap-2 text-sm text-slate-400">
             <ScanLine className="h-4 w-4 text-sky-300" />
@@ -153,14 +128,6 @@ export function QrAdmin() {
           </div>
           <p className="mt-2 text-3xl font-semibold text-white">{activeTableCount}</p>
           <p className="mt-1 text-sm text-slate-400">Müşteriden sipariş gelen aktif masa</p>
-        </div>
-        <div className="rounded-[1.4rem] border border-white/10 bg-[#111827] p-4">
-          <div className="flex items-center gap-2 text-sm text-slate-400">
-            <Bell className="h-4 w-4 text-emerald-300" />
-            Garson çağrısı
-          </div>
-          <p className="mt-2 text-3xl font-semibold text-white">{waiterCount}</p>
-          <p className="mt-1 text-sm text-slate-400">Müşteri tarafından bekleyen çağrı</p>
         </div>
         <div className="rounded-[1.4rem] border border-white/10 bg-[#111827] p-4">
           <div className="flex items-center gap-2 text-sm text-slate-400">
@@ -176,7 +143,7 @@ export function QrAdmin() {
             QR akışı
           </div>
           <p className="mt-2 text-xl font-semibold text-white">Müşteri siparişi doğrudan POS’a düşer</p>
-          <p className="mt-1 text-sm text-slate-400">Aynı masa adisyonuna eklenir, garson çağrısı ve hesap isteği izlenir.</p>
+          <p className="mt-1 text-sm text-slate-400">Aynı masa adisyonuna eklenir ve hesap isteği izlenir.</p>
         </div>
       </section>
 
@@ -231,20 +198,7 @@ export function QrAdmin() {
                   </Link>
                 </div>
 
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <div className="rounded-[1rem] border border-white/8 bg-slate-950/40 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Garson çağrısı</p>
-                    <p className="mt-2 text-sm font-semibold text-white">
-                      {row.waiterRequestedAt ? `Bekliyor · ${formatRelativeTime(row.waiterRequestedAt)}` : 'Çağrı yok'}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setTableWaiterRequested(row.id, false)}
-                      className="mt-3 rounded-full border border-white/10 px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:border-emerald-400/50 hover:text-white"
-                    >
-                      Temizle
-                    </button>
-                  </div>
+                <div className="grid gap-2">
                   <div className="rounded-[1rem] border border-white/8 bg-slate-950/40 p-3">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Hesap isteği</p>
                     <p className="mt-2 text-sm font-semibold text-white">{row.billRequested ? 'Ödeme bekliyor' : 'İstek yok'}</p>
@@ -263,7 +217,7 @@ export function QrAdmin() {
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">QR sipariş onayı</p>
                       <p className="mt-2 text-sm font-semibold text-white">
-                        {row.pendingOrderCount > 0 ? `${row.pendingOrderCount} sipariş garson onayı bekliyor` : 'Bekleyen sipariş yok'}
+                        {row.pendingOrderCount > 0 ? `${row.pendingOrderCount} sipariş onay bekliyor` : 'Bekleyen sipariş yok'}
                       </p>
                     </div>
                     {row.pendingOrderIds[0] ? (

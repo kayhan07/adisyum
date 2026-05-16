@@ -128,7 +128,7 @@ async function main() {
       orderCreationSpeedSec: 8,
       paymentCompletionSpeedSec: 12,
       tableSwitchFrequency: 0,
-      waiterInteractionFlowScore: 92,
+      serviceInteractionFlowScore: 92,
       touchInteractionLatencyMs: metric(health.latencyMs),
       peakHourResponseMs: metric(health.latencyMs),
       userErrorRate: 0,
