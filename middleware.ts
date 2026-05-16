@@ -164,11 +164,11 @@ export async function middleware(request: NextRequest) {
 
   const session = await getSessionFromRequest(request);
 
-  if (!session) {
-    if (pathname === '/system-admin') {
-      return withSecurityHeaders(NextResponse.next());
-    }
+  if (pathname === '/system-admin') {
+    return withSecurityHeaders(NextResponse.next());
+  }
 
+  if (!session) {
     if (isApiPath(pathname)) {
       console.warn('[middleware-auth] api session missing', {
         timestamp: new Date().toISOString(),
@@ -223,6 +223,7 @@ export const config = {
     '/reports/:path*',
     '/finance/:path*',
     '/settings/:path*',
+    '/system-admin',
     '/system-admin/:path*',
   ],
 };
