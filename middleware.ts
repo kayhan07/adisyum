@@ -41,14 +41,94 @@ function isMutatingMethod(method: string) {
   return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method.toUpperCase());
 }
 
+function splitForwardedHeader(value: string | null) {
+  return value
+    ?.split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean) ?? [];
+}
+
+function normalizeHost(value: string | null | undefined) {
+  return value?.trim().toLowerCase() ?? '';
+}
+
+function addHostWithWwwPair(hosts: Set<string>, host: string) {
+  const normalized = normalizeHost(host);
+  if (!normalized) return;
+  hosts.add(normalized);
+  const [hostname, port] = normalized.split(':');
+  if (!hostname) return;
+  if (hostname.startsWith('www.')) {
+    hosts.add(`${hostname.slice(4)}${port ? `:${port}` : ''}`);
+  } else {
+    hosts.add(`www.${hostname}${port ? `:${port}` : ''}`);
+  }
+}
+
+function configuredPublicHosts() {
+  const urls = [
+    process.env.NEXT_PUBLIC_APP_URL,
+    process.env.NEXTAUTH_URL,
+    process.env.APP_URL,
+    process.env.PUBLIC_APP_URL,
+  ];
+  const hosts = new Set<string>();
+  for (const url of urls) {
+    if (!url) continue;
+    try {
+      addHostWithWwwPair(hosts, new URL(url).host);
+    } catch {
+      addHostWithWwwPair(hosts, url);
+    }
+  }
+  return hosts;
+}
+
+function allowedRequestHosts(request: NextRequest) {
+  const hosts = configuredPublicHosts();
+  addHostWithWwwPair(hosts, request.nextUrl.host);
+  addHostWithWwwPair(hosts, request.headers.get('host') ?? '');
+
+  for (const host of splitForwardedHeader(request.headers.get('x-forwarded-host'))) {
+    addHostWithWwwPair(hosts, host);
+  }
+  for (const host of splitForwardedHeader(request.headers.get('x-original-host'))) {
+    addHostWithWwwPair(hosts, host);
+  }
+
+  return hosts;
+}
+
+function getOriginHost(origin: string) {
+  try {
+    return normalizeHost(new URL(origin).host);
+  } catch {
+    return '';
+  }
+}
+
 function hasValidOrigin(request: NextRequest) {
   const origin = request.headers.get('origin');
   if (!origin) return true;
-  try {
-    return new URL(origin).host === request.nextUrl.host;
-  } catch {
-    return false;
-  }
+  const originHost = getOriginHost(origin);
+  if (!originHost) return false;
+  return allowedRequestHosts(request).has(originHost);
+}
+
+function logInvalidOrigin(request: NextRequest) {
+  console.warn('[middleware-auth] invalid mutating API origin', {
+    timestamp: new Date().toISOString(),
+    path: request.nextUrl.pathname,
+    method: request.method,
+    origin: request.headers.get('origin'),
+    originHost: getOriginHost(request.headers.get('origin') ?? ''),
+    nextUrlHost: request.nextUrl.host,
+    host: request.headers.get('host'),
+    forwardedHost: request.headers.get('x-forwarded-host'),
+    forwardedProto: request.headers.get('x-forwarded-proto'),
+    allowedHosts: [...allowedRequestHosts(request)],
+    cookiePresent: Boolean(request.headers.get('cookie')),
+  });
 }
 
 function withSecurityHeaders(response: NextResponse) {
@@ -69,7 +149,17 @@ export async function middleware(request: NextRequest) {
   if (isPublicPath(pathname) || !isProtectedPath(pathname)) return withSecurityHeaders(NextResponse.next());
 
   if (isApiPath(pathname) && isMutatingMethod(request.method) && !hasValidOrigin(request)) {
-    return withSecurityHeaders(NextResponse.json({ ok: false, error: 'Invalid request origin' }, { status: 403 }));
+    logInvalidOrigin(request);
+    return withSecurityHeaders(NextResponse.json({
+      ok: false,
+      error: 'Invalid request origin',
+      code: 'invalid_origin',
+      details: {
+        origin: request.headers.get('origin'),
+        host: request.headers.get('host'),
+        forwardedHost: request.headers.get('x-forwarded-host'),
+      },
+    }, { status: 403 }));
   }
 
   const session = await getSessionFromRequest(request);
@@ -80,7 +170,15 @@ export async function middleware(request: NextRequest) {
     }
 
     if (isApiPath(pathname)) {
-      return withSecurityHeaders(NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 }));
+      console.warn('[middleware-auth] api session missing', {
+        timestamp: new Date().toISOString(),
+        path: pathname,
+        method: request.method,
+        cookiePresent: Boolean(request.headers.get('cookie')),
+        host: request.headers.get('host'),
+        forwardedHost: request.headers.get('x-forwarded-host'),
+      });
+      return withSecurityHeaders(NextResponse.json({ ok: false, error: 'Unauthorized', code: 'missing_session' }, { status: 401 }));
     }
     const url = request.nextUrl.clone();
     url.pathname = pathname.startsWith('/system-admin') ? '/system-admin' : '/adisyonsistemi';
@@ -90,7 +188,16 @@ export async function middleware(request: NextRequest) {
 
   if (pathname.startsWith('/system-admin') && !isSuperAdmin(session)) {
     if (isApiPath(pathname)) {
-      return withSecurityHeaders(NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 }));
+      console.warn('[middleware-auth] system-admin api forbidden', {
+        timestamp: new Date().toISOString(),
+        path: pathname,
+        method: request.method,
+        tenantId: session.tenantId,
+        userId: session.userId,
+        role: session.role,
+        branchId: session.branchId,
+      });
+      return withSecurityHeaders(NextResponse.json({ ok: false, error: 'Forbidden', code: 'system_admin_forbidden' }, { status: 403 }));
     }
     const url = request.nextUrl.clone();
     url.pathname = '/app';
