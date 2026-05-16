@@ -309,8 +309,9 @@ async function appendQueueItem(nextItem: OfflineQueueItem) {
 async function loadSummary(tenantId: string): Promise<OfflineSyncSummary> {
   const items = await readAllQueueItems(tenantId);
   const meta = await readTenantMeta(tenantId);
+  const blockingItems = items.filter((item) => !(item.operationType === 'order.snapshot' && item.status === 'failed'));
   const pending = items.filter((item) => item.status === 'pending').length;
-  const failed = items.filter((item) => item.status === 'failed').length;
+  const failed = blockingItems.filter((item) => item.status === 'failed').length;
   const syncing = items.filter((item) => item.status === 'syncing').length;
   const synced = items.filter((item) => item.status === 'synced').length;
 

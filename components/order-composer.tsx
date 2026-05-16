@@ -47,7 +47,7 @@ import { appendStoredFinanceAccountTransaction, buildFinanceTransaction } from '
 import { erpAccounts, type Account } from '@/lib/erp-engine';
 import { appendPaymentJournalEntries, buildPaymentJournalEntry } from '@/lib/payment-journal-store';
 import { getDefaultTableLayoutState, loadTableLayoutState, subscribeToTableLayoutChanges } from '@/lib/table-layout-store';
-import { getProductMapping, validateProductMapping } from '@/lib/pos-mapping-store';
+import { createAutoProductMapping, getProductMapping, upsertProductMapping, validateProductMapping } from '@/lib/pos-mapping-store';
 import { queueOfflineOrderSnapshot, queueOfflinePaymentSnapshot, syncOfflineOrders } from '@/lib/offline-sync-store';
 import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
 import { fetchLocalAgentJson } from '@/lib/local-agent';
@@ -194,6 +194,23 @@ function areOrderMapsEqual(first: Record<string, OrderLine[]>, second: Record<st
 function logOrderFlow(event: string, payload: Record<string, unknown>) {
   if (typeof window === 'undefined') return;
   console.info(`[adisyon-flow] ${event}`, payload);
+}
+
+function ensureOrderProductMapping(product: ProductCard) {
+  const mapping = getProductMapping(product.id, product.name);
+  const validation = validateProductMapping(mapping);
+  if (validation.valid) {
+    return { mapping, autoCreated: false };
+  }
+
+  const autoMapping = upsertProductMapping(createAutoProductMapping({
+    id: product.id,
+    name: product.name,
+    vatRate: 10,
+    category: product.category,
+  }));
+
+  return { mapping: autoMapping, autoCreated: true };
 }
 
 function getProductCategoryByName(name: string, products: ProductCard[]) {
@@ -541,7 +558,6 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const [discountReason, setDiscountReason] = useState('');
   const [tableActionsOpen, setTableActionsOpen] = useState(false);
   const [tableActionSection, setTableActionSection] = useState<'guest' | 'note' | 'merge' | 'move'>('guest');
-  const [tableCardOpen, setTableCardOpen] = useState(false);
   const [guestCountInput, setGuestCountInput] = useState('0');
   const [reservationNameInput, setReservationNameInput] = useState('');
   const [reservationTimeInput, setReservationTimeInput] = useState('');
@@ -602,7 +618,6 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const productSearchRef = useRef<HTMLInputElement | null>(null);
   const lastPaymentGuardRef = useRef<{ tableId: string; total: number; at: number } | null>(null);
   const previousItemCountsRef = useRef<Record<string, number>>({});
-  const seenTableCardRef = useRef<Record<string, boolean>>({});
   const orderMutationGuardRef = useRef<{ tableId: string; at: number; source: string } | null>(null);
   const paymentRequestedSet = useMemo(() => new Set(paymentRequestedTables), [paymentRequestedTables]);
   const chargeAccounts = useMemo(
@@ -828,12 +843,6 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const subtotal = useMemo(() => lines.reduce((sum, item) => sum + getOrderLineSubtotal(item), 0), [lines]);
   const vat = subtotal * VAT_RATE;
   
-  useEffect(() => {
-    if (!currentTable) return;
-    if (seenTableCardRef.current[currentTable.id]) return;
-    seenTableCardRef.current[currentTable.id] = true;
-    setTableCardOpen(true);
-  }, [currentTable?.id]);
   const total = subtotal + vat;
 
   const selectedSplitItemCount = useMemo(() => lines.reduce((sum, item) => sum + (splitSelection[item.id] ?? 0), 0), [lines, splitSelection]);
@@ -1064,21 +1073,23 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
   useEffect(() => {
     if (!ordersHydrated) return;
+    const activeTableId = currentTable?.id ?? selectedTableId;
+    const activePayload = activeTableId ? ordersByTable[activeTableId] ?? EMPTY_ORDER_LINES : EMPTY_ORDER_LINES;
     logOrderFlow('orders-persisted', {
       selectedTableId,
-      activeOrderId: currentTable?.id ?? null,
-      currentLineCount: currentTable ? ordersByTable[currentTable.id]?.length ?? 0 : 0,
+      activeOrderId: activeTableId || null,
+      currentLineCount: activePayload.length,
       tableCount: Object.keys(ordersByTable).length,
     });
     setStoredOrdersByTable(ordersByTable);
-    Object.entries(ordersByTable).forEach(([tableId, payload]) => {
+    if (activeTableId) {
       queueOfflineOrderSnapshot({
         tenantId: sessionState.tenantId,
         branchId: sessionState.activeBranchId,
-        tableId,
-        payload,
+        tableId: activeTableId,
+        payload: activePayload,
       });
-    });
+    }
   }, [currentTable?.id, ordersByTable, ordersHydrated, selectedTableId, sessionState.activeBranchId, sessionState.tenantId]);
 
   useEffect(() => {
@@ -1376,15 +1387,8 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
   const openProductCard = (product: ProductCard) => {
     if (!currentTable || !hasPermission('orders.create')) return;
-    const mapping = getProductMapping(product.id, product.name);
-    const validation = validateProductMapping(mapping);
-    if (!validation.valid) {
-      const message = `${product.name} için POS PLU eşleştirmesi eksik. Ürünler > POS Mapping alanından tamamlayın.`;
-      setPosMappingWarning(message);
-      setFeedbackMessage(message);
-      return;
-    }
-    setPosMappingWarning('');
+    const mappingResult = ensureOrderProductMapping(product);
+    setPosMappingWarning(mappingResult.autoCreated ? `${product.name} için otomatik POS PLU eşleştirmesi oluşturuldu.` : '');
     setProductCardProduct(product);
     setProductCardQuantity('1');
     setProductCardNote('');
@@ -1420,20 +1424,17 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       });
       return;
     }
-    const mapping = getProductMapping(product.id, product.name);
-    const validation = validateProductMapping(mapping);
-    if (!validation.valid) {
-      const message = `${product.name} için POS PLU eşleştirmesi eksik. Ürünler > POS Mapping alanından tamamlayın.`;
-      setPosMappingWarning(message);
-      setFeedbackMessage(message);
-      logOrderFlow('add-product-blocked', {
+    const mappingResult = ensureOrderProductMapping(product);
+    if (mappingResult.autoCreated) {
+      setPosMappingWarning(`${product.name} için otomatik POS PLU eşleştirmesi oluşturuldu.`);
+      logOrderFlow('product-mapping-autocreated', {
         source,
-        reason: 'missing-pos-mapping',
         productId: product.id,
         productName: product.name,
         tableId: currentTable.id,
       });
-      return;
+    } else {
+      setPosMappingWarning('');
     }
 
     const storedProduct = storedSaleProducts.find((item) => item.id === product.id || item.name === product.name);
@@ -1444,7 +1445,6 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     const discountAllowed = storedProduct?.allowDiscount ?? product.allowDiscount ?? true;
     const happyHourEligible = storedProduct?.happyHourEligible ?? product.happyHourEligible ?? false;
 
-    setPosMappingWarning('');
     orderMutationGuardRef.current = { tableId: currentTable.id, at: Date.now(), source };
     updatePaymentRequested(currentTable.id, false);
     let touchedLineId = '';
@@ -1496,6 +1496,9 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
       touchedLineId = existing ? existing.id : nextLines[nextLines.length - 1].id;
       nextQuantity = nextLines.find((line) => line.id === touchedLineId)?.qty ?? 1;
+      const nextOrders = { ...current, [currentTable.id]: nextLines };
+      setStoredOrdersByTable(nextOrders);
+      setTableLiveTotals({ [currentTable.id]: getOrderGross(nextLines) });
       logOrderFlow('add-product-state-transition', {
         source,
         tableId: currentTable.id,
@@ -1508,34 +1511,13 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         quantity: nextQuantity,
         mergedExisting: Boolean(existing),
       });
-      return { ...current, [currentTable.id]: nextLines };
+      return nextOrders;
     });
 
     setLastAddedId(product.id);
     setLastMutatedLineId(touchedLineId);
     setFeedbackMessage(`${product.name} adisyona eklendi`);
     setProductSearch('');
-  };
-
-  const saveTableCard = () => {
-    if (!currentTable) return;
-    const now = new Date().toISOString();
-    setTableMetaById((current) => {
-      const next = {
-        ...current,
-        [currentTable.id]: {
-          ...current[currentTable.id],
-          guests: Math.max(Number(guestCountInput) || 0, 0),
-          note: tableNoteInput.trim() || undefined,
-          openedAt: current[currentTable.id]?.openedAt ?? now,
-          lastActionAt: now,
-        },
-      };
-      setStoredTableMeta(next);
-      return next;
-    });
-    setFeedbackMessage(`${currentTable.name} masa karti kaydedildi`);
-    setTableCardOpen(false);
   };
 
   const closeProductCard = () => {
@@ -1583,15 +1565,8 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
   const addProduct = () => {
     if (!currentTable || !productCardProduct || !hasPermission('orders.create')) return;
-    const mapping = getProductMapping(productCardProduct.id, productCardProduct.name);
-    const validation = validateProductMapping(mapping);
-    if (!validation.valid) {
-      const message = `${productCardProduct.name} POS mapping eksik olduğu için adisyona eklenmedi.`;
-      setPosMappingWarning(message);
-      setFeedbackMessage(message);
-      return;
-    }
-    setPosMappingWarning('');
+    const mappingResult = ensureOrderProductMapping(productCardProduct);
+    setPosMappingWarning(mappingResult.autoCreated ? `${productCardProduct.name} için otomatik POS PLU eşleştirmesi oluşturuldu.` : '');
     orderMutationGuardRef.current = { tableId: currentTable.id, at: Date.now(), source: 'product-card' };
     updatePaymentRequested(currentTable.id, false);
 
@@ -1654,6 +1629,9 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           ];
 
       touchedLineId = existing ? existing.id : nextLines[nextLines.length - 1].id;
+      const nextOrders = { ...current, [currentTable.id]: nextLines };
+      setStoredOrdersByTable(nextOrders);
+      setTableLiveTotals({ [currentTable.id]: getOrderGross(nextLines) });
       logOrderFlow('add-product-state-transition', {
         source: 'product-card',
         tableId: currentTable.id,
@@ -1666,7 +1644,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         quantity: nextLines.find((line) => line.id === touchedLineId)?.qty ?? qtyToAdd,
         mergedExisting: Boolean(existing),
       });
-      return { ...current, [currentTable.id]: nextLines };
+      return nextOrders;
     });
 
     setLastAddedId(productCardProduct.id);
@@ -2699,6 +2677,8 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       return parts.includes(value) ? current : [...parts, value].join(', ');
     });
   };
+  const showPosDiagnostics = process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_POS_DEBUG === '1';
+  const mutationGuard = orderMutationGuardRef.current;
   const paymentPanel = (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#0B1220] text-slate-100">
       <div className="border-b border-white/10 px-3 py-3 sm:px-4">
@@ -3491,6 +3471,23 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
             <div className="flex items-center gap-2">
               <button
                 type="button"
+                onClick={() => {
+                  setPaymentOpen(false);
+                  setProductCardProduct(null);
+                  setTableActionsOpen(false);
+                  logOrderFlow('leave-order-screen', {
+                    selectedTableId,
+                    activeOrderId: currentTable?.id ?? null,
+                    lineCount: lines.length,
+                  });
+                  router.push('/floor');
+                }}
+                className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-300 bg-white px-3 text-[13px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+              >
+                Masalara dön
+              </button>
+              <button
+                type="button"
                 onClick={() => setTableActionsOpen((current) => !current)}
                 className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-600 bg-slate-900/75 px-3 text-[13px] font-semibold text-white shadow-sm transition hover:border-slate-500 hover:bg-slate-800"
               >
@@ -3818,70 +3815,18 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         </div>
       </aside>
     </div>
-    {tableCardOpen && currentTable ? (
-      <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm">
-        <div className="w-full max-w-2xl rounded-[1.6rem] border border-slate-200 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.28)]">
-          <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Masa karti</p>
-              <h3 className="mt-1 text-2xl font-semibold tracking-tight text-[#0F172A]">{currentTable.name}</h3>
-              <p className="mt-1 text-sm text-slate-500">Masadaki kişi sayısı ve masa notunu buradan yönetin.</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setTableCardOpen(false)}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-
-          <div className="grid gap-4 px-5 py-5 md:grid-cols-[0.75fr_1.25fr]">
-            <div className="grid gap-3">
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Kişi sayısı</label>
-                <input
-                  value={guestCountInput}
-                  onChange={(event) => setGuestCountInput(event.target.value)}
-                  inputMode="numeric"
-                  placeholder="0"
-                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-3">
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Masa notu</label>
-                <textarea
-                  value={tableNoteInput}
-                  onChange={(event) => setTableNoteInput(event.target.value)}
-                  placeholder="Servis, oturum veya masa notu"
-                  className="min-h-[150px] w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm text-[#0F172A] outline-none"
-                />
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={saveTableCard}
-                  className="inline-flex h-11 items-center justify-center rounded-2xl bg-[#2563EB] px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(37,99,235,0.22)]"
-                >
-                  Masa kartını kaydet
-                </button>
-                <button
-                  type="button"
-                  onClick={clearTableMeta}
-                  className="inline-flex h-11 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-700"
-                >
-                  Temizle
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+    {showPosDiagnostics ? (
+      <div className="fixed bottom-3 left-3 z-[90] max-w-sm rounded-2xl border border-slate-700 bg-slate-950/90 px-3 py-2 text-[11px] font-mono text-slate-100 shadow-2xl backdrop-blur">
+        <p>POS diagnostics</p>
+        <p>selectedTableId: {selectedTableId || '-'}</p>
+        <p>activeOrderId: {currentTable?.id ?? '-'}</p>
+        <p>lineCount: {lines.length}</p>
+        <p>isOnline: {String(isOnline)}</p>
+        <p>paymentOpen: {String(paymentOpen)}</p>
+        <p>tableActionsOpen: {String(tableActionsOpen)}</p>
+        <p>pendingMutation: {mutationGuard ? `${mutationGuard.source}:${Date.now() - mutationGuard.at}ms` : '-'}</p>
       </div>
     ) : null}
-
     {productCardProduct ? (
       <div className="fixed inset-0 z-[130] flex items-start justify-center bg-slate-950/60 px-4 py-4 backdrop-blur-sm sm:items-center sm:py-6">
         <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-[1.6rem] border border-slate-200 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.3)]">

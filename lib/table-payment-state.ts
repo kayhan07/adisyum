@@ -5,6 +5,7 @@ const TOTALS_STORAGE_KEY = 'aurelia-table-live-totals';
 const ORDERS_STORAGE_KEY = 'aurelia-orders-by-table';
 const META_STORAGE_KEY = 'aurelia-table-meta';
 const EVENT_NAME = 'aurelia-table-payment-requested:changed';
+let serverBootstrapCompleted = false;
 
 type SharedTablePaymentState = {
   paymentRequestedTableIds: string[];
@@ -55,7 +56,10 @@ function applySnapshot(snapshot: Partial<SharedTablePaymentState>) {
 
 export async function syncTableStateFromServer() {
   if (typeof window === 'undefined') return null;
-  await bootstrapRuntimeScope('tenant');
+  if (!serverBootstrapCompleted) {
+    await bootstrapRuntimeScope('tenant');
+    serverBootstrapCompleted = true;
+  }
   emitChange();
   return buildSnapshot();
 }

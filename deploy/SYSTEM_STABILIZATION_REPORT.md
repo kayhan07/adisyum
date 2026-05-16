@@ -56,3 +56,11 @@
 - Alternate service mode introduced multiple inconsistent order insertion branches.
 - Immediate external runtime refresh could race a local add-product mutation.
 - Swipe shortcuts could trigger note/payment actions from table cards without entering the canonical adisyon flow.
+
+## Critical Runtime Follow-up
+
+- Product insertion was still blocked by strict POS PLU mapping validation. Missing mappings now auto-create a deterministic local PLU and no longer prevent adisyon insertion.
+- Entering an order opened the table-card modal automatically. That modal could trap the operator before product insertion; the automatic modal path has been removed.
+- Offline sync queued snapshots for every table on each order-state change. This inflated the toolbar into "Hata var 50" when stale snapshots failed. Order snapshots now queue only the active table, and non-blocking failed order snapshots no longer mark the POS as a runtime failure.
+- Server runtime bootstrap now runs once per page lifecycle so a stale server snapshot does not repeatedly overwrite fresh local adisyon mutations.
+- A temporary POS diagnostics panel is available outside production, or in production with `NEXT_PUBLIC_POS_DEBUG=1`.
