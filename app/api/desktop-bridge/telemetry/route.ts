@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { logInfo, logWarn } from '@/lib/observability/structured-logger';
 import { recordReleaseTelemetry, recordTenantError, recordTenantRealtimeHealth } from '@/lib/observability/metrics-store';
-import { getSessionFromRequest, unauthorizedResponse } from '@/lib/session';
+import { getSessionFromRequest, forbiddenResponse, unauthorizedResponse } from '@/lib/session';
 import { ingestPilotDiagnostics } from '@/lib/pilot-field/field-validation';
 import { isSessionActive } from '@/lib/server/session-guard';
 import { trackUpdateSecurityEvent } from '@/lib/security/security-telemetry';
@@ -81,7 +81,17 @@ export async function POST(request: Request) {
   if (!(await isSessionActive(session))) return unauthorizedResponse('Oturum sonlandirildi.');
 
   const body = await request.json().catch(() => null) as DesktopBridgeTelemetryPayload | null;
-  const tenantId = body?.tenantId || session.tenantId;
+  if (body?.tenantId && body.tenantId !== session.tenantId) {
+    logWarn({
+      tenantId: session.tenantId,
+      service: 'desktop-bridge.telemetry',
+      message: 'Rejected tenant-mismatched desktop bridge telemetry',
+      context: { requestedTenantId: body.tenantId, sessionTenantId: session.tenantId, bridgeId: body.bridgeId },
+    });
+    return forbiddenResponse('Tenant mismatch');
+  }
+
+  const tenantId = session.tenantId;
   if (!tenantId) {
     return NextResponse.json({ ok: false, error: 'tenantId required' }, { status: 400 });
   }
