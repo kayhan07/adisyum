@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
-import { AlertTriangle, ArrowRightLeft, Boxes, Building2, CheckSquare, Copy, Download, Layers3, Package, Plus, Printer, Save, Search, Sparkles, Trash2, Upload, Warehouse } from 'lucide-react';
+import { AlertTriangle, ArrowRightLeft, Boxes, Building2, CheckSquare, Copy, Download, Layers3, Package, PackageCheck, Plus, Printer, Save, Search, Sparkles, Trash2, Upload, Warehouse } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { ProductCardForm } from '@/components/product-card-form';
 import { getDailyPurchaseInvoiceCount, getDailyPurchaseInvoiceTotal, loadStoredPurchaseInvoices } from '@/lib/purchase-invoice-store';
@@ -3444,6 +3444,9 @@ export default function ProductsPage() {
               </button>
               <a href="/products/templates" className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10">
                 <Sparkles className="h-4 w-4" /> Global şablon havuzu
+              </a>
+              <a href="/onboarding" className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-5 py-3 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/20">
+                <PackageCheck className="h-4 w-4" /> Akıllı kurulum
               </a>
             </>
           ) : null}

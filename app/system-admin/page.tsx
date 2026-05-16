@@ -64,6 +64,15 @@ type TemplateImportStat = {
   template: { id: string; name: string; restaurantType: string; version: number } | null;
   importCount: number;
 };
+type TemplatePackRow = {
+  id: string;
+  name: string;
+  restaurantType: string;
+  scale: string;
+  version: number;
+  active: boolean;
+  deprecated: boolean;
+};
 
 const modules: Array<{ id: AdminModule; label: string; icon: typeof LayoutDashboard }> = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -161,6 +170,7 @@ export default function SystemAdminPage() {
   const [provisioningMessage, setProvisioningMessage] = useState('');
   const [provisioningLoading, setProvisioningLoading] = useState(false);
   const [templatePool, setTemplatePool] = useState<TemplatePoolRow[]>([]);
+  const [templatePacks, setTemplatePacks] = useState<TemplatePackRow[]>([]);
   const [templateImportStats, setTemplateImportStats] = useState<TemplateImportStat[]>([]);
   const [tenantDraft, setTenantDraft] = useState<TenantDraft>(() => createAdminTenantDraft());
   const [dealerDraft, setDealerDraft] = useState<Omit<AdminDealer, 'id'>>({ name: '', type: 'dealer', commission_rate: 20, phone: '', email: '', active: true });
@@ -240,8 +250,9 @@ export default function SystemAdminPage() {
 
   async function loadTemplatePool() {
     const response = await fetch('/api/system-admin/templates', { credentials: 'include', cache: 'no-store' }).catch(() => null);
-    const payload = response && response.ok ? await response.json().catch(() => null) as { templates?: TemplatePoolRow[]; importStats?: TemplateImportStat[] } | null : null;
+    const payload = response && response.ok ? await response.json().catch(() => null) as { templates?: TemplatePoolRow[]; packs?: TemplatePackRow[]; importStats?: TemplateImportStat[] } | null : null;
     setTemplatePool(payload?.templates ?? []);
+    setTemplatePacks(payload?.packs ?? []);
     setTemplateImportStats(payload?.importStats ?? []);
   }
 
@@ -453,7 +464,7 @@ export default function SystemAdminPage() {
 
           {activeModule === 'dashboard' ? <Dashboard dashboard={dashboard} state={state} saasSummary={saasSummary} /> : null}
           {activeModule === 'tenants' ? <TenantsModule state={state} saasTenants={saasTenants} tenantDraft={tenantDraft} setTenantDraft={setTenantDraft} selectedPackage={selectedPackage} saveTenant={saveTenant} commit={commit} provisioningLoading={provisioningLoading} provisioningMessage={provisioningMessage} /> : null}
-          {activeModule === 'templates' ? <TemplatesModule templates={templatePool} importStats={templateImportStats} /> : null}
+          {activeModule === 'templates' ? <TemplatesModule templates={templatePool} packs={templatePacks} importStats={templateImportStats} /> : null}
           {activeModule === 'packages' ? <PackagesModule state={state} packageDraft={packageDraft} setPackageDraft={setPackageDraft} savePackage={savePackage} editPackage={editPackage} resetPackageDraft={resetPackageDraft} deletePackage={deletePackage} /> : null}
           {activeModule === 'dealers' ? <DealersModule state={state} dealerDraft={dealerDraft} setDealerDraft={setDealerDraft} saveDealer={saveDealer} commit={commit} /> : null}
           {activeModule === 'sales' ? <SalesModule state={state} saleDraft={saleDraft} setSaleDraft={setSaleDraft} addSale={addSale} /> : null}
@@ -669,15 +680,26 @@ function TenantsModule({ state, saasTenants, tenantDraft, setTenantDraft, select
   );
 }
 
-function TemplatesModule({ templates, importStats }: { templates: TemplatePoolRow[]; importStats: TemplateImportStat[] }) {
+function TemplatesModule({ templates, packs, importStats }: { templates: TemplatePoolRow[]; packs: TemplatePackRow[]; importStats: TemplateImportStat[] }) {
   const importCountByTemplate = new Map(importStats.map((item) => [item.template?.id, item.importCount]));
   return (
     <div className="mt-6 grid gap-5">
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-4">
         <Metric label="Şablon sayısı" value={String(templates.length)} />
+        <Metric label="Paket sayısı" value={String(packs.length)} />
         <Metric label="Restoran tipi" value={String(new Set(templates.map((template) => template.restaurantType)).size)} />
         <Metric label="Toplam import" value={String(importStats.reduce((sum, item) => sum + item.importCount, 0))} />
       </div>
+      <DataTable
+        headers={['Paket', 'Tip', 'Ölçek', 'Versiyon', 'Durum']}
+        rows={packs.map((pack) => [
+          pack.name,
+          pack.restaurantType,
+          pack.scale,
+          `v${pack.version}`,
+          pack.deprecated ? 'Deprecated' : pack.active ? 'Aktif' : 'Pasif',
+        ])}
+      />
       <DataTable
         headers={['Şablon', 'Tip', 'Varsayılan fiyat', 'Hazırlık', 'Yazıcı', 'Versiyon', 'Import']}
         rows={templates.map((template) => [

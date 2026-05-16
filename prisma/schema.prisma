@@ -738,6 +738,7 @@ model ProductTemplate {
   preparationGroup   String?  @map("preparation_group") @db.VarChar(120)
   active             Boolean  @default(true)
   version            Int      @default(1)
+  deprecated         Boolean  @default(false)
   metadata           Json     @default("{}")
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
@@ -747,6 +748,59 @@ model ProductTemplate {
   @@index([restaurantType])
   @@index([categoryTemplateId])
   @@map("product_templates")
+}
+
+model TemplatePack {
+  id                 String   @id @default(uuid()) @db.Uuid
+  tenantId           String   @default("system") @map("tenant_id") @db.VarChar(64)
+  key                String   @db.VarChar(120)
+  name               String   @db.VarChar(180)
+  restaurantType     String   @map("restaurant_type") @db.VarChar(80)
+  scale              String   @default("small") @db.VarChar(32)
+  version            Int      @default(1)
+  active             Boolean  @default(true)
+  deprecated         Boolean  @default(false)
+  description        String?  @db.VarChar(500)
+  defaults           Json     @default("{}")
+  metadata           Json     @default("{}")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, key, version], name: "tenantId_key_version", map: "template_packs_tenant_id_key_version_key")
+  @@index([tenantId])
+  @@index([restaurantType, scale])
+  @@map("template_packs")
+}
+
+model TemplatePackItem {
+  id                String   @id @default(uuid()) @db.Uuid
+  packId            String   @map("pack_id") @db.Uuid
+  productTemplateId String   @map("product_template_id") @db.Uuid
+  sortOrder         Int      @default(0) @map("sort_order")
+  required          Boolean  @default(true)
+  metadata          Json     @default("{}")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@unique([packId, productTemplateId], name: "packId_productTemplateId", map: "template_pack_items_pack_id_product_template_id_key")
+  @@index([packId])
+  @@index([productTemplateId])
+  @@map("template_pack_items")
+}
+
+model TemplatePackImport {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.VarChar(64)
+  templatePackId String   @map("template_pack_id") @db.Uuid
+  packVersion    Int      @map("pack_version")
+  importedBy     String?  @map("imported_by") @db.Uuid
+  status         String   @default("completed") @db.VarChar(32)
+  summary        Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, templatePackId], name: "tenantId_templatePackId", map: "template_pack_imports_tenant_id_template_pack_id_key")
+  @@index([tenantId])
+  @@index([templatePackId])
+  @@map("template_pack_imports")
 }
 
 model TemplateImport {

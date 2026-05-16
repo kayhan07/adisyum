@@ -27,6 +27,16 @@ type CanonicalTemplate = {
   }>;
 };
 
+type CanonicalPack = {
+  key: string;
+  name: string;
+  restaurantType: string;
+  scale: 'small' | 'medium' | 'large';
+  description: string;
+  templateKeys: string[];
+  defaults: Record<string, unknown>;
+};
+
 const CANONICAL_TEMPLATES: CanonicalTemplate[] = [
   {
     key: 'adana-kebap',
@@ -115,6 +125,76 @@ const CANONICAL_TEMPLATES: CanonicalTemplate[] = [
   },
 ];
 
+const STOCK_ALIASES: Record<string, string[]> = {
+  sut: ['milk', 'süt'],
+  espresso: ['espresso', 'kahve çekirdeği', 'coffee'],
+  seker: ['şeker', 'sugar'],
+  yogurt: ['yoğurt', 'yogurt'],
+};
+
+const CANONICAL_PACKS: CanonicalPack[] = [
+  {
+    key: 'cafe-starter-small',
+    name: 'Cafe Starter Pack',
+    restaurantType: 'Cafe',
+    scale: 'small',
+    description: 'Kahve ve tatlı odaklı küçük kafe başlangıcı.',
+    templateKeys: ['caffe-latte', 'tiramisu'],
+    defaults: {
+      takeawayEnabled: true,
+      serviceChargePercent: 0,
+      printerRoutes: ['Bar', 'Mutfak'],
+      tablePreset: 'cafe-12',
+      modifierGroups: ['Süt seçenekleri', 'Ek shot'],
+    },
+  },
+  {
+    key: 'kebap-starter-small',
+    name: 'Kebapçı Starter Pack',
+    restaurantType: 'Kebap',
+    scale: 'small',
+    description: 'Ocak ve fırın akışına uygun kebapçı başlangıcı.',
+    templateKeys: ['adana-kebap', 'lahmacun'],
+    defaults: {
+      takeawayEnabled: true,
+      serviceChargePercent: 0,
+      printerRoutes: ['Mutfak'],
+      tablePreset: 'restaurant-16',
+      kitchenGroups: ['Ocak', 'Fırın'],
+    },
+  },
+  {
+    key: 'meyhane-starter-small',
+    name: 'Meyhane Pack',
+    restaurantType: 'Meyhane',
+    scale: 'small',
+    description: 'Soğuk mutfak ve meze servisi odaklı başlangıç.',
+    templateKeys: ['raki-mezeleri'],
+    defaults: {
+      takeawayEnabled: false,
+      serviceChargePercent: 10,
+      printerRoutes: ['Mutfak'],
+      tablePreset: 'meyhane-16',
+      kitchenGroups: ['Soğuk Mutfak'],
+    },
+  },
+  {
+    key: 'balik-starter-small',
+    name: 'Balık Restaurant Pack',
+    restaurantType: 'Balık',
+    scale: 'small',
+    description: 'Balık restoranı için ızgara odaklı başlangıç.',
+    templateKeys: ['balik-izgara'],
+    defaults: {
+      takeawayEnabled: false,
+      serviceChargePercent: 10,
+      printerRoutes: ['Mutfak'],
+      tablePreset: 'restaurant-16',
+      kitchenGroups: ['Izgara'],
+    },
+  },
+];
+
 function json<T>(value: T): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
@@ -125,6 +205,7 @@ function normalize(value: string) {
 
 export async function ensureSystemTemplatePool() {
   return prisma.$transaction(async (tx) => {
+    const productByKey = new Map<string, { id: string }>();
     for (const template of CANONICAL_TEMPLATES) {
       const category = await tx.categoryTemplate.upsert({
         where: { tenantId_key: { tenantId: SYSTEM_TENANT_ID, key: template.categoryKey } },
@@ -161,6 +242,7 @@ export async function ensureSystemTemplatePool() {
           preparationGroup: template.preparationGroup,
         },
       });
+      productByKey.set(template.key, productTemplate);
 
       const recipe = await tx.recipeTemplate.upsert({
         where: { id: productTemplate.id },
@@ -211,6 +293,42 @@ export async function ensureSystemTemplatePool() {
             name: ingredient.name,
             quantity: ingredient.quantity,
             unit: ingredient.recipeUnit,
+          },
+        });
+      }
+    }
+
+    for (const pack of CANONICAL_PACKS) {
+      const templatePack = await tx.templatePack.upsert({
+        where: { tenantId_key_version: { tenantId: SYSTEM_TENANT_ID, key: pack.key, version: 1 } },
+        update: {
+          name: pack.name,
+          restaurantType: pack.restaurantType,
+          scale: pack.scale,
+          description: pack.description,
+          defaults: json(pack.defaults),
+          active: true,
+          deprecated: false,
+        },
+        create: {
+          tenantId: SYSTEM_TENANT_ID,
+          key: pack.key,
+          name: pack.name,
+          restaurantType: pack.restaurantType,
+          scale: pack.scale,
+          description: pack.description,
+          defaults: json(pack.defaults),
+        },
+      });
+      await tx.templatePackItem.deleteMany({ where: { packId: templatePack.id } });
+      for (const [index, templateKey] of pack.templateKeys.entries()) {
+        const productTemplate = productByKey.get(templateKey);
+        if (!productTemplate) continue;
+        await tx.templatePackItem.create({
+          data: {
+            packId: templatePack.id,
+            productTemplateId: productTemplate.id,
+            sortOrder: index,
           },
         });
       }
@@ -400,6 +518,161 @@ export async function getTemplateImportStats() {
     template: templates.find((template) => template.id === item.productTemplateId) ?? null,
     importCount: item._count.id,
   }));
+}
+
+export async function listTemplatePacks(filters: { restaurantType?: string; scale?: string } = {}) {
+  await ensureSystemTemplatePool();
+  return prisma.templatePack.findMany({
+    where: {
+      tenantId: SYSTEM_TENANT_ID,
+      active: true,
+      deprecated: false,
+      ...(filters.restaurantType ? { restaurantType: filters.restaurantType } : {}),
+      ...(filters.scale ? { scale: filters.scale } : {}),
+    },
+    orderBy: [{ restaurantType: 'asc' }, { scale: 'asc' }, { name: 'asc' }],
+  });
+}
+
+function normalizeStockKey(value: string) {
+  return normalize(value)
+    .replaceAll('ı', 'i')
+    .replaceAll('ğ', 'g')
+    .replaceAll('ü', 'u')
+    .replaceAll('ş', 's')
+    .replaceAll('ö', 'o')
+    .replaceAll('ç', 'c');
+}
+
+function aliasesForStockTemplate(key: string, name: string) {
+  return [...new Set([key, name, ...(STOCK_ALIASES[key] ?? [])].map(normalizeStockKey))];
+}
+
+export async function previewTemplatePackImport(tenant: TenantContext, packIds: string[]) {
+  const packs = await prisma.templatePack.findMany({
+    where: { id: { in: [...new Set(packIds)] }, tenantId: SYSTEM_TENANT_ID, active: true, deprecated: false },
+  });
+  const packItems = await prisma.templatePackItem.findMany({
+    where: { packId: { in: packs.map((pack) => pack.id) } },
+  });
+  const productTemplateIds = [...new Set(packItems.map((item) => item.productTemplateId))];
+  const [existingImports, recipeTemplates, existingStocks] = await Promise.all([
+    prisma.templateImport.findMany({
+      where: { tenantId: tenant.tenantId, productTemplateId: { in: productTemplateIds } },
+      select: { productTemplateId: true },
+    }),
+    prisma.recipeTemplate.findMany({
+      where: { productTemplateId: { in: productTemplateIds } },
+      select: { id: true, productTemplateId: true },
+    }),
+    prisma.stockItem.findMany({
+      where: { tenantId: tenant.tenantId },
+      select: { id: true, name: true },
+    }),
+  ]);
+  const recipeItems = await prisma.recipeTemplateItem.findMany({
+    where: { templateId: { in: recipeTemplates.map((recipe) => recipe.id) } },
+  });
+  const stockTemplates = await prisma.stockTemplate.findMany({
+    where: { id: { in: recipeItems.map((item) => item.stockTemplateId).filter((id): id is string => Boolean(id)) } },
+  });
+  const existingImportIds = new Set(existingImports.map((item) => item.productTemplateId));
+  const normalizedExistingStocks = existingStocks.map((stock) => ({ ...stock, normalized: normalizeStockKey(stock.name) }));
+  const stockMatches = stockTemplates.map((template) => {
+    const aliases = aliasesForStockTemplate(template.key, template.name);
+    const matched = normalizedExistingStocks.find((stock) => aliases.includes(stock.normalized));
+    return {
+      stockTemplateId: template.id,
+      templateName: template.name,
+      matchedStockItemId: matched?.id ?? null,
+      matchedStockName: matched?.name ?? null,
+      suggestion: matched ? 'reuse' : 'create',
+    };
+  });
+
+  return {
+    packs,
+    summary: {
+      packs: packs.length,
+      products: productTemplateIds.length,
+      recipes: recipeTemplates.length,
+      recipeItems: recipeItems.length,
+      stockItemsToCreate: stockMatches.filter((item) => item.suggestion === 'create').length,
+      stockMatches: stockMatches.filter((item) => item.suggestion === 'reuse').length,
+      duplicateImports: productTemplateIds.filter((id) => existingImportIds.has(id)).length,
+    },
+    conflicts: {
+      duplicateProductTemplateIds: productTemplateIds.filter((id) => existingImportIds.has(id)),
+      stockMatches,
+    },
+  };
+}
+
+export async function importTemplatePacksToTenant(
+  tenant: TenantContext,
+  packIds: string[],
+  configuration?: { branchName?: string; takeawayEnabled?: boolean; serviceChargePercent?: number },
+) {
+  const preview = await previewTemplatePackImport(tenant, packIds);
+  const packItems = await prisma.templatePackItem.findMany({
+    where: { packId: { in: preview.packs.map((pack) => pack.id) } },
+  });
+  const productTemplateIds = [...new Set(packItems.map((item) => item.productTemplateId))];
+  const imported = await importProductTemplatesToTenant(tenant, productTemplateIds);
+  await prisma.$transaction(preview.packs.map((pack) =>
+    prisma.templatePackImport.upsert({
+      where: { tenantId_templatePackId: { tenantId: tenant.tenantId, templatePackId: pack.id } },
+      update: {
+        packVersion: pack.version,
+        importedBy: tenant.userId,
+        summary: json(preview.summary),
+      },
+      create: {
+        tenantId: tenant.tenantId,
+        templatePackId: pack.id,
+        packVersion: pack.version,
+        importedBy: tenant.userId,
+        summary: json(preview.summary),
+      },
+    }),
+  ));
+  if (configuration) {
+    const currentTenant = await prisma.tenant.findUnique({
+      where: { tenantId: tenant.tenantId },
+      select: { settings: true, mainBranchId: true },
+    });
+    const currentSettings = currentTenant?.settings && typeof currentTenant.settings === 'object' && !Array.isArray(currentTenant.settings)
+      ? currentTenant.settings as Record<string, unknown>
+      : {};
+    await prisma.$transaction([
+      prisma.tenant.update({
+        where: { tenantId: tenant.tenantId },
+        data: {
+          settings: json({
+            ...currentSettings,
+            onboarding: {
+              ...((currentSettings.onboarding && typeof currentSettings.onboarding === 'object' && !Array.isArray(currentSettings.onboarding))
+                ? currentSettings.onboarding as Record<string, unknown>
+                : {}),
+              packImported: true,
+              importedTemplateCount: imported.filter((item) => item.status === 'imported').length,
+            },
+            serviceDefaults: {
+              takeawayEnabled: configuration.takeawayEnabled ?? true,
+              serviceChargePercent: configuration.serviceChargePercent ?? 0,
+            },
+          }),
+        },
+      }),
+      ...(configuration.branchName && currentTenant?.mainBranchId
+        ? [prisma.branch.update({
+          where: { tenantId_branchId: { tenantId: tenant.tenantId, branchId: currentTenant.mainBranchId } },
+          data: { name: configuration.branchName },
+        })]
+        : []),
+    ]);
+  }
+  return { preview, imported };
 }
 
 export function searchMatches(value: string, query: string) {
