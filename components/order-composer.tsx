@@ -261,6 +261,8 @@ async function addProductToAuthoritativeOrder(input: {
     message?: string;
     error?: string;
     traceId?: string;
+    code?: string;
+    details?: Record<string, unknown>;
   };
   logOrderFlow('add-product-fetch-response', {
     mutationId: input.mutationId,
@@ -271,11 +273,13 @@ async function addProductToAuthoritativeOrder(input: {
     traceId: payload.traceId,
     tableCount: payload.ordersByTable ? Object.keys(payload.ordersByTable).length : 0,
     activeLineCount: payload.ordersByTable?.[input.tableId]?.length ?? 0,
+    code: payload.code,
+    details: payload.details,
     error: payload.error,
     message: payload.message,
   });
   if (!response.ok) {
-    throw new Error(`Authoritative product mutation failed with ${response.status}: ${payload.message ?? payload.error ?? 'unknown error'}${payload.traceId ? ` (${payload.traceId})` : ''}`);
+    throw new Error(`Authoritative product mutation failed with ${response.status}: ${payload.message ?? payload.error ?? payload.code ?? 'unknown error'}${payload.traceId ? ` (${payload.traceId})` : ''}`);
   }
   return {
     ordersByTable: payload.ordersByTable ?? {},
@@ -1508,6 +1512,10 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         source,
         tableId,
         mutationId,
+        sessionTenantId: sessionState.tenantId,
+        sessionBranchId: sessionState.activeBranchId,
+        sessionRole: sessionState.currentUser.role,
+        isAuthenticated: sessionState.isAuthenticated,
         productId: product.id,
         productName: product.name,
         previousLineCount: (ordersByTable[tableId] ?? EMPTY_ORDER_LINES).length,
@@ -1633,6 +1641,10 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         source: 'product-card',
         tableId,
         mutationId,
+        sessionTenantId: sessionState.tenantId,
+        sessionBranchId: sessionState.activeBranchId,
+        sessionRole: sessionState.currentUser.role,
+        isAuthenticated: sessionState.isAuthenticated,
         productId: productCardProduct.id,
         productName: productCardProduct.name,
         quantity: qtyToAdd,

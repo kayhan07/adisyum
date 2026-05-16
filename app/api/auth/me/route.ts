@@ -4,6 +4,7 @@ import { clearSessionCookie } from '@/lib/session';
 import { prisma } from '@/lib/db/prisma';
 import { userTenantIdKey } from '@/lib/db/compound-keys';
 import { isSessionActive } from '@/lib/server/session-guard';
+import { assertTenantIsActive } from '@/lib/db/tenant-repository';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +14,27 @@ export async function GET(request: Request) {
   const active = await isSessionActive(session);
   if (!active) {
     return clearSessionCookie(NextResponse.json({ ok: false }, { status: 401 }));
+  }
+
+  if (session.role !== 'super_admin') {
+    try {
+      if (!session.subscriptionId) throw new Error('Session subscriptionId is missing.');
+      await assertTenantIsActive(session.tenantId);
+    } catch (error) {
+      console.warn('[auth/me] stale tenant session rejected', {
+        tenantId: session.tenantId,
+        userId: session.userId,
+        role: session.role,
+        branchId: session.branchId,
+        subscriptionId: session.subscriptionId,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      return clearSessionCookie(NextResponse.json({
+        ok: false,
+        error: 'Tenant oturumu gecersiz. Lutfen tekrar giris yapin.',
+        code: 'stale_tenant_session',
+      }, { status: 401 }));
+    }
   }
 
   const [user, tenant, subscription] = session.role === 'super_admin'
@@ -27,7 +49,11 @@ export async function GET(request: Request) {
           select: { name: true },
         }).catch(() => null),
         prisma.subscription.findFirst({
-          where: { tenantId: session.tenantId },
+          where: {
+            tenantId: session.tenantId,
+            status: { in: ['active', 'trial', 'demo'] },
+            endsAt: { gte: new Date() },
+          },
           orderBy: { endsAt: 'desc' },
           select: { endsAt: true },
         }).catch(() => null),
