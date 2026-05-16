@@ -151,7 +151,7 @@ export function TableCard({
     onDragMove?.(sourceId, id);
   }
 
-  const quickButtonClass = 'inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-black/14 text-slate-100 transition hover:bg-white/12 hover:text-white disabled:cursor-not-allowed disabled:opacity-35';
+  const quickButtonClass = 'inline-flex h-8 min-w-0 items-center justify-center rounded-lg border border-white/10 bg-black/14 text-slate-100 transition hover:bg-white/12 hover:text-white disabled:cursor-not-allowed disabled:opacity-35';
 
   return (
     <div
@@ -178,7 +178,7 @@ export function TableCard({
               </p>
             ) : null}
           </div>
-          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${ui.badge}`}>{ui.label}</span>
+          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${ui.badge}`}>{ui.label}</span>
         </div>
 
         <div className="pt-1.5">
@@ -205,34 +205,32 @@ export function TableCard({
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-2">
+          <div className="space-y-1.5">
             {longOpen && status !== 'payment' ? (
-              <span className="rounded-full border border-amber-300/20 bg-amber-400/10 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.14em] text-amber-100">
+              <span className="inline-flex rounded-full border border-amber-300/20 bg-amber-400/10 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.14em] text-amber-100">
                 Uyarı
               </span>
-            ) : (
-              <span />
-            )}
+            ) : null}
             {actionMode && (isActionTargetCandidate || isActionSource) ? (
               <span className="inline-flex h-6 items-center justify-center rounded-lg bg-white/10 px-2 text-[9px] font-semibold text-white shadow-sm">
                 {isActionSource ? 'Kaynak' : 'Hedef'}
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5">
+              <span className="grid w-full grid-cols-5 gap-1">
                 <button type="button" title="Masa notu" className={quickButtonClass} onClick={(event) => runQuickAction(event, onQuickNote)}>
-                  <StickyNote className="h-[18px] w-[18px]" />
+                  <StickyNote className="h-4 w-4" />
                 </button>
                 <button type="button" title="Masa taşı" className={quickButtonClass} onClick={(event) => runQuickAction(event, onQuickMove)} disabled={!hasOrder && status !== 'reserved'}>
-                  <ArrowRightLeft className="h-[18px] w-[18px]" />
+                  <ArrowRightLeft className="h-4 w-4" />
                 </button>
                 <button type="button" title="Masa birleştir" className={quickButtonClass} onClick={(event) => runQuickAction(event, onQuickMerge)} disabled={!hasOrder}>
-                  <GitMerge className="h-[18px] w-[18px]" />
+                  <GitMerge className="h-4 w-4" />
                 </button>
                 <button type="button" title="Ödeme al" className={quickButtonClass} onClick={(event) => runQuickAction(event, onQuickPayment)} disabled={!hasOrder}>
-                  <CreditCard className="h-[18px] w-[18px]" />
+                  <CreditCard className="h-4 w-4" />
                 </button>
                 <button type="button" title="Masayı temizle" className={quickButtonClass} onClick={(event) => runQuickAction(event, onQuickClear)} disabled={!hasOrder && status !== 'reserved'}>
-                  <Trash2 className="h-[18px] w-[18px]" />
+                  <Trash2 className="h-4 w-4" />
                 </button>
               </span>
             )}
