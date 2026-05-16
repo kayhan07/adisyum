@@ -42,6 +42,7 @@ import { getOperationModeSnapshot } from '@/lib/operations/mode-manager';
 import { getPlaybookRuns } from '@/lib/incidents/dr-playbooks';
 import { getPilotOperationsDashboard } from '@/lib/pilot-field/field-validation';
 import { getCommercialOperationsDashboard } from '@/lib/commercial-ops/platform';
+import { buildAllTenantOperationalHealth } from '@/lib/operational-intelligence/engine';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -166,6 +167,7 @@ export async function GET(request: Request) {
   let playbookRuns: ReturnType<typeof getPlaybookRuns> = [];
   let pilotField: ReturnType<typeof getPilotOperationsDashboard> | null = null;
   let commercialOps: ReturnType<typeof getCommercialOperationsDashboard> | null = null;
+  let operationalIntelligence: Awaited<ReturnType<typeof buildAllTenantOperationalHealth>> = [];
 
   try { incidents = getOpenIncidents(); } catch { /* */ }
   try { incidentStats = getIncidentStats(); } catch { /* */ }
@@ -197,6 +199,7 @@ export async function GET(request: Request) {
   try { playbookRuns = getPlaybookRuns(20); } catch { /* */ }
   try { pilotField = getPilotOperationsDashboard(); } catch { /* */ }
   try { commercialOps = getCommercialOperationsDashboard({ pilotField, healthScores }); } catch { /* */ }
+  try { operationalIntelligence = await buildAllTenantOperationalHealth(); } catch { /* */ }
 
   // Fire backup failure alert if needed (non-blocking)
   void fireBackupFailureAlertIfNeeded().catch(() => undefined);
@@ -246,6 +249,7 @@ export async function GET(request: Request) {
     playbookRuns,
     pilotField,
     commercialOps,
+    operationalIntelligence,
     releases,
     releaseSummary,
     generatedAt: new Date().toISOString(),

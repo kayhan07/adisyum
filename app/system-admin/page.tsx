@@ -994,6 +994,15 @@ type ObsPayload = {
   playbookRuns?: ObsPlaybookRun[];
   pilotField?: ObsPilotField;
   commercialOps?: ObsCommercialOps;
+  operationalIntelligence?: Array<{
+    tenantId: string;
+    companyName: string;
+    healthScore: number;
+    operationalScore: number;
+    stockAccuracyScore: number;
+    onboardingCompletenessScore: number;
+    alerts: Array<{ code: string; severity: string; title: string }>;
+  }>;
   releases?: ObsReleaseRow[];
   releaseSummary?: { total: number; failedUpdates: number; outdatedTenants: number; rollbackEvents: number; avgUpdateLatencyMs: number; byChannel: Record<string, number> } | null;
   generatedAt: string;
@@ -1154,6 +1163,25 @@ function MonitoringModule() {
                     </tr>
                   ))}</tbody>
                 </table>
+              </div>
+            </div>
+          )}
+          {(data.operationalIntelligence ?? []).length > 0 && (
+            <div>
+              <SectionTitle>Operasyon Zekasi</SectionTitle>
+              <div className="grid gap-2">
+                {(data.operationalIntelligence ?? []).slice(0, 5).map((tenant) => (
+                  <div key={tenant.tenantId} className="grid gap-2 rounded-2xl border border-white/8 bg-white/4 px-4 py-3 md:grid-cols-[1.2fr_repeat(4,0.6fr)]">
+                    <div>
+                      <p className="font-semibold text-white">{tenant.companyName}</p>
+                      <p className="text-[11px] text-slate-500">{tenant.tenantId}</p>
+                    </div>
+                    <p className="text-xs text-slate-300">Saglik <strong>{tenant.healthScore}</strong></p>
+                    <p className="text-xs text-slate-300">Operasyon <strong>{tenant.operationalScore}</strong></p>
+                    <p className="text-xs text-slate-300">Stok <strong>{tenant.stockAccuracyScore}</strong></p>
+                    <p className="text-xs text-slate-300">Uyari <strong>{tenant.alerts.length}</strong></p>
+                  </div>
+                ))}
               </div>
             </div>
           )}
