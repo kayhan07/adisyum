@@ -19,6 +19,14 @@ const pendingFlushes = new Map<RuntimeScope, ReturnType<typeof globalThis.setTim
 const bootstrapPromises = new Map<RuntimeScope, Promise<Record<string, string>>>();
 const channels = new Map<RuntimeScope, BroadcastChannel>();
 const LOCAL_WRITE_REFRESH_GRACE_MS = 8000;
+const TABLE_RUNTIME_KEYS = [
+	'aurelia-table-payment-requested',
+	'aurelia-table-live-totals',
+	'aurelia-orders-by-table',
+	'aurelia-table-meta',
+	'aurelia-table-state-sync-meta',
+] as const;
+const TABLE_STATE_META_KEY = 'aurelia-table-state-sync-meta';
 const lastLocalWriteAt: Record<RuntimeScope, number> = {
 	tenant: 0,
 	'system-admin': 0,
@@ -37,6 +45,54 @@ function areSnapshotsEqual(first: RuntimeSnapshot, second: RuntimeSnapshot) {
 	const secondKeys = Object.keys(second);
 	if (firstKeys.length !== secondKeys.length) return false;
 	return firstKeys.every((key) => first[key] === second[key]);
+}
+
+function readTableSnapshotVersion(snapshot: RuntimeSnapshot) {
+	const raw = snapshot[TABLE_STATE_META_KEY];
+	if (!raw) return null;
+	try {
+		const parsed = JSON.parse(raw) as { version?: unknown; updatedAtMs?: unknown; clientId?: unknown; mutationId?: unknown; source?: unknown };
+		const version = Number(parsed.version);
+		const updatedAtMs = Number(parsed.updatedAtMs);
+		if (!Number.isFinite(version) || !Number.isFinite(updatedAtMs)) return null;
+		return {
+			version,
+			updatedAtMs,
+			clientId: typeof parsed.clientId === 'string' ? parsed.clientId : 'unknown',
+			mutationId: typeof parsed.mutationId === 'string' ? parsed.mutationId : 'unknown',
+			source: typeof parsed.source === 'string' ? parsed.source : 'unknown',
+		};
+	} catch {
+		return null;
+	}
+}
+
+function mergeIncomingSnapshot(scope: RuntimeScope, incoming: RuntimeSnapshot, source: string) {
+	if (scope !== 'tenant') return incoming;
+	const localMeta = readTableSnapshotVersion(snapshots[scope]);
+	const incomingMeta = readTableSnapshotVersion(incoming);
+	const localIsNewer =
+		Boolean(localMeta) &&
+		(!incomingMeta ||
+			(localMeta?.version ?? 0) > incomingMeta.version ||
+			((localMeta?.version ?? 0) === incomingMeta.version && (localMeta?.updatedAtMs ?? 0) > incomingMeta.updatedAtMs));
+
+	if (!localIsNewer) return incoming;
+
+	const merged = { ...incoming };
+	for (const key of TABLE_RUNTIME_KEYS) {
+		if (snapshots[scope][key] !== undefined) {
+			merged[key] = snapshots[scope][key];
+		}
+	}
+	console.info('[runtime-state] stale table snapshot rejected', {
+		scope,
+		source,
+		localMeta,
+		incomingMeta,
+		preservedKeys: TABLE_RUNTIME_KEYS.filter((key) => snapshots[scope][key] !== undefined),
+	});
+	return merged;
 }
 
 function emit(scope: RuntimeScope) {
@@ -60,8 +116,9 @@ function getChannel(scope: RuntimeScope) {
 			});
 			return;
 		}
-		if (areSnapshotsEqual(snapshots[scope], event.data.snapshot)) return;
-		snapshots[scope] = { ...event.data.snapshot };
+		const nextSnapshot = mergeIncomingSnapshot(scope, { ...event.data.snapshot }, 'broadcast');
+		if (areSnapshotsEqual(snapshots[scope], nextSnapshot)) return;
+		snapshots[scope] = nextSnapshot;
 		emit(scope);
 	};
 	channels.set(scope, channel);
@@ -172,8 +229,9 @@ export async function bootstrapRuntimeScope(scope: RuntimeScope) {
 				});
 				return snapshots[scope];
 			}
-			if (areSnapshotsEqual(snapshots[scope], snapshot)) return snapshots[scope];
-			snapshots[scope] = snapshot;
+			const nextSnapshot = mergeIncomingSnapshot(scope, snapshot, 'bootstrap');
+			if (areSnapshotsEqual(snapshots[scope], nextSnapshot)) return snapshots[scope];
+			snapshots[scope] = nextSnapshot;
 			emit(scope);
 			broadcast(scope);
 			return snapshot;
@@ -205,8 +263,9 @@ export async function refreshRuntimeScope(scope: RuntimeScope) {
 	try {
 		const snapshot = await requestSnapshot(scope, 'GET');
 		if (dirtyScopes[scope] || persistInFlight[scope] || Date.now() - lastLocalWriteAt[scope] < LOCAL_WRITE_REFRESH_GRACE_MS) return snapshots[scope];
-		if (areSnapshotsEqual(snapshots[scope], snapshot)) return snapshots[scope];
-		snapshots[scope] = snapshot;
+		const nextSnapshot = mergeIncomingSnapshot(scope, snapshot, 'refresh');
+		if (areSnapshotsEqual(snapshots[scope], nextSnapshot)) return snapshots[scope];
+		snapshots[scope] = nextSnapshot;
 		emit(scope);
 		broadcast(scope);
 		return snapshot;
@@ -222,8 +281,9 @@ export async function persistRuntimeScope(scope: RuntimeScope) {
 	try {
 		const next = await requestSnapshot(scope, 'POST', snapshots[scope]);
 		dirtyScopes[scope] = false;
-		if (Date.now() - lastLocalWriteAt[scope] >= LOCAL_WRITE_REFRESH_GRACE_MS && !areSnapshotsEqual(snapshots[scope], next)) {
-			snapshots[scope] = next;
+		const nextSnapshot = mergeIncomingSnapshot(scope, next, 'persist-response');
+		if (Date.now() - lastLocalWriteAt[scope] >= LOCAL_WRITE_REFRESH_GRACE_MS && !areSnapshotsEqual(snapshots[scope], nextSnapshot)) {
+			snapshots[scope] = nextSnapshot;
 			emit(scope);
 			broadcast(scope);
 		}

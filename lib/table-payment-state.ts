@@ -4,17 +4,29 @@ const STORAGE_KEY = 'aurelia-table-payment-requested';
 const TOTALS_STORAGE_KEY = 'aurelia-table-live-totals';
 const ORDERS_STORAGE_KEY = 'aurelia-orders-by-table';
 const META_STORAGE_KEY = 'aurelia-table-meta';
+const STATE_META_STORAGE_KEY = 'aurelia-table-state-sync-meta';
 const EVENT_NAME = 'aurelia-table-payment-requested:changed';
 let serverBootstrapCompleted = false;
 let tableStateWriteCounter = 0;
 let tableStateSyncCounter = 0;
 const runtimeClientId = `pos-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
+type TableStateSyncMeta = {
+  version: number;
+  updatedAtMs: number;
+  clientId: string;
+  mutationId: string;
+  source: string;
+  tableId?: string;
+  activeOrderTables: string[];
+};
+
 type SharedTablePaymentState = {
   paymentRequestedTableIds: string[];
   liveTotals: Record<string, number>;
   ordersByTable: Record<string, unknown[]>;
   tableMeta: Record<string, StoredTableMeta>;
+  stateMeta: TableStateSyncMeta | null;
   updatedAt: string;
 };
 
@@ -52,12 +64,53 @@ function writeRuntimeJsonIfChanged(key: string, value: unknown, options: { persi
   return true;
 }
 
+function readTableStateSyncMeta() {
+  const raw = readRuntimeItem('tenant', STATE_META_STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<TableStateSyncMeta>;
+    if (typeof parsed.version !== 'number' || typeof parsed.updatedAtMs !== 'number') return null;
+    return {
+      version: parsed.version,
+      updatedAtMs: parsed.updatedAtMs,
+      clientId: String(parsed.clientId ?? 'unknown'),
+      mutationId: String(parsed.mutationId ?? 'unknown'),
+      source: String(parsed.source ?? 'unknown'),
+      tableId: typeof parsed.tableId === 'string' ? parsed.tableId : undefined,
+      activeOrderTables: Array.isArray(parsed.activeOrderTables)
+        ? parsed.activeOrderTables.filter((value): value is string => typeof value === 'string')
+        : [],
+    } satisfies TableStateSyncMeta;
+  } catch {
+    return null;
+  }
+}
+
+function writeTableStateSyncMeta(source: string, ordersByTable: Record<string, unknown[]>, tableId?: string) {
+  const previous = readTableStateSyncMeta();
+  const now = Date.now();
+  const next: TableStateSyncMeta = {
+    version: Math.max(previous?.version ?? 0, now) + 1,
+    updatedAtMs: now,
+    clientId: runtimeClientId,
+    mutationId: `${runtimeClientId}-${now}-${Math.random().toString(36).slice(2, 8)}`,
+    source,
+    tableId,
+    activeOrderTables: Object.entries(ordersByTable)
+      .filter(([, lines]) => Array.isArray(lines) && lines.length > 0)
+      .map(([id]) => id),
+  };
+  writeRuntimeJsonIfChanged(STATE_META_STORAGE_KEY, next);
+  return next;
+}
+
 function buildSnapshot(): SharedTablePaymentState {
   return {
     paymentRequestedTableIds: getPaymentRequestedTableIds(),
     liveTotals: getTableLiveTotals(),
     ordersByTable: getStoredOrdersByTable(),
     tableMeta: getStoredTableMeta(),
+    stateMeta: readTableStateSyncMeta(),
     updatedAt: new Date().toISOString(),
   };
 }
@@ -77,6 +130,9 @@ function applySnapshot(snapshot: Partial<SharedTablePaymentState>) {
   if (snapshot.tableMeta && typeof snapshot.tableMeta === 'object') {
     writeRuntimeJsonIfChanged(META_STORAGE_KEY, snapshot.tableMeta, { persist: false });
   }
+  if (snapshot.stateMeta && typeof snapshot.stateMeta === 'object') {
+    writeRuntimeJsonIfChanged(STATE_META_STORAGE_KEY, snapshot.stateMeta, { persist: false });
+  }
 }
 
 export async function syncTableStateFromServer() {
@@ -91,6 +147,7 @@ export async function syncTableStateFromServer() {
   console.info('[adisyon-flow] table-runtime-sync', {
     clientId: runtimeClientId,
     syncCount: tableStateSyncCounter,
+    stateMeta: readTableStateSyncMeta(),
     tableCount: Object.keys(getStoredOrdersByTable()).length,
     activeOrderTables: Object.entries(getStoredOrdersByTable()).filter(([, lines]) => Array.isArray(lines) && lines.length > 0).map(([tableId]) => tableId),
     source: 'server-runtime-state',
@@ -136,6 +193,7 @@ export function setTablePaymentRequested(tableId: string, requested: boolean) {
   }
 
   if (!writeRuntimeJsonIfChanged(STORAGE_KEY, [...current])) return;
+  writeTableStateSyncMeta('payment-requested', getStoredOrdersByTable(), tableId);
   emitChange();
   publishTableState();
 }
@@ -184,6 +242,7 @@ export function setTableLiveTotals(totals: Record<string, number>) {
   }
 
   if (!writeRuntimeJsonIfChanged(TOTALS_STORAGE_KEY, { ...getTableLiveTotals(), ...totals })) return;
+  writeTableStateSyncMeta('totals', getStoredOrdersByTable(), Object.keys(totals)[0]);
   emitChange();
   publishTableState();
 }
@@ -213,7 +272,10 @@ export function setStoredOrdersByTable<T>(orders: Record<string, T[]>) {
     return;
   }
 
-  if (!writeRuntimeJsonIfChanged(ORDERS_STORAGE_KEY, { ...getStoredOrdersByTable<T>(), ...orders })) return;
+  const nextOrders = { ...getStoredOrdersByTable<T>(), ...orders };
+  if (!writeRuntimeJsonIfChanged(ORDERS_STORAGE_KEY, nextOrders)) return;
+  const changedTableId = Object.keys(orders).find((tableId) => (orders[tableId] ?? []).length > 0) ?? Object.keys(orders)[0];
+  writeTableStateSyncMeta('orders', nextOrders, changedTableId);
   emitChange();
   publishTableState();
 }
