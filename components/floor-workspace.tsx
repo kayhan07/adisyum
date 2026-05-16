@@ -17,7 +17,6 @@ import {
   setTableLiveTotals,
   setTablePaymentRequested,
   subscribeToPaymentRequestedChanges,
-  syncTableStateFromServer,
   type StoredTableMeta,
 } from '@/lib/table-payment-state';
 import { getDefaultSessionState, loadSessionState, subscribeToSessionChanges } from '@/lib/session-store';
@@ -66,7 +65,20 @@ type OrderLine = {
   price: number;
   category?: string;
   sentQty?: number;
+  complimentary?: boolean;
+  isReturn?: boolean;
 };
+
+async function fetchAuthoritativeTableOrders() {
+  const response = await fetch('/api/pos/table-orders', {
+    method: 'GET',
+    cache: 'no-store',
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error(`Authoritative order fetch failed with ${response.status}`);
+  const payload = await response.json() as { ordersByTable?: Record<string, OrderLine[]> };
+  return payload.ordersByTable ?? {};
+}
 type LocalTableRecord = TableRecord & {
   reservationName?: string;
   reservationPhone?: string;
@@ -459,13 +471,30 @@ export function FloorWorkspace() {
       );
     };
 
-    void syncTableStateFromServer().finally(syncTableState);
-    const pollId = window.setInterval(() => {
-      void syncTableStateFromServer().finally(syncTableState);
-    }, 2500);
+    syncTableState();
+    void fetchAuthoritativeTableOrders()
+      .then((serverOrders) => {
+        setOrdersByTable(serverOrders);
+        setLiveTotals(
+          Object.fromEntries(
+            Object.entries(serverOrders).map(([tableId, lines]) => [
+              tableId,
+              lines.reduce((sum, line) => sum + (line.complimentary ? 0 : line.qty * line.price * (line.isReturn ? -1 : 1) * 1.1), 0),
+            ]),
+          ),
+        );
+        logFloorFlow('authoritative-orders-hydrated', {
+          tableCount: Object.keys(serverOrders).length,
+          activeOrderTables: Object.entries(serverOrders).filter(([, lines]) => lines.length > 0).map(([tableId]) => tableId),
+        });
+      })
+      .catch((error) => {
+        logFloorFlow('authoritative-orders-hydration-failed', {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
     const unsubscribe = subscribeToPaymentRequestedChanges(syncTableState);
     return () => {
-      window.clearInterval(pollId);
       unsubscribe();
     };
   }, []);

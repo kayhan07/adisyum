@@ -11,10 +11,7 @@ import {
 import { getDefaultCompanyState, loadCompanyState, subscribeToCompanyChanges } from '@/lib/company-store';
 import {
   getPaymentRequestedTableIds,
-  getStoredOrdersByTable,
-  syncTableStateFromServer,
   getStoredTableMeta,
-  setStoredOrdersByTable,
   setTableLiveTotals,
   setTablePaymentRequested,
   setStoredTableMeta,
@@ -48,7 +45,7 @@ import { erpAccounts, type Account } from '@/lib/erp-engine';
 import { appendPaymentJournalEntries, buildPaymentJournalEntry } from '@/lib/payment-journal-store';
 import { getDefaultTableLayoutState, loadTableLayoutState, subscribeToTableLayoutChanges } from '@/lib/table-layout-store';
 import { createAutoProductMapping, getProductMapping, upsertProductMapping, validateProductMapping } from '@/lib/pos-mapping-store';
-import { queueOfflineOrderSnapshot, queueOfflinePaymentSnapshot, syncOfflineOrders } from '@/lib/offline-sync-store';
+import { queueOfflinePaymentSnapshot, syncOfflineOrders } from '@/lib/offline-sync-store';
 import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
 import { fetchLocalAgentJson } from '@/lib/local-agent';
 import { printCustomerReceipt, printKitchenTicket, printBarTicket } from '@/lib/receipt-formatter';
@@ -131,8 +128,6 @@ const categories: Category[] = [
 const VAT_RATE = 0.1;
 const RECENT_ACCOUNT_KEY = 'adisyon-recent-charge-accounts';
 const EMPTY_ORDER_LINES: OrderLine[] = [];
-const LOCAL_ORDER_MUTATION_GUARD_MS = 8000;
-let orderRuntimePersistCounter = 0;
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat('tr-TR', {
@@ -196,6 +191,56 @@ function areOrderMapsEqual(first: Record<string, OrderLine[]>, second: Record<st
 function logOrderFlow(event: string, payload: Record<string, unknown>) {
   if (typeof window === 'undefined') return;
   console.info(`[adisyon-flow] ${event}`, payload);
+}
+
+async function fetchAuthoritativeTableOrders() {
+  const response = await fetch('/api/pos/table-orders', {
+    method: 'GET',
+    cache: 'no-store',
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error(`Authoritative order fetch failed with ${response.status}`);
+  const payload = await response.json() as { ordersByTable?: Record<string, OrderLine[]> };
+  return payload.ordersByTable ?? {};
+}
+
+async function addProductToAuthoritativeOrder(input: {
+  tableId: string;
+  mutationId: string;
+  product: {
+    id: string;
+    name: string;
+    price: number;
+    category: string;
+    printCategory?: string;
+    quantity?: number;
+    note?: string;
+    guestName?: string;
+    spicePreference?: OrderLine['spicePreference'];
+    cookingPreference?: OrderLine['cookingPreference'];
+    extrasNote?: string;
+    removalNote?: string;
+    complimentary?: boolean;
+    complimentaryReason?: string;
+    isReturn?: boolean;
+    allowDiscount?: boolean;
+    allowComplimentary?: boolean;
+    happyHourEligible?: boolean;
+  };
+}) {
+  const response = await fetch('/api/pos/table-orders', {
+    method: 'POST',
+    cache: 'no-store',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw new Error(`Authoritative product mutation failed with ${response.status}`);
+  const payload = await response.json() as { ordersByTable?: Record<string, OrderLine[]>; mutationId?: string };
+  return {
+    ordersByTable: payload.ordersByTable ?? {},
+    mutationId: payload.mutationId ?? input.mutationId,
+  };
 }
 
 function ensureOrderProductMapping(product: ProductCard) {
@@ -315,42 +360,6 @@ function sortTablesByGroupAndNumber<T extends { group: string; name: string }>(r
 function getOrderGross(lines: OrderLine[]) {
   const subtotal = lines.reduce((sum, item) => sum + getOrderLineSubtotal(item), 0);
   return Number((subtotal * (1 + VAT_RATE)).toFixed(2));
-}
-
-function persistOrderMutationSnapshot(
-  tableId: string,
-  nextOrders: Record<string, OrderLine[]>,
-  nextLines: OrderLine[],
-  context: Record<string, unknown>,
-) {
-  const total = getOrderGross(nextLines);
-  const persistCount = orderRuntimePersistCounter + 1;
-  const persist = () => {
-    orderRuntimePersistCounter = persistCount;
-    logOrderFlow('order-runtime-persist-start', {
-      ...context,
-      persistCount,
-      tableId,
-      lineCount: nextLines.length,
-      total,
-    });
-    setStoredOrdersByTable(nextOrders);
-    setTableLiveTotals({ [tableId]: total });
-    logOrderFlow('order-runtime-persist-complete', {
-      ...context,
-      persistCount,
-      tableId,
-      lineCount: nextLines.length,
-      total,
-    });
-  };
-
-  if (typeof window !== 'undefined' && typeof window.queueMicrotask === 'function') {
-    window.queueMicrotask(persist);
-    return;
-  }
-
-  persist();
 }
 
 type TenantPrinterSettings = {
@@ -1042,69 +1051,12 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       setTableMetaById((current) =>
         JSON.stringify(current) === JSON.stringify(nextTableMeta) ? current : nextTableMeta,
       );
-      setOrdersByTable((current) => {
-        const guard = orderMutationGuardRef.current;
-        if (guard && Date.now() - guard.at < LOCAL_ORDER_MUTATION_GUARD_MS) {
-          const storedLines = getStoredOrdersByTable<OrderLine>()[guard.tableId] ?? EMPTY_ORDER_LINES;
-          const currentLines = current[guard.tableId] ?? EMPTY_ORDER_LINES;
-          logOrderFlow('external-sync-skipped-after-local-mutation', {
-            source: guard.source,
-            tableId: guard.tableId,
-            ageMs: Date.now() - guard.at,
-            currentLineCount: currentLines.length,
-            storedLineCount: storedLines.length,
-            guardMs: LOCAL_ORDER_MUTATION_GUARD_MS,
-          });
-          return current;
-        }
-
-        const storedOrders = getStoredOrdersByTable<OrderLine>();
-        const nextOrders = normalizeStoredOrders(
-          {
-            ...current,
-            ...storedOrders,
-          },
-          sourceProducts,
-        );
-
-        if (areOrderMapsEqual(current, nextOrders)) return current;
-        logOrderFlow('external-sync-applied', {
-          tableCount: Object.keys(nextOrders).length,
-          source: 'runtime-storage',
-          activeOrderId: currentTable?.id ?? selectedTableId,
-          beforeLineCount: (current[(currentTable?.id ?? selectedTableId) || ''] ?? EMPTY_ORDER_LINES).length,
-          afterLineCount: (nextOrders[(currentTable?.id ?? selectedTableId) || ''] ?? EMPTY_ORDER_LINES).length,
-          storedActiveLineCount: (storedOrders[(currentTable?.id ?? selectedTableId) || ''] ?? EMPTY_ORDER_LINES).length,
-        });
-        return nextOrders;
-      });
     };
-
-    void syncTableStateFromServer().then(() => {
-      syncPaymentRequested();
-    }).catch((error) => {
-      logOrderFlow('external-sync-failed', {
-        source: 'runtime-storage',
-        message: error instanceof Error ? error.message : String(error),
-      });
-    });
-
-    const pollId = window.setInterval(() => {
-      void syncTableStateFromServer().catch((error) => {
-        logOrderFlow('external-sync-failed', {
-          source: 'runtime-storage-poll',
-          message: error instanceof Error ? error.message : String(error),
-        });
-      });
-    }, 2500);
 
     syncPaymentRequested();
     const unsubscribe = subscribeToPaymentRequestedChanges(syncPaymentRequested);
-    return () => {
-      window.clearInterval(pollId);
-      unsubscribe();
-    };
-  }, [sourceProducts]);
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     const refreshReservations = () => {
@@ -1116,17 +1068,29 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   }, []);
 
   useEffect(() => {
-    const storedOrders = getStoredOrdersByTable<OrderLine>();
-    setOrdersByTable(
-      normalizeStoredOrders(
-        {
-          ...initialOrders,
-          ...storedOrders,
-        },
-        sourceProducts,
-      ),
-    );
-    setOrdersHydrated(true);
+    void fetchAuthoritativeTableOrders()
+      .then((serverOrders) => {
+        const nextOrders = normalizeStoredOrders(
+          {
+            ...initialOrders,
+            ...serverOrders,
+          },
+          sourceProducts,
+        );
+        logOrderFlow('authoritative-orders-hydrated', {
+          tableCount: Object.keys(nextOrders).length,
+          activeOrderTables: Object.entries(nextOrders).filter(([, value]) => value.length > 0).map(([tableId]) => tableId),
+        });
+        setOrdersByTable(nextOrders);
+        setOrdersHydrated(true);
+      })
+      .catch((error) => {
+        logOrderFlow('authoritative-orders-hydration-failed', {
+          message: error instanceof Error ? error.message : String(error),
+        });
+        setOrdersByTable(initialOrders);
+        setOrdersHydrated(true);
+      });
   }, [initialOrders, sourceProducts]);
 
   useEffect(() => {
@@ -1139,16 +1103,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       currentLineCount: activePayload.length,
       tableCount: Object.keys(ordersByTable).length,
     });
-    setStoredOrdersByTable(ordersByTable);
-    if (activeTableId) {
-      queueOfflineOrderSnapshot({
-        tenantId: sessionState.tenantId,
-        branchId: sessionState.activeBranchId,
-        tableId: activeTableId,
-        payload: activePayload,
-      });
-    }
-  }, [currentTable?.id, ordersByTable, ordersHydrated, selectedTableId, sessionState.activeBranchId, sessionState.tenantId]);
+  }, [currentTable?.id, ordersByTable, ordersHydrated, selectedTableId]);
 
   useEffect(() => {
     const sync = () => void syncOfflineOrders();
@@ -1460,7 +1415,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     setProductCardIsReturn(false);
   };
 
-  const addProductToOrder = (product: ProductCard, source: 'product-grid' | 'search' = 'product-grid') => {
+  const addProductToOrder = async (product: ProductCard, source: 'product-grid' | 'search' = 'product-grid') => {
     if (!currentTable) {
       logOrderFlow('add-product-blocked', {
         source,
@@ -1503,84 +1458,70 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     const discountAllowed = storedProduct?.allowDiscount ?? product.allowDiscount ?? true;
     const happyHourEligible = storedProduct?.happyHourEligible ?? product.happyHourEligible ?? false;
 
-    orderMutationGuardRef.current = { tableId: currentTable.id, at: Date.now(), source };
+    const tableId = currentTable.id;
+    const mutationId = `${tableId}-${product.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    orderMutationGuardRef.current = { tableId, at: Date.now(), source };
     updatePaymentRequested(currentTable.id, false);
-    let touchedLineId = '';
-    let nextQuantity = 1;
 
-    setOrdersByTable((current) => {
-      rememberUndo(current, `${product.name} eklendi`);
-      const currentLines = current[currentTable.id] ?? [];
-      const existing = currentLines.find((line) =>
-        line.name === product.name &&
-        line.price === resolvedUnitPrice &&
-        (line.note ?? '') === '' &&
-        (line.guestName ?? '') === '' &&
-        (line.spicePreference ?? 'standart') === 'standart' &&
-        (line.cookingPreference ?? 'standart') === 'standart' &&
-        (line.extrasNote ?? '') === '' &&
-        (line.removalNote ?? '') === '' &&
-        Boolean(line.complimentary) === false &&
-        Boolean(line.isReturn) === false &&
-        (line.allowDiscount ?? true) === discountAllowed,
+    try {
+      logOrderFlow('add-product-db-mutation-start', {
+        source,
+        tableId,
+        mutationId,
+        productId: product.id,
+        productName: product.name,
+        previousLineCount: (ordersByTable[tableId] ?? EMPTY_ORDER_LINES).length,
+      });
+
+      const result = await addProductToAuthoritativeOrder({
+        tableId,
+        mutationId,
+        product: {
+          id: product.id,
+          name: product.name,
+          price: resolvedUnitPrice,
+          category: product.category,
+          printCategory: storedProduct?.category ?? product.printCategory ?? product.category,
+          allowDiscount: discountAllowed,
+          allowComplimentary: complimentaryAllowed,
+          happyHourEligible,
+        },
+      });
+
+      const nextOrders = normalizeStoredOrders(
+        {
+          ...initialOrders,
+          ...result.ordersByTable,
+        },
+        sourceProducts,
       );
-
-      const newLine: OrderLine = {
-        id: `${product.id}-${Date.now()}`,
-        productId: product.id,
-        name: product.name,
-        qty: 1,
-        note: '',
-        price: resolvedUnitPrice,
-        category: product.category,
-        printCategory: storedProduct?.category ?? product.printCategory ?? product.category,
-        sentQty: 0,
-        guestName: undefined,
-        spicePreference: 'standart',
-        cookingPreference: 'standart',
-        extrasNote: undefined,
-        removalNote: undefined,
-        complimentary: false,
-        complimentaryReason: undefined,
-        isReturn: false,
-        allowDiscount: discountAllowed,
-        allowComplimentary: complimentaryAllowed,
-        happyHourEligible,
-      };
-
-      const nextLines: OrderLine[] = existing
-        ? currentLines.map((line) => (line.id === existing.id ? { ...line, qty: line.qty + 1 } : line))
-        : [...currentLines, newLine];
-
-      touchedLineId = existing ? existing.id : nextLines[nextLines.length - 1].id;
-      nextQuantity = nextLines.find((line) => line.id === touchedLineId)?.qty ?? 1;
-      const nextOrders = { ...current, [currentTable.id]: nextLines };
-      logOrderFlow('add-product-state-transition', {
+      const nextLines = nextOrders[tableId] ?? EMPTY_ORDER_LINES;
+      setOrdersByTable(nextOrders);
+      setTableLiveTotals({ [tableId]: getOrderGross(nextLines) });
+      logOrderFlow('add-product-db-mutation-complete', {
         source,
-        tableId: currentTable.id,
-        activeOrderId: currentTable.id,
+        tableId,
+        mutationId: result.mutationId,
         productId: product.id,
         productName: product.name,
-        lineId: touchedLineId,
-        previousLineCount: currentLines.length,
         nextLineCount: nextLines.length,
-        quantity: nextQuantity,
-        mergedExisting: Boolean(existing),
+        total: getOrderGross(nextLines),
       });
-      persistOrderMutationSnapshot(currentTable.id, nextOrders, nextLines, {
+      setLastAddedId(product.id);
+      setLastMutatedLineId(nextLines[nextLines.length - 1]?.id ?? null);
+      setFeedbackMessage(`${product.name} adisyona eklendi`);
+      setProductSearch('');
+    } catch (error) {
+      logOrderFlow('add-product-db-mutation-failed', {
         source,
+        tableId,
+        mutationId,
         productId: product.id,
         productName: product.name,
-        lineId: touchedLineId,
-        quantity: nextQuantity,
+        message: error instanceof Error ? error.message : String(error),
       });
-      return nextOrders;
-    });
-
-    setLastAddedId(product.id);
-    setLastMutatedLineId(touchedLineId);
-    setFeedbackMessage(`${product.name} adisyona eklendi`);
-    setProductSearch('');
+      setFeedbackMessage('Ürün eklenemedi. Bağlantıyı kontrol edin.');
+    }
   };
 
   const closeProductCard = () => {
@@ -1626,7 +1567,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     return account;
   };
 
-  const addProduct = () => {
+  const addProduct = async () => {
     if (!currentTable || !productCardProduct || !hasPermission('orders.create')) return;
     const mappingResult = ensureOrderProductMapping(productCardProduct);
     setPosMappingWarning(mappingResult.autoCreated ? `${productCardProduct.name} için otomatik POS PLU eşleştirmesi oluşturuldu.` : '');
@@ -1634,7 +1575,6 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     updatePaymentRequested(currentTable.id, false);
 
     const qtyToAdd = Math.max(Number(productCardQuantity) || 1, 1);
-    let touchedLineId = '';
     const normalizedGuestName = productCardGuestName.trim();
     const normalizedNote = productCardNote.trim();
     const normalizedExtrasNote = productCardExtrasNote.trim();
@@ -1645,81 +1585,81 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     const happyHourEligible = productCardStoredProduct?.happyHourEligible ?? productCardProduct.happyHourEligible ?? false;
     const effectiveComplimentary = complimentaryAllowed ? productCardComplimentary : false;
     const normalizedComplimentaryReason = effectiveComplimentary ? productCardComplimentaryReason.trim() : '';
+    const tableId = currentTable.id;
+    const mutationId = `${tableId}-${productCardProduct.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-    setOrdersByTable((current) => {
-      rememberUndo(current, `${productCardProduct.name} eklendi`);
-      const currentLines = current[currentTable.id] ?? [];
-      const existing = currentLines.find((line) =>
-        line.name === productCardProduct.name &&
-        line.price === resolvedUnitPrice &&
-        (line.note ?? '') === normalizedNote &&
-        (line.guestName ?? '') === normalizedGuestName &&
-        (line.spicePreference ?? 'standart') === productCardSpicePreference &&
-        (line.cookingPreference ?? 'standart') === productCardCookingPreference &&
-        (line.extrasNote ?? '') === normalizedExtrasNote &&
-        (line.removalNote ?? '') === normalizedRemovalNote &&
-        Boolean(line.complimentary) === effectiveComplimentary &&
-        (line.complimentaryReason ?? '') === normalizedComplimentaryReason &&
-        Boolean(line.isReturn) === productCardIsReturn &&
-        (line.allowDiscount ?? true) === discountAllowed,
+    try {
+      logOrderFlow('add-product-db-mutation-start', {
+        source: 'product-card',
+        tableId,
+        mutationId,
+        productId: productCardProduct.id,
+        productName: productCardProduct.name,
+        quantity: qtyToAdd,
+        previousLineCount: (ordersByTable[tableId] ?? EMPTY_ORDER_LINES).length,
+      });
+
+      const result = await addProductToAuthoritativeOrder({
+        tableId,
+        mutationId,
+        product: {
+          id: productCardProduct.id,
+          name: productCardProduct.name,
+          price: resolvedUnitPrice,
+          category: productCardProduct.category,
+          printCategory: productCardStoredProduct?.category ?? productCardProduct.printCategory ?? productCardProduct.category,
+          quantity: qtyToAdd,
+          note: normalizedNote,
+          guestName: normalizedGuestName || undefined,
+          spicePreference: productCardSpicePreference,
+          cookingPreference: productCardCookingPreference,
+          extrasNote: normalizedExtrasNote || undefined,
+          removalNote: normalizedRemovalNote || undefined,
+          complimentary: effectiveComplimentary,
+          complimentaryReason: normalizedComplimentaryReason || undefined,
+          isReturn: productCardIsReturn,
+          allowDiscount: discountAllowed,
+          allowComplimentary: complimentaryAllowed,
+          happyHourEligible,
+        },
+      });
+
+      const nextOrders = normalizeStoredOrders(
+        {
+          ...initialOrders,
+          ...result.ordersByTable,
+        },
+        sourceProducts,
       );
-      const nextLines = existing
-        ? currentLines.map((line) => (line.id === existing.id ? { ...line, qty: line.qty + qtyToAdd } : line))
-        : [
-            ...currentLines,
-            {
-              id: `${productCardProduct.id}-${Date.now()}`,
-              productId: productCardProduct.id,
-              name: productCardProduct.name,
-              qty: qtyToAdd,
-              note: normalizedNote,
-              price: resolvedUnitPrice,
-              category: productCardProduct.category,
-              printCategory: productCardStoredProduct?.category ?? productCardProduct.printCategory ?? productCardProduct.category,
-              sentQty: 0,
-              guestName: normalizedGuestName || undefined,
-              spicePreference: productCardSpicePreference,
-              cookingPreference: productCardCookingPreference,
-              extrasNote: normalizedExtrasNote || undefined,
-              removalNote: normalizedRemovalNote || undefined,
-              complimentary: effectiveComplimentary,
-              complimentaryReason: normalizedComplimentaryReason || undefined,
-              isReturn: productCardIsReturn,
-              allowDiscount: discountAllowed,
-              allowComplimentary: complimentaryAllowed,
-              happyHourEligible,
-            },
-          ];
-
-      touchedLineId = existing ? existing.id : nextLines[nextLines.length - 1].id;
-      const nextOrders = { ...current, [currentTable.id]: nextLines };
-      logOrderFlow('add-product-state-transition', {
+      const nextLines = nextOrders[tableId] ?? EMPTY_ORDER_LINES;
+      setOrdersByTable(nextOrders);
+      setTableLiveTotals({ [tableId]: getOrderGross(nextLines) });
+      const touchedLineId = nextLines[nextLines.length - 1]?.id ?? null;
+      logOrderFlow('add-product-db-mutation-complete', {
         source: 'product-card',
-        tableId: currentTable.id,
-        activeOrderId: currentTable.id,
+        tableId,
+        mutationId: result.mutationId,
         productId: productCardProduct.id,
         productName: productCardProduct.name,
-        lineId: touchedLineId,
-        previousLineCount: currentLines.length,
         nextLineCount: nextLines.length,
-        quantity: nextLines.find((line) => line.id === touchedLineId)?.qty ?? qtyToAdd,
-        mergedExisting: Boolean(existing),
+        total: getOrderGross(nextLines),
       });
-      persistOrderMutationSnapshot(currentTable.id, nextOrders, nextLines, {
+      setLastAddedId(productCardProduct.id);
+      setLastMutatedLineId(touchedLineId);
+      setFeedbackMessage(`${productCardProduct.name} adisyona eklendi`);
+      setProductSearch('');
+      closeProductCard();
+    } catch (error) {
+      logOrderFlow('add-product-db-mutation-failed', {
         source: 'product-card',
+        tableId,
+        mutationId,
         productId: productCardProduct.id,
         productName: productCardProduct.name,
-        lineId: touchedLineId,
-        quantity: nextLines.find((line) => line.id === touchedLineId)?.qty ?? qtyToAdd,
+        message: error instanceof Error ? error.message : String(error),
       });
-      return nextOrders;
-    });
-
-    setLastAddedId(productCardProduct.id);
-    setLastMutatedLineId(touchedLineId);
-    setFeedbackMessage(`${productCardProduct.name} adisyona eklendi`);
-    setProductSearch('');
-    closeProductCard();
+      setFeedbackMessage('Ürün eklenemedi. Bağlantıyı kontrol edin.');
+    }
   };
 
   const applyGuestSplitSelection = (guestName: string) => {
