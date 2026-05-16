@@ -143,6 +143,7 @@ export async function bootstrapRuntimeScope(scope: RuntimeScope) {
 	const promise = requestSnapshot(scope, 'GET')
 		.then((snapshot) => {
 			if (Date.now() - lastLocalWriteAt[scope] < 750) return snapshots[scope];
+			if (areSnapshotsEqual(snapshots[scope], snapshot)) return snapshots[scope];
 			snapshots[scope] = snapshot;
 			emit(scope);
 			broadcast(scope);
@@ -158,6 +159,22 @@ export async function bootstrapRuntimeScope(scope: RuntimeScope) {
 
 	bootstrapPromises.set(scope, promise);
 	return promise;
+}
+
+export async function refreshRuntimeScope(scope: RuntimeScope) {
+	if (typeof window === 'undefined') return snapshots[scope];
+	try {
+		const snapshot = await requestSnapshot(scope, 'GET');
+		if (Date.now() - lastLocalWriteAt[scope] < 750) return snapshots[scope];
+		if (areSnapshotsEqual(snapshots[scope], snapshot)) return snapshots[scope];
+		snapshots[scope] = snapshot;
+		emit(scope);
+		broadcast(scope);
+		return snapshot;
+	} catch (error) {
+		console.warn('[runtime-state] refresh failed; keeping local snapshot', { scope, error });
+		return snapshots[scope];
+	}
 }
 
 export async function persistRuntimeScope(scope: RuntimeScope) {

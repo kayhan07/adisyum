@@ -1,4 +1,4 @@
-import { bootstrapRuntimeScope, persistRuntimeScope, readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
+import { bootstrapRuntimeScope, persistRuntimeScope, readRuntimeItem, refreshRuntimeScope, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
 
 const STORAGE_KEY = 'aurelia-table-payment-requested';
 const TOTALS_STORAGE_KEY = 'aurelia-table-live-totals';
@@ -7,6 +7,8 @@ const META_STORAGE_KEY = 'aurelia-table-meta';
 const EVENT_NAME = 'aurelia-table-payment-requested:changed';
 let serverBootstrapCompleted = false;
 let tableStateWriteCounter = 0;
+let tableStateSyncCounter = 0;
+const runtimeClientId = `pos-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 type SharedTablePaymentState = {
   paymentRequestedTableIds: string[];
@@ -82,7 +84,17 @@ export async function syncTableStateFromServer() {
   if (!serverBootstrapCompleted) {
     await bootstrapRuntimeScope('tenant');
     serverBootstrapCompleted = true;
+  } else {
+    await refreshRuntimeScope('tenant');
   }
+  tableStateSyncCounter += 1;
+  console.info('[adisyon-flow] table-runtime-sync', {
+    clientId: runtimeClientId,
+    syncCount: tableStateSyncCounter,
+    tableCount: Object.keys(getStoredOrdersByTable()).length,
+    activeOrderTables: Object.entries(getStoredOrdersByTable()).filter(([, lines]) => Array.isArray(lines) && lines.length > 0).map(([tableId]) => tableId),
+    source: 'server-runtime-state',
+  });
   emitChange();
   return buildSnapshot();
 }

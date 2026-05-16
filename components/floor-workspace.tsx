@@ -17,6 +17,7 @@ import {
   setTableLiveTotals,
   setTablePaymentRequested,
   subscribeToPaymentRequestedChanges,
+  syncTableStateFromServer,
   type StoredTableMeta,
 } from '@/lib/table-payment-state';
 import { getDefaultSessionState, loadSessionState, subscribeToSessionChanges } from '@/lib/session-store';
@@ -458,8 +459,15 @@ export function FloorWorkspace() {
       );
     };
 
-    syncTableState();
-    return subscribeToPaymentRequestedChanges(syncTableState);
+    void syncTableStateFromServer().finally(syncTableState);
+    const pollId = window.setInterval(() => {
+      void syncTableStateFromServer().finally(syncTableState);
+    }, 2500);
+    const unsubscribe = subscribeToPaymentRequestedChanges(syncTableState);
+    return () => {
+      window.clearInterval(pollId);
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
