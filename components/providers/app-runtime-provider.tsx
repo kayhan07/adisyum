@@ -35,6 +35,50 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   const authFingerprint = useMemo(() => `${tenantId ?? 'anonymous'}:${role ?? 'none'}`, [role, tenantId]);
 
   useEffect(() => {
+    if (!tenantId) return;
+
+    let runtimeErrorCount = 0;
+    const ingestRuntimeError = (payload: Record<string, unknown>) => {
+      runtimeErrorCount += 1;
+      ingestObservability(tenantId, {
+        runtime: {
+          errorCount: runtimeErrorCount,
+          ...payload,
+        },
+      });
+      console.error('[runtime-diagnostics]', { errorCount: runtimeErrorCount, ...payload });
+    };
+
+    const onError = (event: ErrorEvent) => {
+      ingestRuntimeError({
+        type: 'window.error',
+        message: event.message,
+        source: event.filename,
+        line: event.lineno,
+        column: event.colno,
+        stack: event.error instanceof Error ? event.error.stack : undefined,
+      });
+    };
+
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const reason = event.reason;
+      ingestRuntimeError({
+        type: 'unhandledrejection',
+        message: reason instanceof Error ? reason.message : String(reason ?? 'unknown'),
+        stack: reason instanceof Error ? reason.stack : undefined,
+      });
+    };
+
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onUnhandledRejection);
+
+    return () => {
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onUnhandledRejection);
+    };
+  }, [tenantId]);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function prepare() {
@@ -63,7 +107,10 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
 
     if (!isFetched) return;
     setReady(false);
-    void prepare();
+    void prepare().catch((error) => {
+      console.error('[runtime-provider] prepare failed', error);
+      if (!cancelled) setReady(true);
+    });
 
     return () => {
       cancelled = true;

@@ -18,6 +18,10 @@ const listeners: Record<RuntimeScope, Set<RuntimeListener>> = {
 const pendingFlushes = new Map<RuntimeScope, ReturnType<typeof globalThis.setTimeout>>();
 const bootstrapPromises = new Map<RuntimeScope, Promise<Record<string, string>>>();
 const channels = new Map<RuntimeScope, BroadcastChannel>();
+const lastLocalWriteAt: Record<RuntimeScope, number> = {
+	tenant: 0,
+	'system-admin': 0,
+};
 
 function emit(scope: RuntimeScope) {
 	listeners[scope].forEach((listener) => listener());
@@ -31,6 +35,7 @@ function getChannel(scope: RuntimeScope) {
 	const channel = new BroadcastChannel(`adisyum-runtime:${scope}`);
 	channel.onmessage = (event: MessageEvent<{ snapshot?: RuntimeSnapshot }>) => {
 		if (!event.data?.snapshot || typeof event.data.snapshot !== 'object') return;
+		if (Date.now() - lastLocalWriteAt[scope] < 750) return;
 		snapshots[scope] = { ...event.data.snapshot };
 		emit(scope);
 	};
@@ -96,6 +101,7 @@ export function writeRuntimeItem(scope: RuntimeScope, key: string, value: string
 	} else {
 		snapshots[scope][key] = value;
 	}
+	lastLocalWriteAt[scope] = Date.now();
 
 	emit(scope);
 	broadcast(scope);
@@ -123,10 +129,15 @@ export async function bootstrapRuntimeScope(scope: RuntimeScope) {
 
 	const promise = requestSnapshot(scope, 'GET')
 		.then((snapshot) => {
+			if (Date.now() - lastLocalWriteAt[scope] < 750) return snapshots[scope];
 			snapshots[scope] = snapshot;
 			emit(scope);
 			broadcast(scope);
 			return snapshot;
+		})
+		.catch((error) => {
+			console.warn('[runtime-state] bootstrap failed; keeping local snapshot', { scope, error });
+			return snapshots[scope];
 		})
 		.finally(() => {
 			bootstrapPromises.delete(scope);
@@ -138,11 +149,18 @@ export async function bootstrapRuntimeScope(scope: RuntimeScope) {
 
 export async function persistRuntimeScope(scope: RuntimeScope) {
 	if (typeof window === 'undefined') return snapshots[scope];
-	const next = await requestSnapshot(scope, 'POST', snapshots[scope]);
-	snapshots[scope] = next;
-	emit(scope);
-	broadcast(scope);
-	return next;
+	try {
+		const next = await requestSnapshot(scope, 'POST', snapshots[scope]);
+		if (Date.now() - lastLocalWriteAt[scope] >= 750) {
+			snapshots[scope] = next;
+			emit(scope);
+			broadcast(scope);
+		}
+		return snapshots[scope];
+	} catch (error) {
+		console.warn('[runtime-state] persist failed; keeping local snapshot', { scope, error });
+		return snapshots[scope];
+	}
 }
 
 export async function clearRuntimeScope(scope: RuntimeScope) {
@@ -151,6 +169,8 @@ export async function clearRuntimeScope(scope: RuntimeScope) {
 	broadcast(scope);
 
 	if (typeof window !== 'undefined') {
-		await requestSnapshot(scope, 'DELETE');
+		await requestSnapshot(scope, 'DELETE').catch((error) => {
+			console.warn('[runtime-state] clear failed after local reset', { scope, error });
+		});
 	}
 }

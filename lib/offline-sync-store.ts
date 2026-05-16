@@ -198,8 +198,9 @@ async function removeQueueItems(tenantId?: string) {
     if (!tenantId) {
       store.clear();
     } else {
-      store.getAll().onsuccess = () => {
-        const rows = Array.isArray((store.getAll() as IDBRequest).result) ? (store.getAll() as IDBRequest).result as OfflineQueueItem[] : [];
+      const request = store.getAll();
+      request.onsuccess = () => {
+        const rows = Array.isArray(request.result) ? request.result as OfflineQueueItem[] : [];
         rows.filter((item) => item.tenantId === tenantId).forEach((item) => store.delete(item.id));
       };
     }
@@ -637,8 +638,9 @@ export async function clearOfflineOrderQueue(tenantId?: string) {
     const metaStore = transaction.objectStore(META_STORE);
 
     if (resolvedTenantId) {
-      queueStore.getAll().onsuccess = () => {
-        const rows = Array.isArray((queueStore.getAll() as IDBRequest).result) ? (queueStore.getAll() as IDBRequest).result as OfflineQueueItem[] : [];
+      const request = queueStore.getAll();
+      request.onsuccess = () => {
+        const rows = Array.isArray(request.result) ? request.result as OfflineQueueItem[] : [];
         rows.filter((item) => item.tenantId === resolvedTenantId).forEach((item) => queueStore.delete(item.id));
       };
       metaStore.delete(resolvedTenantId);

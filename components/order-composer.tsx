@@ -1034,10 +1034,20 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
     void syncTableStateFromServer().then(() => {
       syncPaymentRequested();
+    }).catch((error) => {
+      logOrderFlow('external-sync-failed', {
+        source: 'runtime-storage',
+        message: error instanceof Error ? error.message : String(error),
+      });
     });
 
     const pollId = window.setInterval(() => {
-      void syncTableStateFromServer();
+      void syncTableStateFromServer().catch((error) => {
+        logOrderFlow('external-sync-failed', {
+          source: 'runtime-storage-poll',
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
     }, 2500);
 
     syncPaymentRequested();
