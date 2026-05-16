@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { forbiddenResponse, getSessionFromRequest } from '@/lib/session';
-import { assertActiveSubscription, tenantFromSession, type TenantContext } from '@/lib/tenant';
+import { tenantFromSession, type TenantContext } from '@/lib/tenant';
 import { assertTenantIsActive } from '@/lib/db/tenant-repository';
 import { isSessionActive } from '@/lib/server/session-guard';
 
@@ -71,7 +71,6 @@ export async function requireTenant(request: Request, options: { allowSuperAdmin
   }
 
   try {
-    assertActiveSubscription(session);
     await assertTenantIsActive(session.tenantId);
   } catch (error) {
     logTenantRejection(request, 'inactive_tenant_or_subscription', 403, {

@@ -18,7 +18,6 @@ export async function GET(request: Request) {
 
   if (session.role !== 'super_admin') {
     try {
-      if (!session.subscriptionId) throw new Error('Session subscriptionId is missing.');
       await assertTenantIsActive(session.tenantId);
     } catch (error) {
       console.warn('[auth/me] stale tenant session rejected', {
