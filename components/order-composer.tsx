@@ -315,6 +315,38 @@ function getOrderGross(lines: OrderLine[]) {
   return Number((subtotal * (1 + VAT_RATE)).toFixed(2));
 }
 
+function persistOrderMutationSnapshot(
+  tableId: string,
+  nextOrders: Record<string, OrderLine[]>,
+  nextLines: OrderLine[],
+  context: Record<string, unknown>,
+) {
+  const total = getOrderGross(nextLines);
+  const persist = () => {
+    logOrderFlow('order-runtime-persist-start', {
+      ...context,
+      tableId,
+      lineCount: nextLines.length,
+      total,
+    });
+    setStoredOrdersByTable(nextOrders);
+    setTableLiveTotals({ [tableId]: total });
+    logOrderFlow('order-runtime-persist-complete', {
+      ...context,
+      tableId,
+      lineCount: nextLines.length,
+      total,
+    });
+  };
+
+  if (typeof window !== 'undefined' && typeof window.queueMicrotask === 'function') {
+    window.queueMicrotask(persist);
+    return;
+  }
+
+  persist();
+}
+
 type TenantPrinterSettings = {
   defaultPrinter: string;
   kitchenPrinter: string;
@@ -1507,8 +1539,6 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       touchedLineId = existing ? existing.id : nextLines[nextLines.length - 1].id;
       nextQuantity = nextLines.find((line) => line.id === touchedLineId)?.qty ?? 1;
       const nextOrders = { ...current, [currentTable.id]: nextLines };
-      setStoredOrdersByTable(nextOrders);
-      setTableLiveTotals({ [currentTable.id]: getOrderGross(nextLines) });
       logOrderFlow('add-product-state-transition', {
         source,
         tableId: currentTable.id,
@@ -1520,6 +1550,13 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         nextLineCount: nextLines.length,
         quantity: nextQuantity,
         mergedExisting: Boolean(existing),
+      });
+      persistOrderMutationSnapshot(currentTable.id, nextOrders, nextLines, {
+        source,
+        productId: product.id,
+        productName: product.name,
+        lineId: touchedLineId,
+        quantity: nextQuantity,
       });
       return nextOrders;
     });
@@ -1640,8 +1677,6 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
       touchedLineId = existing ? existing.id : nextLines[nextLines.length - 1].id;
       const nextOrders = { ...current, [currentTable.id]: nextLines };
-      setStoredOrdersByTable(nextOrders);
-      setTableLiveTotals({ [currentTable.id]: getOrderGross(nextLines) });
       logOrderFlow('add-product-state-transition', {
         source: 'product-card',
         tableId: currentTable.id,
@@ -1653,6 +1688,13 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         nextLineCount: nextLines.length,
         quantity: nextLines.find((line) => line.id === touchedLineId)?.qty ?? qtyToAdd,
         mergedExisting: Boolean(existing),
+      });
+      persistOrderMutationSnapshot(currentTable.id, nextOrders, nextLines, {
+        source: 'product-card',
+        productId: productCardProduct.id,
+        productName: productCardProduct.name,
+        lineId: touchedLineId,
+        quantity: nextLines.find((line) => line.id === touchedLineId)?.qty ?? qtyToAdd,
       });
       return nextOrders;
     });

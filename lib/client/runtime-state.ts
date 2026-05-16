@@ -57,9 +57,7 @@ async function requestSnapshot(scope: RuntimeScope, method: 'GET' | 'POST' | 'DE
 	});
 
 	if (response.status === 401 || response.status === 403) {
-		snapshots[scope] = {};
-		emit(scope);
-		return {};
+		throw new Error(`Runtime ${scope} sync unauthorized with ${response.status}.`);
 	}
 
 	if (!response.ok) {
