@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSessionFromRequest, forbiddenResponse, unauthorizedResponse } from '@/lib/session';
 import { isSuperAdmin } from '@/lib/tenant';
 import { upsertLicense, type LicenseStatus } from '@/lib/commercial-ops/platform';
-import type { PackageModuleKey } from '@/lib/package-access';
+import type { PackageModuleKey } from '@/lib/package-access-core';
 import { isSessionActive } from '@/lib/server/session-guard';
 
 export const runtime = 'nodejs';

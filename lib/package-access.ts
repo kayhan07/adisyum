@@ -1,23 +1,12 @@
 'use client';
 
-import type { PackageType } from '@/lib/saas-store';
-
-export type PackageModuleKey =
-  | 'floor'
-  | 'orders'
-  | 'qr'
-  | 'qr-menu'
-  | 'products'
-  | 'finance'
-  | 'delivery'
-  | 'kds'
-  | 'branches'
-  | 'reports'
-  | 'settings'
-  | 'overview'
-  | 'warehouse'
-  | 'bar-control'
-  | 'saas';
+export {
+  DEFAULT_PACKAGE_MODULES,
+  getDefaultModulesForPackageType,
+  sanitizePackageModules,
+  type PackageModuleKey,
+} from '@/lib/package-access-core';
+import type { PackageModuleKey } from '@/lib/package-access-core';
 
 export const PACKAGE_MODULE_OPTIONS: Array<{ key: PackageModuleKey; label: string; description: string }> = [
   { key: 'floor', label: 'Masalar', description: 'Salon yerleşimi ve masa akışı' },
@@ -37,22 +26,3 @@ export const PACKAGE_MODULE_OPTIONS: Array<{ key: PackageModuleKey; label: strin
   { key: 'saas', label: 'SaaS', description: 'Lisans ve abonelik ekranı' },
 ];
 
-export const DEFAULT_PACKAGE_MODULES: Record<PackageType, PackageModuleKey[]> = {
-  mini: ['floor', 'orders', 'products', 'finance', 'settings'],
-  gold: ['floor', 'orders', 'qr', 'qr-menu', 'products', 'finance', 'delivery', 'kds', 'settings'],
-  premium: ['floor', 'orders', 'qr', 'qr-menu', 'products', 'finance', 'delivery', 'kds', 'branches', 'reports', 'settings', 'overview', 'warehouse', 'bar-control', 'saas'],
-};
-
-const VALID_MODULES = new Set<PackageModuleKey>(PACKAGE_MODULE_OPTIONS.map((item) => item.key));
-
-export function getDefaultModulesForPackageType(packageType: PackageType): PackageModuleKey[] {
-  return [...DEFAULT_PACKAGE_MODULES[packageType]];
-}
-
-export function sanitizePackageModules(modules: string[] | undefined, packageType: PackageType): PackageModuleKey[] {
-  const normalized = Array.isArray(modules)
-    ? modules.filter((item): item is PackageModuleKey => VALID_MODULES.has(item as PackageModuleKey))
-    : [];
-
-  return normalized.length > 0 ? Array.from(new Set(normalized)) : getDefaultModulesForPackageType(packageType);
-}

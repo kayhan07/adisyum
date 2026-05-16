@@ -12,13 +12,17 @@ import {
   getStoredOrdersByTable,
   getStoredTableMeta,
   getTableLiveTotals,
-  setStoredOrdersByTable,
   setStoredTableMeta,
   setTableLiveTotals,
   setTablePaymentRequested,
   subscribeToPaymentRequestedChanges,
   type StoredTableMeta,
 } from '@/lib/table-payment-state';
+import {
+  refreshAuthoritativeOrdersByTable,
+  replaceAuthoritativeOrdersByTable,
+  subscribeToAuthoritativeOrders,
+} from '@/lib/client/authoritative-table-orders';
 import { getDefaultSessionState, loadSessionState, subscribeToSessionChanges } from '@/lib/session-store';
 import {
   getDefaultTableLayoutState,
@@ -69,16 +73,6 @@ type OrderLine = {
   isReturn?: boolean;
 };
 
-async function fetchAuthoritativeTableOrders() {
-  const response = await fetch('/api/pos/table-orders', {
-    method: 'GET',
-    cache: 'no-store',
-    credentials: 'include',
-  });
-  if (!response.ok) throw new Error(`Authoritative order fetch failed with ${response.status}`);
-  const payload = await response.json() as { ordersByTable?: Record<string, OrderLine[]> };
-  return payload.ordersByTable ?? {};
-}
 type LocalTableRecord = TableRecord & {
   reservationName?: string;
   reservationPhone?: string;
@@ -472,7 +466,7 @@ export function FloorWorkspace() {
     };
 
     syncTableState();
-    void fetchAuthoritativeTableOrders()
+    void refreshAuthoritativeOrdersByTable<OrderLine>()
       .then((serverOrders) => {
         setOrdersByTable(serverOrders);
         setLiveTotals(
@@ -494,8 +488,10 @@ export function FloorWorkspace() {
         });
       });
     const unsubscribe = subscribeToPaymentRequestedChanges(syncTableState);
+    const unsubscribeOrders = subscribeToAuthoritativeOrders(syncTableState);
     return () => {
       unsubscribe();
+      unsubscribeOrders();
     };
   }, []);
 
@@ -580,20 +576,10 @@ export function FloorWorkspace() {
   }, [storedReservations.length]);
 
   useEffect(() => {
-    const storedOrders = getStoredOrdersByTable<OrderLine>();
-    const seededOrders = { ...storedOrders };
-    let changed = false;
-
+    const seededOrders = { ...getStoredOrdersByTable<OrderLine>() };
     initialTables.forEach((table) => {
-      if (seededOrders[table.id]) return;
-      seededOrders[table.id] = [];
-      changed = true;
+      seededOrders[table.id] ??= [];
     });
-
-    if (changed) {
-      setStoredOrdersByTable(seededOrders);
-    }
-
     setOrdersByTable(seededOrders);
   }, [initialTables]);
 
@@ -1194,8 +1180,8 @@ export function FloorWorkspace() {
       tableCount: Object.keys(nextOrders).length,
       activeOrderTables: Object.entries(nextOrders).filter(([, lines]) => lines.length > 0).map(([tableId]) => tableId),
     });
+    replaceAuthoritativeOrdersByTable(nextOrders);
     setOrdersByTable(nextOrders);
-    setStoredOrdersByTable(nextOrders);
   }
 
   function persistRows(nextRows: LocalTableRecord[]) {

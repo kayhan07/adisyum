@@ -41,6 +41,7 @@ function mutationTraceId(mutationId?: string) {
 }
 
 function logTableOrderEvent(event: string, payload: Record<string, unknown>) {
+  if (process.env.POS_DIAGNOSTICS !== '1') return;
   console.info(`[pos-table-orders] ${event}`, {
     timestamp: new Date().toISOString(),
     ...payload,

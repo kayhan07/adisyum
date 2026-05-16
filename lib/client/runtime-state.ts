@@ -22,7 +22,6 @@ const LOCAL_WRITE_REFRESH_GRACE_MS = 8000;
 const TABLE_RUNTIME_KEYS = [
 	'aurelia-table-payment-requested',
 	'aurelia-table-live-totals',
-	'aurelia-orders-by-table',
 	'aurelia-table-meta',
 	'aurelia-table-state-sync-meta',
 ] as const;

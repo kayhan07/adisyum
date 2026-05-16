@@ -1,6 +1,6 @@
 'use client';
 
-import { getDefaultModulesForPackageType, sanitizePackageModules, type PackageModuleKey } from '@/lib/package-access';
+import { getDefaultModulesForPackageType, sanitizePackageModules, type PackageModuleKey } from '@/lib/package-access-core';
 import { createTenantId, type PackageType } from '@/lib/saas-store';
 import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
 

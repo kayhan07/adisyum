@@ -3,7 +3,7 @@ import { hashPassword } from '@/lib/auth/password';
 import { prisma } from '@/lib/db/prisma';
 import { writeAuditLog } from '@/lib/db/audit';
 import { branchTenantBranchKey, roleTenantKey, userTenantUsernameKey } from '@/lib/db/compound-keys';
-import { getDefaultModulesForPackageType, type PackageModuleKey } from '@/lib/package-access';
+import { getDefaultModulesForPackageType, type PackageModuleKey } from '@/lib/package-access-core';
 import type { PackageType } from '@/lib/saas-store';
 
 const ROLE_PERMISSIONS: Record<string, string[]> = {

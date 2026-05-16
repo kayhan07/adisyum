@@ -10,7 +10,6 @@ export const dynamic = 'force-dynamic';
 type SharedTablePaymentState = {
   paymentRequestedTableIds: string[];
   liveTotals: Record<string, number>;
-  ordersByTable: Record<string, unknown[]>;
   tableMeta: Record<string, unknown>;
   updatedAt: string;
 };
@@ -21,7 +20,6 @@ function getDefaultState(): SharedTablePaymentState {
   return {
     paymentRequestedTableIds: [],
     liveTotals: {},
-    ordersByTable: {},
     tableMeta: {},
     updatedAt: new Date(0).toISOString(),
   };
@@ -72,9 +70,6 @@ export async function POST(request: Request) {
     liveTotals: body.liveTotals && typeof body.liveTotals === 'object'
       ? Object.fromEntries(Object.entries(body.liveTotals).filter((entry): entry is [string, number] => typeof entry[1] === 'number'))
       : current.liveTotals,
-    ordersByTable: body.ordersByTable && typeof body.ordersByTable === 'object'
-      ? Object.fromEntries(Object.entries(body.ordersByTable).filter((entry): entry is [string, unknown[]] => Array.isArray(entry[1])))
-      : current.ordersByTable,
     tableMeta: body.tableMeta && typeof body.tableMeta === 'object'
       ? body.tableMeta
       : current.tableMeta,

@@ -1,6 +1,6 @@
 'use client';
 
-import { sanitizePackageModules, type PackageModuleKey } from '@/lib/package-access';
+import { sanitizePackageModules, type PackageModuleKey } from '@/lib/package-access-core';
 import { readRuntimeItem } from '@/lib/client/runtime-state';
 
 export type PackageType = 'mini' | 'gold' | 'premium';

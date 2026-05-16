@@ -1,4 +1,4 @@
-import { getDefaultModulesForPackageType, type PackageModuleKey } from '@/lib/package-access';
+import { getDefaultModulesForPackageType, type PackageModuleKey } from '@/lib/package-access-core';
 import { loadSystemAdminState, type AdminTenant } from '@/lib/system-admin-store';
 import type { PackageType } from '@/lib/saas-store';
 import type { getPilotOperationsDashboard } from '@/lib/pilot-field/field-validation';

@@ -47,6 +47,7 @@ import { getDefaultTableLayoutState, loadTableLayoutState, subscribeToTableLayou
 import { createAutoProductMapping, getProductMapping, upsertProductMapping, validateProductMapping } from '@/lib/pos-mapping-store';
 import { queueOfflinePaymentSnapshot, syncOfflineOrders } from '@/lib/offline-sync-store';
 import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
+import { replaceAuthoritativeOrdersByTable } from '@/lib/client/authoritative-table-orders';
 import { fetchLocalAgentJson } from '@/lib/local-agent';
 import { printCustomerReceipt, printKitchenTicket, printBarTicket } from '@/lib/receipt-formatter';
 import { recordOrderForSmartStock } from '@/lib/smart-recipe-stock-engine';
@@ -189,7 +190,7 @@ function areOrderMapsEqual(first: Record<string, OrderLine[]>, second: Record<st
 }
 
 function logOrderFlow(event: string, payload: Record<string, unknown>) {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || process.env.NEXT_PUBLIC_POS_DIAGNOSTICS !== '1') return;
   console.info(`[adisyon-flow] ${event}`, payload);
 }
 
@@ -1544,6 +1545,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         sourceProducts,
       );
       const nextLines = nextOrders[tableId] ?? EMPTY_ORDER_LINES;
+      replaceAuthoritativeOrdersByTable(nextOrders);
       setOrdersByTable(nextOrders);
       setTableLiveTotals({ [tableId]: getOrderGross(nextLines) });
       logOrderFlow('add-product-db-mutation-complete', {
@@ -1684,6 +1686,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         sourceProducts,
       );
       const nextLines = nextOrders[tableId] ?? EMPTY_ORDER_LINES;
+      replaceAuthoritativeOrdersByTable(nextOrders);
       setOrdersByTable(nextOrders);
       setTableLiveTotals({ [tableId]: getOrderGross(nextLines) });
       const touchedLineId = nextLines[nextLines.length - 1]?.id ?? null;

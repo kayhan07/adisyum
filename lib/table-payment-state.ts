@@ -1,8 +1,13 @@
 import { bootstrapRuntimeScope, persistRuntimeScope, readRuntimeItem, refreshRuntimeScope, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
+import {
+  getAuthoritativeOrdersByTable,
+  refreshAuthoritativeOrdersByTable,
+  replaceAuthoritativeOrdersByTable,
+  subscribeToAuthoritativeOrders,
+} from '@/lib/client/authoritative-table-orders';
 
 const STORAGE_KEY = 'aurelia-table-payment-requested';
 const TOTALS_STORAGE_KEY = 'aurelia-table-live-totals';
-const ORDERS_STORAGE_KEY = 'aurelia-orders-by-table';
 const META_STORAGE_KEY = 'aurelia-table-meta';
 const STATE_META_STORAGE_KEY = 'aurelia-table-state-sync-meta';
 const EVENT_NAME = 'aurelia-table-payment-requested:changed';
@@ -124,9 +129,6 @@ function applySnapshot(snapshot: Partial<SharedTablePaymentState>) {
   if (snapshot.liveTotals && typeof snapshot.liveTotals === 'object') {
     writeRuntimeJsonIfChanged(TOTALS_STORAGE_KEY, snapshot.liveTotals, { persist: false });
   }
-  if (snapshot.ordersByTable && typeof snapshot.ordersByTable === 'object') {
-    writeRuntimeJsonIfChanged(ORDERS_STORAGE_KEY, snapshot.ordersByTable, { persist: false });
-  }
   if (snapshot.tableMeta && typeof snapshot.tableMeta === 'object') {
     writeRuntimeJsonIfChanged(META_STORAGE_KEY, snapshot.tableMeta, { persist: false });
   }
@@ -143,6 +145,7 @@ export async function syncTableStateFromServer() {
   } else {
     await refreshRuntimeScope('tenant');
   }
+  await refreshAuthoritativeOrdersByTable();
   tableStateSyncCounter += 1;
   console.info('[adisyon-flow] table-runtime-sync', {
     clientId: runtimeClientId,
@@ -248,36 +251,12 @@ export function setTableLiveTotals(totals: Record<string, number>) {
 }
 
 export function getStoredOrdersByTable<T>() {
-  if (typeof window === 'undefined') {
-    return {} as Record<string, T[]>;
-  }
-
-  const raw = readRuntimeItem('tenant', ORDERS_STORAGE_KEY);
-  if (!raw) {
-    return {} as Record<string, T[]>;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    return Object.fromEntries(
-      Object.entries(parsed).filter((entry): entry is [string, T[]] => Array.isArray(entry[1])),
-    );
-  } catch {
-    return {} as Record<string, T[]>;
-  }
+  return getAuthoritativeOrdersByTable<T>();
 }
 
 export function setStoredOrdersByTable<T>(orders: Record<string, T[]>) {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
   const nextOrders = { ...getStoredOrdersByTable<T>(), ...orders };
-  if (!writeRuntimeJsonIfChanged(ORDERS_STORAGE_KEY, nextOrders)) return;
-  const changedTableId = Object.keys(orders).find((tableId) => (orders[tableId] ?? []).length > 0) ?? Object.keys(orders)[0];
-  writeTableStateSyncMeta('orders', nextOrders, changedTableId);
-  emitChange();
-  publishTableState();
+  replaceAuthoritativeOrdersByTable(nextOrders);
 }
 
 export function subscribeToStoredOrdersChanges(callback: () => void) {
@@ -285,17 +264,7 @@ export function subscribeToStoredOrdersChanges(callback: () => void) {
     return () => {};
   }
 
-  const handleCustom = () => {
-    callback();
-  };
-
-  window.addEventListener(EVENT_NAME, handleCustom);
-  const unsubscribeRuntime = subscribeRuntimeScope('tenant', callback);
-
-  return () => {
-    window.removeEventListener(EVENT_NAME, handleCustom);
-    unsubscribeRuntime();
-  };
+  return subscribeToAuthoritativeOrders(callback);
 }
 
 export type StoredTableMeta = {
