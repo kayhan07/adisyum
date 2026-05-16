@@ -6,7 +6,6 @@ import { getDefaultModulesForPackageType, PACKAGE_MODULE_OPTIONS, type PackageMo
 import { secureLogout } from '@/lib/client/secure-logout';
 import {
   createAdminTenantDraft,
-  createEmptyTenantDataStructure,
   createRenewalNotice,
   formatAdminMoney,
   loadSystemAdminState,
@@ -24,6 +23,34 @@ import type { PackageType } from '@/lib/saas-store';
 
 type AdminModule = 'dashboard' | 'tenants' | 'packages' | 'dealers' | 'sales' | 'payments' | 'finance' | 'invoices' | 'reports' | 'monitoring';
 type TenantDraft = ReturnType<typeof createAdminTenantDraft>;
+type SaasTenantRow = {
+  tenantId: string;
+  companyName: string;
+  status: string;
+  plan: PackageType | string;
+  billingPeriod: string;
+  branchCount: number;
+  activeBranchCount: number;
+  activeUsers: number;
+  lastActivity: string;
+  expiresAt: string | null;
+  subscriptionStatus: string;
+  balance: number;
+  kontorBalance: number;
+  dailyOrders: number;
+  dailyRevenue: number;
+  mainBranchId?: string | null;
+  createdAt: string;
+};
+type SaasSummary = {
+  totalTenants: number;
+  activeTenants: number;
+  expiredTenants: number;
+  totalBranches: number;
+  activeUsers: number;
+  dailyOrders: number;
+  liveRevenue: number;
+};
 
 const modules: Array<{ id: AdminModule; label: string; icon: typeof LayoutDashboard }> = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -115,6 +142,10 @@ export default function SystemAdminPage() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [activeModule, setActiveModule] = useState<AdminModule>('dashboard');
   const [state, setState] = useState<SystemAdminState>(() => loadSystemAdminState());
+  const [saasTenants, setSaasTenants] = useState<SaasTenantRow[]>([]);
+  const [saasSummary, setSaasSummary] = useState<SaasSummary | null>(null);
+  const [provisioningMessage, setProvisioningMessage] = useState('');
+  const [provisioningLoading, setProvisioningLoading] = useState(false);
   const [tenantDraft, setTenantDraft] = useState<TenantDraft>(() => createAdminTenantDraft());
   const [dealerDraft, setDealerDraft] = useState<Omit<AdminDealer, 'id'>>({ name: '', type: 'dealer', commission_rate: 20, phone: '', email: '', active: true });
   const [packageDraft, setPackageDraft] = useState<AdminPackage>(() => createPackageDraft());
@@ -131,6 +162,7 @@ export default function SystemAdminPage() {
       if (!mounted) return;
       if (payload?.ok && payload?.session?.role === 'super_admin') {
         setAdminLoggedIn(true);
+        void loadSaasTenants();
       }
       setState(loadSystemAdminState());
     };
@@ -150,6 +182,43 @@ export default function SystemAdminPage() {
   function commit(nextState: SystemAdminState) {
     setState(nextState);
     saveSystemAdminState(nextState);
+  }
+
+  function packageIdForType(packageType: string) {
+    return state.packages.find((pkg) => pkg.package_type === packageType)?.id ?? state.packages[0]?.id ?? 'pkg-mini';
+  }
+
+  function mapSaasTenant(row: SaasTenantRow): AdminTenant {
+    return {
+      id: `db-${row.tenantId}`,
+      tenant_id: row.tenantId,
+      company_name: row.companyName,
+      package_id: packageIdForType(row.plan),
+      package_type: (row.plan === 'gold' || row.plan === 'premium' ? row.plan : 'mini') as PackageType,
+      start_date: row.createdAt.slice(0, 10),
+      end_date: row.expiresAt?.slice(0, 10) ?? today(),
+      status: row.status === 'trial' || row.status === 'demo' ? 'demo' : row.status === 'active' ? 'active' : row.status === 'suspended' ? 'blocked' : 'expired',
+      demo_enabled: row.status === 'demo' || row.status === 'trial',
+      auto_renew: row.billingPeriod !== 'manual',
+      admin_username: 'admin',
+      admin_password: '********',
+      created_at: row.createdAt,
+    };
+  }
+
+  async function loadSaasTenants() {
+    const response = await fetch('/api/system-admin/tenants', { credentials: 'include', cache: 'no-store' }).catch(() => null);
+    const payload = response && response.ok ? await response.json().catch(() => null) as { tenants?: SaasTenantRow[]; summary?: SaasSummary } | null : null;
+    if (!payload?.tenants) return;
+    setSaasTenants(payload.tenants);
+    setSaasSummary(payload.summary ?? null);
+    const dbTenants = payload.tenants.map(mapSaasTenant);
+    setState((current) => {
+      const localOnly = current.tenants.filter((tenant) => !dbTenants.some((dbTenant) => dbTenant.tenant_id === tenant.tenant_id));
+      const next = { ...current, tenants: [...dbTenants, ...localOnly] };
+      saveSystemAdminState(next);
+      return next;
+    });
   }
 
   function selectedPackage(packageId: string) {
@@ -172,27 +241,44 @@ export default function SystemAdminPage() {
     return { income, expense, net: income - expense, revenue, activeSubscriptions, commissions, pendingPayments, pendingCommissions, unpaidInvoices };
   }, [state]);
 
-  function saveTenant() {
+  async function saveTenant() {
     const pkg = selectedPackage(tenantDraft.package_id);
     if (!tenantDraft.company_name.trim() || !tenantDraft.admin_username.trim() || !tenantDraft.admin_password.trim()) return;
-    const tenant: AdminTenant = {
-      id: `tenant-${Date.now()}`,
-      tenant_id: tenantDraft.tenant_id,
-      company_name: tenantDraft.company_name.trim(),
-      package_id: pkg.id,
-      package_type: pkg.package_type,
-      start_date: tenantDraft.start_date,
-      end_date: tenantDraft.end_date || addDays(tenantDraft.start_date, pkg.duration_days),
-      status: tenantDraft.demo_enabled ? 'demo' : tenantDraft.status,
-      demo_enabled: tenantDraft.demo_enabled,
-      auto_renew: tenantDraft.auto_renew,
-      admin_username: tenantDraft.admin_username.trim(),
-      admin_password: tenantDraft.admin_password.trim(),
-      dealer_id: tenantDraft.dealer_id || undefined,
-      created_at: new Date().toISOString(),
-    };
-    createEmptyTenantDataStructure(tenant.tenant_id);
-    commit({ ...state, tenants: [tenant, ...state.tenants] });
+    setProvisioningLoading(true);
+    setProvisioningMessage('');
+    const response = await fetch('/api/system-admin/tenants', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        tenantId: tenantDraft.tenant_id,
+        companyName: tenantDraft.company_name.trim(),
+        packageType: pkg.package_type,
+        billingPeriod: 'monthly',
+        status: tenantDraft.demo_enabled ? 'trial' : tenantDraft.status === 'expired' ? 'cancelled' : tenantDraft.status === 'blocked' ? 'suspended' : 'active',
+        startsAt: tenantDraft.start_date,
+        endsAt: tenantDraft.end_date || addDays(tenantDraft.start_date, pkg.duration_days),
+        branchId: 'mrk',
+        branchName: 'Merkez Şube',
+        adminUsername: tenantDraft.admin_username.trim(),
+        adminPassword: tenantDraft.admin_password.trim(),
+        adminName: 'Tenant Admin',
+        initialBalance: 0,
+        kontorBalance: 0,
+      }),
+    }).catch(() => null);
+    const payload = response ? await response.json().catch(() => null) as { ok?: boolean; error?: string; provisioned?: { tenantId: string; adminPassword?: string }; tenants?: SaasTenantRow[] } | null : null;
+    setProvisioningLoading(false);
+    if (!response?.ok || !payload?.ok) {
+      setProvisioningMessage(payload?.error ?? 'Tenant provision edilemedi.');
+      return;
+    }
+    if (payload.tenants) {
+      setSaasTenants(payload.tenants);
+      const dbTenants = payload.tenants.map(mapSaasTenant);
+      commit({ ...state, tenants: dbTenants });
+    }
+    setProvisioningMessage(`Tenant provision edildi: ${payload.provisioned?.tenantId}. İlk şifre güvenli şekilde hashlenerek kaydedildi.`);
     setTenantDraft(createAdminTenantDraft());
   }
 
@@ -341,8 +427,8 @@ export default function SystemAdminPage() {
             </div>
           </header>
 
-          {activeModule === 'dashboard' ? <Dashboard dashboard={dashboard} state={state} /> : null}
-          {activeModule === 'tenants' ? <TenantsModule state={state} tenantDraft={tenantDraft} setTenantDraft={setTenantDraft} selectedPackage={selectedPackage} saveTenant={saveTenant} commit={commit} /> : null}
+          {activeModule === 'dashboard' ? <Dashboard dashboard={dashboard} state={state} saasSummary={saasSummary} /> : null}
+          {activeModule === 'tenants' ? <TenantsModule state={state} saasTenants={saasTenants} tenantDraft={tenantDraft} setTenantDraft={setTenantDraft} selectedPackage={selectedPackage} saveTenant={saveTenant} commit={commit} provisioningLoading={provisioningLoading} provisioningMessage={provisioningMessage} /> : null}
           {activeModule === 'packages' ? <PackagesModule state={state} packageDraft={packageDraft} setPackageDraft={setPackageDraft} savePackage={savePackage} editPackage={editPackage} resetPackageDraft={resetPackageDraft} deletePackage={deletePackage} /> : null}
           {activeModule === 'dealers' ? <DealersModule state={state} dealerDraft={dealerDraft} setDealerDraft={setDealerDraft} saveDealer={saveDealer} commit={commit} /> : null}
           {activeModule === 'sales' ? <SalesModule state={state} saleDraft={saleDraft} setSaleDraft={setSaleDraft} addSale={addSale} /> : null}
@@ -357,17 +443,27 @@ export default function SystemAdminPage() {
   );
 }
 
-function Dashboard({ dashboard, state }: { dashboard: any; state: SystemAdminState }) {
+function Dashboard({ dashboard, state, saasSummary }: { dashboard: any; state: SystemAdminState; saasSummary: SaasSummary | null }) {
+  const operationalMetrics = saasSummary
+    ? [
+      ['Toplam tenant', saasSummary.totalTenants],
+      ['Aktif tenant', saasSummary.activeTenants],
+      ['Aktif kullanıcı', saasSummary.activeUsers],
+      ['Günlük sipariş', saasSummary.dailyOrders],
+      ['Canlı ciro', formatAdminMoney(saasSummary.liveRevenue)],
+    ]
+    : [
+      ['Toplam gelir', formatAdminMoney(dashboard.revenue)],
+      ['Aktif abonelik', dashboard.activeSubscriptions],
+      ['Komisyon', formatAdminMoney(dashboard.commissions)],
+      ['Bekleyen ödeme', formatAdminMoney(dashboard.pendingPayments)],
+      ['Bekleyen hak ediş', formatAdminMoney(dashboard.pendingCommissions)],
+    ];
+
   return (
     <div className="mt-6 grid gap-5">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        {[
-          ['Toplam gelir', formatAdminMoney(dashboard.revenue)],
-          ['Aktif abonelik', dashboard.activeSubscriptions],
-          ['Komisyon', formatAdminMoney(dashboard.commissions)],
-          ['Bekleyen ödeme', formatAdminMoney(dashboard.pendingPayments)],
-          ['Bekleyen hak ediş', formatAdminMoney(dashboard.pendingCommissions)],
-        ].map(([label, value]) => <Metric key={label} label={String(label)} value={String(value)} />)}
+        {operationalMetrics.map(([label, value]) => <Metric key={label} label={String(label)} value={String(value)} />)}
       </div>
       <DataTable headers={['Abone', 'Bitiş', 'Yenileme', 'Uyarı']} rows={state.tenants.map((tenant) => [tenant.company_name, tenant.end_date, tenant.auto_renew ? 'Otomatik' : 'Manuel', createRenewalNotice(tenant)])} />
     </div>
@@ -391,7 +487,7 @@ function DataTable({ headers, rows }: { headers: string[]; rows: Array<Array<Rea
   );
 }
 
-function TenantsModule({ state, tenantDraft, setTenantDraft, selectedPackage, saveTenant, commit }: any) {
+function TenantsModule({ state, saasTenants, tenantDraft, setTenantDraft, selectedPackage, saveTenant, commit, provisioningLoading, provisioningMessage }: any) {
   const [selectedTenantId, setSelectedTenantId] = useState<string>(state.tenants[0]?.tenant_id ?? '');
   const [editDraft, setEditDraft] = useState<AdminTenant | null>(null);
   const [editSaved, setEditSaved] = useState(false);
@@ -444,10 +540,22 @@ function TenantsModule({ state, tenantDraft, setTenantDraft, selectedPackage, sa
           <label className="check-row">Otomatik yenileme <input type="checkbox" checked={tenantDraft.auto_renew} onChange={(e) => setTenantDraft((c: TenantDraft) => ({ ...c, auto_renew: e.target.checked }))} /></label>
           <label className="check-row">Demo abonelik <input type="checkbox" checked={tenantDraft.demo_enabled} onChange={(e) => setTenantDraft((c: TenantDraft) => ({ ...c, demo_enabled: e.target.checked }))} /></label>
         </div>
-        <button type="button" onClick={saveTenant} className="btn-green"><Plus className="h-4 w-4" /> Abone oluştur</button>
-        <p className="mt-3 text-xs leading-5 text-slate-400">Yeni abone için boş tenant veri alanı açılır. Varsayılan ürün veya müşteri eklenmez.</p>
+        <button type="button" onClick={() => void saveTenant()} disabled={provisioningLoading} className="btn-green disabled:cursor-wait disabled:opacity-60"><Plus className="h-4 w-4" /> {provisioningLoading ? 'Provision ediliyor' : 'Abone oluştur'}</button>
+        {provisioningMessage ? <p className="mt-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs leading-5 text-slate-200">{provisioningMessage}</p> : null}
+        <p className="mt-3 text-xs leading-5 text-slate-400">Yeni abone DB üzerinde tenant, ana şube, tenant_admin kullanıcısı, roller, abonelik lisansı ve POS varsayılanlarıyla birlikte provision edilir.</p>
       </article>
       <div className="grid gap-4">
+        {saasTenants?.length ? (
+          <DataTable headers={['Tenant', 'Plan', 'Sube', 'Kullanici', 'Durum', 'Bugun', 'Bitis']} rows={saasTenants.map((tenant: SaasTenantRow) => [
+            <button key="tenant" type="button" onClick={() => setSelectedTenantId(tenant.tenantId)} className={`w-full rounded-xl px-3 py-2 text-left transition ${selectedTenantId === tenant.tenantId ? 'bg-blue-600/20 ring-1 ring-blue-400/40' : 'bg-white/0 hover:bg-white/5'}`}><p className="font-semibold">{tenant.companyName}</p><p className="text-xs text-slate-400">{tenant.tenantId}</p></button>,
+            `${tenant.plan} / ${tenant.billingPeriod}`,
+            `${tenant.activeBranchCount}/${tenant.branchCount}`,
+            tenant.activeUsers,
+            tenant.status,
+            `${tenant.dailyOrders} siparis / ${formatAdminMoney(tenant.dailyRevenue)}`,
+            tenant.expiresAt ? tenant.expiresAt.slice(0, 10) : '-',
+          ])} />
+        ) : null}
         <DataTable headers={['Firma', 'Kullanıcı', 'Paket', 'Bayi', 'Tarih', 'Yenileme', '']} rows={state.tenants.map((tenant: AdminTenant) => [
         <button key="firm" type="button" onClick={() => setSelectedTenantId(tenant.tenant_id)} className={`w-full rounded-xl px-3 py-2 text-left transition ${selectedTenantId === tenant.tenant_id ? 'bg-blue-600/20 ring-1 ring-blue-400/40' : 'bg-white/0 hover:bg-white/5'}`}><p className="font-semibold">{tenant.company_name}</p><p className="text-xs text-slate-400">{tenant.tenant_id}</p></button>,
         tenant.admin_username,
