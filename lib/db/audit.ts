@@ -27,6 +27,9 @@ export async function writeAuditLog(input: {
   branchId?: string | null;
   ip?: string | null;
   userAgent?: string | null;
+  requestId?: string | null;
+  before?: unknown;
+  after?: unknown;
   metadata?: unknown;
   db?: Prisma.TransactionClient;
 }) {
@@ -43,6 +46,9 @@ export async function writeAuditLog(input: {
       branchId: input.branchId ?? null,
       ip: input.ip ?? null,
       userAgent: input.userAgent ?? null,
+      requestId: input.requestId ?? null,
+      before: input.before === undefined ? undefined : JSON.parse(JSON.stringify(input.before)) as Prisma.InputJsonValue,
+      after: input.after === undefined ? undefined : JSON.parse(JSON.stringify(input.after)) as Prisma.InputJsonValue,
       metadata: input.metadata === undefined || input.metadata === null
         ? {}
         : JSON.parse(JSON.stringify(input.metadata)) as Prisma.InputJsonValue,

@@ -7,6 +7,7 @@ import { branchTenantBranchKey, roleTenantKey, userTenantIdKey, userTenantUserna
 import { prisma } from '@/lib/db/prisma';
 import { registerActiveSession } from '@/lib/server/session-revocation';
 import { createDbSession } from '@/lib/server/auth-session-db';
+import { recordOperationalEvent } from '@/lib/operations/live-ops';
 
 export const dynamic = 'force-dynamic';
 
@@ -173,6 +174,17 @@ export async function POST(request: Request) {
       userAgent,
       metadata: { username },
     }).catch(() => undefined);
+    await recordOperationalEvent({
+      tenantId: SYSTEM_TENANT_ID,
+      userId: user?.id ?? null,
+      type: 'auth.login_failed',
+      severity: 'warning',
+      message: `Basarisiz system-admin girisi: ${username}`,
+      entity: 'system_admin',
+      entityId: user?.id,
+      source: 'auth.system-admin',
+      metadata: { username, ip },
+    }).catch(() => undefined);
     return NextResponse.json({ ok: false, error: 'Admin kullanici adi veya sifre hatali.' }, { status: 401 });
   }
 
@@ -218,6 +230,18 @@ export async function POST(request: Request) {
     branchId: user.branchId ?? 'system',
     ip,
     userAgent,
+  }).catch(() => undefined);
+  await recordOperationalEvent({
+    tenantId: SYSTEM_TENANT_ID,
+    branchId: user.branchId ?? 'system',
+    userId: user.id,
+    sessionId: dbSession?.id,
+    type: 'auth.login_succeeded',
+    message: `${user.username} system-admin girisi yapti.`,
+    entity: 'system_admin',
+    entityId: user.id,
+    source: 'auth.system-admin',
+    metadata: { username: user.username, ip },
   }).catch(() => undefined);
 
   if (verified) {

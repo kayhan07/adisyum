@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { requireTenant, TenantAuthError, tenantAuthErrorResponse } from '@/lib/requireTenant';
 import { publishTenantEvent } from '@/lib/realtime/tenant-events';
+import { recordOperationalEvent } from '@/lib/operations/live-ops';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -192,6 +193,8 @@ export async function POST(request: Request) {
   let tenantId = '';
   let tableId = '';
   let traceId = mutationTraceId();
+  let updatedOrderId = '';
+  let updatedLineCount = 0;
   try {
     logTableOrderEvent('request-entry', { traceId, method: 'POST' });
     const tenant = await requireTenant(request);
@@ -466,6 +469,8 @@ export async function POST(request: Request) {
         taxTotal,
         total: Number((subtotal + taxTotal).toFixed(2)),
       });
+      updatedOrderId = order.id;
+      updatedLineCount = nextItems.length;
     });
 
     logTableOrderEvent('transaction-committed', {
@@ -479,6 +484,23 @@ export async function POST(request: Request) {
       type: 'order.updated',
       tableId,
       mutationId,
+    }).catch(() => undefined);
+    await recordOperationalEvent({
+      tenantId,
+      branchId: tenant.branchId,
+      userId: tenant.userId,
+      type: 'order.product_added',
+      message: `${productName} masaya eklendi.`,
+      entity: 'order',
+      entityId: updatedOrderId,
+      source: 'pos.table-orders',
+      metadata: {
+        tableId,
+        mutationId,
+        productId: product?.id,
+        quantityToAdd,
+        lineCount: updatedLineCount,
+      },
     }).catch(() => undefined);
 
     const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId);

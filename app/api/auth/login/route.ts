@@ -7,6 +7,7 @@ import { writeAuditLog } from '@/lib/db/audit';
 import { userTenantIdKey } from '@/lib/db/compound-keys';
 import { registerActiveSession } from '@/lib/server/session-revocation';
 import { createDbSession } from '@/lib/server/auth-session-db';
+import { recordOperationalEvent } from '@/lib/operations/live-ops';
 
 export const dynamic = 'force-dynamic';
 
@@ -92,6 +93,17 @@ export async function POST(request: Request) {
         username,
       },
     }).catch(() => undefined);
+    await recordOperationalEvent({
+      tenantId,
+      userId: user?.id ?? null,
+      type: 'auth.login_failed',
+      severity: 'warning',
+      message: `Basarisiz giris denemesi: ${username}`,
+      entity: 'user',
+      entityId: user?.id,
+      source: 'auth.login',
+      metadata: { username, ip },
+    }).catch(() => undefined);
 
     return NextResponse.json({ ok: false, error: 'Kullanici adi veya sifre hatali.' }, { status: 401 });
   }
@@ -135,6 +147,18 @@ export async function POST(request: Request) {
     branchId,
     ip,
     userAgent,
+  }).catch(() => undefined);
+  await recordOperationalEvent({
+    tenantId,
+    branchId,
+    userId: user.id,
+    sessionId: dbSession?.id,
+    type: 'auth.login_succeeded',
+    message: `${user.username} giris yapti.`,
+    entity: 'user',
+    entityId: user.id,
+    source: 'auth.login',
+    metadata: { username: user.username, ip },
   }).catch(() => undefined);
 
   if (verified) {

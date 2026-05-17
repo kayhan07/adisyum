@@ -21,7 +21,7 @@ import {
 } from '@/lib/system-admin-store';
 import type { PackageType } from '@/lib/saas-store';
 
-type AdminModule = 'dashboard' | 'tenants' | 'jobs' | 'templates' | 'packages' | 'dealers' | 'sales' | 'payments' | 'finance' | 'invoices' | 'reports' | 'monitoring';
+type AdminModule = 'dashboard' | 'tenants' | 'jobs' | 'live-ops' | 'templates' | 'packages' | 'dealers' | 'sales' | 'payments' | 'finance' | 'invoices' | 'reports' | 'monitoring';
 type TenantDraft = ReturnType<typeof createAdminTenantDraft>;
 type SaasTenantRow = {
   tenantId: string;
@@ -120,11 +120,67 @@ type RecipeTemplateItemRow = { id: string; templateId: string; stockTemplateId?:
 type StockTemplateRow = { id: string; key: string; name: string; stockUnit: string; recipeUnit: string; purchaseUnit: string; minLevel: string | number };
 type CategoryTemplateRow = { id: string; key: string; name: string; sortOrder: number };
 type TemplatePackItemRow = { id: string; packId: string; productTemplateId: string; sortOrder: number };
+type LivePresenceRow = {
+  id: string;
+  tenantId: string;
+  branchId?: string | null;
+  userId: string;
+  username: string;
+  role: string;
+  deviceType?: string | null;
+  browser?: string | null;
+  os?: string | null;
+  ip?: string | null;
+  currentRoute?: string | null;
+  activeTableId?: string | null;
+  status: string;
+  heartbeatLatency?: number | null;
+  loginAt: string;
+  lastSeenAt: string;
+};
+type LiveDeviceRow = {
+  id: string;
+  tenantId: string;
+  branchId?: string | null;
+  deviceId: string;
+  deviceType: string;
+  status: string;
+  failureCount: number;
+  latencyMs?: number | null;
+  lastHeartbeatAt: string;
+};
+type LiveEventRow = {
+  id: string;
+  tenantId?: string | null;
+  branchId?: string | null;
+  type: string;
+  severity: string;
+  message: string;
+  source: string;
+  createdAt: string;
+};
+type LiveOperationsPayload = {
+  summary: {
+    onlineTenants: number;
+    onlineUsers: number;
+    onlineBranches: number;
+    activeDevices: number;
+    activeTables: number;
+    activeOrders: number;
+    failedLogins24h: number;
+  };
+  presence: LivePresenceRow[];
+  devices: LiveDeviceRow[];
+  events: LiveEventRow[];
+  activeTablesByTenant: Array<{ tenantId: string; count: number }>;
+  generatedAt: string;
+};
 
 const modules: Array<{ id: AdminModule; label: string; icon: typeof LayoutDashboard }> = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'tenants', label: 'Aboneler', icon: Building2 },
   { id: 'jobs', label: 'Jobs Center', icon: Workflow },
+  { id: 'live-ops', label: 'Canlı Operasyon', icon: Activity },
   { id: 'templates', label: 'Şablon Havuzu', icon: Sparkles },
   { id: 'packages', label: 'Paketler', icon: Package },
   { id: 'dealers', label: 'Bayi / Temsilci', icon: HandCoins },
@@ -563,6 +619,7 @@ export default function SystemAdminPage() {
           {activeModule === 'dashboard' ? <Dashboard dashboard={dashboard} state={state} saasSummary={saasSummary} /> : null}
           {activeModule === 'tenants' ? <TenantsModule state={state} saasTenants={saasTenants} provisioningJobs={provisioningJobs} provisioningMetrics={provisioningMetrics} tenantDraft={tenantDraft} setTenantDraft={setTenantDraft} selectedPackage={selectedPackage} saveTenant={saveTenant} runProvisioningAction={runProvisioningAction} commit={commit} provisioningLoading={provisioningLoading} provisioningMessage={provisioningMessage} /> : null}
           {activeModule === 'jobs' ? <JobsCenterModule /> : null}
+          {activeModule === 'live-ops' ? <LiveOperationsModule /> : null}
           {activeModule === 'templates' ? <TemplatesModule templates={templatePool} packs={templatePacks} recipes={recipeTemplates} recipeItems={recipeTemplateItems} stocks={stockTemplates} categories={categoryTemplates} packItems={templatePackItems} importStats={templateImportStats} reload={loadTemplatePool} /> : null}
           {activeModule === 'packages' ? <PackagesModule state={state} packageDraft={packageDraft} setPackageDraft={setPackageDraft} savePackage={savePackage} editPackage={editPackage} resetPackageDraft={resetPackageDraft} deletePackage={deletePackage} /> : null}
           {activeModule === 'dealers' ? <DealersModule state={state} dealerDraft={dealerDraft} setDealerDraft={setDealerDraft} saveDealer={saveDealer} commit={commit} /> : null}
@@ -979,6 +1036,132 @@ function JobsCenterModule() {
       </article>
     </div>
   );
+}
+
+function LiveOperationsModule() {
+  const [data, setData] = useState<LiveOperationsPayload | null>(null);
+  const [error, setError] = useState('');
+
+  async function refresh() {
+    const response = await fetch('/api/system-admin/live-operations', { credentials: 'include', cache: 'no-store' }).catch(() => null);
+    const payload = response && response.ok ? await response.json().catch(() => null) as LiveOperationsPayload | null : null;
+    if (!response?.ok || !payload) {
+      setError('Canli operasyon verisi alinamadi.');
+      return;
+    }
+    setData(payload);
+    setError('');
+  }
+
+  useEffect(() => {
+    void refresh();
+    const stream = new EventSource('/api/system-admin/live-operations/stream', { withCredentials: true });
+    stream.addEventListener('live-operations', (event) => {
+      setData(JSON.parse((event as MessageEvent).data) as LiveOperationsPayload);
+      setError('');
+    });
+    stream.addEventListener('error', () => {
+      setError('Canli operasyon stream baglantisi kesildi; veri son gorulen snapshot uzerinden gosteriliyor.');
+    });
+    return () => stream.close();
+  }, []);
+
+  const summary = data?.summary;
+  return (
+    <div className="mt-6 grid gap-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Realtime SaaS Operations</p>
+          <h2 className="mt-2 text-2xl font-semibold">Canli Operasyon Merkezi</h2>
+        </div>
+        <button type="button" onClick={() => void refresh()} className="rounded-xl bg-blue-600/20 px-4 py-2 text-xs font-semibold text-blue-200 hover:bg-blue-600/35">Yenile</button>
+      </div>
+      {error ? <p className="rounded-2xl bg-amber-500/15 px-4 py-3 text-sm text-amber-100">{error}</p> : null}
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Online tenant" value={String(summary?.onlineTenants ?? 0)} />
+        <Metric label="Online kullanici" value={String(summary?.onlineUsers ?? 0)} />
+        <Metric label="Aktif cihaz" value={String(summary?.activeDevices ?? 0)} />
+        <Metric label="Aktif masa" value={String(summary?.activeTables ?? 0)} />
+        <Metric label="Aktif siparis" value={String(summary?.activeOrders ?? 0)} />
+        <Metric label="Online sube" value={String(summary?.onlineBranches ?? 0)} />
+        <Metric label="24s basarisiz login" value={String(summary?.failedLogins24h ?? 0)} />
+        <Metric label="Son snapshot" value={data?.generatedAt ? new Date(data.generatedAt).toLocaleTimeString('tr-TR') : '-'} />
+      </div>
+      <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+        <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Presence</p>
+          <h3 className="mt-2 text-xl font-semibold">Canli oturumlar</h3>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead className="text-xs uppercase tracking-[0.16em] text-slate-400">
+                <tr><th className="pb-3">Tenant</th><th className="pb-3">Kullanici</th><th className="pb-3">Rol</th><th className="pb-3">Cihaz</th><th className="pb-3">Rota</th><th className="pb-3">Durum</th></tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {(data?.presence ?? []).slice(0, 18).map((row) => (
+                  <tr key={row.id}>
+                    <td className="py-3">{row.tenantId}</td>
+                    <td className="py-3">{row.username}</td>
+                    <td className="py-3">{row.role}</td>
+                    <td className="py-3">{[row.deviceType, row.browser, row.os].filter(Boolean).join(' / ') || '-'}</td>
+                    <td className="py-3 text-slate-300">{row.currentRoute ?? '-'}</td>
+                    <td className="py-3"><StatusPill status={row.status} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </article>
+        <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Event stream</p>
+          <h3 className="mt-2 text-xl font-semibold">Son operasyonlar</h3>
+          <div className="mt-4 grid gap-3">
+            {(data?.events ?? []).slice(0, 12).map((event) => (
+              <div key={event.id} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold">{event.message}</p>
+                  <span className="text-[11px] text-slate-400">{new Date(event.createdAt).toLocaleTimeString('tr-TR')}</span>
+                </div>
+                <p className="mt-1 text-xs text-slate-400">{event.type} / {event.tenantId ?? 'global'} / {event.source}</p>
+              </div>
+            ))}
+          </div>
+        </article>
+      </div>
+      <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Device monitoring</p>
+        <h3 className="mt-2 text-xl font-semibold">Aktif cihazlar</h3>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[780px] text-left text-sm">
+            <thead className="text-xs uppercase tracking-[0.16em] text-slate-400">
+              <tr><th className="pb-3">Tenant</th><th className="pb-3">Cihaz</th><th className="pb-3">Tip</th><th className="pb-3">Durum</th><th className="pb-3">Latency</th><th className="pb-3">Failure</th><th className="pb-3">Son heartbeat</th></tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {(data?.devices ?? []).slice(0, 24).map((row) => (
+                <tr key={row.id}>
+                  <td className="py-3">{row.tenantId}</td>
+                  <td className="py-3 font-mono text-xs">{row.deviceId}</td>
+                  <td className="py-3">{row.deviceType}</td>
+                  <td className="py-3"><StatusPill status={row.status} /></td>
+                  <td className="py-3">{row.latencyMs ?? '-'} ms</td>
+                  <td className="py-3">{row.failureCount}</td>
+                  <td className="py-3 text-slate-300">{new Date(row.lastHeartbeatAt).toLocaleString('tr-TR')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </article>
+    </div>
+  );
+}
+
+function StatusPill({ status }: { status: string }) {
+  const color = status === 'online'
+    ? 'bg-emerald-500/15 text-emerald-200'
+    : status === 'idle'
+      ? 'bg-amber-500/15 text-amber-200'
+      : 'bg-slate-500/15 text-slate-300';
+  return <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${color}`}>{status}</span>;
 }
 
 function TemplatesModule({ templates, packs, recipes, recipeItems, stocks, categories, packItems, importStats, reload }: {

@@ -6,6 +6,7 @@ import { invalidateTenantCache } from '@/lib/db/cache';
 import { publishTenantEvent } from '@/lib/realtime/tenant-events';
 import type { TenantContext } from '@/lib/tenant';
 import { OrderRepository, PaymentRepository, StockRepository } from '@/lib/db/repositories';
+import { recordOperationalEvent } from '@/lib/operations/live-ops';
 
 const orderLineSchema = z.object({
   productId: z.string().uuid().nullable().optional(),
@@ -79,6 +80,17 @@ export class PaymentService {
       await writeAuditLog({ tenantId: tenant.tenantId, userId: tenant.userId, action: 'payment_create', entity: 'payment', entityId: payment.id, db: tx });
       await invalidateTenantCache(tenant.tenantId, ['orders', 'payments', 'reports']);
       await publishTenantEvent(tenant.tenantId, 'payments', { type: 'payment.created', paymentId: payment.id, orderId: input.orderId });
+      await recordOperationalEvent({
+        tenantId: tenant.tenantId,
+        branchId: tenant.branchId,
+        userId: tenant.userId,
+        type: 'payment.completed',
+        message: `Odeme tamamlandi: ${input.amount}`,
+        entity: 'payment',
+        entityId: payment.id,
+        source: 'payment.service',
+        metadata: { orderId: input.orderId, amount: input.amount, method: input.method, closeOrder: Boolean(input.closeOrder) },
+      });
       return payment;
     });
   }

@@ -5,6 +5,7 @@ import { writeAuditLog } from '@/lib/db/audit';
 import { branchTenantBranchKey, roleTenantKey, userTenantUsernameKey } from '@/lib/db/compound-keys';
 import { getDefaultModulesForPackageType, type PackageModuleKey } from '@/lib/package-access-core';
 import type { PackageType } from '@/lib/saas-store';
+import { recordOperationalEvent } from '@/lib/operations/live-ops';
 
 const ROLE_PERMISSIONS: Record<string, string[]> = {
   tenant_admin: [
@@ -177,7 +178,7 @@ async function appendJobDiagnostic(jobId: string, step: string, status: 'ok' | '
 }
 
 export async function recordProvisioningEvent(jobId: string, event: ProvisioningTraceEvent) {
-  return prisma.provisioningJobEvent.create({
+  const created = await prisma.provisioningJobEvent.create({
     data: {
       jobId,
       type: event.type,
@@ -188,6 +189,17 @@ export async function recordProvisioningEvent(jobId: string, event: Provisioning
       source: event.source ?? 'provisioning-engine',
     },
   });
+  await recordOperationalEvent({
+    tenantId: typeof event.metadata?.tenantId === 'string' ? event.metadata.tenantId : null,
+    type: `onboarding.${event.type}`,
+    severity: event.severity,
+    message: event.message,
+    entity: 'provisioning_job',
+    entityId: jobId,
+    source: event.source ?? 'provisioning-engine',
+    metadata: event.metadata,
+  }).catch(() => undefined);
+  return created;
 }
 
 async function recordProvisioningEvents(jobId: string, events: ProvisioningTraceEvent[]) {

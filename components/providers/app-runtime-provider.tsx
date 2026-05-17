@@ -22,6 +22,18 @@ function ingestObservability(tenantId: string, payload: Record<string, unknown>)
   }).catch(() => undefined);
 }
 
+function getRuntimeDeviceId() {
+  if (typeof window === 'undefined') return null;
+  const key = 'adisyum-runtime-device-id';
+  const existing = window.localStorage.getItem(key);
+  if (existing) return existing;
+  const next = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `device-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  window.localStorage.setItem(key, next);
+  return next;
+}
+
 export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   const { data, isFetched } = useQuery(authSessionQueryOptions());
   const [ready, setReady] = useState(false);
@@ -230,6 +242,42 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', handleVisibility);
       window.clearInterval(heartbeat);
       window.clearInterval(releaseHeartbeat);
+    };
+  }, [data, isFetched]);
+
+  useEffect(() => {
+    if (!isFetched || !data?.ok) return;
+    let cancelled = false;
+    const deviceId = getRuntimeDeviceId();
+
+    const sendHeartbeat = async () => {
+      if (cancelled || isLogoutInProgress()) return;
+      await fetch('/api/runtime/heartbeat', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          currentRoute: typeof window !== 'undefined' ? window.location.pathname : undefined,
+          deviceId,
+        }),
+      }).catch(() => undefined);
+    };
+
+    const onFocus = () => { void sendHeartbeat(); };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void sendHeartbeat();
+    };
+
+    void sendHeartbeat();
+    const interval = window.setInterval(() => { void sendHeartbeat(); }, 30000);
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [data, isFetched]);
 

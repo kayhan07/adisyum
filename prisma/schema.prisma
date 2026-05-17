@@ -316,6 +316,7 @@ model Session {
   branch           Branch?       @relation(fields: [tenantId, branchId], references: [tenantId, branchId], onDelete: NoAction, onUpdate: Cascade)
   subscription     Subscription? @relation(fields: [tenantId, subscriptionId], references: [tenantId, id], onDelete: NoAction, onUpdate: Cascade)
   auditLogs        AuditLog[]
+  presence         PresenceSession?
 
   @@index([tenantId])
   @@index([tenantId, userId])
@@ -324,6 +325,79 @@ model Session {
   @@index([tenantId, revokedAt])
   @@index([tenantId, deletedAt])
   @@map("sessions")
+}
+
+model PresenceSession {
+  id               String   @id @default(uuid()) @db.Uuid
+  sessionId        String   @unique @map("session_id") @db.Uuid
+  tenantId         String   @map("tenant_id") @db.VarChar(64)
+  branchId         String?  @map("branch_id") @db.VarChar(64)
+  userId           String   @map("user_id") @db.Uuid
+  username         String   @db.VarChar(120)
+  role             String   @db.VarChar(64)
+  deviceType       String?  @map("device_type") @db.VarChar(80)
+  browser          String?  @db.VarChar(120)
+  os               String?  @db.VarChar(120)
+  ip               String?  @db.VarChar(80)
+  currentRoute     String?  @map("current_route") @db.VarChar(240)
+  activeTableId    String?  @map("active_table_id") @db.VarChar(120)
+  status           String   @default("online") @db.VarChar(32)
+  heartbeatLatency Int?     @map("heartbeat_latency")
+  loginAt          DateTime @default(now()) @map("login_at")
+  lastSeenAt       DateTime @default(now()) @map("last_seen_at")
+  disconnectedAt   DateTime? @map("disconnected_at")
+  metadata         Json     @default("{}")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  session          Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, lastSeenAt])
+  @@index([tenantId, branchId])
+  @@index([tenantId, userId])
+  @@index([status])
+  @@map("presence_sessions")
+}
+
+model OperationalEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String?  @map("tenant_id") @db.VarChar(64)
+  branchId    String?  @map("branch_id") @db.VarChar(64)
+  userId      String?  @map("user_id") @db.VarChar(80)
+  sessionId   String?  @map("session_id") @db.Uuid
+  type        String   @db.VarChar(120)
+  severity    String   @default("info") @db.VarChar(16)
+  message     String   @db.VarChar(500)
+  entity      String?  @db.VarChar(120)
+  entityId    String?  @map("entity_id") @db.VarChar(120)
+  source      String   @default("runtime") @db.VarChar(120)
+  metadata    Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, createdAt])
+  @@index([type, createdAt])
+  @@index([severity, createdAt])
+  @@map("operational_events")
+}
+
+model DeviceHeartbeat {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.VarChar(64)
+  branchId         String?  @map("branch_id") @db.VarChar(64)
+  deviceId         String   @map("device_id") @db.VarChar(160)
+  deviceType       String   @map("device_type") @db.VarChar(80)
+  status           String   @default("online") @db.VarChar(32)
+  failureCount     Int      @default(0) @map("failure_count")
+  latencyMs        Int?     @map("latency_ms")
+  lastHeartbeatAt  DateTime @default(now()) @map("last_heartbeat_at")
+  metadata         Json     @default("{}")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, deviceId], name: "tenantId_deviceId", map: "device_heartbeats_tenant_id_device_id_key")
+  @@index([tenantId, status])
+  @@index([tenantId, branchId])
+  @@map("device_heartbeats")
 }
 
 model TableGroup {
