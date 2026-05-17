@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Activity, BarChart3, Building2, CreditCard, FileText, HandCoins, LayoutDashboard, Package, Plus, ReceiptText, RefreshCw, ShieldCheck, Sparkles, Trash2, Users } from 'lucide-react';
+import { Activity, BarChart3, Building2, CreditCard, FileText, HandCoins, LayoutDashboard, Package, Plus, ReceiptText, RefreshCw, ShieldCheck, Sparkles, Trash2, Users, Workflow } from 'lucide-react';
 import { getDefaultModulesForPackageType, PACKAGE_MODULE_OPTIONS, type PackageModuleKey } from '@/lib/package-access';
 import { secureLogout } from '@/lib/client/secure-logout';
 import {
@@ -21,7 +21,7 @@ import {
 } from '@/lib/system-admin-store';
 import type { PackageType } from '@/lib/saas-store';
 
-type AdminModule = 'dashboard' | 'tenants' | 'templates' | 'packages' | 'dealers' | 'sales' | 'payments' | 'finance' | 'invoices' | 'reports' | 'monitoring';
+type AdminModule = 'dashboard' | 'tenants' | 'jobs' | 'templates' | 'packages' | 'dealers' | 'sales' | 'payments' | 'finance' | 'invoices' | 'reports' | 'monitoring';
 type TenantDraft = ReturnType<typeof createAdminTenantDraft>;
 type SaasTenantRow = {
   tenantId: string;
@@ -124,6 +124,7 @@ type TemplatePackItemRow = { id: string; packId: string; productTemplateId: stri
 const modules: Array<{ id: AdminModule; label: string; icon: typeof LayoutDashboard }> = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'tenants', label: 'Aboneler', icon: Building2 },
+  { id: 'jobs', label: 'Jobs Center', icon: Workflow },
   { id: 'templates', label: 'Şablon Havuzu', icon: Sparkles },
   { id: 'packages', label: 'Paketler', icon: Package },
   { id: 'dealers', label: 'Bayi / Temsilci', icon: HandCoins },
@@ -561,6 +562,7 @@ export default function SystemAdminPage() {
 
           {activeModule === 'dashboard' ? <Dashboard dashboard={dashboard} state={state} saasSummary={saasSummary} /> : null}
           {activeModule === 'tenants' ? <TenantsModule state={state} saasTenants={saasTenants} provisioningJobs={provisioningJobs} provisioningMetrics={provisioningMetrics} tenantDraft={tenantDraft} setTenantDraft={setTenantDraft} selectedPackage={selectedPackage} saveTenant={saveTenant} runProvisioningAction={runProvisioningAction} commit={commit} provisioningLoading={provisioningLoading} provisioningMessage={provisioningMessage} /> : null}
+          {activeModule === 'jobs' ? <JobsCenterModule /> : null}
           {activeModule === 'templates' ? <TemplatesModule templates={templatePool} packs={templatePacks} recipes={recipeTemplates} recipeItems={recipeTemplateItems} stocks={stockTemplates} categories={categoryTemplates} packItems={templatePackItems} importStats={templateImportStats} reload={loadTemplatePool} /> : null}
           {activeModule === 'packages' ? <PackagesModule state={state} packageDraft={packageDraft} setPackageDraft={setPackageDraft} savePackage={savePackage} editPackage={editPackage} resetPackageDraft={resetPackageDraft} deletePackage={deletePackage} /> : null}
           {activeModule === 'dealers' ? <DealersModule state={state} dealerDraft={dealerDraft} setDealerDraft={setDealerDraft} saveDealer={saveDealer} commit={commit} /> : null}
@@ -845,6 +847,136 @@ function TenantsModule({ state, saasTenants, provisioningJobs, provisioningMetri
           </article>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+type JobsCenterMetric = {
+  queue: string;
+  waiting: number;
+  active: number;
+  completed: number;
+  failed: number;
+  delayed: number;
+  paused: number;
+  dead: number;
+};
+type JobsCenterRow = {
+  id: string;
+  queue: string;
+  name: string;
+  status: string;
+  tenantId?: string | null;
+  provisioningJobId?: string | null;
+  attemptsMade: number;
+  maxAttempts: number;
+  failedReason?: string | null;
+  timestamp: number;
+};
+
+function JobsCenterModule() {
+  const [metrics, setMetrics] = useState<JobsCenterMetric[]>([]);
+  const [jobs, setJobs] = useState<JobsCenterRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  async function refresh() {
+    setLoading(true);
+    const response = await fetch('/api/system-admin/jobs', { credentials: 'include', cache: 'no-store' }).catch(() => null);
+    const payload = response && response.ok ? await response.json().catch(() => null) as { metrics?: JobsCenterMetric[]; jobs?: JobsCenterRow[] } | null : null;
+    if (!response?.ok || !payload) {
+      setError('Jobs Center verisi alinamadi.');
+      setLoading(false);
+      return;
+    }
+    setMetrics(payload.metrics ?? []);
+    setJobs(payload.jobs ?? []);
+    setError('');
+    setLoading(false);
+  }
+
+  async function act(action: 'retry' | 'clear_failed', queue: string, jobId?: string) {
+    await fetch('/api/system-admin/jobs', {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action, queue, jobId }),
+    });
+    await refresh();
+  }
+
+  useEffect(() => {
+    void refresh();
+    const stream = new EventSource('/api/system-admin/jobs/stream', { withCredentials: true });
+    stream.addEventListener('jobs', (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as { metrics?: JobsCenterMetric[]; jobs?: JobsCenterRow[] };
+      setMetrics(payload.metrics ?? []);
+      setJobs(payload.jobs ?? []);
+      setError('');
+      setLoading(false);
+    });
+    stream.addEventListener('error', () => {
+      setError('Canli job stream baglantisi kesildi; manuel yenileme kullanilabilir.');
+    });
+    return () => stream.close();
+  }, []);
+
+  return (
+    <div className="mt-6 grid gap-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Operations</p>
+          <h2 className="mt-2 text-2xl font-semibold">Jobs Center</h2>
+        </div>
+        <button type="button" onClick={() => void refresh()} className="rounded-xl bg-blue-600/20 px-4 py-2 text-xs font-semibold text-blue-200 hover:bg-blue-600/35">Yenile</button>
+      </div>
+      {error ? <p className="rounded-2xl bg-rose-500/15 px-4 py-3 text-sm text-rose-100">{error}</p> : null}
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {metrics.map((metric) => (
+          <div key={metric.queue} className="rounded-2xl border border-white/10 bg-slate-900 p-4">
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-semibold capitalize">{metric.queue.replaceAll('-', ' ')}</p>
+              {metric.dead ? <button type="button" onClick={() => void act('clear_failed', metric.queue)} className="rounded-lg bg-rose-500/15 px-2 py-1 text-[11px] font-semibold text-rose-200">DLQ temizle</button> : null}
+            </div>
+            <div className="mt-4 grid grid-cols-4 gap-2 text-center text-xs">
+              <div><p className="text-lg font-bold text-blue-200">{metric.waiting}</p><p className="text-slate-500">Bekleyen</p></div>
+              <div><p className="text-lg font-bold text-amber-200">{metric.active}</p><p className="text-slate-500">Aktif</p></div>
+              <div><p className="text-lg font-bold text-emerald-200">{metric.completed}</p><p className="text-slate-500">Biten</p></div>
+              <div><p className="text-lg font-bold text-rose-200">{metric.dead}</p><p className="text-slate-500">Dead</p></div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Worker stream</p>
+            <h3 className="mt-2 text-xl font-semibold">Son joblar</h3>
+          </div>
+          {loading ? <span className="text-xs text-blue-200">Yenileniyor</span> : null}
+        </div>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[900px] text-left text-sm">
+            <thead className="text-xs uppercase tracking-[0.16em] text-slate-400">
+              <tr>{['Queue', 'Job', 'Tenant', 'Durum', 'Attempt', 'Hata', 'Zaman', 'Aksiyon'].map((header) => <th key={header} className="px-3 py-2">{header}</th>)}</tr>
+            </thead>
+            <tbody>
+              {jobs.map((job) => (
+                <tr key={`${job.queue}:${job.id}`} className="border-t border-white/10">
+                  <td className="px-3 py-3">{job.queue}</td>
+                  <td className="px-3 py-3"><p className="font-semibold">{job.name}</p><p className="text-xs text-slate-500">{job.id}</p></td>
+                  <td className="px-3 py-3">{job.tenantId ?? '-'}</td>
+                  <td className="px-3 py-3">{job.status}</td>
+                  <td className="px-3 py-3">{job.attemptsMade}/{job.maxAttempts}</td>
+                  <td className="max-w-[220px] truncate px-3 py-3 text-slate-400">{job.failedReason ?? '-'}</td>
+                  <td className="px-3 py-3 text-slate-400">{new Date(job.timestamp).toLocaleTimeString('tr-TR')}</td>
+                  <td className="px-3 py-3">{job.status === 'failed' ? <button type="button" onClick={() => void act('retry', job.queue, job.id)} className="rounded-lg bg-blue-600 px-2 py-1 text-xs">Retry</button> : '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </article>
     </div>
   );
 }

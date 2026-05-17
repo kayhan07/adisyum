@@ -5,9 +5,9 @@ import {
   getProvisioningMetrics,
   listProvisioningJobs,
   listSaasTenants,
-  rollbackProvisioningJob,
-  runProvisioningJob,
+  recordProvisioningEvent,
 } from '@/lib/system-admin/provisioning';
+import { enqueueProvisioningRun } from '@/lib/queue/orchestration';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -74,7 +74,18 @@ export async function POST(request: Request) {
       companyName: body.companyName,
       createdBy: admin.userId,
     });
-    await runProvisioningJob(job.id);
+    await enqueueProvisioningRun({
+      action: 'run',
+      provisioningJobId: job.id,
+      tenantId: job.targetTenantId,
+      requestedBy: admin.userId,
+    });
+    await recordProvisioningEvent(job.id, {
+      type: 'queue_scheduled',
+      message: 'Provisioning queued for background worker execution.',
+      metadata: { queue: 'onboarding', action: 'run', tenantId: job.targetTenantId },
+      source: 'system-admin-api',
+    });
 
     const [tenants, jobs, provisioningMetrics] = await Promise.all([listSaasTenants(), listProvisioningJobs(), getProvisioningMetrics()]);
     return NextResponse.json({
@@ -84,7 +95,7 @@ export async function POST(request: Request) {
       jobs,
       provisioningMetrics,
       generatedAt: new Date().toISOString(),
-    });
+    }, { status: 202 });
   } catch (error) {
     if (isRouteResponse(error)) return error;
     console.error('[system-admin/tenants] provisioning failed', error);
@@ -102,11 +113,33 @@ export async function PATCH(request: Request) {
     if (!body.jobId || !body.action) {
       return NextResponse.json({ ok: false, error: 'jobId ve action zorunludur.' }, { status: 400 });
     }
-    const job = body.action === 'rollback'
-      ? await rollbackProvisioningJob(body.jobId)
-      : await runProvisioningJob(body.jobId);
+    const existing = await listProvisioningJobs();
+    const current = existing.find((item) => item.id === body.jobId);
+    if (!current) return NextResponse.json({ ok: false, error: 'Provisioning job bulunamadi.' }, { status: 404 });
+    if (body.action === 'rollback') {
+      await enqueueProvisioningRun({
+        action: 'rollback',
+        provisioningJobId: body.jobId,
+        tenantId: current.targetTenantId,
+        requestedBy: current.requestedBy,
+      });
+    } else {
+      await enqueueProvisioningRun({
+        action: 'run',
+        provisioningJobId: body.jobId,
+        tenantId: current.targetTenantId,
+        requestedBy: current.requestedBy,
+      });
+    }
+    await recordProvisioningEvent(body.jobId, {
+      type: body.action === 'rollback' ? 'rollback_queued' : 'retry_queued',
+      severity: body.action === 'rollback' ? 'warning' : 'info',
+      message: body.action === 'rollback' ? 'Rollback queued for worker execution.' : 'Retry queued for worker execution.',
+      metadata: { action: body.action, queue: 'onboarding', tenantId: current.targetTenantId },
+      source: 'system-admin-api',
+    });
     const [jobs, provisioningMetrics] = await Promise.all([listProvisioningJobs(), getProvisioningMetrics()]);
-    return NextResponse.json({ ok: true, job, jobs, provisioningMetrics });
+    return NextResponse.json({ ok: true, job: jobs.find((item) => item.id === body.jobId), jobs, provisioningMetrics }, { status: 202 });
   } catch (error) {
     if (isRouteResponse(error)) return error;
     console.error('[system-admin/tenants] provisioning action failed', error);

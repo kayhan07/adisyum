@@ -17,7 +17,7 @@ There is no `app.adisyum.com`, `admin.adisyum.com`, second root Next.js process,
 
 ## Canonical Files
 
-- PM2: `ecosystem.config.cjs`
+- PM2: `ecosystem.config.cjs` with `adisyum-website`, `adisyum-root-app`, and `adisyum-worker`
 - Deploy: `deploy-production.sh`
 - Nginx: `deploy/nginx/adisyum.conf`
 - Prisma: `prisma/schema.prisma`, `prisma.config.ts`
@@ -31,7 +31,7 @@ There is no `app.adisyum.com`, `admin.adisyum.com`, second root Next.js process,
 4. Bootstrap tenant admin and system admin.
 5. Build root Next app and website Next app.
 6. Install nginx configs and validate `nginx -t`.
-7. Start PM2 with exactly `adisyum-website` and `adisyum-root-app`.
+7. Start PM2 with exactly `adisyum-website`, `adisyum-root-app`, and `adisyum-worker`.
 8. Install single-domain Nginx routing and validate `nginx -t`.
 9. Validate local ports, path routes, domains, and auth endpoints.
 

@@ -5,6 +5,7 @@
 - Website: `adisyum.com` -> `adisyum-website` -> `127.0.0.1:3010`
 - POS: `adisyum.com/app` -> `adisyum-root-app` -> `127.0.0.1:3000/app`
 - System admin: `adisyum.com/system-admin` -> `adisyum-root-app` -> `127.0.0.1:3000/system-admin`
+- Background orchestration: `adisyum-worker` -> BullMQ -> `REDIS_URL`
 - Forbidden drift: `app.adisyum.com`, `admin.adisyum.com`, `adisyum-pos-app`, `adisyum-system-admin`, and port `3020`
 
 ## Pre-Deploy

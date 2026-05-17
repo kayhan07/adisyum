@@ -4,7 +4,7 @@ import { isSuperAdmin } from '@/lib/tenant';
 import { isSessionActive } from '@/lib/server/session-guard';
 import { acknowledgeIncident, manuallyResolveIncident } from '@/lib/incidents/incident-engine';
 import { resolveAnomaly } from '@/lib/anomaly/detector';
-import { clearDeadLetterQueue } from '@/lib/queue/enterprise-queue';
+import { clearFailedOrchestrationJobs, ORCHESTRATION_QUEUES } from '@/lib/queue/orchestration';
 import { unblockIp } from '@/lib/security/security-telemetry';
 import { runBackup, runScheduledBackups } from '@/lib/backup/backup-engine';
 import { fullRestore, tenantOnlyRestore, pointInTimeRecovery, rollbackSnapshot, recoverFailedMigration } from '@/lib/dr/recovery-engine';
@@ -61,8 +61,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
 
     case 'clear_dead_queue':
-      if (body.queue) {
-        const cleared = clearDeadLetterQueue(body.queue as import('@/lib/queue/enterprise-queue').QueueName, body.tenantId);
+      if (body.queue && (ORCHESTRATION_QUEUES as readonly string[]).includes(body.queue)) {
+        const cleared = await clearFailedOrchestrationJobs(body.queue as import('@/lib/queue/orchestration').OrchestrationQueueName);
         return NextResponse.json({ ok: true, cleared });
       }
       return NextResponse.json({ ok: false, error: 'queue required' }, { status: 400 });

@@ -18,7 +18,7 @@ import { computeAllHealthScores, getSystemHealthSummary } from '@/lib/health-sco
 import { getSecurityStats, getSecurityEvents } from '@/lib/security/security-telemetry';
 import { getAuditStats, getAuditTrail } from '@/lib/audit/audit-trail';
 import { generatePerformanceAdvisories } from '@/lib/performance/performance-advisor';
-import { getQueueMetrics } from '@/lib/queue/enterprise-queue';
+import { getDurableQueueMetrics } from '@/lib/queue/orchestration';
 import { getHealingEvents, getHealingStats } from '@/lib/self-healing/engine';
 import {
   bootstrapAutoBackupEngine,
@@ -150,7 +150,7 @@ export async function GET(request: Request) {
   let auditStats: ReturnType<typeof getAuditStats> | null = null;
   let recentAudit: ReturnType<typeof getAuditTrail> = [];
   let advisories: ReturnType<typeof generatePerformanceAdvisories> = [];
-  let queueMetrics: ReturnType<typeof getQueueMetrics> = [];
+  let queueMetrics: Awaited<ReturnType<typeof getDurableQueueMetrics>> = [];
   let healingEvents: ReturnType<typeof getHealingEvents> = [];
   let healingStats: ReturnType<typeof getHealingStats> | null = null;
 
@@ -182,7 +182,7 @@ export async function GET(request: Request) {
   try { auditStats = getAuditStats(); } catch { /* */ }
   try { recentAudit = getAuditTrail({ limit: 50 }); } catch { /* */ }
   try { advisories = generatePerformanceAdvisories(); } catch { /* */ }
-  try { queueMetrics = getQueueMetrics(); } catch { /* */ }
+  try { queueMetrics = await getDurableQueueMetrics(); } catch { /* */ }
   try { healingEvents = getHealingEvents(50); } catch { /* */ }
   try { healingStats = getHealingStats(); } catch { /* */ }
 

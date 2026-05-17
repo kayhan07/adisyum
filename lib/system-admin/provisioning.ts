@@ -176,7 +176,7 @@ async function appendJobDiagnostic(jobId: string, step: string, status: 'ok' | '
   });
 }
 
-async function recordProvisioningEvent(jobId: string, event: ProvisioningTraceEvent) {
+export async function recordProvisioningEvent(jobId: string, event: ProvisioningTraceEvent) {
   return prisma.provisioningJobEvent.create({
     data: {
       jobId,
