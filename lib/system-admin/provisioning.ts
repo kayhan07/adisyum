@@ -60,6 +60,16 @@ export type ProvisioningJobState =
   | 'rollback_pending'
   | 'rolled_back';
 
+export type ProvisioningEventSeverity = 'info' | 'warning' | 'error' | 'critical';
+export type ProvisioningTraceEvent = {
+  type: string;
+  severity?: ProvisioningEventSeverity;
+  message: string;
+  metadata?: Record<string, unknown>;
+  durationMs?: number;
+  source?: string;
+};
+
 function createTenantId() {
   return `TNT-${Math.random().toString(36).slice(2, 7).toUpperCase()}-${Date.now().toString().slice(-4)}`;
 }
@@ -166,6 +176,25 @@ async function appendJobDiagnostic(jobId: string, step: string, status: 'ok' | '
   });
 }
 
+async function recordProvisioningEvent(jobId: string, event: ProvisioningTraceEvent) {
+  return prisma.provisioningJobEvent.create({
+    data: {
+      jobId,
+      type: event.type,
+      severity: event.severity ?? 'info',
+      message: event.message,
+      metadata: compactJson(event.metadata ?? {}),
+      durationMs: event.durationMs,
+      source: event.source ?? 'provisioning-engine',
+    },
+  });
+}
+
+async function recordProvisioningEvents(jobId: string, events: ProvisioningTraceEvent[]) {
+  if (!events.length) return [];
+  return Promise.all(events.map((event) => recordProvisioningEvent(jobId, event)));
+}
+
 export async function createProvisioningJob(input: ProvisionTenantInput) {
   const jobKey = provisioningJobKey(input);
   return prisma.provisioningJob.upsert({
@@ -187,7 +216,56 @@ export async function listProvisioningJobs() {
   return prisma.provisioningJob.findMany({
     orderBy: { updatedAt: 'desc' },
     take: 100,
+    include: {
+      events: {
+        orderBy: { createdAt: 'desc' },
+        take: 80,
+      },
+    },
   });
+}
+
+export async function getProvisioningMetrics() {
+  const [jobs, failuresByStep, eventCounts] = await Promise.all([
+    prisma.provisioningJob.findMany({
+      select: {
+        status: true,
+        attemptCount: true,
+        startedAt: true,
+        completedAt: true,
+        rollbackAt: true,
+      },
+    }),
+    prisma.provisioningJob.groupBy({
+      by: ['currentStep'],
+      where: { status: 'failed' },
+      _count: { _all: true },
+    }),
+    prisma.provisioningJobEvent.groupBy({
+      by: ['type', 'severity'],
+      _count: { _all: true },
+    }),
+  ]);
+  const completed = jobs.filter((job) => job.status === 'completed');
+  const durations = completed
+    .map((job) => job.startedAt && job.completedAt ? job.completedAt.getTime() - job.startedAt.getTime() : null)
+    .filter((duration): duration is number => duration !== null);
+  const retries = jobs.filter((job) => job.attemptCount > 1).length;
+  const rollbacks = jobs.filter((job) => Boolean(job.rollbackAt)).length;
+  return {
+    totalJobs: jobs.length,
+    completedJobs: completed.length,
+    failedJobs: jobs.filter((job) => job.status === 'failed').length,
+    activeJobs: jobs.filter((job) => job.status === 'pending' || job.status === 'provisioning').length,
+    retryCount: retries,
+    rollbackCount: rollbacks,
+    successRate: jobs.length ? Math.round((completed.length / jobs.length) * 100) : 0,
+    retryRate: jobs.length ? Math.round((retries / jobs.length) * 100) : 0,
+    rollbackRate: jobs.length ? Math.round((rollbacks / jobs.length) * 100) : 0,
+    averageDurationMs: durations.length ? Math.round(durations.reduce((sum, duration) => sum + duration, 0) / durations.length) : 0,
+    failuresByStep: failuresByStep.map((row) => ({ step: row.currentStep, count: row._count._all })),
+    eventCounts: eventCounts.map((row) => ({ type: row.type, severity: row.severity, count: row._count._all })),
+  };
 }
 
 export async function provisionTenant(input: ProvisionTenantInput) {
@@ -204,6 +282,7 @@ export async function provisionTenant(input: ProvisionTenantInput) {
   const subscriptionStatus = normalizeSubscriptionStatus(status);
   const limits = licenseLimits(packageType);
   const passwordHash = await hashPassword(adminPassword);
+  const trace: ProvisioningTraceEvent[] = [];
 
   const result = await prisma.$transaction(async (tx) => {
     const existing = await tx.tenant.findUnique({
@@ -224,6 +303,12 @@ export async function provisionTenant(input: ProvisionTenantInput) {
       const subscription = existing.subscriptions[0];
       if (existing.mainBranchId && branch && adminUser && subscription) {
         logProvisioningStep('idempotent-retry-hit', { tenantId });
+        trace.push({
+          type: 'idempotent_retry_hit',
+          severity: 'warning',
+          message: 'Provisioning retry reused an already complete tenant graph.',
+          metadata: { tenantId },
+        });
         return {
           tenant: { tenantId: existing.tenantId, name: existing.name, status: existing.status },
           branch: { branchId: branch.branchId },
@@ -257,6 +342,11 @@ export async function provisionTenant(input: ProvisionTenantInput) {
       },
     });
     logProvisioningStep('tenant-created', { tenantId, mainBranchId: tenant.mainBranchId });
+    trace.push({
+      type: 'tenant_created',
+      message: 'Tenant created.',
+      metadata: { tenantId, mainBranchId: tenant.mainBranchId },
+    });
 
     const branch = await tx.branch.create({
       data: {
@@ -273,6 +363,11 @@ export async function provisionTenant(input: ProvisionTenantInput) {
       },
     });
     logProvisioningStep('branch-created', { tenantId, branchId: branch.branchId, branchRecordId: branch.id });
+    trace.push({
+      type: 'branch_created',
+      message: 'Default branch provisioned.',
+      metadata: { tenantId, branchId: branch.branchId, branchRecordId: branch.id },
+    });
 
     const createdBranch = await tx.branch.findUnique({
       where: branchTenantBranchKey(tenantId, branch.branchId),
@@ -289,6 +384,11 @@ export async function provisionTenant(input: ProvisionTenantInput) {
     logProvisioningStep('tenant-main-branch-updated', {
       tenantId,
       mainBranchId: tenantWithMainBranch.mainBranchId,
+    });
+    trace.push({
+      type: 'main_branch_assigned',
+      message: 'Tenant main branch assigned.',
+      metadata: { tenantId, mainBranchId: tenantWithMainBranch.mainBranchId },
     });
 
     const subscription = await tx.subscription.create({
@@ -317,6 +417,11 @@ export async function provisionTenant(input: ProvisionTenantInput) {
       subscriptionId: subscription.id,
       subscriptionStatus: subscription.status,
     });
+    trace.push({
+      type: 'subscription_created',
+      message: 'Subscription activated.',
+      metadata: { tenantId, subscriptionId: subscription.id, subscriptionStatus: subscription.status },
+    });
 
     const roles = await Promise.all(
       Object.entries(ROLE_PERMISSIONS).map(([key, permissions]) =>
@@ -334,6 +439,11 @@ export async function provisionTenant(input: ProvisionTenantInput) {
       ),
     );
     logProvisioningStep('roles-created', { tenantId, roleKeys: roles.map((role) => role.key) });
+    trace.push({
+      type: 'roles_created',
+      message: 'Tenant roles created.',
+      metadata: { tenantId, roleKeys: roles.map((role) => role.key) },
+    });
 
     const adminUser = await tx.user.upsert({
       where: userTenantUsernameKey(tenantId, adminUsername),
@@ -363,6 +473,11 @@ export async function provisionTenant(input: ProvisionTenantInput) {
       userId: adminUser.id,
       username: adminUsername,
       branchId,
+    });
+    trace.push({
+      type: 'admin_created',
+      message: 'Tenant admin user created.',
+      metadata: { tenantId, userId: adminUser.id, username: adminUsername, branchId },
     });
 
     const tenantAdminRole = roles.find((role) => role.key === 'tenant_admin');
@@ -423,6 +538,7 @@ export async function provisionTenant(input: ProvisionTenantInput) {
     endsAt: result.subscription.endsAt.toISOString(),
     modules,
     idempotent: Boolean('idempotent' in result && result.idempotent),
+    trace,
   };
 }
 
@@ -431,6 +547,14 @@ export async function runProvisioningJob(jobId: string) {
   if (!job) throw new Error('Provisioning job bulunamadi.');
   if (job.status === 'completed') return job;
   const input = job.input as unknown as ProvisionTenantInput;
+  if (job.attemptCount > 0) {
+    await recordProvisioningEvent(jobId, {
+      type: 'retry_started',
+      severity: 'warning',
+      message: 'Provisioning retry started.',
+      metadata: { attempt: job.attemptCount + 1, targetTenantId: job.targetTenantId },
+    });
+  }
   await prisma.provisioningJob.update({
     where: { id: jobId },
     data: {
@@ -444,7 +568,14 @@ export async function runProvisioningJob(jobId: string) {
   const startedAt = Date.now();
   try {
     const provisioned = await provisionTenant({ ...input, tenantId: job.targetTenantId });
+    await recordProvisioningEvents(jobId, provisioned.trace);
     await appendJobDiagnostic(jobId, 'completed', 'ok', startedAt, { tenantId: provisioned.tenantId, idempotent: provisioned.idempotent });
+    await recordProvisioningEvent(jobId, {
+      type: job.attemptCount > 0 ? 'retry_completed' : 'provisioning_completed',
+      message: job.attemptCount > 0 ? 'Provisioning retry completed.' : 'Provisioning completed.',
+      metadata: { tenantId: provisioned.tenantId, idempotent: provisioned.idempotent },
+      durationMs: Date.now() - startedAt,
+    });
     return prisma.provisioningJob.update({
       where: { id: jobId },
       data: { status: 'completed', currentStep: 'completed', completedAt: new Date() },
@@ -456,6 +587,13 @@ export async function runProvisioningJob(jobId: string) {
       where: { id: jobId },
       data: { status: 'failed', currentStep: 'failed', failedAt: new Date(), failureReason: message },
     });
+    await recordProvisioningEvent(jobId, {
+      type: 'provisioning_failed',
+      severity: 'error',
+      message: 'Provisioning failed.',
+      metadata: { reason: message, targetTenantId: job.targetTenantId },
+      durationMs: Date.now() - startedAt,
+    });
     throw error;
   }
 }
@@ -464,23 +602,49 @@ export async function rollbackProvisioningJob(jobId: string) {
   const job = await prisma.provisioningJob.findUnique({ where: { id: jobId } });
   if (!job) throw new Error('Provisioning job bulunamadi.');
   const startedAt = Date.now();
+  await recordProvisioningEvent(jobId, {
+    type: 'rollback_started',
+    severity: 'warning',
+    message: 'Rollback started.',
+    metadata: { targetTenantId: job.targetTenantId },
+  });
   await prisma.provisioningJob.update({ where: { id: jobId }, data: { status: 'rollback_pending', currentStep: 'rollback_pending' } });
-  await prisma.$transaction(async (tx) => {
-    await tx.templatePackImport.deleteMany({ where: { tenantId: job.targetTenantId } });
-    await tx.templateImport.deleteMany({ where: { tenantId: job.targetTenantId } });
-    await tx.runtimeState.deleteMany({ where: { tenantId: job.targetTenantId } });
-    await tx.userRole.deleteMany({ where: { tenantId: job.targetTenantId } });
-    await tx.user.deleteMany({ where: { tenantId: job.targetTenantId } });
-    await tx.role.deleteMany({ where: { tenantId: job.targetTenantId } });
-    await tx.subscription.deleteMany({ where: { tenantId: job.targetTenantId } });
-    await tx.branch.deleteMany({ where: { tenantId: job.targetTenantId } });
-    await tx.tenant.deleteMany({ where: { tenantId: job.targetTenantId } });
-  });
-  await appendJobDiagnostic(jobId, 'rollback', 'ok', startedAt);
-  return prisma.provisioningJob.update({
-    where: { id: jobId },
-    data: { status: 'rolled_back', currentStep: 'rolled_back', rollbackAt: new Date() },
-  });
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.templatePackImport.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.templateImport.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.runtimeState.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.userRole.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.user.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.role.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.subscription.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.branch.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.tenant.deleteMany({ where: { tenantId: job.targetTenantId } });
+    });
+    await appendJobDiagnostic(jobId, 'rollback', 'ok', startedAt);
+    await recordProvisioningEvent(jobId, {
+      type: 'rollback_completed',
+      severity: 'warning',
+      message: 'Rollback completed.',
+      metadata: { targetTenantId: job.targetTenantId },
+      durationMs: Date.now() - startedAt,
+    });
+    return prisma.provisioningJob.update({
+      where: { id: jobId },
+      data: { status: 'rolled_back', currentStep: 'rolled_back', rollbackAt: new Date() },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await appendJobDiagnostic(jobId, 'rollback', 'failed', startedAt, { reason: message });
+    await recordProvisioningEvent(jobId, {
+      type: 'rollback_failed',
+      severity: 'critical',
+      message: 'Rollback failed.',
+      metadata: { targetTenantId: job.targetTenantId, reason: message },
+      durationMs: Date.now() - startedAt,
+    });
+    throw error;
+  }
 }
 
 export async function listSaasTenants() {

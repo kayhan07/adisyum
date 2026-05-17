@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { isRouteResponse, requireSystemAdmin } from '@/lib/system-admin/auth';
 import {
   createProvisioningJob,
+  getProvisioningMetrics,
   listProvisioningJobs,
   listSaasTenants,
   rollbackProvisioningJob,
@@ -14,11 +15,12 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   try {
     await requireSystemAdmin(request);
-    const [tenants, jobs] = await Promise.all([listSaasTenants(), listProvisioningJobs()]);
+    const [tenants, jobs, provisioningMetrics] = await Promise.all([listSaasTenants(), listProvisioningJobs(), getProvisioningMetrics()]);
     return NextResponse.json({
       ok: true,
       tenants,
       jobs,
+      provisioningMetrics,
       summary: {
         totalTenants: tenants.length,
         activeTenants: tenants.filter((tenant) => tenant.status === 'active' || tenant.status === 'trial' || tenant.status === 'demo').length,
@@ -74,12 +76,13 @@ export async function POST(request: Request) {
     });
     await runProvisioningJob(job.id);
 
-    const [tenants, jobs] = await Promise.all([listSaasTenants(), listProvisioningJobs()]);
+    const [tenants, jobs, provisioningMetrics] = await Promise.all([listSaasTenants(), listProvisioningJobs(), getProvisioningMetrics()]);
     return NextResponse.json({
       ok: true,
       job: jobs.find((item) => item.id === job.id) ?? job,
       tenants,
       jobs,
+      provisioningMetrics,
       generatedAt: new Date().toISOString(),
     });
   } catch (error) {
@@ -102,8 +105,8 @@ export async function PATCH(request: Request) {
     const job = body.action === 'rollback'
       ? await rollbackProvisioningJob(body.jobId)
       : await runProvisioningJob(body.jobId);
-    const jobs = await listProvisioningJobs();
-    return NextResponse.json({ ok: true, job, jobs });
+    const [jobs, provisioningMetrics] = await Promise.all([listProvisioningJobs(), getProvisioningMetrics()]);
+    return NextResponse.json({ ok: true, job, jobs, provisioningMetrics });
   } catch (error) {
     if (isRouteResponse(error)) return error;
     console.error('[system-admin/tenants] provisioning action failed', error);

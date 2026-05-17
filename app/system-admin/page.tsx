@@ -59,6 +59,31 @@ type ProvisioningJobRow = {
   attemptCount: number;
   failureReason?: string | null;
   updatedAt: string;
+  events?: ProvisioningJobEventRow[];
+};
+type ProvisioningJobEventRow = {
+  id: string;
+  type: string;
+  severity: string;
+  message: string;
+  metadata?: Record<string, unknown>;
+  durationMs?: number | null;
+  source: string;
+  createdAt: string;
+};
+type ProvisioningMetrics = {
+  totalJobs: number;
+  completedJobs: number;
+  failedJobs: number;
+  activeJobs: number;
+  retryCount: number;
+  rollbackCount: number;
+  successRate: number;
+  retryRate: number;
+  rollbackRate: number;
+  averageDurationMs: number;
+  failuresByStep: Array<{ step: string; count: number }>;
+  eventCounts: Array<{ type: string; severity: string; count: number }>;
 };
 type TemplatePoolRow = {
   id: string;
@@ -190,6 +215,7 @@ export default function SystemAdminPage() {
   const [saasTenants, setSaasTenants] = useState<SaasTenantRow[]>([]);
   const [saasSummary, setSaasSummary] = useState<SaasSummary | null>(null);
   const [provisioningJobs, setProvisioningJobs] = useState<ProvisioningJobRow[]>([]);
+  const [provisioningMetrics, setProvisioningMetrics] = useState<ProvisioningMetrics | null>(null);
   const [provisioningMessage, setProvisioningMessage] = useState('');
   const [provisioningLoading, setProvisioningLoading] = useState(false);
   const [templatePool, setTemplatePool] = useState<TemplatePoolRow[]>([]);
@@ -263,11 +289,12 @@ export default function SystemAdminPage() {
 
   async function loadSaasTenants() {
     const response = await fetch('/api/system-admin/tenants', { credentials: 'include', cache: 'no-store' }).catch(() => null);
-    const payload = response && response.ok ? await response.json().catch(() => null) as { tenants?: SaasTenantRow[]; summary?: SaasSummary; jobs?: ProvisioningJobRow[] } | null : null;
+    const payload = response && response.ok ? await response.json().catch(() => null) as { tenants?: SaasTenantRow[]; summary?: SaasSummary; jobs?: ProvisioningJobRow[]; provisioningMetrics?: ProvisioningMetrics } | null : null;
     if (!payload?.tenants) return;
     setSaasTenants(payload.tenants);
     setSaasSummary(payload.summary ?? null);
     setProvisioningJobs(payload.jobs ?? []);
+    setProvisioningMetrics(payload.provisioningMetrics ?? null);
     const dbTenants = payload.tenants.map(mapSaasTenant);
     setState((current) => {
       const localOnly = current.tenants.filter((tenant) => !dbTenants.some((dbTenant) => dbTenant.tenant_id === tenant.tenant_id));
@@ -345,7 +372,7 @@ export default function SystemAdminPage() {
         kontorBalance: 0,
       }),
     }).catch(() => null);
-    const payload = response ? await response.json().catch(() => null) as { ok?: boolean; error?: string; job?: ProvisioningJobRow; tenants?: SaasTenantRow[]; jobs?: ProvisioningJobRow[] } | null : null;
+    const payload = response ? await response.json().catch(() => null) as { ok?: boolean; error?: string; job?: ProvisioningJobRow; tenants?: SaasTenantRow[]; jobs?: ProvisioningJobRow[]; provisioningMetrics?: ProvisioningMetrics } | null : null;
     setProvisioningLoading(false);
     if (!response?.ok || !payload?.ok) {
       setProvisioningMessage(payload?.error ?? 'Tenant provision edilemedi.');
@@ -357,6 +384,7 @@ export default function SystemAdminPage() {
       commit({ ...state, tenants: dbTenants });
     }
     setProvisioningJobs(payload.jobs ?? []);
+    setProvisioningMetrics(payload.provisioningMetrics ?? null);
     setProvisioningMessage(`Tenant provisioning tamamlandi: ${payload.job?.targetTenantId ?? tenantDraft.tenant_id}.`);
     setTenantDraft(createAdminTenantDraft());
   }
@@ -368,9 +396,10 @@ export default function SystemAdminPage() {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ jobId, action }),
     });
-    const payload = await response.json().catch(() => null) as { jobs?: ProvisioningJobRow[]; error?: string } | null;
+    const payload = await response.json().catch(() => null) as { jobs?: ProvisioningJobRow[]; provisioningMetrics?: ProvisioningMetrics; error?: string } | null;
     setProvisioningMessage(response.ok ? `Provisioning ${action} tamamlandi.` : payload?.error ?? 'Provisioning aksiyonu basarisiz.');
     if (payload?.jobs) setProvisioningJobs(payload.jobs);
+    if (payload?.provisioningMetrics) setProvisioningMetrics(payload.provisioningMetrics);
     if (response.ok) await loadSaasTenants();
   }
 
@@ -531,7 +560,7 @@ export default function SystemAdminPage() {
           </header>
 
           {activeModule === 'dashboard' ? <Dashboard dashboard={dashboard} state={state} saasSummary={saasSummary} /> : null}
-          {activeModule === 'tenants' ? <TenantsModule state={state} saasTenants={saasTenants} provisioningJobs={provisioningJobs} tenantDraft={tenantDraft} setTenantDraft={setTenantDraft} selectedPackage={selectedPackage} saveTenant={saveTenant} runProvisioningAction={runProvisioningAction} commit={commit} provisioningLoading={provisioningLoading} provisioningMessage={provisioningMessage} /> : null}
+          {activeModule === 'tenants' ? <TenantsModule state={state} saasTenants={saasTenants} provisioningJobs={provisioningJobs} provisioningMetrics={provisioningMetrics} tenantDraft={tenantDraft} setTenantDraft={setTenantDraft} selectedPackage={selectedPackage} saveTenant={saveTenant} runProvisioningAction={runProvisioningAction} commit={commit} provisioningLoading={provisioningLoading} provisioningMessage={provisioningMessage} /> : null}
           {activeModule === 'templates' ? <TemplatesModule templates={templatePool} packs={templatePacks} recipes={recipeTemplates} recipeItems={recipeTemplateItems} stocks={stockTemplates} categories={categoryTemplates} packItems={templatePackItems} importStats={templateImportStats} reload={loadTemplatePool} /> : null}
           {activeModule === 'packages' ? <PackagesModule state={state} packageDraft={packageDraft} setPackageDraft={setPackageDraft} savePackage={savePackage} editPackage={editPackage} resetPackageDraft={resetPackageDraft} deletePackage={deletePackage} /> : null}
           {activeModule === 'dealers' ? <DealersModule state={state} dealerDraft={dealerDraft} setDealerDraft={setDealerDraft} saveDealer={saveDealer} commit={commit} /> : null}
@@ -591,8 +620,9 @@ function DataTable({ headers, rows }: { headers: string[]; rows: Array<Array<Rea
   );
 }
 
-function TenantsModule({ state, saasTenants, provisioningJobs, tenantDraft, setTenantDraft, selectedPackage, saveTenant, runProvisioningAction, commit, provisioningLoading, provisioningMessage }: any) {
+function TenantsModule({ state, saasTenants, provisioningJobs, provisioningMetrics, tenantDraft, setTenantDraft, selectedPackage, saveTenant, runProvisioningAction, commit, provisioningLoading, provisioningMessage }: any) {
   const [selectedTenantId, setSelectedTenantId] = useState<string>(state.tenants[0]?.tenant_id ?? '');
+  const [selectedProvisioningJobId, setSelectedProvisioningJobId] = useState<string>('');
   const [editDraft, setEditDraft] = useState<AdminTenant | null>(null);
   const [editSaved, setEditSaved] = useState(false);
 
@@ -602,7 +632,15 @@ function TenantsModule({ state, saasTenants, provisioningJobs, tenantDraft, setT
     }
   }, [selectedTenantId, state.tenants]);
 
+  useEffect(() => {
+    if (!selectedProvisioningJobId && provisioningJobs[0]?.id) {
+      setSelectedProvisioningJobId(provisioningJobs[0].id);
+    }
+  }, [provisioningJobs, selectedProvisioningJobId]);
+
   const selectedTenant = state.tenants.find((tenant: AdminTenant) => tenant.tenant_id === selectedTenantId) ?? null;
+  const selectedProvisioningJob = provisioningJobs.find((job: ProvisioningJobRow) => job.id === selectedProvisioningJobId) ?? provisioningJobs[0] ?? null;
+  const selectedProvisioningEvents = [...(selectedProvisioningJob?.events ?? [])].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 
   useEffect(() => {
     setEditDraft(selectedTenant ? { ...selectedTenant } : null);
@@ -617,6 +655,16 @@ function TenantsModule({ state, saasTenants, provisioningJobs, tenantDraft, setT
     commit({ ...state, tenants: updated });
     setEditSaved(true);
     setTimeout(() => setEditSaved(false), 2000);
+  }
+
+  function exportProvisioningLog(job: ProvisioningJobRow) {
+    const blob = new Blob([JSON.stringify(job, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `provisioning-${job.targetTenantId}-${job.id}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -649,6 +697,14 @@ function TenantsModule({ state, saasTenants, provisioningJobs, tenantDraft, setT
         <p className="mt-3 text-xs leading-5 text-slate-400">Yeni abone DB üzerinde tenant, ana şube, tenant_admin kullanıcısı, roller, abonelik lisansı ve POS varsayılanlarıyla birlikte provision edilir.</p>
       </article>
       <div className="grid gap-4">
+        {provisioningMetrics ? (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <StatCard label="Provisioning basari" value={`%${provisioningMetrics.successRate}`} sub={`${provisioningMetrics.completedJobs}/${provisioningMetrics.totalJobs} tamamlandi`} />
+            <StatCard label="Ortalama sure" value={`${Math.round(provisioningMetrics.averageDurationMs / 1000)} sn`} sub={`${provisioningMetrics.activeJobs} aktif job`} />
+            <StatCard label="Retry orani" value={`%${provisioningMetrics.retryRate}`} sub={`${provisioningMetrics.retryCount} retry`} />
+            <StatCard label="Rollback orani" value={`%${provisioningMetrics.rollbackRate}`} sub={`${provisioningMetrics.rollbackCount} rollback`} />
+          </div>
+        ) : null}
         {saasTenants?.length ? (
           <DataTable headers={['Tenant', 'Plan', 'Sube', 'Kullanici', 'Durum', 'Bugun', 'Bitis']} rows={saasTenants.map((tenant: SaasTenantRow) => [
             <button key="tenant" type="button" onClick={() => setSelectedTenantId(tenant.tenantId)} className={`w-full rounded-xl px-3 py-2 text-left transition ${selectedTenantId === tenant.tenantId ? 'bg-blue-600/20 ring-1 ring-blue-400/40' : 'bg-white/0 hover:bg-white/5'}`}><p className="font-semibold">{tenant.companyName}</p><p className="text-xs text-slate-400">{tenant.tenantId}</p></button>,
@@ -670,7 +726,7 @@ function TenantsModule({ state, saasTenants, provisioningJobs, tenantDraft, setT
         <button key="delete" type="button" onClick={() => commit({ ...state, tenants: state.tenants.filter((item: AdminTenant) => item.tenant_id !== tenant.tenant_id) })} className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-semibold"><Trash2 className="h-3.5 w-3.5" /></button>,
       ])} />
         <DataTable headers={['Job', 'Tenant', 'Durum', 'Adim', 'Deneme', 'Hata', 'Aksiyon']} rows={provisioningJobs.map((job: ProvisioningJobRow) => [
-          job.id.slice(0, 8),
+          <button key="job" type="button" onClick={() => setSelectedProvisioningJobId(job.id)} className={`rounded-lg px-2 py-1 text-left ${selectedProvisioningJobId === job.id ? 'bg-blue-600/25 text-blue-100' : 'hover:bg-white/5'}`}>{job.id.slice(0, 8)}</button>,
           job.targetTenantId,
           job.status,
           job.currentStep,
@@ -678,6 +734,42 @@ function TenantsModule({ state, saasTenants, provisioningJobs, tenantDraft, setT
           job.failureReason ?? '-',
           <div key={job.id} className="flex gap-2"><button type="button" onClick={() => void runProvisioningAction(job.id, 'retry')} className="rounded-lg bg-blue-600 px-2 py-1 text-xs">Retry</button><button type="button" onClick={() => void runProvisioningAction(job.id, 'rollback')} className="rounded-lg bg-rose-600 px-2 py-1 text-xs">Rollback</button></div>,
         ])} />
+
+        {selectedProvisioningJob ? (
+          <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Operations timeline</p>
+                <h3 className="mt-2 text-xl font-semibold">{selectedProvisioningJob.targetTenantId}</h3>
+                <p className="mt-1 text-sm text-slate-400">{selectedProvisioningJob.status} / {selectedProvisioningJob.currentStep}</p>
+              </div>
+              <button type="button" onClick={() => exportProvisioningLog(selectedProvisioningJob)} className="rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/5">Log export</button>
+            </div>
+            <div className="mt-5 grid gap-3">
+              {selectedProvisioningEvents.length ? selectedProvisioningEvents.map((event: ProvisioningJobEventRow) => (
+                <div key={event.id} className="grid gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4 md:grid-cols-[128px_minmax(0,1fr)]">
+                  <div>
+                    <p className="text-sm font-semibold">{new Date(event.createdAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
+                    <p className={`mt-2 inline-flex rounded-full px-2 py-1 text-[11px] font-semibold uppercase ${event.severity === 'error' || event.severity === 'critical' ? 'bg-rose-500/15 text-rose-200' : event.severity === 'warning' ? 'bg-amber-500/15 text-amber-200' : 'bg-emerald-500/15 text-emerald-200'}`}>{event.severity}</p>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold">{event.message}</p>
+                      <span className="rounded-full bg-white/5 px-2 py-1 text-[11px] text-slate-300">{event.type}</span>
+                      {event.durationMs != null ? <span className="text-xs text-slate-400">{event.durationMs} ms</span> : null}
+                    </div>
+                    <p className="mt-1 text-xs text-slate-400">{event.source}</p>
+                    {event.metadata && Object.keys(event.metadata).length ? (
+                      <pre className="mt-3 overflow-x-auto rounded-xl bg-black/20 p-3 text-xs leading-5 text-slate-300">{JSON.stringify(event.metadata, null, 2)}</pre>
+                    ) : null}
+                  </div>
+                </div>
+              )) : (
+                <p className="rounded-2xl border border-dashed border-white/10 px-4 py-5 text-sm text-slate-400">Bu job icin henuz journal event kaydi yok.</p>
+              )}
+            </div>
+          </article>
+        ) : null}
 
         {editDraft ? (
           <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
@@ -781,6 +873,7 @@ function TemplatesModule({ templates, packs, recipes, recipeItems, stocks, categ
     setMessage(response.ok ? 'Kaydedildi.' : body?.error ?? 'Kaydetme basarisiz.');
     if (response.ok) await reload();
   }
+
   async function removeProduct(id: string) {
     const response = await fetch(`/api/system-admin/templates?kind=product&id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' });
     setMessage(response.ok ? 'Sablon silindi veya deprecated yapildi.' : 'Silme basarisiz.');
