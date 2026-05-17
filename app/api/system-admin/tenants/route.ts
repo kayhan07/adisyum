@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 import { isRouteResponse, requireSystemAdmin } from '@/lib/system-admin/auth';
-import { listSaasTenants, provisionTenant } from '@/lib/system-admin/provisioning';
+import {
+  createProvisioningJob,
+  listProvisioningJobs,
+  listSaasTenants,
+  rollbackProvisioningJob,
+  runProvisioningJob,
+} from '@/lib/system-admin/provisioning';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -8,10 +14,11 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   try {
     await requireSystemAdmin(request);
-    const tenants = await listSaasTenants();
+    const [tenants, jobs] = await Promise.all([listSaasTenants(), listProvisioningJobs()]);
     return NextResponse.json({
       ok: true,
       tenants,
+      jobs,
       summary: {
         totalTenants: tenants.length,
         activeTenants: tenants.filter((tenant) => tenant.status === 'active' || tenant.status === 'trial' || tenant.status === 'demo').length,
@@ -60,17 +67,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'companyName zorunludur.' }, { status: 400 });
     }
 
-    const provisioned = await provisionTenant({
+    const job = await createProvisioningJob({
       ...body,
       companyName: body.companyName,
       createdBy: admin.userId,
     });
+    await runProvisioningJob(job.id);
 
-    const tenants = await listSaasTenants();
+    const [tenants, jobs] = await Promise.all([listSaasTenants(), listProvisioningJobs()]);
     return NextResponse.json({
       ok: true,
-      provisioned,
+      job: jobs.find((item) => item.id === job.id) ?? job,
       tenants,
+      jobs,
       generatedAt: new Date().toISOString(),
     });
   } catch (error) {
@@ -80,5 +89,24 @@ export async function POST(request: Request) {
       ok: false,
       error: error instanceof Error ? error.message : 'Tenant provision edilemedi.',
     }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    await requireSystemAdmin(request);
+    const body = await request.json().catch(() => ({})) as { jobId?: string; action?: 'retry' | 'rollback' };
+    if (!body.jobId || !body.action) {
+      return NextResponse.json({ ok: false, error: 'jobId ve action zorunludur.' }, { status: 400 });
+    }
+    const job = body.action === 'rollback'
+      ? await rollbackProvisioningJob(body.jobId)
+      : await runProvisioningJob(body.jobId);
+    const jobs = await listProvisioningJobs();
+    return NextResponse.json({ ok: true, job, jobs });
+  } catch (error) {
+    if (isRouteResponse(error)) return error;
+    console.error('[system-admin/tenants] provisioning action failed', error);
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Provisioning aksiyonu basarisiz.' }, { status: 500 });
   }
 }

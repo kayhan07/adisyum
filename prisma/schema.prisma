@@ -819,6 +819,29 @@ model TemplateImport {
   @@map("template_imports")
 }
 
+model ProvisioningJob {
+  id             String   @id @default(uuid()) @db.Uuid
+  jobKey         String   @unique @map("job_key") @db.VarChar(160)
+  targetTenantId String   @map("target_tenant_id") @db.VarChar(64)
+  requestedBy    String   @map("requested_by") @db.Uuid
+  status         String   @default("pending") @db.VarChar(40)
+  currentStep    String   @default("pending") @map("current_step") @db.VarChar(80)
+  attemptCount   Int      @default(0) @map("attempt_count")
+  input          Json     @default("{}")
+  diagnostics    Json     @default("[]")
+  failureReason  String?  @map("failure_reason")
+  startedAt      DateTime? @map("started_at")
+  completedAt    DateTime? @map("completed_at")
+  failedAt       DateTime? @map("failed_at")
+  rollbackAt     DateTime? @map("rollback_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([targetTenantId])
+  @@index([status])
+  @@map("provisioning_jobs")
+}
+
 model Expense {
   id        String   @id @default(uuid()) @db.Uuid
   tenantId  String   @map("tenant_id") @db.VarChar(64)

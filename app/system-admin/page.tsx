@@ -51,6 +51,15 @@ type SaasSummary = {
   dailyOrders: number;
   liveRevenue: number;
 };
+type ProvisioningJobRow = {
+  id: string;
+  targetTenantId: string;
+  status: string;
+  currentStep: string;
+  attemptCount: number;
+  failureReason?: string | null;
+  updatedAt: string;
+};
 type TemplatePoolRow = {
   id: string;
   key: string;
@@ -180,6 +189,7 @@ export default function SystemAdminPage() {
   const [state, setState] = useState<SystemAdminState>(() => loadSystemAdminState());
   const [saasTenants, setSaasTenants] = useState<SaasTenantRow[]>([]);
   const [saasSummary, setSaasSummary] = useState<SaasSummary | null>(null);
+  const [provisioningJobs, setProvisioningJobs] = useState<ProvisioningJobRow[]>([]);
   const [provisioningMessage, setProvisioningMessage] = useState('');
   const [provisioningLoading, setProvisioningLoading] = useState(false);
   const [templatePool, setTemplatePool] = useState<TemplatePoolRow[]>([]);
@@ -253,10 +263,11 @@ export default function SystemAdminPage() {
 
   async function loadSaasTenants() {
     const response = await fetch('/api/system-admin/tenants', { credentials: 'include', cache: 'no-store' }).catch(() => null);
-    const payload = response && response.ok ? await response.json().catch(() => null) as { tenants?: SaasTenantRow[]; summary?: SaasSummary } | null : null;
+    const payload = response && response.ok ? await response.json().catch(() => null) as { tenants?: SaasTenantRow[]; summary?: SaasSummary; jobs?: ProvisioningJobRow[] } | null : null;
     if (!payload?.tenants) return;
     setSaasTenants(payload.tenants);
     setSaasSummary(payload.summary ?? null);
+    setProvisioningJobs(payload.jobs ?? []);
     const dbTenants = payload.tenants.map(mapSaasTenant);
     setState((current) => {
       const localOnly = current.tenants.filter((tenant) => !dbTenants.some((dbTenant) => dbTenant.tenant_id === tenant.tenant_id));
@@ -334,7 +345,7 @@ export default function SystemAdminPage() {
         kontorBalance: 0,
       }),
     }).catch(() => null);
-    const payload = response ? await response.json().catch(() => null) as { ok?: boolean; error?: string; provisioned?: { tenantId: string; adminPassword?: string }; tenants?: SaasTenantRow[] } | null : null;
+    const payload = response ? await response.json().catch(() => null) as { ok?: boolean; error?: string; job?: ProvisioningJobRow; tenants?: SaasTenantRow[]; jobs?: ProvisioningJobRow[] } | null : null;
     setProvisioningLoading(false);
     if (!response?.ok || !payload?.ok) {
       setProvisioningMessage(payload?.error ?? 'Tenant provision edilemedi.');
@@ -345,8 +356,22 @@ export default function SystemAdminPage() {
       const dbTenants = payload.tenants.map(mapSaasTenant);
       commit({ ...state, tenants: dbTenants });
     }
-    setProvisioningMessage(`Tenant provision edildi: ${payload.provisioned?.tenantId}. İlk şifre güvenli şekilde hashlenerek kaydedildi.`);
+    setProvisioningJobs(payload.jobs ?? []);
+    setProvisioningMessage(`Tenant provisioning tamamlandi: ${payload.job?.targetTenantId ?? tenantDraft.tenant_id}.`);
     setTenantDraft(createAdminTenantDraft());
+  }
+
+  async function runProvisioningAction(jobId: string, action: 'retry' | 'rollback') {
+    const response = await fetch('/api/system-admin/tenants', {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jobId, action }),
+    });
+    const payload = await response.json().catch(() => null) as { jobs?: ProvisioningJobRow[]; error?: string } | null;
+    setProvisioningMessage(response.ok ? `Provisioning ${action} tamamlandi.` : payload?.error ?? 'Provisioning aksiyonu basarisiz.');
+    if (payload?.jobs) setProvisioningJobs(payload.jobs);
+    if (response.ok) await loadSaasTenants();
   }
 
   function saveDealer() {
@@ -506,7 +531,7 @@ export default function SystemAdminPage() {
           </header>
 
           {activeModule === 'dashboard' ? <Dashboard dashboard={dashboard} state={state} saasSummary={saasSummary} /> : null}
-          {activeModule === 'tenants' ? <TenantsModule state={state} saasTenants={saasTenants} tenantDraft={tenantDraft} setTenantDraft={setTenantDraft} selectedPackage={selectedPackage} saveTenant={saveTenant} commit={commit} provisioningLoading={provisioningLoading} provisioningMessage={provisioningMessage} /> : null}
+          {activeModule === 'tenants' ? <TenantsModule state={state} saasTenants={saasTenants} provisioningJobs={provisioningJobs} tenantDraft={tenantDraft} setTenantDraft={setTenantDraft} selectedPackage={selectedPackage} saveTenant={saveTenant} runProvisioningAction={runProvisioningAction} commit={commit} provisioningLoading={provisioningLoading} provisioningMessage={provisioningMessage} /> : null}
           {activeModule === 'templates' ? <TemplatesModule templates={templatePool} packs={templatePacks} recipes={recipeTemplates} recipeItems={recipeTemplateItems} stocks={stockTemplates} categories={categoryTemplates} packItems={templatePackItems} importStats={templateImportStats} reload={loadTemplatePool} /> : null}
           {activeModule === 'packages' ? <PackagesModule state={state} packageDraft={packageDraft} setPackageDraft={setPackageDraft} savePackage={savePackage} editPackage={editPackage} resetPackageDraft={resetPackageDraft} deletePackage={deletePackage} /> : null}
           {activeModule === 'dealers' ? <DealersModule state={state} dealerDraft={dealerDraft} setDealerDraft={setDealerDraft} saveDealer={saveDealer} commit={commit} /> : null}
@@ -566,7 +591,7 @@ function DataTable({ headers, rows }: { headers: string[]; rows: Array<Array<Rea
   );
 }
 
-function TenantsModule({ state, saasTenants, tenantDraft, setTenantDraft, selectedPackage, saveTenant, commit, provisioningLoading, provisioningMessage }: any) {
+function TenantsModule({ state, saasTenants, provisioningJobs, tenantDraft, setTenantDraft, selectedPackage, saveTenant, runProvisioningAction, commit, provisioningLoading, provisioningMessage }: any) {
   const [selectedTenantId, setSelectedTenantId] = useState<string>(state.tenants[0]?.tenant_id ?? '');
   const [editDraft, setEditDraft] = useState<AdminTenant | null>(null);
   const [editSaved, setEditSaved] = useState(false);
@@ -644,6 +669,15 @@ function TenantsModule({ state, saasTenants, tenantDraft, setTenantDraft, select
         tenant.auto_renew ? 'Otomatik' : 'Manuel',
         <button key="delete" type="button" onClick={() => commit({ ...state, tenants: state.tenants.filter((item: AdminTenant) => item.tenant_id !== tenant.tenant_id) })} className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-semibold"><Trash2 className="h-3.5 w-3.5" /></button>,
       ])} />
+        <DataTable headers={['Job', 'Tenant', 'Durum', 'Adim', 'Deneme', 'Hata', 'Aksiyon']} rows={provisioningJobs.map((job: ProvisioningJobRow) => [
+          job.id.slice(0, 8),
+          job.targetTenantId,
+          job.status,
+          job.currentStep,
+          job.attemptCount,
+          job.failureReason ?? '-',
+          <div key={job.id} className="flex gap-2"><button type="button" onClick={() => void runProvisioningAction(job.id, 'retry')} className="rounded-lg bg-blue-600 px-2 py-1 text-xs">Retry</button><button type="button" onClick={() => void runProvisioningAction(job.id, 'rollback')} className="rounded-lg bg-rose-600 px-2 py-1 text-xs">Rollback</button></div>,
+        ])} />
 
         {editDraft ? (
           <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">

@@ -23,7 +23,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   accountant: ['reports.view', 'finance.manage', 'invoices.manage'],
 };
 
-type ProvisionTenantInput = {
+export type ProvisionTenantInput = {
   tenantId?: string;
   companyName: string;
   legalName?: string;
@@ -47,6 +47,18 @@ type ProvisionTenantInput = {
   seats?: number;
   createdBy: string;
 };
+
+export type ProvisioningJobState =
+  | 'pending'
+  | 'provisioning'
+  | 'branch_created'
+  | 'subscription_created'
+  | 'admin_created'
+  | 'templates_imported'
+  | 'completed'
+  | 'failed'
+  | 'rollback_pending'
+  | 'rolled_back';
 
 function createTenantId() {
   return `TNT-${Math.random().toString(36).slice(2, 7).toUpperCase()}-${Date.now().toString().slice(-4)}`;
@@ -131,6 +143,53 @@ function logProvisioningStep(step: string, payload: Record<string, unknown>) {
   });
 }
 
+function provisioningJobKey(input: ProvisionTenantInput) {
+  return `tenant:${(input.tenantId?.trim() || input.companyName.trim()).toUpperCase()}`;
+}
+
+function serializeDiagnostic(step: string, status: 'ok' | 'failed', startedAt: number, detail?: Record<string, unknown>) {
+  return {
+    step,
+    status,
+    durationMs: Date.now() - startedAt,
+    at: new Date().toISOString(),
+    ...(detail ?? {}),
+  };
+}
+
+async function appendJobDiagnostic(jobId: string, step: string, status: 'ok' | 'failed', startedAt: number, detail?: Record<string, unknown>) {
+  const job = await prisma.provisioningJob.findUnique({ where: { id: jobId }, select: { diagnostics: true } });
+  const current = Array.isArray(job?.diagnostics) ? job.diagnostics : [];
+  await prisma.provisioningJob.update({
+    where: { id: jobId },
+    data: { diagnostics: [...current, serializeDiagnostic(step, status, startedAt, detail)] as Prisma.InputJsonValue },
+  });
+}
+
+export async function createProvisioningJob(input: ProvisionTenantInput) {
+  const jobKey = provisioningJobKey(input);
+  return prisma.provisioningJob.upsert({
+    where: { jobKey },
+    update: {
+      input: input as Prisma.InputJsonValue,
+      requestedBy: input.createdBy,
+    },
+    create: {
+      jobKey,
+      targetTenantId: (input.tenantId?.trim() || createTenantId()).toUpperCase(),
+      requestedBy: input.createdBy,
+      input: input as Prisma.InputJsonValue,
+    },
+  });
+}
+
+export async function listProvisioningJobs() {
+  return prisma.provisioningJob.findMany({
+    orderBy: { updatedAt: 'desc' },
+    take: 100,
+  });
+}
+
 export async function provisionTenant(input: ProvisionTenantInput) {
   const packageType = input.packageType ?? 'gold';
   const trialDays = Math.max(0, Number(input.trialDays ?? 14));
@@ -147,9 +206,34 @@ export async function provisionTenant(input: ProvisionTenantInput) {
   const passwordHash = await hashPassword(adminPassword);
 
   const result = await prisma.$transaction(async (tx) => {
-    const existing = await tx.tenant.findUnique({ where: { tenantId }, select: { tenantId: true } });
+    const existing = await tx.tenant.findUnique({
+      where: { tenantId },
+      select: {
+        tenantId: true,
+        name: true,
+        status: true,
+        mainBranchId: true,
+        branches: { select: { branchId: true }, take: 1 },
+        users: { where: { username: adminUsername }, select: { id: true }, take: 1 },
+        subscriptions: { select: { id: true, endsAt: true }, orderBy: { createdAt: 'desc' }, take: 1 },
+      },
+    });
     if (existing) {
-      throw new Error(`Tenant zaten mevcut: ${tenantId}`);
+      const branch = existing.branches[0];
+      const adminUser = existing.users[0];
+      const subscription = existing.subscriptions[0];
+      if (existing.mainBranchId && branch && adminUser && subscription) {
+        logProvisioningStep('idempotent-retry-hit', { tenantId });
+        return {
+          tenant: { tenantId: existing.tenantId, name: existing.name, status: existing.status },
+          branch: { branchId: branch.branchId },
+          roles: [],
+          adminUser: { id: adminUser.id },
+          subscription,
+          idempotent: true,
+        };
+      }
+      throw new Error(`Tenant zaten mevcut fakat eksik provisioning durumunda: ${tenantId}`);
     }
 
     const tenant = await tx.tenant.create({
@@ -338,7 +422,65 @@ export async function provisionTenant(input: ProvisionTenantInput) {
     subscriptionId: result.subscription.id,
     endsAt: result.subscription.endsAt.toISOString(),
     modules,
+    idempotent: Boolean('idempotent' in result && result.idempotent),
   };
+}
+
+export async function runProvisioningJob(jobId: string) {
+  const job = await prisma.provisioningJob.findUnique({ where: { id: jobId } });
+  if (!job) throw new Error('Provisioning job bulunamadi.');
+  if (job.status === 'completed') return job;
+  const input = job.input as unknown as ProvisionTenantInput;
+  await prisma.provisioningJob.update({
+    where: { id: jobId },
+    data: {
+      status: 'provisioning',
+      currentStep: 'provisioning',
+      attemptCount: { increment: 1 },
+      startedAt: new Date(),
+      failureReason: null,
+    },
+  });
+  const startedAt = Date.now();
+  try {
+    const provisioned = await provisionTenant({ ...input, tenantId: job.targetTenantId });
+    await appendJobDiagnostic(jobId, 'completed', 'ok', startedAt, { tenantId: provisioned.tenantId, idempotent: provisioned.idempotent });
+    return prisma.provisioningJob.update({
+      where: { id: jobId },
+      data: { status: 'completed', currentStep: 'completed', completedAt: new Date() },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await appendJobDiagnostic(jobId, 'failed', 'failed', startedAt, { reason: message });
+    await prisma.provisioningJob.update({
+      where: { id: jobId },
+      data: { status: 'failed', currentStep: 'failed', failedAt: new Date(), failureReason: message },
+    });
+    throw error;
+  }
+}
+
+export async function rollbackProvisioningJob(jobId: string) {
+  const job = await prisma.provisioningJob.findUnique({ where: { id: jobId } });
+  if (!job) throw new Error('Provisioning job bulunamadi.');
+  const startedAt = Date.now();
+  await prisma.provisioningJob.update({ where: { id: jobId }, data: { status: 'rollback_pending', currentStep: 'rollback_pending' } });
+  await prisma.$transaction(async (tx) => {
+    await tx.templatePackImport.deleteMany({ where: { tenantId: job.targetTenantId } });
+    await tx.templateImport.deleteMany({ where: { tenantId: job.targetTenantId } });
+    await tx.runtimeState.deleteMany({ where: { tenantId: job.targetTenantId } });
+    await tx.userRole.deleteMany({ where: { tenantId: job.targetTenantId } });
+    await tx.user.deleteMany({ where: { tenantId: job.targetTenantId } });
+    await tx.role.deleteMany({ where: { tenantId: job.targetTenantId } });
+    await tx.subscription.deleteMany({ where: { tenantId: job.targetTenantId } });
+    await tx.branch.deleteMany({ where: { tenantId: job.targetTenantId } });
+    await tx.tenant.deleteMany({ where: { tenantId: job.targetTenantId } });
+  });
+  await appendJobDiagnostic(jobId, 'rollback', 'ok', startedAt);
+  return prisma.provisioningJob.update({
+    where: { id: jobId },
+    data: { status: 'rolled_back', currentStep: 'rolled_back', rollbackAt: new Date() },
+  });
 }
 
 export async function listSaasTenants() {
