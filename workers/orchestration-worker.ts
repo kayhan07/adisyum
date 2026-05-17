@@ -1,7 +1,8 @@
 import { loadEnvConfig } from '@next/env';
 import { Worker } from 'bullmq';
-import { getQueueConnection, ORCHESTRATION_QUEUES, type OnboardingQueuePayload, type OrchestrationQueueName } from '../lib/queue/orchestration';
+import { ensureObservabilitySchedulers, getQueueConnection, ORCHESTRATION_QUEUES, type ObservabilityQueuePayload, type OnboardingQueuePayload, type OrchestrationQueueName } from '../lib/queue/orchestration';
 import { rollbackProvisioningJob, runProvisioningJob } from '../lib/system-admin/provisioning';
+import { aggregateOperationalTelemetry, runTelemetryRetention } from '../lib/operations/telemetry-retention';
 
 loadEnvConfig(process.cwd(), process.env.NODE_ENV !== 'production');
 
@@ -13,6 +14,16 @@ async function processJob(queue: OrchestrationQueueName, name: string, data: Rec
       return;
     }
     await runProvisioningJob(payload.provisioningJobId);
+    return;
+  }
+
+  if (queue === 'observability-aggregation') {
+    const payload = data as ObservabilityQueuePayload;
+    if (name === 'observability.retention' || payload.action === 'retention') {
+      await runTelemetryRetention();
+      return;
+    }
+    await aggregateOperationalTelemetry();
     return;
   }
 
@@ -33,3 +44,4 @@ for (const queue of ORCHESTRATION_QUEUES) {
 }
 
 console.info('[orchestration-worker] booted', { queues: ORCHESTRATION_QUEUES });
+void ensureObservabilitySchedulers().catch((error) => console.error('[orchestration-worker] scheduler bootstrap failed', error));

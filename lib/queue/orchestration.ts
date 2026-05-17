@@ -20,6 +20,10 @@ export type OnboardingQueuePayload = {
   tenantId: string;
   requestedBy: string;
 };
+export type ObservabilityQueuePayload = {
+  action: 'aggregate' | 'retention';
+  requestedAt: string;
+};
 
 type QueueRegistry = Partial<Record<OrchestrationQueueName, Queue>>;
 type GlobalQueueState = typeof globalThis & {
@@ -89,6 +93,27 @@ export async function enqueueProvisioningRun(payload: OnboardingQueuePayload) {
     payload,
     tenantId: payload.tenantId,
     jobId: `${payload.action}-${payload.provisioningJobId}`,
+  });
+}
+
+export async function enqueueObservabilityMaintenance(action: ObservabilityQueuePayload['action']) {
+  return enqueueOrchestrationJob({
+    queue: 'observability-aggregation',
+    name: action === 'aggregate' ? 'observability.aggregate' : 'observability.retention',
+    payload: { action, requestedAt: new Date().toISOString() },
+    jobId: `${action}-${new Date().toISOString().slice(0, action === 'aggregate' ? 13 : 10)}`,
+  });
+}
+
+export async function ensureObservabilitySchedulers() {
+  const queue = getOrchestrationQueue('observability-aggregation');
+  await queue.add('observability.aggregate', { action: 'aggregate', requestedAt: new Date().toISOString() }, {
+    jobId: 'observability-aggregate-scheduler',
+    repeat: { every: 60 * 60 * 1000 },
+  });
+  await queue.add('observability.retention', { action: 'retention', requestedAt: new Date().toISOString() }, {
+    jobId: 'observability-retention-scheduler',
+    repeat: { every: 24 * 60 * 60 * 1000 },
   });
 }
 

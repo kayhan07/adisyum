@@ -400,6 +400,40 @@ model DeviceHeartbeat {
   @@map("device_heartbeats")
 }
 
+model OperationalMetricBucket {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.VarChar(64)
+  bucketStart    DateTime @map("bucket_start")
+  bucketSize     String   @map("bucket_size") @db.VarChar(24)
+  metricType     String   @map("metric_type") @db.VarChar(120)
+  eventCount     Int      @default(0) @map("event_count")
+  sampleCount    Int      @default(0) @map("sample_count")
+  numericValue   Decimal? @map("numeric_value") @db.Decimal(18, 4)
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, bucketStart, bucketSize, metricType], name: "tenantId_bucketStart_bucketSize_metricType", map: "operational_metric_buckets_unique")
+  @@index([bucketStart, bucketSize])
+  @@index([tenantId, metricType, bucketStart])
+  @@map("operational_metric_buckets")
+}
+
+model TelemetryArchiveRun {
+  id                 String   @id @default(uuid()) @db.Uuid
+  kind               String   @db.VarChar(80)
+  status             String   @db.VarChar(32)
+  presenceDeleted    Int      @default(0) @map("presence_deleted")
+  heartbeatsDeleted  Int      @default(0) @map("heartbeats_deleted")
+  eventsDeleted      Int      @default(0) @map("events_deleted")
+  startedAt          DateTime @default(now()) @map("started_at")
+  completedAt        DateTime? @map("completed_at")
+  metadata           Json     @default("{}")
+
+  @@index([kind, startedAt])
+  @@map("telemetry_archive_runs")
+}
+
 model TableGroup {
   id        String   @id @default(uuid()) @db.Uuid
   tenantId  String   @map("tenant_id") @db.VarChar(64)

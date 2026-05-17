@@ -175,6 +175,16 @@ type LiveOperationsPayload = {
   activeTablesByTenant: Array<{ tenantId: string; count: number }>;
   generatedAt: string;
 };
+type HistoricalMetricRow = {
+  id: string;
+  tenantId: string;
+  bucketStart: string;
+  bucketSize: string;
+  metricType: string;
+  eventCount: number;
+  sampleCount: number;
+  numericValue?: string | number | null;
+};
 
 const modules: Array<{ id: AdminModule; label: string; icon: typeof LayoutDashboard }> = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -1040,6 +1050,7 @@ function JobsCenterModule() {
 
 function LiveOperationsModule() {
   const [data, setData] = useState<LiveOperationsPayload | null>(null);
+  const [history, setHistory] = useState<HistoricalMetricRow[]>([]);
   const [error, setError] = useState('');
 
   async function refresh() {
@@ -1053,8 +1064,15 @@ function LiveOperationsModule() {
     setError('');
   }
 
+  async function refreshHistory() {
+    const response = await fetch('/api/system-admin/live-operations/history?days=7', { credentials: 'include', cache: 'no-store' }).catch(() => null);
+    const payload = response && response.ok ? await response.json().catch(() => null) as { metrics?: HistoricalMetricRow[] } | null : null;
+    if (payload?.metrics) setHistory(payload.metrics);
+  }
+
   useEffect(() => {
     void refresh();
+    void refreshHistory();
     const stream = new EventSource('/api/system-admin/live-operations/stream', { withCredentials: true });
     stream.addEventListener('live-operations', (event) => {
       setData(JSON.parse((event as MessageEvent).data) as LiveOperationsPayload);
@@ -1145,6 +1163,33 @@ function LiveOperationsModule() {
                   <td className="py-3">{row.latencyMs ?? '-'} ms</td>
                   <td className="py-3">{row.failureCount}</td>
                   <td className="py-3 text-slate-300">{new Date(row.lastHeartbeatAt).toLocaleString('tr-TR')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </article>
+      <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Cold telemetry</p>
+            <h3 className="mt-2 text-xl font-semibold">7 gunluk ozet metrikler</h3>
+          </div>
+          <button type="button" onClick={() => void refreshHistory()} className="rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/5">Ozetleri yenile</button>
+        </div>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left text-sm">
+            <thead className="text-xs uppercase tracking-[0.16em] text-slate-400">
+              <tr><th className="pb-3">Bucket</th><th className="pb-3">Tenant</th><th className="pb-3">Metrik</th><th className="pb-3">Adet</th><th className="pb-3">Ortalama</th></tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {history.slice(0, 24).map((row) => (
+                <tr key={row.id}>
+                  <td className="py-3">{new Date(row.bucketStart).toLocaleString('tr-TR')} / {row.bucketSize}</td>
+                  <td className="py-3">{row.tenantId}</td>
+                  <td className="py-3">{row.metricType}</td>
+                  <td className="py-3">{row.eventCount}</td>
+                  <td className="py-3">{row.numericValue ?? '-'}</td>
                 </tr>
               ))}
             </tbody>

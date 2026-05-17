@@ -4,6 +4,13 @@ import { prisma } from '@/lib/db/prisma';
 
 const ONLINE_WINDOW_MS = 90_000;
 const IDLE_WINDOW_MS = 5 * 60_000;
+const DUPLICATE_EVENT_WINDOW_MS = 60_000;
+const SNAPSHOT_CACHE_MS = 2_500;
+
+type LiveOpsGlobalState = typeof globalThis & {
+  __adisyumLiveOpsSnapshot?: { expiresAt: number; value: Awaited<ReturnType<typeof buildLiveOperationsSnapshot>> };
+};
+const liveOpsGlobalState = globalThis as LiveOpsGlobalState;
 
 function json(value: unknown) {
   return JSON.parse(JSON.stringify(value ?? {})) as Prisma.InputJsonValue;
@@ -33,6 +40,20 @@ export async function recordOperationalEvent(input: {
   source?: string;
   metadata?: unknown;
 }) {
+  if ((input.severity ?? 'info') !== 'critical') {
+    const duplicate = await prisma.operationalEvent.findFirst({
+      where: {
+        tenantId: input.tenantId ?? null,
+        type: input.type,
+        source: input.source ?? 'runtime',
+        message: input.message,
+        entityId: input.entityId,
+        createdAt: { gte: new Date(Date.now() - DUPLICATE_EVENT_WINDOW_MS) },
+      },
+      select: { id: true },
+    });
+    if (duplicate) return duplicate;
+  }
   return prisma.operationalEvent.create({
     data: {
       tenantId: input.tenantId ?? null,
@@ -158,6 +179,14 @@ export async function expireStalePresence() {
 }
 
 export async function getLiveOperationsSnapshot() {
+  const cached = liveOpsGlobalState.__adisyumLiveOpsSnapshot;
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const value = await buildLiveOperationsSnapshot();
+  liveOpsGlobalState.__adisyumLiveOpsSnapshot = { expiresAt: Date.now() + SNAPSHOT_CACHE_MS, value };
+  return value;
+}
+
+async function buildLiveOperationsSnapshot() {
   await expireStalePresence();
   const [presence, devices, events, activeTables, activeOrders, failedLogins] = await Promise.all([
     prisma.presenceSession.findMany({ orderBy: { lastSeenAt: 'desc' }, take: 250 }),
