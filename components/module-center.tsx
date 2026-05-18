@@ -19,6 +19,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AppShell } from '@/components/app-shell';
 import { canPackageAccessModule, loadAuthToken } from '@/lib/saas-store';
 import { secureLogout } from '@/lib/client/secure-logout';
+import { DesktopSupportCenter } from '@/components/desktop-support-center';
 
 type ModuleCard = {
   moduleId: string;
@@ -126,6 +127,7 @@ export function ModuleCenter() {
           );
         })}
       </section>
+      <DesktopSupportCenter />
     </AppShell>
   );
 }

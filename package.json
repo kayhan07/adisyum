@@ -31,7 +31,10 @@
     "enterprise:load-test": "k6 run tools/enterprise-stress-test/load-test-k6.js --vus 50 --duration 300s",
     "enterprise:load-test-heavy": "k6 run tools/enterprise-stress-test/load-test-k6.js --vus 500 --duration 600s",
     "enterprise:run-all-tests": "npm run enterprise:test-tenant-stress && npm run enterprise:test-concurrency && npm run enterprise:test-websocket-isolation && npm run enterprise:test-redis-isolation && npm run enterprise:test-security && npm run enterprise:test-db-performance",
-    "enterprise:generate-report": "node tools/enterprise-stress-test/generate-report.mjs"
+    "enterprise:generate-report": "node tools/enterprise-stress-test/generate-report.mjs",
+    "desktop:start": "npm --prefix apps/desktop start",
+    "desktop:pack": "npm --prefix apps/desktop run pack",
+    "desktop:dist": "npm --prefix apps/desktop run dist"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { ArrowRight, LockKeyhole } from 'lucide-react';
+import { DesktopSupportCenter } from '@/components/desktop-support-center';
 
 export default function TenantLoginPage() {
   const [tenantId, setTenantId] = useState('ABN-48291');
@@ -87,6 +88,9 @@ export default function TenantLoginPage() {
           </button>
           <p className="mt-4 text-center text-xs font-semibold text-slate-400">System admin paneli bu ekranda görünmez, yalnızca direkt URL ile erişilir.</p>
         </section>
+      </div>
+      <div className="mx-auto mt-8 max-w-6xl">
+        <DesktopSupportCenter />
       </div>
     </main>
   );

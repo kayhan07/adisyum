@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Adisyum Desktop</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <p>Adisyum Desktop</p>
+        <h1>İlk kurulum</h1>
+      </header>
+
+      <section class="steps">
+        <button data-step="login" class="active">1. Giriş</button>
+        <button data-step="branch">2. Şube</button>
+        <button data-step="printers">3. Yazıcılar</button>
+        <button data-step="fiscal">4. Mali POS</button>
+        <button data-step="verify">5. Doğrulama</button>
+      </section>
+
+      <section id="login" class="panel active">
+        <h2>Bulut bağlantısı</h2>
+        <label>Bulut URL <input id="cloudUrl" /></label>
+        <label>Bridge URL <input id="bridgeUrl" /></label>
+        <label class="check"><input id="kiosk" type="checkbox" /> Kiosk / tam ekran modunda aç</label>
+        <button id="saveConfig">Kaydet</button>
+      </section>
+
+      <section id="branch" class="panel">
+        <h2>Şube seçimi</h2>
+        <label>Şube kodu <input id="branchId" placeholder="MRK" /></label>
+      </section>
+
+      <section id="printers" class="panel">
+        <div class="row">
+          <h2>Yazıcı kurulumu</h2>
+          <button id="scanPrinters">Yazıcı tara</button>
+        </div>
+        <div id="printerList" class="list"></div>
+      </section>
+
+      <section id="fiscal" class="panel">
+        <div class="row">
+          <h2>Mali POS hazırlığı</h2>
+          <button id="checkFiscal">Durumu kontrol et</button>
+        </div>
+        <pre id="fiscalResult"></pre>
+      </section>
+
+      <section id="verify" class="panel">
+        <h2>Bağlantı doğrulama</h2>
+        <button id="checkBridge">Bridge kontrol et</button>
+        <pre id="healthResult"></pre>
+        <button id="openPos">POS'u aç</button>
+      </section>
+    </main>
+    <script src="./renderer.js"></script>
+  </body>
+</html>

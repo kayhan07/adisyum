@@ -1,0 +1,50 @@
+{
+  "name": "@adisyum/desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Adisyum Desktop shell for Windows restaurant operations",
+  "main": "src/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win nsis",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "electron-store": "^10.0.0"
+  },
+  "devDependencies": {
+    "electron": "^35.1.5",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.adisyum.desktop",
+    "productName": "Adisyum Desktop",
+    "artifactName": "AdisyumDesktop-${version}-${arch}.${ext}",
+    "files": [
+      "src/**/*",
+      "assets/**/*"
+    ],
+    "directories": {
+      "buildResources": "assets",
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Adisyum Desktop"
+    }
+  }
+}
