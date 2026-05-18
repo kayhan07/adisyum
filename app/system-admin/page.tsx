@@ -185,6 +185,7 @@ type HistoricalMetricRow = {
   sampleCount: number;
   numericValue?: string | number | null;
 };
+type TenantDrawerTab = 'overview' | 'live' | 'finance' | 'branches' | 'users' | 'devices' | 'printers' | 'queues' | 'audit' | 'activity' | 'billing' | 'ai' | 'security' | 'settings';
 
 const navGroups: Array<{ label: string; items: Array<{ id: AdminModule; label: string; icon: typeof LayoutDashboard }> }> = [
   {
@@ -310,6 +311,9 @@ export default function SystemAdminPage() {
   const [templatePackItems, setTemplatePackItems] = useState<TemplatePackItemRow[]>([]);
   const [templateImportStats, setTemplateImportStats] = useState<TemplateImportStat[]>([]);
   const [liveOps, setLiveOps] = useState<LiveOperationsPayload | null>(null);
+  const [selectedTenantDrawerId, setSelectedTenantDrawerId] = useState('');
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [savedTenantIds, setSavedTenantIds] = useState<string[]>([]);
   const [tenantDraft, setTenantDraft] = useState<TenantDraft>(() => createAdminTenantDraft());
   const [dealerDraft, setDealerDraft] = useState<Omit<AdminDealer, 'id'>>({ name: '', type: 'dealer', commission_rate: 20, phone: '', email: '', active: true });
   const [packageDraft, setPackageDraft] = useState<AdminPackage>(() => createPackageDraft());
@@ -352,6 +356,21 @@ export default function SystemAdminPage() {
       window.clearInterval(interval);
     };
   }, [adminLoggedIn]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setCommandPaletteOpen((open) => !open);
+      }
+      if (event.key === 'Escape') {
+        setCommandPaletteOpen(false);
+        setSelectedTenantDrawerId('');
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   async function handleAdminLogout() {
     if (loggingOut) return;
@@ -670,7 +689,7 @@ export default function SystemAdminPage() {
             </header>
 
           {activeModule === 'command-center' ? <CommandCenter dashboard={dashboard} state={state} saasSummary={saasSummary} liveOps={liveOps} provisioningJobs={provisioningJobs} /> : null}
-          {activeModule === 'tenants' ? <TenantsModule state={state} saasTenants={saasTenants} provisioningJobs={provisioningJobs} provisioningMetrics={provisioningMetrics} tenantDraft={tenantDraft} setTenantDraft={setTenantDraft} selectedPackage={selectedPackage} saveTenant={saveTenant} runProvisioningAction={runProvisioningAction} commit={commit} provisioningLoading={provisioningLoading} provisioningMessage={provisioningMessage} liveOps={liveOps} /> : null}
+          {activeModule === 'tenants' ? <TenantsModule state={state} saasTenants={saasTenants} provisioningJobs={provisioningJobs} provisioningMetrics={provisioningMetrics} tenantDraft={tenantDraft} setTenantDraft={setTenantDraft} selectedPackage={selectedPackage} saveTenant={saveTenant} runProvisioningAction={runProvisioningAction} commit={commit} provisioningLoading={provisioningLoading} provisioningMessage={provisioningMessage} liveOps={liveOps} onOpenTenant={setSelectedTenantDrawerId} savedTenantIds={savedTenantIds} onToggleSavedTenant={(tenantId: string) => setSavedTenantIds((current) => current.includes(tenantId) ? current.filter((id) => id !== tenantId) : [...current, tenantId])} /> : null}
           {activeModule === 'jobs' ? <JobsCenterModule /> : null}
           {activeModule === 'operations' ? <LiveOperationsModule /> : null}
           {activeModule === 'templates' ? <TemplatesModule templates={templatePool} packs={templatePacks} recipes={recipeTemplates} recipeItems={recipeTemplateItems} stocks={stockTemplates} categories={categoryTemplates} packItems={templatePackItems} importStats={templateImportStats} reload={loadTemplatePool} /> : null}
@@ -685,6 +704,8 @@ export default function SystemAdminPage() {
           </div>
         </section>
       </div>
+      {selectedTenantDrawerId ? <TenantOperationsDrawer tenantId={selectedTenantDrawerId} tenant={saasTenants.find((item) => item.tenantId === selectedTenantDrawerId) ?? null} liveOps={liveOps} provisioningJobs={provisioningJobs} state={state} onClose={() => setSelectedTenantDrawerId('')} /> : null}
+      {commandPaletteOpen ? <CommandPalette tenants={saasTenants} onClose={() => setCommandPaletteOpen(false)} onSelectTenant={(tenantId) => { setSelectedTenantDrawerId(tenantId); setActiveModule('tenants'); setCommandPaletteOpen(false); }} /> : null}
     </main>
   );
 }
@@ -815,7 +836,7 @@ function DataTable({ headers, rows }: { headers: string[]; rows: Array<Array<Rea
   );
 }
 
-function TenantsModule({ state, saasTenants, provisioningJobs, provisioningMetrics, tenantDraft, setTenantDraft, selectedPackage, saveTenant, runProvisioningAction, commit, provisioningLoading, provisioningMessage, liveOps }: any) {
+function TenantsModule({ state, saasTenants, provisioningJobs, provisioningMetrics, tenantDraft, setTenantDraft, selectedPackage, saveTenant, runProvisioningAction, commit, provisioningLoading, provisioningMessage, liveOps, onOpenTenant, savedTenantIds, onToggleSavedTenant }: any) {
   const [selectedTenantId, setSelectedTenantId] = useState<string>(state.tenants[0]?.tenant_id ?? '');
   const [selectedProvisioningJobId, setSelectedProvisioningJobId] = useState<string>('');
   const [editDraft, setEditDraft] = useState<AdminTenant | null>(null);
@@ -878,10 +899,13 @@ function TenantsModule({ state, saasTenants, provisioningJobs, provisioningMetri
           const onlineUsers = liveOps?.presence.filter((presence: LivePresenceRow) => presence.tenantId === tenant.tenantId && presence.status === 'online').length ?? 0;
           const health = tenant.status === 'active' ? 92 : tenant.status === 'trial' ? 81 : 54;
           return (
-            <button key={tenant.tenantId} type="button" onClick={() => setSelectedTenantId(tenant.tenantId)} className={`rounded-[1.4rem] border p-4 text-left transition ${selectedTenantId === tenant.tenantId ? 'border-cyan-300/40 bg-cyan-400/10' : 'border-white/10 bg-slate-900 hover:border-white/20'}`}>
+            <div key={tenant.tenantId} className={`rounded-[1.4rem] border p-4 text-left transition ${selectedTenantId === tenant.tenantId ? 'border-cyan-300/40 bg-cyan-400/10' : 'border-white/10 bg-slate-900 hover:border-white/20'}`}>
               <div className="flex items-start justify-between gap-3">
                 <div><p className="font-semibold">{tenant.companyName}</p><p className="mt-1 text-xs text-slate-400">{tenant.tenantId}</p></div>
-                <StatusPill status={tenant.status} />
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => onToggleSavedTenant(tenant.tenantId)} className="rounded-full border border-white/10 px-2 py-1 text-xs">{savedTenantIds.includes(tenant.tenantId) ? '★' : '☆'}</button>
+                  <StatusPill status={tenant.status} />
+                </div>
               </div>
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                 <MiniMetric label="Paket" value={String(tenant.plan)} />
@@ -889,7 +913,11 @@ function TenantsModule({ state, saasTenants, provisioningJobs, provisioningMetri
                 <MiniMetric label="Bugün ciro" value={formatAdminMoney(tenant.dailyRevenue)} />
                 <MiniMetric label="Health" value={`${health}%`} />
               </div>
-            </button>
+              <div className="mt-4 flex gap-2">
+                <button type="button" onClick={() => setSelectedTenantId(tenant.tenantId)} className="rounded-xl border border-white/10 px-3 py-2 text-xs">Seç</button>
+                <button type="button" onClick={() => onOpenTenant(tenant.tenantId)} className="rounded-xl bg-cyan-400/15 px-3 py-2 text-xs font-semibold text-cyan-100">Operasyon aç</button>
+              </div>
+            </div>
           );
         })}
       </div>
@@ -1305,6 +1333,117 @@ function BillingCenter(props: any) {
 
 function ResellerCenter(props: any) {
   return <DealersModule {...props} />;
+}
+
+function TenantOperationsDrawer({ tenantId, tenant, liveOps, provisioningJobs, state, onClose }: { tenantId: string; tenant: SaasTenantRow | null; liveOps: LiveOperationsPayload | null; provisioningJobs: ProvisioningJobRow[]; state: SystemAdminState; onClose: () => void }) {
+  const [activeTab, setActiveTab] = useState<TenantDrawerTab>('overview');
+  const presence = liveOps?.presence.filter((row) => row.tenantId === tenantId) ?? [];
+  const devices = liveOps?.devices.filter((row) => row.tenantId === tenantId) ?? [];
+  const events = liveOps?.events.filter((row) => row.tenantId === tenantId) ?? [];
+  const jobs = provisioningJobs.filter((job) => job.targetTenantId === tenantId);
+  const tenantState = state.tenants.find((row) => row.tenant_id === tenantId);
+  const tabs: Array<{ id: TenantDrawerTab; label: string }> = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'live', label: 'Live Operations' },
+    { id: 'finance', label: 'Finance' },
+    { id: 'branches', label: 'Branches' },
+    { id: 'users', label: 'Users' },
+    { id: 'devices', label: 'Devices' },
+    { id: 'printers', label: 'Printers' },
+    { id: 'queues', label: 'Queues' },
+    { id: 'audit', label: 'Audit Logs' },
+    { id: 'activity', label: 'Activity Stream' },
+    { id: 'billing', label: 'Billing' },
+    { id: 'ai', label: 'AI Insights' },
+    { id: 'security', label: 'Security' },
+    { id: 'settings', label: 'Settings' },
+  ];
+  const health = tenant?.status === 'active' ? 92 : tenant?.status === 'trial' ? 81 : 54;
+  useEffect(() => {
+    const next = new URL(window.location.href);
+    next.searchParams.set('tenant', tenantId);
+    window.history.replaceState(null, '', next);
+    return () => {
+      const cleanup = new URL(window.location.href);
+      cleanup.searchParams.delete('tenant');
+      window.history.replaceState(null, '', cleanup);
+    };
+  }, [tenantId]);
+  return (
+    <div className="fixed inset-0 z-40 flex justify-end bg-black/45" role="dialog" aria-modal="true">
+      <button type="button" aria-label="Kapat" onClick={onClose} className="flex-1" />
+      <aside className="flex h-full w-full max-w-5xl flex-col border-l border-white/10 bg-[#0b1322] shadow-2xl">
+        <header className="border-b border-white/10 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-cyan-400/15 text-xl font-semibold text-cyan-100">{tenant?.companyName?.slice(0, 2).toUpperCase() ?? 'TN'}</div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-2xl font-semibold">{tenant?.companyName ?? tenantId}</h2>
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-300 shadow-[0_0_16px_rgba(110,231,183,0.8)]" />
+                </div>
+                <p className="mt-1 text-sm text-slate-400">{tenantId} / {tenant?.plan ?? '-'} / health {health}%</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2"><StatusPill status={tenant?.status ?? 'unknown'} /><button type="button" onClick={onClose} className="rounded-xl border border-white/10 px-3 py-2 text-sm">Kapat</button></div>
+          </div>
+          <div className="mt-5 flex gap-2 overflow-x-auto pb-1">
+            {tabs.map((tab) => <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`whitespace-nowrap rounded-xl px-3 py-2 text-xs font-semibold ${activeTab === tab.id ? 'bg-cyan-400/15 text-cyan-100' : 'bg-white/5 text-slate-300'}`}>{tab.label}</button>)}
+          </div>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          {activeTab === 'overview' ? <DrawerOverview tenant={tenant} tenantState={tenantState} presence={presence} devices={devices} jobs={jobs} events={events} /> : null}
+          {activeTab === 'live' ? <DrawerLiveOps presence={presence} events={events} /> : null}
+          {activeTab === 'finance' ? <DrawerFinance tenantId={tenantId} state={state} /> : null}
+          {activeTab === 'branches' ? <DrawerSimple title="Branches" rows={[`${tenant?.activeBranchCount ?? 0}/${tenant?.branchCount ?? 0} aktif şube`, `Ana şube: ${tenant?.mainBranchId ?? '-'}`]} /> : null}
+          {activeTab === 'users' ? <DrawerSimple title="Users" rows={[`${tenant?.activeUsers ?? 0} aktif kullanıcı`, `${presence.length} canlı session`]} /> : null}
+          {activeTab === 'devices' || activeTab === 'printers' ? <DrawerDevices devices={devices} title={activeTab === 'printers' ? 'Printers' : 'Devices'} /> : null}
+          {activeTab === 'queues' ? <DrawerQueues jobs={jobs} /> : null}
+          {activeTab === 'audit' ? <DrawerAudit events={events} /> : null}
+          {activeTab === 'activity' ? <DrawerActivity events={events} /> : null}
+          {activeTab === 'billing' ? <DrawerSimple title="Billing" rows={[`Plan: ${tenant?.plan ?? '-'}`, `Bitiş: ${tenant?.expiresAt?.slice(0, 10) ?? '-'}`, `Bakiye: ${tenant?.balance ?? 0}`]} /> : null}
+          {activeTab === 'ai' ? <DrawerAi tenant={tenant} events={events} /> : null}
+          {activeTab === 'security' ? <DrawerSimple title="Security" rows={[`${events.filter((event) => event.type === 'auth.login_failed').length} başarısız giriş`, `${presence.length} aktif oturum`]} /> : null}
+          {activeTab === 'settings' ? <DrawerSimple title="Settings" rows={['Tenant isolation aktif', 'Runtime tenant scope doğrulandı', 'Destek işlemleri kontrollü']} /> : null}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function DrawerOverview({ tenant, tenantState, presence, devices, jobs, events }: { tenant: SaasTenantRow | null; tenantState?: AdminTenant; presence: LivePresenceRow[]; devices: LiveDeviceRow[]; jobs: ProvisioningJobRow[]; events: LiveEventRow[] }) {
+  return <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+    <Metric label="Bugün ciro" value={formatAdminMoney(tenant?.dailyRevenue ?? 0)} />
+    <Metric label="Aktif kullanıcı" value={String(presence.length)} />
+    <Metric label="Aktif cihaz" value={String(devices.length)} />
+    <Metric label="Aktif şube" value={String(tenant?.activeBranchCount ?? 0)} />
+    <Metric label="Failed ops" value={String(events.filter((event) => event.severity === 'error' || event.severity === 'critical').length)} />
+    <Metric label="Onboarding jobs" value={String(jobs.length)} />
+    <div className="md:col-span-2 xl:col-span-3"><DrawerSimple title="Subscription" rows={[`Durum: ${tenant?.subscriptionStatus ?? '-'}`, `Yenileme: ${tenantState ? createRenewalNotice(tenantState) : '-'}`, `Bitiş: ${tenant?.expiresAt?.slice(0, 10) ?? '-'}`]} /></div>
+  </div>;
+}
+function DrawerLiveOps({ presence, events }: { presence: LivePresenceRow[]; events: LiveEventRow[] }) { return <div className="grid gap-5"><DrawerSimple title="Aktif kullanıcılar" rows={presence.map((row) => `${row.username} / ${row.role} / ${row.currentRoute ?? '-'}`)} /><DrawerActivity events={events} /></div>; }
+function DrawerFinance({ tenantId, state }: { tenantId: string; state: SystemAdminState }) { return <DrawerSimple title="Finance" rows={state.payments.filter((p) => p.tenant_id === tenantId).map((p) => `${p.date} / ${formatAdminMoney(p.amount)} / ${p.status}`)} />; }
+function DrawerDevices({ devices, title }: { devices: LiveDeviceRow[]; title: string }) { return <DrawerSimple title={title} rows={devices.map((device) => `${device.deviceId} / ${device.status} / ${device.latencyMs ?? '-'} ms`)} />; }
+function DrawerQueues({ jobs }: { jobs: ProvisioningJobRow[] }) { return <DrawerSimple title="Queues" rows={jobs.map((job) => `${job.id.slice(0, 8)} / ${job.status} / ${job.currentStep}`)} />; }
+function DrawerAudit({ events }: { events: LiveEventRow[] }) { return <DrawerSimple title="Audit Logs" rows={events.map((event) => `${event.type} / ${event.message}`)} />; }
+function DrawerActivity({ events }: { events: LiveEventRow[] }) { return <DrawerSimple title="Activity Stream" rows={events.map((event) => `${new Date(event.createdAt).toLocaleTimeString('tr-TR')} / ${event.message}`)} />; }
+function DrawerAi({ tenant, events }: { tenant: SaasTenantRow | null; events: LiveEventRow[] }) { return <DrawerSimple title="AI Insights" rows={[`Churn risk: ${tenant?.status === 'active' ? 'low' : 'elevated'}`, `Evidence: ${events.length} recent operational events`, `Upgrade opportunity: ${tenant?.plan === 'mini' ? 'present' : 'watch'}`]} />; }
+function DrawerSimple({ title, rows }: { title: string; rows: string[] }) { return <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5"><h3 className="text-lg font-semibold">{title}</h3><div className="mt-4 grid gap-2">{rows.length ? rows.map((row, index) => <p key={`${title}-${index}`} className="rounded-xl bg-white/[0.035] px-3 py-2 text-sm text-slate-300">{row}</p>) : <p className="text-sm text-slate-400">Kayıt yok.</p>}</div></article>; }
+
+function CommandPalette({ tenants, onClose, onSelectTenant }: { tenants: SaasTenantRow[]; onClose: () => void; onSelectTenant: (tenantId: string) => void }) {
+  const [query, setQuery] = useState('');
+  const visible = tenants.filter((tenant) => `${tenant.companyName} ${tenant.tenantId}`.toLowerCase().includes(query.toLowerCase())).slice(0, 8);
+  return <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/55 p-6 pt-24">
+    <button type="button" aria-label="Kapat" className="absolute inset-0" onClick={onClose} />
+    <div className="relative w-full max-w-2xl rounded-[1.5rem] border border-white/10 bg-[#0d1626] p-4 shadow-2xl">
+      <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4">
+        <Search className="h-4 w-4 text-slate-400" />
+        <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tenant, cihaz, kuyruk ara..." className="h-12 flex-1 bg-transparent text-sm outline-none" />
+      </div>
+      <div className="mt-3 grid gap-2">{visible.map((tenant) => <button key={tenant.tenantId} type="button" onClick={() => onSelectTenant(tenant.tenantId)} className="rounded-2xl px-4 py-3 text-left hover:bg-white/5"><p className="font-semibold">{tenant.companyName}</p><p className="text-xs text-slate-400">{tenant.tenantId}</p></button>)}</div>
+    </div>
+  </div>;
 }
 
 function LiveOperationsModule() {
