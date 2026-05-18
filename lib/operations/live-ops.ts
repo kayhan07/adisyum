@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
+import { appendIncidentEvent, openOrUpdateIncident } from '@/lib/incidents/durable-incident-center';
 
 const ONLINE_WINDOW_MS = 90_000;
 const IDLE_WINDOW_MS = 5 * 60_000;
@@ -54,7 +55,7 @@ export async function recordOperationalEvent(input: {
     });
     if (duplicate) return duplicate;
   }
-  return prisma.operationalEvent.create({
+  const event = await prisma.operationalEvent.create({
     data: {
       tenantId: input.tenantId ?? null,
       branchId: input.branchId ?? null,
@@ -69,6 +70,32 @@ export async function recordOperationalEvent(input: {
       metadata: json(input.metadata),
     },
   });
+  if ((input.severity === 'critical' || input.severity === 'error') && input.tenantId) {
+    const metadata = (input.metadata ?? {}) as Record<string, unknown>;
+    const correlationId = typeof metadata.correlationId === 'string' ? metadata.correlationId : null;
+    const incident = await openOrUpdateIncident({
+      incidentKey: `${input.tenantId}:${input.type}:${input.entityId ?? 'global'}`,
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+      type: input.type,
+      severity: input.severity === 'critical' ? 'critical' : 'degraded',
+      title: input.message,
+      summary: input.message,
+      correlationId,
+      blastRadius: { tenantId: input.tenantId, branchId: input.branchId ?? null, entityId: input.entityId ?? null },
+      metadata: input.metadata,
+    });
+    await appendIncidentEvent({
+      incidentId: incident.id,
+      eventType: input.type,
+      severity: input.severity === 'critical' ? 'critical' : 'degraded',
+      message: input.message,
+      actorId: input.userId,
+      correlationId,
+      metadata: { operationalEventId: event.id, source: input.source ?? 'runtime' },
+    });
+  }
+  return event;
 }
 
 export async function upsertPresence(input: {

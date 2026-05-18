@@ -28,6 +28,13 @@ export async function writeAuditLog(input: {
   ip?: string | null;
   userAgent?: string | null;
   requestId?: string | null;
+  correlationId?: string | null;
+  mutationId?: string | null;
+  orchestrationJobId?: string | null;
+  queueJobId?: string | null;
+  deviceId?: string | null;
+  route?: string | null;
+  source?: string | null;
   before?: unknown;
   after?: unknown;
   metadata?: unknown;
@@ -47,6 +54,13 @@ export async function writeAuditLog(input: {
       ip: input.ip ?? null,
       userAgent: input.userAgent ?? null,
       requestId: input.requestId ?? null,
+      correlationId: input.correlationId ?? input.requestId ?? null,
+      mutationId: input.mutationId ?? null,
+      orchestrationJobId: input.orchestrationJobId ?? null,
+      queueJobId: input.queueJobId ?? null,
+      deviceId: input.deviceId ?? null,
+      route: input.route ?? null,
+      source: input.source ?? 'runtime',
       before: input.before === undefined ? undefined : JSON.parse(JSON.stringify(input.before)) as Prisma.InputJsonValue,
       after: input.after === undefined ? undefined : JSON.parse(JSON.stringify(input.after)) as Prisma.InputJsonValue,
       metadata: input.metadata === undefined || input.metadata === null

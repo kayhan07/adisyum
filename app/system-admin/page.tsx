@@ -21,7 +21,7 @@ import {
 } from '@/lib/system-admin-store';
 import type { PackageType } from '@/lib/saas-store';
 
-type AdminModule = 'command-center' | 'tenants' | 'finance-center' | 'operations' | 'observability' | 'jobs' | 'templates' | 'devices' | 'security' | 'analytics' | 'ai-insights' | 'billing' | 'resellers';
+type AdminModule = 'command-center' | 'tenants' | 'finance-center' | 'operations' | 'incidents' | 'audit-explorer' | 'observability' | 'jobs' | 'templates' | 'devices' | 'security' | 'analytics' | 'ai-insights' | 'billing' | 'resellers';
 type TenantDraft = ReturnType<typeof createAdminTenantDraft>;
 type SaasTenantRow = {
   tenantId: string;
@@ -185,6 +185,36 @@ type HistoricalMetricRow = {
   sampleCount: number;
   numericValue?: string | number | null;
 };
+type IncidentRow = {
+  id: string;
+  tenantId?: string | null;
+  type: string;
+  severity: string;
+  status: string;
+  title: string;
+  summary: string;
+  correlationId?: string | null;
+  openedAt: string;
+  updatedAt: string;
+  events?: Array<{ id: string; eventType: string; severity: string; message: string; createdAt: string }>;
+};
+type IncidentSummary = { total: number; open: number; critical: number; outage: number };
+type DurableAuditRow = {
+  id: string;
+  tenantId?: string | null;
+  action: string;
+  entity?: string | null;
+  entityId?: string | null;
+  userId?: string | null;
+  deviceId?: string | null;
+  route?: string | null;
+  source: string;
+  correlationId?: string | null;
+  mutationId?: string | null;
+  before?: unknown;
+  after?: unknown;
+  createdAt: string;
+};
 type TenantDrawerTab = 'overview' | 'live' | 'finance' | 'branches' | 'users' | 'devices' | 'printers' | 'queues' | 'audit' | 'activity' | 'billing' | 'ai' | 'security' | 'settings';
 
 const navGroups: Array<{ label: string; items: Array<{ id: AdminModule; label: string; icon: typeof LayoutDashboard }> }> = [
@@ -200,6 +230,8 @@ const navGroups: Array<{ label: string; items: Array<{ id: AdminModule; label: s
     label: 'Operations',
     items: [
       { id: 'operations', label: 'Operations', icon: Activity },
+      { id: 'incidents', label: 'Incidents', icon: BellRing },
+      { id: 'audit-explorer', label: 'Audit Explorer', icon: FileText },
       { id: 'observability', label: 'Observability', icon: Cpu },
       { id: 'jobs', label: 'Jobs', icon: Workflow },
       { id: 'devices', label: 'Devices', icon: Printer },
@@ -314,6 +346,8 @@ export default function SystemAdminPage() {
   const [selectedTenantDrawerId, setSelectedTenantDrawerId] = useState('');
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [savedTenantIds, setSavedTenantIds] = useState<string[]>([]);
+  const [incidentRows, setIncidentRows] = useState<IncidentRow[]>([]);
+  const [incidentSummary, setIncidentSummary] = useState<IncidentSummary | null>(null);
   const [tenantDraft, setTenantDraft] = useState<TenantDraft>(() => createAdminTenantDraft());
   const [dealerDraft, setDealerDraft] = useState<Omit<AdminDealer, 'id'>>({ name: '', type: 'dealer', commission_rate: 20, phone: '', email: '', active: true });
   const [packageDraft, setPackageDraft] = useState<AdminPackage>(() => createPackageDraft());
@@ -332,6 +366,7 @@ export default function SystemAdminPage() {
         setAdminLoggedIn(true);
         void loadSaasTenants();
         void loadTemplatePool();
+        void loadOperatorMemory();
       }
       setState(loadSystemAdminState());
     };
@@ -356,6 +391,20 @@ export default function SystemAdminPage() {
       window.clearInterval(interval);
     };
   }, [adminLoggedIn]);
+
+  useEffect(() => {
+    if (!adminLoggedIn || activeModule !== 'incidents') return;
+    let cancelled = false;
+    async function refreshIncidents() {
+      if (!cancelled) await loadIncidents();
+    }
+    void refreshIncidents();
+    const interval = window.setInterval(() => { void refreshIncidents(); }, 15_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [activeModule, adminLoggedIn]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -443,6 +492,30 @@ export default function SystemAdminPage() {
     setCategoryTemplates(payload?.categories ?? []);
     setTemplatePackItems(payload?.packItems ?? []);
     setTemplateImportStats(payload?.importStats ?? []);
+  }
+
+  async function loadOperatorMemory() {
+    const response = await fetch('/api/system-admin/operator-memory?kind=favorite_tenant', { credentials: 'include', cache: 'no-store' }).catch(() => null);
+    const payload = response && response.ok ? await response.json().catch(() => null) as { items?: Array<{ key: string }> } | null : null;
+    setSavedTenantIds(payload?.items?.map((item) => item.key) ?? []);
+  }
+
+  async function toggleSavedTenant(tenantId: string) {
+    const saved = savedTenantIds.includes(tenantId);
+    setSavedTenantIds((current) => saved ? current.filter((id) => id !== tenantId) : [...current, tenantId]);
+    await fetch('/api/system-admin/operator-memory', {
+      method: saved ? 'DELETE' : 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'favorite_tenant', key: tenantId, label: tenantId }),
+    }).catch(() => null);
+  }
+
+  async function loadIncidents() {
+    const response = await fetch('/api/system-admin/incidents', { credentials: 'include', cache: 'no-store' }).catch(() => null);
+    const payload = response && response.ok ? await response.json().catch(() => null) as { incidents?: IncidentRow[]; summary?: IncidentSummary } | null : null;
+    setIncidentRows(payload?.incidents ?? []);
+    setIncidentSummary(payload?.summary ?? null);
   }
 
   function selectedPackage(packageId: string) {
@@ -689,7 +762,9 @@ export default function SystemAdminPage() {
             </header>
 
           {activeModule === 'command-center' ? <CommandCenter dashboard={dashboard} state={state} saasSummary={saasSummary} liveOps={liveOps} provisioningJobs={provisioningJobs} /> : null}
-          {activeModule === 'tenants' ? <TenantsModule state={state} saasTenants={saasTenants} provisioningJobs={provisioningJobs} provisioningMetrics={provisioningMetrics} tenantDraft={tenantDraft} setTenantDraft={setTenantDraft} selectedPackage={selectedPackage} saveTenant={saveTenant} runProvisioningAction={runProvisioningAction} commit={commit} provisioningLoading={provisioningLoading} provisioningMessage={provisioningMessage} liveOps={liveOps} onOpenTenant={setSelectedTenantDrawerId} savedTenantIds={savedTenantIds} onToggleSavedTenant={(tenantId: string) => setSavedTenantIds((current) => current.includes(tenantId) ? current.filter((id) => id !== tenantId) : [...current, tenantId])} /> : null}
+          {activeModule === 'tenants' ? <TenantsModule state={state} saasTenants={saasTenants} provisioningJobs={provisioningJobs} provisioningMetrics={provisioningMetrics} tenantDraft={tenantDraft} setTenantDraft={setTenantDraft} selectedPackage={selectedPackage} saveTenant={saveTenant} runProvisioningAction={runProvisioningAction} commit={commit} provisioningLoading={provisioningLoading} provisioningMessage={provisioningMessage} liveOps={liveOps} onOpenTenant={setSelectedTenantDrawerId} savedTenantIds={savedTenantIds} onToggleSavedTenant={toggleSavedTenant} /> : null}
+          {activeModule === 'incidents' ? <IncidentCenter incidents={incidentRows} summary={incidentSummary} refresh={loadIncidents} onOpenTenant={setSelectedTenantDrawerId} /> : null}
+          {activeModule === 'audit-explorer' ? <AuditExplorer /> : null}
           {activeModule === 'jobs' ? <JobsCenterModule /> : null}
           {activeModule === 'operations' ? <LiveOperationsModule /> : null}
           {activeModule === 'templates' ? <TemplatesModule templates={templatePool} packs={templatePacks} recipes={recipeTemplates} recipeItems={recipeTemplateItems} stocks={stockTemplates} categories={categoryTemplates} packItems={templatePackItems} importStats={templateImportStats} reload={loadTemplatePool} /> : null}
@@ -1443,6 +1518,131 @@ function CommandPalette({ tenants, onClose, onSelectTenant }: { tenants: SaasTen
       </div>
       <div className="mt-3 grid gap-2">{visible.map((tenant) => <button key={tenant.tenantId} type="button" onClick={() => onSelectTenant(tenant.tenantId)} className="rounded-2xl px-4 py-3 text-left hover:bg-white/5"><p className="font-semibold">{tenant.companyName}</p><p className="text-xs text-slate-400">{tenant.tenantId}</p></button>)}</div>
     </div>
+  </div>;
+}
+
+function IncidentCenter({ incidents, summary, refresh, onOpenTenant }: { incidents: IncidentRow[]; summary: IncidentSummary | null; refresh: () => Promise<void>; onOpenTenant: (tenantId: string) => void }) {
+  const [selectedIncidentId, setSelectedIncidentId] = useState('');
+  const selected = incidents.find((incident) => incident.id === selectedIncidentId) ?? incidents[0];
+  async function act(action: 'acknowledge' | 'resolve', incidentId: string) {
+    await fetch('/api/system-admin/incidents/actions', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action, incidentId }),
+    });
+    await refresh();
+  }
+  return <section className="grid gap-5">
+    <div className="grid gap-4 md:grid-cols-4">
+      <Metric label="Toplam incident" value={String(summary?.total ?? 0)} />
+      <Metric label="Açık" value={String(summary?.open ?? 0)} />
+      <Metric label="Kritik" value={String(summary?.critical ?? 0)} />
+      <Metric label="Outage" value={String(summary?.outage ?? 0)} />
+    </div>
+    <div className="grid gap-5 xl:grid-cols-[minmax(320px,0.8fr)_minmax(420px,1.2fr)]">
+      <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Incident Center</h3>
+          <button type="button" onClick={() => void refresh()} className="rounded-xl border border-white/10 px-3 py-2 text-xs">Yenile</button>
+        </div>
+        <div className="mt-4 grid gap-2">
+          {incidents.map((incident) => <button key={incident.id} type="button" onClick={() => setSelectedIncidentId(incident.id)} className={`rounded-2xl border p-4 text-left ${selected?.id === incident.id ? 'border-cyan-300/40 bg-cyan-400/10' : 'border-white/10 bg-white/[0.025]'}`}>
+            <div className="flex items-center justify-between gap-3"><p className="font-semibold">{incident.title}</p><StatusPill status={incident.severity} /></div>
+            <p className="mt-2 text-sm text-slate-400">{incident.tenantId ?? 'platform'} / {incident.status}</p>
+          </button>)}
+          {!incidents.length ? <p className="text-sm text-slate-400">Aktif incident yok.</p> : null}
+        </div>
+      </article>
+      <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
+        {selected ? <>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{selected.type}</p>
+              <h3 className="mt-1 text-xl font-semibold">{selected.title}</h3>
+              <p className="mt-2 text-sm text-slate-300">{selected.summary}</p>
+            </div>
+            <div className="flex gap-2">
+              {selected.tenantId ? <button type="button" onClick={() => onOpenTenant(selected.tenantId!)} className="rounded-xl border border-white/10 px-3 py-2 text-xs">Tenant aç</button> : null}
+              {selected.status === 'open' ? <button type="button" onClick={() => void act('acknowledge', selected.id)} className="rounded-xl bg-amber-400/15 px-3 py-2 text-xs text-amber-100">Onayla</button> : null}
+              {selected.status !== 'resolved' ? <button type="button" onClick={() => void act('resolve', selected.id)} className="rounded-xl bg-emerald-400/15 px-3 py-2 text-xs text-emerald-100">Çöz</button> : null}
+            </div>
+          </div>
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <MiniMetric label="Tenant" value={selected.tenantId ?? 'platform'} />
+            <MiniMetric label="Correlation" value={selected.correlationId ?? '-'} />
+            <MiniMetric label="Açılış" value={new Date(selected.openedAt).toLocaleString('tr-TR')} />
+          </div>
+          <div className="mt-5">
+            <h4 className="font-semibold">Root timeline</h4>
+            <div className="mt-3 grid gap-2">
+              {(selected.events ?? []).map((event) => <div key={event.id} className="rounded-2xl bg-white/[0.035] px-4 py-3">
+                <div className="flex items-center justify-between gap-3"><p className="text-sm font-semibold">{event.eventType}</p><span className="text-xs text-slate-500">{new Date(event.createdAt).toLocaleTimeString('tr-TR')}</span></div>
+                <p className="mt-1 text-sm text-slate-300">{event.message}</p>
+              </div>)}
+            </div>
+          </div>
+        </> : <p className="text-sm text-slate-400">İncelemek için incident seçin.</p>}
+      </article>
+    </div>
+  </section>;
+}
+
+function AuditExplorer() {
+  const [query, setQuery] = useState('');
+  const [tenantId, setTenantId] = useState('');
+  const [rows, setRows] = useState<DurableAuditRow[]>([]);
+  const [selectedId, setSelectedId] = useState('');
+  const selected = rows.find((row) => row.id === selectedId) ?? rows[0];
+  async function search() {
+    const params = new URLSearchParams();
+    if (query) params.set('q', query);
+    if (tenantId) params.set('tenantId', tenantId);
+    const response = await fetch(`/api/system-admin/audit?${params.toString()}`, { credentials: 'include', cache: 'no-store' });
+    const payload = await response.json().catch(() => null) as { rows?: DurableAuditRow[] } | null;
+    setRows(payload?.rows ?? []);
+  }
+  useEffect(() => { void search(); }, []);
+  return <section className="grid gap-5">
+    <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-4">
+      <div className="grid gap-3 md:grid-cols-[1fr_220px_auto]">
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Aksiyon, actor, device, entity ara..." className="h-11 rounded-xl border border-white/10 bg-white/5 px-4 text-sm outline-none" />
+        <input value={tenantId} onChange={(event) => setTenantId(event.target.value)} placeholder="Tenant filter" className="h-11 rounded-xl border border-white/10 bg-white/5 px-4 text-sm outline-none" />
+        <button type="button" onClick={() => void search()} className="rounded-xl bg-cyan-400/15 px-4 text-sm font-semibold text-cyan-100">Ara</button>
+      </div>
+    </article>
+    <div className="grid gap-5 xl:grid-cols-[minmax(360px,0.9fr)_minmax(420px,1.1fr)]">
+      <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-4">
+        <div className="grid gap-2">
+          {rows.map((row) => <button key={row.id} type="button" onClick={() => setSelectedId(row.id)} className={`rounded-2xl border p-4 text-left ${selected?.id === row.id ? 'border-cyan-300/40 bg-cyan-400/10' : 'border-white/10 bg-white/[0.025]'}`}>
+            <p className="font-mono text-sm">{row.action}</p>
+            <p className="mt-2 text-xs text-slate-400">{row.tenantId ?? '-'} / {row.entity ?? '-'} / {new Date(row.createdAt).toLocaleString('tr-TR')}</p>
+          </button>)}
+        </div>
+      </article>
+      <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
+        {selected ? <>
+          <h3 className="text-lg font-semibold">{selected.action}</h3>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <MiniMetric label="Actor" value={selected.userId ?? '-'} />
+            <MiniMetric label="Device" value={selected.deviceId ?? '-'} />
+            <MiniMetric label="Correlation" value={selected.correlationId ?? '-'} />
+            <MiniMetric label="Mutation" value={selected.mutationId ?? '-'} />
+          </div>
+          <div className="mt-5 grid gap-3 md:grid-cols-2">
+            <AuditJson title="Before" value={selected.before} />
+            <AuditJson title="After" value={selected.after} />
+          </div>
+        </> : <p className="text-sm text-slate-400">Audit kaydı seçin.</p>}
+      </article>
+    </div>
+  </section>;
+}
+
+function AuditJson({ title, value }: { title: string; value: unknown }) {
+  return <div className="rounded-2xl bg-black/25 p-4">
+    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{title}</p>
+    <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap text-xs text-slate-300">{JSON.stringify(value ?? {}, null, 2)}</pre>
   </div>;
 }
 
