@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Activity, BarChart3, Building2, CreditCard, FileText, HandCoins, LayoutDashboard, Package, Plus, ReceiptText, RefreshCw, ShieldCheck, Sparkles, Trash2, Users, Workflow } from 'lucide-react';
+import { Activity, BarChart3, BellRing, BrainCircuit, Building2, Command, Cpu, CreditCard, FileText, HandCoins, LayoutDashboard, Package, Plus, Printer, ReceiptText, RefreshCw, Search, ShieldCheck, Sparkles, Trash2, Users, WalletCards, Workflow } from 'lucide-react';
 import { getDefaultModulesForPackageType, PACKAGE_MODULE_OPTIONS, type PackageModuleKey } from '@/lib/package-access';
 import { secureLogout } from '@/lib/client/secure-logout';
 import {
@@ -21,7 +21,7 @@ import {
 } from '@/lib/system-admin-store';
 import type { PackageType } from '@/lib/saas-store';
 
-type AdminModule = 'dashboard' | 'tenants' | 'jobs' | 'live-ops' | 'templates' | 'packages' | 'dealers' | 'sales' | 'payments' | 'finance' | 'invoices' | 'reports' | 'monitoring';
+type AdminModule = 'command-center' | 'tenants' | 'finance-center' | 'operations' | 'observability' | 'jobs' | 'templates' | 'devices' | 'security' | 'analytics' | 'ai-insights' | 'billing' | 'resellers';
 type TenantDraft = ReturnType<typeof createAdminTenantDraft>;
 type SaasTenantRow = {
   tenantId: string;
@@ -186,21 +186,37 @@ type HistoricalMetricRow = {
   numericValue?: string | number | null;
 };
 
-const modules: Array<{ id: AdminModule; label: string; icon: typeof LayoutDashboard }> = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'tenants', label: 'Aboneler', icon: Building2 },
-  { id: 'jobs', label: 'Jobs Center', icon: Workflow },
-  { id: 'live-ops', label: 'Canlı Operasyon', icon: Activity },
-  { id: 'templates', label: 'Şablon Havuzu', icon: Sparkles },
-  { id: 'packages', label: 'Paketler', icon: Package },
-  { id: 'dealers', label: 'Bayi / Temsilci', icon: HandCoins },
-  { id: 'sales', label: 'Satış Takibi', icon: Users },
-  { id: 'payments', label: 'Ödeme / Yenileme', icon: RefreshCw },
-  { id: 'finance', label: 'Finans', icon: CreditCard },
-  { id: 'invoices', label: 'Faturalar', icon: FileText },
-  { id: 'reports', label: 'Raporlar', icon: BarChart3 },
-  { id: 'monitoring', label: 'Monitoring', icon: Activity },
+const navGroups: Array<{ label: string; items: Array<{ id: AdminModule; label: string; icon: typeof LayoutDashboard }> }> = [
+  {
+    label: 'Control',
+    items: [
+      { id: 'command-center', label: 'Command Center', icon: LayoutDashboard },
+      { id: 'tenants', label: 'Tenants', icon: Building2 },
+      { id: 'finance-center', label: 'Finance', icon: WalletCards },
+    ],
+  },
+  {
+    label: 'Operations',
+    items: [
+      { id: 'operations', label: 'Operations', icon: Activity },
+      { id: 'observability', label: 'Observability', icon: Cpu },
+      { id: 'jobs', label: 'Jobs', icon: Workflow },
+      { id: 'devices', label: 'Devices', icon: Printer },
+      { id: 'security', label: 'Security', icon: ShieldCheck },
+    ],
+  },
+  {
+    label: 'Growth',
+    items: [
+      { id: 'templates', label: 'Templates', icon: Sparkles },
+      { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+      { id: 'ai-insights', label: 'AI Insights', icon: BrainCircuit },
+      { id: 'billing', label: 'Billing', icon: CreditCard },
+      { id: 'resellers', label: 'Resellers', icon: HandCoins },
+    ],
+  },
 ];
+const modules = navGroups.flatMap((group) => group.items);
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -277,7 +293,7 @@ function LoginCard({ onLogin }: { onLogin: () => void }) {
 export default function SystemAdminPage() {
   const [adminLoggedIn, setAdminLoggedIn] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const [activeModule, setActiveModule] = useState<AdminModule>('dashboard');
+  const [activeModule, setActiveModule] = useState<AdminModule>('command-center');
   const [state, setState] = useState<SystemAdminState>(() => loadSystemAdminState());
   const [saasTenants, setSaasTenants] = useState<SaasTenantRow[]>([]);
   const [saasSummary, setSaasSummary] = useState<SaasSummary | null>(null);
@@ -293,6 +309,7 @@ export default function SystemAdminPage() {
   const [categoryTemplates, setCategoryTemplates] = useState<CategoryTemplateRow[]>([]);
   const [templatePackItems, setTemplatePackItems] = useState<TemplatePackItemRow[]>([]);
   const [templateImportStats, setTemplateImportStats] = useState<TemplateImportStat[]>([]);
+  const [liveOps, setLiveOps] = useState<LiveOperationsPayload | null>(null);
   const [tenantDraft, setTenantDraft] = useState<TenantDraft>(() => createAdminTenantDraft());
   const [dealerDraft, setDealerDraft] = useState<Omit<AdminDealer, 'id'>>({ name: '', type: 'dealer', commission_rate: 20, phone: '', email: '', active: true });
   const [packageDraft, setPackageDraft] = useState<AdminPackage>(() => createPackageDraft());
@@ -319,6 +336,22 @@ export default function SystemAdminPage() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!adminLoggedIn) return;
+    let cancelled = false;
+    async function refreshCommandMetrics() {
+      const response = await fetch('/api/system-admin/live-operations', { credentials: 'include', cache: 'no-store' }).catch(() => null);
+      const payload = response && response.ok ? await response.json().catch(() => null) as LiveOperationsPayload | null : null;
+      if (!cancelled && payload) setLiveOps(payload);
+    }
+    void refreshCommandMetrics();
+    const interval = window.setInterval(() => { void refreshCommandMetrics(); }, 15000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [adminLoggedIn]);
 
   async function handleAdminLogout() {
     if (loggingOut) return;
@@ -585,63 +618,152 @@ export default function SystemAdminPage() {
   if (!adminLoggedIn) return <LoginCard onLogin={() => void handleSystemAdminLogin()} />;
 
   return (
-    <main className="min-h-screen bg-[#0B1220] text-white">
-      <div className="grid min-h-screen lg:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="border-r border-white/10 bg-[#111827] p-5">
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-blue-200">System Admin</p>
-          <h1 className="mt-2 text-2xl font-semibold">SaaS ERP</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-400">Satış, fatura, bayi ve abonelik sistemi.</p>
-          <nav className="mt-8 grid gap-2">
-            {modules.map((module) => {
-              const Icon = module.icon;
-              const active = activeModule === module.id;
-              return (
-                <button key={module.id} type="button" onClick={() => setActiveModule(module.id)} className={`flex h-12 items-center gap-3 rounded-2xl px-4 text-left text-sm font-semibold transition ${active ? 'bg-blue-600 text-white' : 'bg-white/5 text-slate-300 hover:bg-white/10'}`}>
-                  <Icon className="h-4.5 w-4.5" />
-                  {module.label}
-                </button>
-              );
-            })}
+    <main className="min-h-screen bg-[#08111d] text-white">
+      <div className="grid min-h-screen lg:grid-cols-[272px_minmax(0,1fr)]">
+        <aside className="border-r border-white/10 bg-[#0d1626] p-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-200">Adisyum Control Tower</p>
+          <h1 className="mt-2 text-2xl font-semibold">System Admin</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-400">SaaS operasyon, gelir ve tenant zekası.</p>
+          <nav className="mt-8 grid gap-6">
+            {navGroups.map((group) => (
+              <div key={group.label}>
+                <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">{group.label}</p>
+                <div className="grid gap-2">
+                  {group.items.map((module) => {
+                    const Icon = module.icon;
+                    const active = activeModule === module.id;
+                    return (
+                      <button key={module.id} type="button" onClick={() => setActiveModule(module.id)} className={`flex h-11 items-center gap-3 rounded-xl px-3 text-left text-sm font-semibold transition ${active ? 'bg-cyan-400/15 text-cyan-100 ring-1 ring-cyan-300/30' : 'text-slate-300 hover:bg-white/6'}`}>
+                        <Icon className="h-4.5 w-4.5" />
+                        {module.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </nav>
         </aside>
 
-        <section className="min-w-0 p-6">
-          <header className="flex flex-col gap-3 border-b border-white/10 pb-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Kontrol paneli</p>
-              <h2 className="mt-2 text-3xl font-semibold">{modules.find((item) => item.id === activeModule)?.label}</h2>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-slate-200">
-                Tenant verisi ayrı, system-admin gelir verisi ayrı saklanır.
+        <section className="min-w-0">
+          <CommandBar dashboard={dashboard} saasSummary={saasSummary} provisioningMetrics={provisioningMetrics} liveOps={liveOps} state={state} />
+          <div className="p-6">
+            <header className="flex flex-col gap-3 border-b border-white/10 pb-5 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">SaaS operations</p>
+                <h2 className="mt-2 text-3xl font-semibold">{modules.find((item) => item.id === activeModule)?.label}</h2>
               </div>
-              <button
-                type="button"
-                onClick={() => void handleAdminLogout()}
-                disabled={loggingOut}
-                className="rounded-2xl border border-rose-300/35 bg-rose-500/15 px-4 py-3 text-sm font-semibold text-rose-100 disabled:opacity-60"
-              >
-                {loggingOut ? 'Çıkılıyor…' : 'Güvenli Çıkış'}
-              </button>
-            </div>
-          </header>
+              <div className="flex flex-wrap items-center gap-3">
+                <button type="button" className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-slate-200">
+                  <Command className="h-4 w-4" />
+                  Komut paleti
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleAdminLogout()}
+                  disabled={loggingOut}
+                  className="rounded-2xl border border-rose-300/35 bg-rose-500/15 px-4 py-3 text-sm font-semibold text-rose-100 disabled:opacity-60"
+                >
+                  {loggingOut ? 'Çıkılıyor…' : 'Güvenli Çıkış'}
+                </button>
+              </div>
+            </header>
 
-          {activeModule === 'dashboard' ? <Dashboard dashboard={dashboard} state={state} saasSummary={saasSummary} /> : null}
-          {activeModule === 'tenants' ? <TenantsModule state={state} saasTenants={saasTenants} provisioningJobs={provisioningJobs} provisioningMetrics={provisioningMetrics} tenantDraft={tenantDraft} setTenantDraft={setTenantDraft} selectedPackage={selectedPackage} saveTenant={saveTenant} runProvisioningAction={runProvisioningAction} commit={commit} provisioningLoading={provisioningLoading} provisioningMessage={provisioningMessage} /> : null}
+          {activeModule === 'command-center' ? <CommandCenter dashboard={dashboard} state={state} saasSummary={saasSummary} liveOps={liveOps} provisioningJobs={provisioningJobs} /> : null}
+          {activeModule === 'tenants' ? <TenantsModule state={state} saasTenants={saasTenants} provisioningJobs={provisioningJobs} provisioningMetrics={provisioningMetrics} tenantDraft={tenantDraft} setTenantDraft={setTenantDraft} selectedPackage={selectedPackage} saveTenant={saveTenant} runProvisioningAction={runProvisioningAction} commit={commit} provisioningLoading={provisioningLoading} provisioningMessage={provisioningMessage} liveOps={liveOps} /> : null}
           {activeModule === 'jobs' ? <JobsCenterModule /> : null}
-          {activeModule === 'live-ops' ? <LiveOperationsModule /> : null}
+          {activeModule === 'operations' ? <LiveOperationsModule /> : null}
           {activeModule === 'templates' ? <TemplatesModule templates={templatePool} packs={templatePacks} recipes={recipeTemplates} recipeItems={recipeTemplateItems} stocks={stockTemplates} categories={categoryTemplates} packItems={templatePackItems} importStats={templateImportStats} reload={loadTemplatePool} /> : null}
-          {activeModule === 'packages' ? <PackagesModule state={state} packageDraft={packageDraft} setPackageDraft={setPackageDraft} savePackage={savePackage} editPackage={editPackage} resetPackageDraft={resetPackageDraft} deletePackage={deletePackage} /> : null}
-          {activeModule === 'dealers' ? <DealersModule state={state} dealerDraft={dealerDraft} setDealerDraft={setDealerDraft} saveDealer={saveDealer} commit={commit} /> : null}
-          {activeModule === 'sales' ? <SalesModule state={state} saleDraft={saleDraft} setSaleDraft={setSaleDraft} addSale={addSale} /> : null}
-          {activeModule === 'payments' ? <PaymentsModule state={state} paymentDraft={paymentDraft} setPaymentDraft={setPaymentDraft} processPayment={processPayment} /> : null}
-          {activeModule === 'finance' ? <FinanceModule state={state} financeDraft={financeDraft} setFinanceDraft={setFinanceDraft} addFinanceTransaction={addFinanceTransaction} /> : null}
-          {activeModule === 'invoices' ? <InvoiceModule state={state} invoiceDraft={invoiceDraft} setInvoiceDraft={setInvoiceDraft} addInvoice={addInvoice} /> : null}
-          {activeModule === 'reports' ? <ReportsModule state={state} dashboard={dashboard} /> : null}
-          {activeModule === 'monitoring' ? <MonitoringModule /> : null}
+          {activeModule === 'finance-center' ? <FinanceCenter state={state} dashboard={dashboard} saleDraft={saleDraft} setSaleDraft={setSaleDraft} addSale={addSale} paymentDraft={paymentDraft} setPaymentDraft={setPaymentDraft} processPayment={processPayment} financeDraft={financeDraft} setFinanceDraft={setFinanceDraft} addFinanceTransaction={addFinanceTransaction} invoiceDraft={invoiceDraft} setInvoiceDraft={setInvoiceDraft} addInvoice={addInvoice} /> : null}
+          {activeModule === 'observability' ? <MonitoringModule /> : null}
+          {activeModule === 'devices' ? <DeviceCenter liveOps={liveOps} /> : null}
+          {activeModule === 'security' ? <SecurityCenter liveOps={liveOps} /> : null}
+          {activeModule === 'analytics' ? <ReportsModule state={state} dashboard={dashboard} /> : null}
+          {activeModule === 'ai-insights' ? <AiInsightsCenter state={state} saasTenants={saasTenants} liveOps={liveOps} /> : null}
+          {activeModule === 'billing' ? <BillingCenter state={state} packageDraft={packageDraft} setPackageDraft={setPackageDraft} savePackage={savePackage} editPackage={editPackage} resetPackageDraft={resetPackageDraft} deletePackage={deletePackage} /> : null}
+          {activeModule === 'resellers' ? <ResellerCenter state={state} dealerDraft={dealerDraft} setDealerDraft={setDealerDraft} saveDealer={saveDealer} commit={commit} /> : null}
+          </div>
         </section>
       </div>
     </main>
+  );
+}
+
+function CommandBar({ dashboard, saasSummary, provisioningMetrics, liveOps, state }: { dashboard: any; saasSummary: SaasSummary | null; provisioningMetrics: ProvisioningMetrics | null; liveOps: LiveOperationsPayload | null; state: SystemAdminState }) {
+  const expiring = state.tenants.filter((tenant) => {
+    const daysLeft = Math.ceil((new Date(tenant.end_date).getTime() - Date.now()) / 86400000);
+    return daysLeft >= 0 && daysLeft <= 7;
+  }).length;
+  const metrics = [
+    ['Aktif tenant', String(saasSummary?.activeTenants ?? dashboard.activeSubscriptions)],
+    ['Online kullanıcı', String(liveOps?.summary.onlineUsers ?? 0)],
+    ['MRR', formatAdminMoney(state.packages.reduce((sum, pkg) => sum + pkg.price, 0))],
+    ['Bugün ciro', formatAdminMoney(saasSummary?.liveRevenue ?? dashboard.revenue)],
+    ['Yakın yenileme', String(expiring)],
+    ['Failed payment', String(state.payments.filter((payment) => payment.status === 'failed').length)],
+    ['Aktif onboarding', String(provisioningMetrics?.activeJobs ?? 0)],
+    ['Aktif masa', String(liveOps?.summary.activeTables ?? 0)],
+    ['Incident', String(liveOps?.summary.failedLogins24h ?? 0)],
+  ];
+  return (
+    <div className="sticky top-0 z-20 border-b border-white/10 bg-[#08111d]/95 px-6 py-3 backdrop-blur">
+      <div className="flex gap-3 overflow-x-auto">
+        {metrics.map(([label, value]) => (
+          <div key={label} className="min-w-[140px] rounded-2xl border border-white/10 bg-white/[0.045] px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</p>
+            <p className="mt-1 text-lg font-semibold text-white">{value}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CommandCenter({ dashboard, state, saasSummary, liveOps, provisioningJobs }: { dashboard: any; state: SystemAdminState; saasSummary: SaasSummary | null; liveOps: LiveOperationsPayload | null; provisioningJobs: ProvisioningJobRow[] }) {
+  const latestEvents = liveOps?.events.slice(0, 8) ?? [];
+  return (
+    <div className="mt-6 grid gap-5">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Toplam tenant" value={String(saasSummary?.totalTenants ?? state.tenants.length)} />
+        <Metric label="Canlı ciro" value={formatAdminMoney(saasSummary?.liveRevenue ?? dashboard.revenue)} />
+        <Metric label="Aktif sipariş" value={String(liveOps?.summary.activeOrders ?? 0)} />
+        <Metric label="Failed onboarding" value={String(provisioningJobs.filter((job) => job.status === 'failed').length)} />
+      </div>
+      <div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+        <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Live activity</p>
+          <h3 className="mt-2 text-xl font-semibold">Operasyon akışı</h3>
+          <div className="mt-4 grid gap-3">
+            {latestEvents.length ? latestEvents.map((event) => (
+              <div key={event.id} className="flex items-start gap-3 rounded-2xl bg-white/[0.035] p-3">
+                <span className="mt-1 h-2.5 w-2.5 rounded-full bg-cyan-300 shadow-[0_0_18px_rgba(103,232,249,0.8)]" />
+                <div className="min-w-0">
+                  <p className="font-medium">{event.message}</p>
+                  <p className="mt-1 text-xs text-slate-400">{event.type} / {event.tenantId ?? 'global'} / {new Date(event.createdAt).toLocaleTimeString('tr-TR')}</p>
+                </div>
+              </div>
+            )) : <p className="text-sm text-slate-400">Henüz canlı operasyon olayı yok.</p>}
+          </div>
+        </article>
+        <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Control posture</p>
+          <h3 className="mt-2 text-xl font-semibold">Anlık sağlık</h3>
+          <div className="mt-4 grid gap-3">
+            {[
+              ['Online tenant', liveOps?.summary.onlineTenants ?? 0],
+              ['Aktif cihaz', liveOps?.summary.activeDevices ?? 0],
+              ['Online şube', liveOps?.summary.onlineBranches ?? 0],
+              ['Başarısız login / 24s', liveOps?.summary.failedLogins24h ?? 0],
+            ].map(([label, value]) => (
+              <div key={String(label)} className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                <span className="text-sm text-slate-300">{label}</span>
+                <span className="font-semibold">{value}</span>
+              </div>
+            ))}
+          </div>
+        </article>
+      </div>
+    </div>
   );
 }
 
@@ -676,6 +798,10 @@ function Metric({ label, value }: { label: string; value: string }) {
   return <div className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</p><p className="mt-3 text-2xl font-semibold">{value}</p></div>;
 }
 
+function MiniMetric({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-xl bg-white/[0.04] p-3"><p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">{label}</p><p className="mt-1 font-semibold">{value}</p></div>;
+}
+
 function DataTable({ headers, rows }: { headers: string[]; rows: Array<Array<ReactNode>> }) {
   return (
     <div className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-slate-900">
@@ -689,11 +815,12 @@ function DataTable({ headers, rows }: { headers: string[]; rows: Array<Array<Rea
   );
 }
 
-function TenantsModule({ state, saasTenants, provisioningJobs, provisioningMetrics, tenantDraft, setTenantDraft, selectedPackage, saveTenant, runProvisioningAction, commit, provisioningLoading, provisioningMessage }: any) {
+function TenantsModule({ state, saasTenants, provisioningJobs, provisioningMetrics, tenantDraft, setTenantDraft, selectedPackage, saveTenant, runProvisioningAction, commit, provisioningLoading, provisioningMessage, liveOps }: any) {
   const [selectedTenantId, setSelectedTenantId] = useState<string>(state.tenants[0]?.tenant_id ?? '');
   const [selectedProvisioningJobId, setSelectedProvisioningJobId] = useState<string>('');
   const [editDraft, setEditDraft] = useState<AdminTenant | null>(null);
   const [editSaved, setEditSaved] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     if (!state.tenants.some((tenant: AdminTenant) => tenant.tenant_id === selectedTenantId)) {
@@ -710,6 +837,7 @@ function TenantsModule({ state, saasTenants, provisioningJobs, provisioningMetri
   const selectedTenant = state.tenants.find((tenant: AdminTenant) => tenant.tenant_id === selectedTenantId) ?? null;
   const selectedProvisioningJob = provisioningJobs.find((job: ProvisioningJobRow) => job.id === selectedProvisioningJobId) ?? provisioningJobs[0] ?? null;
   const selectedProvisioningEvents = [...(selectedProvisioningJob?.events ?? [])].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  const visibleTenants = saasTenants.filter((tenant: SaasTenantRow) => `${tenant.companyName} ${tenant.tenantId}`.toLowerCase().includes(searchTerm.toLowerCase()));
 
   useEffect(() => {
     setEditDraft(selectedTenant ? { ...selectedTenant } : null);
@@ -737,7 +865,35 @@ function TenantsModule({ state, saasTenants, provisioningJobs, provisioningMetri
   }
 
   return (
-    <div className="mt-6 grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
+    <div className="mt-6 grid gap-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <label className="relative min-w-[280px] flex-1 max-w-xl">
+          <Search className="pointer-events-none absolute left-4 top-3.5 h-4 w-4 text-slate-500" />
+          <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Tenant ara, tenantId filtrele..." className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 pl-11 pr-4 text-sm outline-none" />
+        </label>
+        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">{visibleTenants.length} tenant görünür</div>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {visibleTenants.map((tenant: SaasTenantRow) => {
+          const onlineUsers = liveOps?.presence.filter((presence: LivePresenceRow) => presence.tenantId === tenant.tenantId && presence.status === 'online').length ?? 0;
+          const health = tenant.status === 'active' ? 92 : tenant.status === 'trial' ? 81 : 54;
+          return (
+            <button key={tenant.tenantId} type="button" onClick={() => setSelectedTenantId(tenant.tenantId)} className={`rounded-[1.4rem] border p-4 text-left transition ${selectedTenantId === tenant.tenantId ? 'border-cyan-300/40 bg-cyan-400/10' : 'border-white/10 bg-slate-900 hover:border-white/20'}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div><p className="font-semibold">{tenant.companyName}</p><p className="mt-1 text-xs text-slate-400">{tenant.tenantId}</p></div>
+                <StatusPill status={tenant.status} />
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                <MiniMetric label="Paket" value={String(tenant.plan)} />
+                <MiniMetric label="Online" value={String(onlineUsers)} />
+                <MiniMetric label="Bugün ciro" value={formatAdminMoney(tenant.dailyRevenue)} />
+                <MiniMetric label="Health" value={`${health}%`} />
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
       <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
         <h3 className="text-xl font-semibold">Yeni abone oluştur</h3>
         <div className="mt-5 grid gap-3">
@@ -915,6 +1071,7 @@ function TenantsModule({ state, saasTenants, provisioningJobs, provisioningMetri
         ) : null}
       </div>
     </div>
+    </div>
   );
 }
 
@@ -1046,6 +1203,108 @@ function JobsCenterModule() {
       </article>
     </div>
   );
+}
+
+function FinanceCenter({ state, dashboard, saleDraft, setSaleDraft, addSale, paymentDraft, setPaymentDraft, processPayment, financeDraft, setFinanceDraft, addFinanceTransaction, invoiceDraft, setInvoiceDraft, addInvoice }: any) {
+  const arr = dashboard.revenue * 12;
+  const failedPayments = state.payments.filter((payment: AdminPayment) => payment.status === 'failed').length;
+  const unpaidInvoices = state.invoices.filter((invoice: AdminInvoice) => invoice.status !== 'paid' && invoice.status !== 'cancelled').length;
+  return (
+    <div className="mt-6 grid gap-5">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Metric label="MRR" value={formatAdminMoney(dashboard.revenue)} />
+        <Metric label="ARR" value={formatAdminMoney(arr)} />
+        <Metric label="Failed payment" value={String(failedPayments)} />
+        <Metric label="Ödenmemiş fatura" value={String(unpaidInvoices)} />
+      </div>
+      <div className="grid gap-5 xl:grid-cols-2">
+        <SalesModule state={state} saleDraft={saleDraft} setSaleDraft={setSaleDraft} addSale={addSale} />
+        <PaymentsModule state={state} paymentDraft={paymentDraft} setPaymentDraft={setPaymentDraft} processPayment={processPayment} />
+      </div>
+      <div className="grid gap-5 xl:grid-cols-2">
+        <FinanceModule state={state} financeDraft={financeDraft} setFinanceDraft={setFinanceDraft} addFinanceTransaction={addFinanceTransaction} />
+        <InvoiceModule state={state} invoiceDraft={invoiceDraft} setInvoiceDraft={setInvoiceDraft} addInvoice={addInvoice} />
+      </div>
+    </div>
+  );
+}
+
+function DeviceCenter({ liveOps }: { liveOps: LiveOperationsPayload | null }) {
+  return (
+    <div className="mt-6 grid gap-5">
+      <div className="grid gap-4 md:grid-cols-3">
+        <Metric label="Aktif cihaz" value={String(liveOps?.summary.activeDevices ?? 0)} />
+        <Metric label="Online branch" value={String(liveOps?.summary.onlineBranches ?? 0)} />
+        <Metric label="Online user" value={String(liveOps?.summary.onlineUsers ?? 0)} />
+      </div>
+      <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
+        <h3 className="text-xl font-semibold">Cihaz sağlığı</h3>
+        <div className="mt-4 grid gap-3">
+          {(liveOps?.devices ?? []).slice(0, 24).map((device) => (
+            <div key={device.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white/[0.035] p-4">
+              <div><p className="font-semibold">{device.deviceId}</p><p className="text-xs text-slate-400">{device.tenantId} / {device.deviceType}</p></div>
+              <div className="flex items-center gap-3"><StatusPill status={device.status} /><span className="text-sm text-slate-300">{device.latencyMs ?? '-'} ms</span></div>
+            </div>
+          ))}
+        </div>
+      </article>
+    </div>
+  );
+}
+
+function SecurityCenter({ liveOps }: { liveOps: LiveOperationsPayload | null }) {
+  return (
+    <div className="mt-6 grid gap-5">
+      <div className="grid gap-4 md:grid-cols-3">
+        <Metric label="Failed login / 24s" value={String(liveOps?.summary.failedLogins24h ?? 0)} />
+        <Metric label="Online tenant" value={String(liveOps?.summary.onlineTenants ?? 0)} />
+        <Metric label="Aktif session" value={String(liveOps?.summary.onlineUsers ?? 0)} />
+      </div>
+      <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
+        <h3 className="text-xl font-semibold">Security timeline</h3>
+        <div className="mt-4 grid gap-3">
+          {(liveOps?.events ?? []).filter((event) => event.type.startsWith('auth.')).slice(0, 16).map((event) => (
+            <div key={event.id} className="rounded-2xl bg-white/[0.035] p-4">
+              <p className="font-semibold">{event.message}</p>
+              <p className="mt-1 text-xs text-slate-400">{event.type} / {event.tenantId ?? 'global'} / {new Date(event.createdAt).toLocaleString('tr-TR')}</p>
+            </div>
+          ))}
+        </div>
+      </article>
+    </div>
+  );
+}
+
+function AiInsightsCenter({ state, saasTenants, liveOps }: { state: SystemAdminState; saasTenants: SaasTenantRow[]; liveOps: LiveOperationsPayload | null }) {
+  const expired = saasTenants.filter((tenant) => tenant.status !== 'active').slice(0, 4);
+  return (
+    <div className="mt-6 grid gap-5">
+      <div className="grid gap-4 md:grid-cols-3">
+        <Metric label="Churn risk" value={String(expired.length)} />
+        <Metric label="Upgrade fırsatı" value={String(state.tenants.filter((tenant) => tenant.package_type === 'mini').length)} />
+        <Metric label="Operasyon alarmı" value={String(liveOps?.summary.failedLogins24h ?? 0)} />
+      </div>
+      <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
+        <h3 className="text-xl font-semibold">AI-ready öneri kuyruğu</h3>
+        <div className="mt-4 grid gap-3">
+          {expired.map((tenant) => (
+            <div key={tenant.tenantId} className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+              <p className="font-semibold">{tenant.companyName}</p>
+              <p className="mt-1 text-sm text-slate-300">Abonelik veya operasyon riski mevcut. Yenileme ve sağlık kontrolü önerilir.</p>
+            </div>
+          ))}
+        </div>
+      </article>
+    </div>
+  );
+}
+
+function BillingCenter(props: any) {
+  return <PackagesModule {...props} />;
+}
+
+function ResellerCenter(props: any) {
+  return <DealersModule {...props} />;
 }
 
 function LiveOperationsModule() {
