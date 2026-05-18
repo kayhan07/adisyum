@@ -220,33 +220,43 @@ type TenantDrawerTab = 'overview' | 'live' | 'finance' | 'branches' | 'users' | 
 
 const navGroups: Array<{ label: string; items: Array<{ id: AdminModule; label: string; icon: typeof LayoutDashboard }> }> = [
   {
-    label: 'Control',
+    label: 'Yönetim',
     items: [
-      { id: 'command-center', label: 'Command Center', icon: LayoutDashboard },
-      { id: 'tenants', label: 'Tenants', icon: Building2 },
-      { id: 'finance-center', label: 'Finance', icon: WalletCards },
+      { id: 'command-center', label: 'Kontrol Merkezi', icon: LayoutDashboard },
+      { id: 'tenants', label: 'Tenantlar', icon: Building2 },
     ],
   },
   {
-    label: 'Operations',
+    label: 'Operasyon',
     items: [
-      { id: 'operations', label: 'Operations', icon: Activity },
-      { id: 'incidents', label: 'Incidents', icon: BellRing },
-      { id: 'audit-explorer', label: 'Audit Explorer', icon: FileText },
-      { id: 'observability', label: 'Observability', icon: Cpu },
-      { id: 'jobs', label: 'Jobs', icon: Workflow },
-      { id: 'devices', label: 'Devices', icon: Printer },
-      { id: 'security', label: 'Security', icon: ShieldCheck },
+      { id: 'operations', label: 'Operasyon Merkezi', icon: Activity },
+      { id: 'incidents', label: 'Olay Yönetimi', icon: BellRing },
+      { id: 'jobs', label: 'Görev Kuyruğu', icon: Workflow },
+      { id: 'devices', label: 'Cihazlar', icon: Printer },
     ],
   },
   {
-    label: 'Growth',
+    label: 'Finans',
     items: [
-      { id: 'templates', label: 'Templates', icon: Sparkles },
-      { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-      { id: 'ai-insights', label: 'AI Insights', icon: BrainCircuit },
-      { id: 'billing', label: 'Billing', icon: CreditCard },
-      { id: 'resellers', label: 'Resellers', icon: HandCoins },
+      { id: 'finance-center', label: 'Finans Merkezi', icon: WalletCards },
+      { id: 'billing', label: 'Faturalama', icon: CreditCard },
+      { id: 'resellers', label: 'Bayiler', icon: HandCoins },
+    ],
+  },
+  {
+    label: 'Analitik',
+    items: [
+      { id: 'analytics', label: 'Analitik', icon: BarChart3 },
+      { id: 'ai-insights', label: 'AI Analiz', icon: BrainCircuit },
+    ],
+  },
+  {
+    label: 'Sistem',
+    items: [
+      { id: 'observability', label: 'Sistem İzleme', icon: Cpu },
+      { id: 'audit-explorer', label: 'Denetim Kayıtları', icon: FileText },
+      { id: 'security', label: 'Güvenlik Merkezi', icon: ShieldCheck },
+      { id: 'templates', label: 'Şablonlar', icon: Sparkles },
     ],
   },
 ];
@@ -718,9 +728,9 @@ export default function SystemAdminPage() {
           <h1 className="mt-2 text-2xl font-semibold">System Admin</h1>
           <p className="mt-2 text-sm leading-6 text-slate-400">SaaS operasyon, gelir ve tenant zekası.</p>
           <nav className="mt-8 grid gap-6">
-            {navGroups.map((group) => (
-              <div key={group.label}>
-                <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">{group.label}</p>
+            {navGroups.map((group, index) => (
+              <details key={group.label} open={index < 3} className="group">
+                <summary className="mb-2 cursor-pointer list-none px-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">{group.label}</summary>
                 <div className="grid gap-2">
                   {group.items.map((module) => {
                     const Icon = module.icon;
@@ -733,7 +743,7 @@ export default function SystemAdminPage() {
                     );
                   })}
                 </div>
-              </div>
+              </details>
             ))}
           </nav>
         </aside>
@@ -897,6 +907,12 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 function MiniMetric({ label, value }: { label: string; value: string }) {
   return <div className="rounded-xl bg-white/[0.04] p-3"><p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">{label}</p><p className="mt-1 font-semibold">{value}</p></div>;
+}
+
+function DomainTabs<T extends string>({ value, onChange, tabs }: { value: T; onChange: (value: T) => void; tabs: Array<[T, string]> }) {
+  return <div className="flex gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.025] p-2">
+    {tabs.map(([id, label]) => <button key={id} type="button" onClick={() => onChange(id)} className={`whitespace-nowrap rounded-xl px-3 py-2 text-sm font-semibold ${value === id ? 'bg-cyan-400/15 text-cyan-100' : 'text-slate-300 hover:bg-white/5'}`}>{label}</button>)}
+  </div>;
 }
 
 function DataTable({ headers, rows }: { headers: string[]; rows: Array<Array<ReactNode>> }) {
@@ -1310,6 +1326,7 @@ function JobsCenterModule() {
 }
 
 function FinanceCenter({ state, dashboard, saleDraft, setSaleDraft, addSale, paymentDraft, setPaymentDraft, processPayment, financeDraft, setFinanceDraft, addFinanceTransaction, invoiceDraft, setInvoiceDraft, addInvoice }: any) {
+  const [activeTab, setActiveTab] = useState<'overview' | 'sales' | 'payments' | 'invoices' | 'collections' | 'reports'>('overview');
   const arr = dashboard.revenue * 12;
   const failedPayments = state.payments.filter((payment: AdminPayment) => payment.status === 'failed').length;
   const unpaidInvoices = state.invoices.filter((invoice: AdminInvoice) => invoice.status !== 'paid' && invoice.status !== 'cancelled').length;
@@ -1321,14 +1338,20 @@ function FinanceCenter({ state, dashboard, saleDraft, setSaleDraft, addSale, pay
         <Metric label="Failed payment" value={String(failedPayments)} />
         <Metric label="Ödenmemiş fatura" value={String(unpaidInvoices)} />
       </div>
-      <div className="grid gap-5 xl:grid-cols-2">
-        <SalesModule state={state} saleDraft={saleDraft} setSaleDraft={setSaleDraft} addSale={addSale} />
-        <PaymentsModule state={state} paymentDraft={paymentDraft} setPaymentDraft={setPaymentDraft} processPayment={processPayment} />
-      </div>
-      <div className="grid gap-5 xl:grid-cols-2">
-        <FinanceModule state={state} financeDraft={financeDraft} setFinanceDraft={setFinanceDraft} addFinanceTransaction={addFinanceTransaction} />
-        <InvoiceModule state={state} invoiceDraft={invoiceDraft} setInvoiceDraft={setInvoiceDraft} addInvoice={addInvoice} />
-      </div>
+      <DomainTabs value={activeTab} onChange={setActiveTab} tabs={[
+        ['overview', 'Genel Bakış'],
+        ['sales', 'Satışlar'],
+        ['payments', 'Ödemeler'],
+        ['invoices', 'Faturalar'],
+        ['collections', 'Tahsilatlar'],
+        ['reports', 'Raporlar'],
+      ]} />
+      {activeTab === 'overview' ? <div className="grid gap-5 xl:grid-cols-2"><SalesModule state={state} saleDraft={saleDraft} setSaleDraft={setSaleDraft} addSale={addSale} /><PaymentsModule state={state} paymentDraft={paymentDraft} setPaymentDraft={setPaymentDraft} processPayment={processPayment} /></div> : null}
+      {activeTab === 'sales' ? <SalesModule state={state} saleDraft={saleDraft} setSaleDraft={setSaleDraft} addSale={addSale} /> : null}
+      {activeTab === 'payments' ? <PaymentsModule state={state} paymentDraft={paymentDraft} setPaymentDraft={setPaymentDraft} processPayment={processPayment} /> : null}
+      {activeTab === 'invoices' ? <InvoiceModule state={state} invoiceDraft={invoiceDraft} setInvoiceDraft={setInvoiceDraft} addInvoice={addInvoice} /> : null}
+      {activeTab === 'collections' ? <FinanceModule state={state} financeDraft={financeDraft} setFinanceDraft={setFinanceDraft} addFinanceTransaction={addFinanceTransaction} /> : null}
+      {activeTab === 'reports' ? <DrawerSimple title="Finans raporları" rows={['MRR, ARR ve tahsilat trendleri bu sekmede odaklanır.', 'Detaylı raporlar ayrı yüzeylerde tutulur.']} /> : null}
     </div>
   );
 }
@@ -1524,7 +1547,14 @@ function CommandPalette({ tenants, onClose, onSelectTenant }: { tenants: SaasTen
 
 function IncidentCenter({ incidents, summary, refresh, onOpenTenant }: { incidents: IncidentRow[]; summary: IncidentSummary | null; refresh: () => Promise<void>; onOpenTenant: (tenantId: string) => void }) {
   const [selectedIncidentId, setSelectedIncidentId] = useState('');
-  const selected = incidents.find((incident) => incident.id === selectedIncidentId) ?? incidents[0];
+  const [activeTab, setActiveTab] = useState<'active' | 'critical' | 'history' | 'root' | 'escalation' | 'resolved'>('active');
+  const visibleIncidents = incidents.filter((incident) => {
+    if (activeTab === 'critical') return incident.severity === 'critical' || incident.severity === 'outage';
+    if (activeTab === 'resolved') return incident.status === 'resolved';
+    if (activeTab === 'active') return incident.status !== 'resolved';
+    return true;
+  });
+  const selected = visibleIncidents.find((incident) => incident.id === selectedIncidentId) ?? visibleIncidents[0];
   async function act(action: 'acknowledge' | 'resolve', incidentId: string) {
     await fetch('/api/system-admin/incidents/actions', {
       method: 'POST',
@@ -1541,6 +1571,14 @@ function IncidentCenter({ incidents, summary, refresh, onOpenTenant }: { inciden
       <Metric label="Kritik" value={String(summary?.critical ?? 0)} />
       <Metric label="Outage" value={String(summary?.outage ?? 0)} />
     </div>
+    <DomainTabs value={activeTab} onChange={setActiveTab} tabs={[
+      ['active', 'Aktif Olaylar'],
+      ['critical', 'Kritik Olaylar'],
+      ['history', 'Geçmiş'],
+      ['root', 'Root Cause'],
+      ['escalation', 'Eskalasyon'],
+      ['resolved', 'Çözülmüş Olaylar'],
+    ]} />
     <div className="grid gap-5 xl:grid-cols-[minmax(320px,0.8fr)_minmax(420px,1.2fr)]">
       <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-4">
         <div className="flex items-center justify-between">
@@ -1548,11 +1586,11 @@ function IncidentCenter({ incidents, summary, refresh, onOpenTenant }: { inciden
           <button type="button" onClick={() => void refresh()} className="rounded-xl border border-white/10 px-3 py-2 text-xs">Yenile</button>
         </div>
         <div className="mt-4 grid gap-2">
-          {incidents.map((incident) => <button key={incident.id} type="button" onClick={() => setSelectedIncidentId(incident.id)} className={`rounded-2xl border p-4 text-left ${selected?.id === incident.id ? 'border-cyan-300/40 bg-cyan-400/10' : 'border-white/10 bg-white/[0.025]'}`}>
+          {visibleIncidents.map((incident) => <button key={incident.id} type="button" onClick={() => setSelectedIncidentId(incident.id)} className={`rounded-2xl border p-4 text-left ${selected?.id === incident.id ? 'border-cyan-300/40 bg-cyan-400/10' : 'border-white/10 bg-white/[0.025]'}`}>
             <div className="flex items-center justify-between gap-3"><p className="font-semibold">{incident.title}</p><StatusPill status={incident.severity} /></div>
             <p className="mt-2 text-sm text-slate-400">{incident.tenantId ?? 'platform'} / {incident.status}</p>
           </button>)}
-          {!incidents.length ? <p className="text-sm text-slate-400">Aktif incident yok.</p> : null}
+          {!visibleIncidents.length ? <p className="text-sm text-slate-400">Bu görünümde olay yok.</p> : null}
         </div>
       </article>
       <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">

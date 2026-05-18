@@ -26,21 +26,21 @@ type AuditRow = { id: string; action: string; entity?: string | null; entityId?:
 type WorkspaceSection = 'overview' | 'finance' | 'operations' | 'users' | 'devices' | 'printers' | 'queues' | 'incidents' | 'audit' | 'billing' | 'templates' | 'ai' | 'security' | 'branches' | 'settings';
 
 const sections: Array<{ id: WorkspaceSection; label: string; icon: typeof Activity }> = [
-  { id: 'overview', label: 'Overview', icon: Building2 },
-  { id: 'finance', label: 'Finance', icon: CreditCard },
-  { id: 'operations', label: 'Operations', icon: Activity },
-  { id: 'users', label: 'Users', icon: Users },
-  { id: 'devices', label: 'Devices', icon: Printer },
-  { id: 'printers', label: 'Printers', icon: Printer },
-  { id: 'queues', label: 'Queues', icon: Workflow },
-  { id: 'incidents', label: 'Incidents', icon: Activity },
-  { id: 'audit', label: 'Audit', icon: FileText },
-  { id: 'billing', label: 'Billing', icon: CreditCard },
-  { id: 'templates', label: 'Templates', icon: FileText },
-  { id: 'ai', label: 'AI Insights', icon: BrainCircuit },
-  { id: 'security', label: 'Security', icon: ShieldCheck },
-  { id: 'branches', label: 'Branches', icon: Building2 },
-  { id: 'settings', label: 'Settings', icon: ShieldCheck },
+  { id: 'overview', label: 'Genel Bakış', icon: Building2 },
+  { id: 'finance', label: 'Finans', icon: CreditCard },
+  { id: 'operations', label: 'Operasyon', icon: Activity },
+  { id: 'users', label: 'Kullanıcılar', icon: Users },
+  { id: 'devices', label: 'Cihazlar', icon: Printer },
+  { id: 'printers', label: 'Yazıcılar', icon: Printer },
+  { id: 'queues', label: 'Kuyruklar', icon: Workflow },
+  { id: 'incidents', label: 'Olaylar', icon: Activity },
+  { id: 'audit', label: 'Denetim', icon: FileText },
+  { id: 'billing', label: 'Faturalama', icon: CreditCard },
+  { id: 'templates', label: 'Şablonlar', icon: FileText },
+  { id: 'ai', label: 'AI Analiz', icon: BrainCircuit },
+  { id: 'security', label: 'Güvenlik', icon: ShieldCheck },
+  { id: 'branches', label: 'Şubeler', icon: Building2 },
+  { id: 'settings', label: 'Ayarlar', icon: ShieldCheck },
 ];
 
 export default function TenantWorkspaceClient({ tenantId }: { tenantId: string }) {
