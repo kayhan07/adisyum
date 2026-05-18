@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import Link from 'next/link';
 import { Activity, BarChart3, BellRing, BrainCircuit, Building2, Command, Cpu, CreditCard, FileText, HandCoins, LayoutDashboard, Package, Plus, Printer, ReceiptText, RefreshCw, Search, ShieldCheck, Sparkles, Trash2, Users, WalletCards, Workflow } from 'lucide-react';
 import { getDefaultModulesForPackageType, PACKAGE_MODULE_OPTIONS, type PackageModuleKey } from '@/lib/package-access';
 import { secureLogout } from '@/lib/client/secure-logout';
@@ -990,7 +991,7 @@ function TenantsModule({ state, saasTenants, provisioningJobs, provisioningMetri
               </div>
               <div className="mt-4 flex gap-2">
                 <button type="button" onClick={() => setSelectedTenantId(tenant.tenantId)} className="rounded-xl border border-white/10 px-3 py-2 text-xs">Seç</button>
-                <button type="button" onClick={() => onOpenTenant(tenant.tenantId)} className="rounded-xl bg-cyan-400/15 px-3 py-2 text-xs font-semibold text-cyan-100">Operasyon aç</button>
+                <Link href={`/system-admin/tenants/${tenant.tenantId}`} className="rounded-xl bg-cyan-400/15 px-3 py-2 text-xs font-semibold text-cyan-100">Workspace aç</Link>
               </div>
             </div>
           );
