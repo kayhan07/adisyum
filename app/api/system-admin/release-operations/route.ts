@@ -11,6 +11,13 @@ import {
   type VersionComponent,
 } from '@/lib/release-governance';
 import { DEVICE_CERTIFICATION_MATRIX, certificationSummary } from '@/lib/device-certification';
+import {
+  autonomousOperationsSummary,
+  buildAutonomousRiskSignals,
+  evaluateOperationalPolicies,
+  OPERATIONAL_POLICIES,
+  simulateChaosScenario,
+} from '@/lib/autonomous-operations';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -32,6 +39,10 @@ type ReleaseActionBody =
   | {
       action: 'validate';
       installedVersions?: Partial<Record<VersionComponent, string>>;
+    }
+  | {
+      action: 'simulate_chaos';
+      scenario?: 'reconnect_storm' | 'rollout_corruption' | 'printer_fleet_failure' | 'offline_replay_corruption' | 'bridge_crash_loop';
     };
 
 export async function GET(request: Request) {
@@ -47,6 +58,12 @@ export async function GET(request: Request) {
       certification: {
         summary: certificationSummary(),
         matrix: DEVICE_CERTIFICATION_MATRIX,
+      },
+      automation: {
+        policies: OPERATIONAL_POLICIES,
+        decisions: evaluateOperationalPolicies(),
+        summary: autonomousOperationsSummary(),
+        riskSignals: buildAutonomousRiskSignals(),
       },
     });
   } catch (error) {
@@ -88,6 +105,13 @@ export async function POST(request: Request) {
       return NextResponse.json({
         ok: true,
         compatibility: validateVersionCompatibility(body.installedVersions ?? {}),
+      });
+    }
+
+    if (body.action === 'simulate_chaos') {
+      return NextResponse.json({
+        ok: true,
+        chaos: simulateChaosScenario(body.scenario ?? 'reconnect_storm'),
       });
     }
 

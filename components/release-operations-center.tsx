@@ -1,73 +1,37 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, ArrowLeft, CheckCircle2, FlaskConical, HardDrive, History, Layers3, RefreshCw, RotateCcw, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Bot, CheckCircle2, FlaskConical, HardDrive, History, Layers3, RefreshCw, RotateCcw, ShieldCheck } from 'lucide-react';
 
-type TabId = 'versions' | 'rollouts' | 'devices' | 'failed' | 'rollbacks' | 'certification' | 'diagnostics';
+type TabId = 'versions' | 'rollouts' | 'automation' | 'policies' | 'failed' | 'rollbacks' | 'certification' | 'diagnostics' | 'chaos';
 
 type ReleasePayload = {
   ok: boolean;
   generatedAt: string;
-  registry: Array<{
-    component: string;
-    version: string;
-    channel: string;
-    releaseDate: string;
-    supportedHardwareStatuses: string[];
-    health: {
-      updateSuccessRate: number;
-      rollbackRate: number;
-      reconnectFailureRate: number;
-      postUpdateIncidentRate: number;
-    };
-    notes: string[];
-  }>;
+  registry: Array<{ component: string; version: string; channel: string; supportedHardwareStatuses: string[]; health: { updateSuccessRate: number; rollbackRate: number; reconnectFailureRate: number; postUpdateIncidentRate: number }; notes: string[] }>;
   compatibilityRules: Array<{ id: string; sourceComponent: string; targetComponent: string; minTargetVersion?: string; severity: string; reason: string }>;
-  rollouts: Array<{
-    id: string;
-    name: string;
-    component: string;
-    version: string;
-    channel: string;
-    status: string;
-    targetPercent: number;
-    targetTenantIds: string[];
-    rollbackVersion?: string;
-    safetyGates: string[];
-    metrics: {
-      targetedDevices: number;
-      updatedDevices: number;
-      failedUpdates: number;
-      rollbackEvents: number;
-      incompatibleDevices: number;
-    };
-  }>;
-  health: {
-    totalDevices: number;
-    updatedDevices: number;
-    failedUpdates: number;
-    rollbackEvents: number;
-    incompatibleDevices: number;
-    updateSuccessRate: number;
-    activeRollouts: number;
-    pausedRollouts: number;
-    certifiedHardwareCount: number;
-  };
-  certification: {
-    summary: Record<string, number>;
-    matrix: Array<{ category: string; vendor: string; model: string; driverType: string; connectionType: string; status: string; knownIssues: string[]; lastValidatedAt: string }>;
+  rollouts: Array<{ id: string; name: string; component: string; version: string; channel: string; status: string; targetPercent: number; targetTenantIds: string[]; rollbackVersion?: string; safetyGates: string[]; metrics: { targetedDevices: number; updatedDevices: number; failedUpdates: number; rollbackEvents: number; incompatibleDevices: number } }>;
+  health: { totalDevices: number; updatedDevices: number; failedUpdates: number; rollbackEvents: number; incompatibleDevices: number; updateSuccessRate: number; activeRollouts: number; pausedRollouts: number; certifiedHardwareCount: number };
+  certification: { summary: Record<string, number>; matrix: Array<{ category: string; vendor: string; model: string; driverType: string; connectionType: string; status: string; knownIssues: string[]; lastValidatedAt: string }> };
+  automation: {
+    policies: Array<{ id: string; name: string; description: string; severity: string; cooldownMinutes: number; approvalRequired: boolean; condition: string; actions: string[] }>;
+    decisions: Array<{ id: string; policyName: string; severity: string; triggered: boolean; reason: string; actions: Array<{ type: string; status: string; message: string }>; correlationId: string; createdAt: string }>;
+    summary: { policies: number; evaluatedDecisions: number; triggeredDecisions: number; automaticActions: number; approvalRequired: number; criticalSignals: number };
+    riskSignals: Array<{ scope: string; score: number; severity: string; evidence: string[]; recommendation: string }>;
   };
 };
 
 const tabs: Array<{ id: TabId; label: string; icon: typeof Layers3 }> = [
   { id: 'versions', label: 'Sürümler', icon: Layers3 },
   { id: 'rollouts', label: 'Rollout', icon: RefreshCw },
-  { id: 'devices', label: 'Cihazlar', icon: HardDrive },
+  { id: 'automation', label: 'Otomasyon', icon: Bot },
+  { id: 'policies', label: 'Politikalar', icon: ShieldCheck },
   { id: 'failed', label: 'Başarısız Güncellemeler', icon: AlertTriangle },
   { id: 'rollbacks', label: 'Rollback', icon: RotateCcw },
-  { id: 'certification', label: 'Sertifikasyon', icon: ShieldCheck },
+  { id: 'certification', label: 'Sertifikasyon', icon: HardDrive },
   { id: 'diagnostics', label: 'Diagnostik', icon: FlaskConical },
+  { id: 'chaos', label: 'Chaos Test', icon: History },
 ];
 
 export function ReleaseOperationsCenter() {
@@ -76,6 +40,7 @@ export function ReleaseOperationsCenter() {
   const [loading, setLoading] = useState(true);
   const [snapshot, setSnapshot] = useState<any>(null);
   const [rollback, setRollback] = useState<any>(null);
+  const [chaos, setChaos] = useState<any>(null);
   const [error, setError] = useState('');
 
   async function load() {
@@ -87,8 +52,7 @@ export function ReleaseOperationsCenter() {
       setLoading(false);
       return;
     }
-    const payload = await response.json();
-    setData(payload);
+    setData(await response.json());
     setLoading(false);
   }
 
@@ -98,26 +62,29 @@ export function ReleaseOperationsCenter() {
 
   const failedUpdates = useMemo(() => data?.rollouts.filter((rollout) => rollout.metrics.failedUpdates > 0 || rollout.metrics.incompatibleDevices > 0) ?? [], [data]);
 
-  async function requestSnapshot() {
+  async function postAction(body: Record<string, unknown>) {
     const response = await fetch('/api/system-admin/release-operations', {
       method: 'POST',
       credentials: 'include',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ action: 'diagnostic_snapshot', tenantId: 'ABN-48291', bridgeId: 'pilot-bridge-01' }),
+      body: JSON.stringify(body),
     });
-    const payload = await response.json();
+    return response.json();
+  }
+
+  async function requestSnapshot() {
+    const payload = await postAction({ action: 'diagnostic_snapshot', tenantId: 'ABN-48291', bridgeId: 'pilot-bridge-01' });
     setSnapshot(payload.snapshot);
   }
 
   async function requestRollbackPlan() {
-    const response = await fetch('/api/system-admin/release-operations', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ action: 'rollback_plan', tenantId: 'ABN-48291', component: 'bridge' }),
-    });
-    const payload = await response.json();
+    const payload = await postAction({ action: 'rollback_plan', tenantId: 'ABN-48291', component: 'bridge' });
     setRollback(payload.rollback);
+  }
+
+  async function runChaos(scenario: string) {
+    const payload = await postAction({ action: 'simulate_chaos', scenario });
+    setChaos(payload.chaos);
   }
 
   return (
@@ -129,11 +96,11 @@ export function ReleaseOperationsCenter() {
           </Link>
           <div className="mt-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-200">Release Operations Center</p>
-              <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">Sürüm ve dağıtım yönetimi</h1>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-200">Autonomous Release Operations</p>
+              <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">Sürüm, rollout ve otonom operasyon yönetimi</h1>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
-                Cloud, desktop, bridge, yerel ajan ve fiscal adapter sürümlerini güvenli rollout, uyumluluk matrisi,
-                rollback ve saha diagnostikleriyle yönetin.
+                Cloud, desktop, bridge, yerel ajan ve fiscal adapter sürümlerini policy engine, otomatik koruma,
+                rollback kapıları, saha diagnostikleri ve chaos testleriyle yönetin.
               </p>
             </div>
             <button type="button" onClick={() => void load()} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:bg-white/10">
@@ -150,8 +117,8 @@ export function ReleaseOperationsCenter() {
             <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
               <Metric title="Aktif rollout" value={data.health.activeRollouts} detail={`${data.health.pausedRollouts} duraklatılmış`} />
               <Metric title="Güncellenen cihaz" value={`${data.health.updatedDevices}/${data.health.totalDevices}`} detail={`Başarı ${data.health.updateSuccessRate}%`} />
-              <Metric title="Başarısız update" value={data.health.failedUpdates} detail={`${data.health.incompatibleDevices} uyumsuz cihaz`} tone={data.health.failedUpdates ? 'warn' : 'ok'} />
-              <Metric title="Rollback olayı" value={data.health.rollbackEvents} detail="Saha geri dönüş takibi" />
+              <Metric title="Tetiklenen policy" value={data.automation.summary.triggeredDecisions} detail={`${data.automation.summary.automaticActions} otomatik aksiyon`} tone={data.automation.summary.criticalSignals ? 'warn' : 'ok'} />
+              <Metric title="Onay bekleyen" value={data.automation.summary.approvalRequired} detail="İnsan onayı gereken aksiyon" />
               <Metric title="Sertifikalı donanım" value={data.health.certifiedHardwareCount} detail="Onaylı cihaz matrisi" tone="ok" />
             </section>
 
@@ -169,11 +136,13 @@ export function ReleaseOperationsCenter() {
 
             {activeTab === 'versions' ? <VersionsPanel data={data} /> : null}
             {activeTab === 'rollouts' ? <RolloutsPanel data={data} /> : null}
-            {activeTab === 'devices' ? <DevicesPanel data={data} /> : null}
+            {activeTab === 'automation' ? <AutomationPanel data={data} /> : null}
+            {activeTab === 'policies' ? <PoliciesPanel data={data} /> : null}
             {activeTab === 'failed' ? <FailedUpdatesPanel rollouts={failedUpdates} /> : null}
             {activeTab === 'rollbacks' ? <RollbackPanel rollback={rollback} onCreate={() => void requestRollbackPlan()} /> : null}
             {activeTab === 'certification' ? <CertificationPanel data={data} /> : null}
             {activeTab === 'diagnostics' ? <DiagnosticsPanel snapshot={snapshot} onSnapshot={() => void requestSnapshot()} /> : null}
+            {activeTab === 'chaos' ? <ChaosPanel chaos={chaos} onRun={runChaos} /> : null}
           </>
         ) : null}
       </div>
@@ -239,25 +208,54 @@ function RolloutsPanel({ data }: { data: ReleasePayload }) {
             <MiniStat label="Başarısız" value={rollout.metrics.failedUpdates} />
             <MiniStat label="Uyumsuz" value={rollout.metrics.incompatibleDevices} />
           </div>
-          <div className="mt-5 space-y-2">
-            {rollout.safetyGates.map((gate) => (
-              <div key={gate} className="flex items-center gap-2 text-sm text-slate-300">
-                <CheckCircle2 className="h-4 w-4 text-emerald-300" /> {gate}
-              </div>
-            ))}
-          </div>
         </article>
       ))}
     </section>
   );
 }
 
-function DevicesPanel({ data }: { data: ReleasePayload }) {
+function AutomationPanel({ data }: { data: ReleasePayload }) {
+  const triggered = data.automation.decisions.filter((decision) => decision.triggered);
   return (
-    <section className="grid gap-4 lg:grid-cols-3">
-      <InfoCard title="Uyumluluk matrisi" rows={data.compatibilityRules.map((rule) => `${rule.sourceComponent} -> ${rule.targetComponent}: ${rule.reason}`)} />
-      <InfoCard title="Güvenli update kapıları" rows={['Signed paket zorunlu', 'Rollback paketi hazır', 'Offline queue replay guard aktif', 'Bridge/cloud uyumluluğu bloklayıcı kontrol']} />
-      <InfoCard title="Saha sürüm riski" rows={[`${data.health.incompatibleDevices} uyumsuz cihaz`, `${data.health.failedUpdates} başarısız update`, `${data.health.rollbackEvents} rollback olayı`]} />
+    <section className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+      <article className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5">
+        <PanelTitle title="Otomatik aksiyonlar" subtitle="Policy engine tarafından tetiklenen rollout, cihaz ve queue koruma kararları." />
+        <div className="mt-5 grid gap-3">
+          {triggered.map((decision) => (
+            <div key={decision.id} className="rounded-2xl border border-cyan-300/15 bg-cyan-400/5 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="font-semibold text-white">{decision.policyName}</p>
+                <Badge>{decision.severity}</Badge>
+              </div>
+              <p className="mt-2 text-sm text-slate-300">{decision.reason}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {decision.actions.map((action) => <Badge key={`${decision.id}-${action.type}`}>{action.status}: {action.type}</Badge>)}
+              </div>
+            </div>
+          ))}
+        </div>
+      </article>
+      <InfoCard title="AI operasyon sinyalleri" rows={data.automation.riskSignals.map((signal) => `${signal.score}/100 · ${signal.recommendation}`)} />
+    </section>
+  );
+}
+
+function PoliciesPanel({ data }: { data: ReleasePayload }) {
+  return (
+    <section className="grid gap-4 lg:grid-cols-2">
+      {data.automation.policies.map((policy) => (
+        <article key={policy.id} className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-white">{policy.name}</h2>
+              <p className="mt-2 text-sm text-slate-400">{policy.description}</p>
+            </div>
+            <Badge>{policy.severity}</Badge>
+          </div>
+          <p className="mt-4 rounded-2xl bg-slate-950/50 p-3 text-sm text-slate-300">{policy.condition}</p>
+          <p className="mt-3 text-xs text-slate-500">Cooldown {policy.cooldownMinutes} dk · {policy.approvalRequired ? 'operator onayı gerekir' : 'otomatik çalışabilir'}</p>
+        </article>
+      ))}
     </section>
   );
 }
@@ -279,15 +277,7 @@ function FailedUpdatesPanel({ rollouts }: { rollouts: ReleasePayload['rollouts']
 }
 
 function RollbackPanel({ rollback, onCreate }: { rollback: any; onCreate: () => void }) {
-  return (
-    <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <PanelTitle title="Saha rollback planlayıcı" subtitle="Tenant, şube veya cihaz grubu bazlı güvenli geri dönüş planı üretir." />
-        <button type="button" onClick={onCreate} className="rounded-2xl bg-cyan-400/15 px-4 py-3 text-sm font-semibold text-cyan-100">Plan oluştur</button>
-      </div>
-      {rollback ? <pre className="mt-5 max-h-[420px] overflow-auto rounded-2xl bg-slate-950 p-4 text-xs text-slate-300">{JSON.stringify(rollback, null, 2)}</pre> : null}
-    </section>
-  );
+  return <JsonActionPanel title="Saha rollback planlayıcı" subtitle="Tenant, şube veya cihaz grubu bazlı güvenli geri dönüş planı üretir." button="Plan oluştur" payload={rollback} onClick={onCreate} />;
 }
 
 function CertificationPanel({ data }: { data: ReleasePayload }) {
@@ -311,37 +301,44 @@ function CertificationPanel({ data }: { data: ReleasePayload }) {
 }
 
 function DiagnosticsPanel({ snapshot, onSnapshot }: { snapshot: any; onSnapshot: () => void }) {
+  return <JsonActionPanel title="Uzaktan diagnostik snapshot" subtitle="Bridge, spool, yazıcı, queue, sync ve fiscal adapter durumunu tek pakette toplar." button="Snapshot iste" payload={snapshot} onClick={onSnapshot} />;
+}
+
+function ChaosPanel({ chaos, onRun }: { chaos: any; onRun: (scenario: string) => void }) {
+  const scenarios = ['reconnect_storm', 'rollout_corruption', 'printer_fleet_failure', 'offline_replay_corruption', 'bridge_crash_loop'];
+  return (
+    <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5">
+      <PanelTitle title="Production chaos testing" subtitle="Policy engine davranışını reconnect storm, rollout corruption, printer fleet failure ve offline replay bozulması altında simüle eder." />
+      <div className="mt-5 flex flex-wrap gap-2">
+        {scenarios.map((scenario) => <button key={scenario} type="button" onClick={() => onRun(scenario)} className="rounded-2xl bg-cyan-400/15 px-4 py-3 text-sm font-semibold text-cyan-100">{scenario}</button>)}
+      </div>
+      {chaos ? <pre className="mt-5 max-h-[520px] overflow-auto rounded-2xl bg-slate-950 p-4 text-xs text-slate-300">{JSON.stringify(chaos, null, 2)}</pre> : null}
+    </section>
+  );
+}
+
+function JsonActionPanel({ title, subtitle, button, payload, onClick }: { title: string; subtitle: string; button: string; payload: any; onClick: () => void }) {
   return (
     <section className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <PanelTitle title="Uzaktan diagnostik snapshot" subtitle="Bridge, spool, yazıcı, queue, sync ve fiscal adapter durumunu tek pakette toplar." />
-        <button type="button" onClick={onSnapshot} className="rounded-2xl bg-cyan-400/15 px-4 py-3 text-sm font-semibold text-cyan-100">Snapshot iste</button>
+        <PanelTitle title={title} subtitle={subtitle} />
+        <button type="button" onClick={onClick} className="rounded-2xl bg-cyan-400/15 px-4 py-3 text-sm font-semibold text-cyan-100">{button}</button>
       </div>
-      {snapshot ? <pre className="mt-5 max-h-[420px] overflow-auto rounded-2xl bg-slate-950 p-4 text-xs text-slate-300">{JSON.stringify(snapshot, null, 2)}</pre> : null}
+      {payload ? <pre className="mt-5 max-h-[420px] overflow-auto rounded-2xl bg-slate-950 p-4 text-xs text-slate-300">{JSON.stringify(payload, null, 2)}</pre> : null}
     </section>
   );
 }
 
 function PanelTitle({ title, subtitle }: { title: string; subtitle: string }) {
-  return (
-    <div>
-      <h2 className="text-xl font-semibold text-white">{title}</h2>
-      <p className="mt-1 text-sm text-slate-400">{subtitle}</p>
-    </div>
-  );
+  return <div><h2 className="text-xl font-semibold text-white">{title}</h2><p className="mt-1 text-sm text-slate-400">{subtitle}</p></div>;
 }
 
-function Badge({ children }: { children: string }) {
+function Badge({ children }: { children: ReactNode }) {
   return <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-200">{children}</span>;
 }
 
 function MiniStat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-3">
-      <p className="text-xs text-slate-500">{label}</p>
-      <p className="mt-1 text-lg font-semibold text-white">{value}</p>
-    </div>
-  );
+  return <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-3"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-lg font-semibold text-white">{value}</p></div>;
 }
 
 function InfoCard({ title, rows }: { title: string; rows: string[] }) {
@@ -349,7 +346,7 @@ function InfoCard({ title, rows }: { title: string; rows: string[] }) {
     <article className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5">
       <h2 className="text-lg font-semibold text-white">{title}</h2>
       <div className="mt-4 space-y-3">
-        {rows.map((row) => (
+        {rows.length === 0 ? <p className="text-sm text-slate-400">Veri yok.</p> : rows.map((row) => (
           <div key={row} className="flex gap-2 text-sm text-slate-300">
             <History className="mt-0.5 h-4 w-4 shrink-0 text-cyan-200" /> {row}
           </div>
