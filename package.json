@@ -29,6 +29,7 @@
     "hardware:test-print-reliability": "node tools/hardware-validation/print-reliability-test.mjs",
     "hardware:test-device-certification": "node tools/hardware-validation/device-certification-suite.mjs",
     "hardware:test-field-hardening": "node tools/hardware-validation/field-hardening-simulation.mjs",
+    "release:simulate-failures": "node tools/release-governance/rollout-failure-simulation.mjs",
     "field:pilot-runner": "node tools/field-validation/pilot-field-runner.mjs",
     "enterprise:load-test": "k6 run tools/enterprise-stress-test/load-test-k6.js --vus 50 --duration 300s",
     "enterprise:load-test-heavy": "k6 run tools/enterprise-stress-test/load-test-k6.js --vus 500 --duration 600s",

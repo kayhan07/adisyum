@@ -779,6 +779,10 @@ export default function SystemAdminPage() {
                   <Command className="h-4 w-4" />
                   Komut paleti
                 </button>
+                <Link href="/system-admin/release-operations" className="inline-flex items-center gap-2 rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-4 py-3 text-sm font-semibold text-cyan-100">
+                  <RefreshCw className="h-4 w-4" />
+                  Release Operations
+                </Link>
                 <button
                   type="button"
                   onClick={() => void handleAdminLogout()}
