@@ -101,21 +101,21 @@ export default function TenantWorkspaceClient({ tenantId }: { tenantId: string }
   const devices = useMemo(() => live?.devices.filter((row) => row.tenantId === tenantId) ?? [], [live, tenantId]);
   const events = useMemo(() => live?.events.filter((row) => row.tenantId === tenantId) ?? [], [live, tenantId]);
 
-  if (loading) return <main className="min-h-screen bg-[#08111f] p-6 text-white">Workspace yükleniyor...</main>;
-  if (!tenant) return <main className="min-h-screen bg-[#08111f] p-6 text-white">Tenant bulunamadı.</main>;
+  if (loading) return <main className="min-h-screen bg-[#08111f] p-6 text-white">Çalışma alanı yükleniyor...</main>;
+  if (!tenant) return <main className="min-h-screen bg-[#08111f] p-6 text-white">Abonelik bulunamadı.</main>;
 
   return <main className="min-h-screen bg-[#08111f] text-white">
     <header className="border-b border-white/10 px-6 py-5">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <Link href="/system-admin" className="text-sm text-slate-400">← Tenants Home</Link>
+          <Link href="/system-admin" className="text-sm text-slate-400">← Abonelikler</Link>
           <h1 className="mt-2 text-3xl font-semibold">{tenant.companyName}</h1>
           <p className="mt-1 text-sm text-slate-400">{tenant.tenantId} / {tenant.plan} / {tenant.status}</p>
         </div>
         <div className="grid grid-cols-3 gap-3">
-          <WorkspaceMetric label="Online" value={String(presence.length)} />
-          <WorkspaceMetric label="Incidents" value={String(incidents.filter((incident) => incident.status !== 'resolved').length)} />
-          <WorkspaceMetric label="Revenue" value={`₺${tenant.dailyRevenue.toLocaleString('tr-TR')}`} />
+          <WorkspaceMetric label="Online Kullanıcı" value={String(presence.length)} />
+          <WorkspaceMetric label="Açık Olay" value={String(incidents.filter((incident) => incident.status !== 'resolved').length)} />
+          <WorkspaceMetric label="Ciro" value={`₺${tenant.dailyRevenue.toLocaleString('tr-TR')}`} />
         </div>
       </div>
     </header>
@@ -129,11 +129,11 @@ export default function TenantWorkspaceClient({ tenantId }: { tenantId: string }
         <WorkspaceSurface section={activeSection} tenant={tenant} presence={presence} devices={devices} events={events} incidents={incidents} audit={audit} />
       </section>
       <aside className="border-l border-white/10 p-4">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">Live sidebar</h2>
-        <SidebarBlock title="Online users" rows={presence.slice(0, 6).map((row) => `${row.username} / ${row.currentRoute ?? '-'}`)} />
-        <SidebarBlock title="Active incidents" rows={incidents.filter((incident) => incident.status !== 'resolved').slice(0, 5).map((incident) => incident.title)} />
-        <SidebarBlock title="Latest mutations" rows={audit.slice(0, 5).map((row) => row.action)} />
-        <SidebarBlock title="Operational warnings" rows={events.filter((event) => event.severity !== 'info').slice(0, 5).map((event) => event.message)} />
+        <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">Canlı Akış</h2>
+        <SidebarBlock title="Online kullanıcılar" rows={presence.slice(0, 6).map((row) => `${row.username} / ${row.currentRoute ?? '-'}`)} />
+        <SidebarBlock title="Aktif olaylar" rows={incidents.filter((incident) => incident.status !== 'resolved').slice(0, 5).map((incident) => incident.title)} />
+        <SidebarBlock title="Son değişiklikler" rows={audit.slice(0, 5).map((row) => row.action)} />
+        <SidebarBlock title="Operasyon uyarıları" rows={events.filter((event) => event.severity !== 'info').slice(0, 5).map((event) => event.message)} />
       </aside>
     </div>
   </main>;
@@ -142,22 +142,22 @@ export default function TenantWorkspaceClient({ tenantId }: { tenantId: string }
 function WorkspaceSurface({ section, tenant, presence, devices, events, incidents, audit }: { section: WorkspaceSection; tenant: TenantRow; presence: PresenceRow[]; devices: DeviceRow[]; events: EventRow[]; incidents: IncidentRow[]; audit: AuditRow[] }) {
   if (section === 'overview') return <div className="grid gap-5">
     <div className="grid gap-4 md:grid-cols-4">
-      <WorkspaceCard title="Today revenue" value={`₺${tenant.dailyRevenue.toLocaleString('tr-TR')}`} />
-      <WorkspaceCard title="Active users" value={String(presence.length)} />
-      <WorkspaceCard title="Active branches" value={`${tenant.activeBranchCount}/${tenant.branchCount}`} />
-      <WorkspaceCard title="Open incidents" value={String(incidents.filter((incident) => incident.status !== 'resolved').length)} />
+      <WorkspaceCard title="Bugünkü ciro" value={`₺${tenant.dailyRevenue.toLocaleString('tr-TR')}`} />
+      <WorkspaceCard title="Aktif kullanıcı" value={String(presence.length)} />
+      <WorkspaceCard title="Aktif şube" value={`${tenant.activeBranchCount}/${tenant.branchCount}`} />
+      <WorkspaceCard title="Açık olay" value={String(incidents.filter((incident) => incident.status !== 'resolved').length)} />
     </div>
-    <ListPanel title="Recent tenant mutations" rows={audit.slice(0, 8).map((row) => `${row.action} / ${row.entity ?? '-'}`)} />
+    <ListPanel title="Son abonelik değişiklikleri" rows={audit.slice(0, 8).map((row) => `${row.action} / ${row.entity ?? '-'}`)} />
   </div>;
-  if (section === 'operations') return <ListPanel title="Operations" rows={events.map((event) => `${event.type} / ${event.message}`)} />;
-  if (section === 'users') return <ListPanel title="Users" rows={presence.map((row) => `${row.username} / ${row.role} / ${row.status}`)} />;
-  if (section === 'devices' || section === 'printers') return <ListPanel title={section === 'printers' ? 'Printers' : 'Devices'} rows={devices.map((device) => `${device.deviceType} / ${device.deviceId} / ${device.status} / ${device.latencyMs ?? '-'}ms`)} />;
-  if (section === 'incidents') return <ListPanel title="Incidents" rows={incidents.map((incident) => `${incident.severity} / ${incident.status} / ${incident.title}`)} />;
-  if (section === 'audit') return <ListPanel title="Audit" rows={audit.map((row) => `${row.action} / ${row.userId ?? '-'} / ${row.entity ?? '-'}`)} />;
-  if (section === 'finance' || section === 'billing') return <div className="grid gap-4 md:grid-cols-3"><WorkspaceCard title="Daily revenue" value={`₺${tenant.dailyRevenue.toLocaleString('tr-TR')}`} /><WorkspaceCard title="Billing period" value={tenant.billingPeriod} /><WorkspaceCard title="Renewal" value={tenant.expiresAt?.slice(0, 10) ?? '-'} /></div>;
-  if (section === 'branches') return <ListPanel title="Branches" rows={[`${tenant.activeBranchCount} active`, `${tenant.branchCount} total`]} />;
-  if (section === 'ai') return <ListPanel title="AI Insights" rows={[incidents.length ? 'Incident load elevated' : 'Operational risk stable', devices.some((device) => device.failureCount > 0) ? 'Device reliability watch' : 'Device reliability stable']} />;
-  return <ListPanel title={section[0].toUpperCase() + section.slice(1)} rows={['Contextual workspace surface hazır.', 'Bu alan route-level lazy hydration ile ayrıştırıldı.']} />;
+  if (section === 'operations') return <ListPanel title="Operasyon" rows={events.map((event) => `${event.type} / ${event.message}`)} />;
+  if (section === 'users') return <ListPanel title="Kullanıcılar" rows={presence.map((row) => `${row.username} / ${row.role} / ${row.status}`)} />;
+  if (section === 'devices' || section === 'printers') return <ListPanel title={section === 'printers' ? 'Yazıcılar' : 'Cihazlar'} rows={devices.map((device) => `${device.deviceType} / ${device.deviceId} / ${device.status} / ${device.latencyMs ?? '-'}ms`)} />;
+  if (section === 'incidents') return <ListPanel title="Olaylar" rows={incidents.map((incident) => `${incident.severity} / ${incident.status} / ${incident.title}`)} />;
+  if (section === 'audit') return <ListPanel title="Denetim" rows={audit.map((row) => `${row.action} / ${row.userId ?? '-'} / ${row.entity ?? '-'}`)} />;
+  if (section === 'finance' || section === 'billing') return <div className="grid gap-4 md:grid-cols-3"><WorkspaceCard title="Günlük ciro" value={`₺${tenant.dailyRevenue.toLocaleString('tr-TR')}`} /><WorkspaceCard title="Fatura dönemi" value={tenant.billingPeriod} /><WorkspaceCard title="Yenileme" value={tenant.expiresAt?.slice(0, 10) ?? '-'} /></div>;
+  if (section === 'branches') return <ListPanel title="Şubeler" rows={[`${tenant.activeBranchCount} aktif`, `${tenant.branchCount} toplam`]} />;
+  if (section === 'ai') return <ListPanel title="AI Analiz" rows={[incidents.length ? 'Olay yükü yükselmiş' : 'Operasyon riski dengeli', devices.some((device) => device.failureCount > 0) ? 'Cihaz güvenilirliği izlenmeli' : 'Cihaz güvenilirliği dengeli']} />;
+  return <ListPanel title={section[0].toUpperCase() + section.slice(1)} rows={['Bağlamsal çalışma alanı hazır.', 'Bu alan rota bazlı kademeli yükleme ile ayrıştırıldı.']} />;
 }
 
 function WorkspaceMetric({ label, value }: { label: string; value: string }) { return <div className="rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 font-semibold">{value}</p></div>; }

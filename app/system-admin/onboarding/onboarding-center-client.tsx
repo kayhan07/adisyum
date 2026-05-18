@@ -1,19 +1,68 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
-type ProvisioningJob = { id: string; targetTenantId: string; status: string; currentStep: string; attemptCount: number; failureReason?: string | null };
-type TabId = 'new' | 'jobs' | 'failed' | 'retry' | 'rollback' | 'templates' | 'health';
+type ProvisioningJob = {
+  id: string;
+  targetTenantId: string;
+  status: string;
+  currentStep: string;
+  attemptCount: number;
+  failureReason?: string | null;
+};
+
+type WizardStep =
+  | 'company'
+  | 'package'
+  | 'branch'
+  | 'users'
+  | 'starter'
+  | 'finance'
+  | 'preview'
+  | 'provisioning';
+
+type AdvancedTab = 'jobs' | 'failed' | 'retry' | 'rollback' | 'health';
+
+const wizardSteps: Array<{ id: WizardStep; label: string }> = [
+  { id: 'company', label: 'Firma Bilgileri' },
+  { id: 'package', label: 'Paket Seçimi' },
+  { id: 'branch', label: 'Şube Yapısı' },
+  { id: 'users', label: 'Kullanıcılar' },
+  { id: 'starter', label: 'Başlangıç' },
+  { id: 'finance', label: 'Finans' },
+  { id: 'preview', label: 'Önizleme' },
+  { id: 'provisioning', label: 'Kurulum' },
+];
 
 export default function OnboardingCenterClient() {
-  const [activeTab, setActiveTab] = useState<TabId>('new');
+  const [activeStep, setActiveStep] = useState<WizardStep>('company');
+  const [advancedTab, setAdvancedTab] = useState<AdvancedTab>('jobs');
   const [jobs, setJobs] = useState<ProvisioningJob[]>([]);
-  const [companyName, setCompanyName] = useState('');
-  const [adminUsername, setAdminUsername] = useState('admin');
-  const [adminPassword, setAdminPassword] = useState('');
-  const [packageType, setPackageType] = useState<'mini' | 'gold' | 'premium'>('mini');
   const [message, setMessage] = useState('');
+  const [draft, setDraft] = useState({
+    companyName: '',
+    contactName: '',
+    phone: '',
+    email: '',
+    address: '',
+    taxInfo: '',
+    notes: '',
+    packageType: 'mini' as 'mini' | 'gold' | 'premium',
+    branchCount: 1,
+    restaurantType: 'cafe',
+    tableModel: 'standard',
+    serviceModel: 'table',
+    adminUsername: 'admin',
+    adminPassword: '',
+    starterPack: 'empty',
+    startDate: '',
+    packageFee: 0,
+    reseller: '',
+    commissionRate: 0,
+    autoRenew: true,
+    paymentType: 'monthly',
+  });
 
   async function loadJobs() {
     const response = await fetch('/api/system-admin/tenants', { credentials: 'include', cache: 'no-store' });
@@ -23,21 +72,48 @@ export default function OnboardingCenterClient() {
 
   useEffect(() => { void loadJobs(); }, []);
 
+  const failedJobs = jobs.filter((job) => job.status === 'failed');
+  const currentStepIndex = wizardSteps.findIndex((step) => step.id === activeStep);
+  const previewRows = useMemo(() => [
+    `1 firma kaydı: ${draft.companyName || '-'}`,
+    `${draft.branchCount} şube`,
+    `1 yönetici kullanıcı: ${draft.adminUsername || '-'}`,
+    `Paket: ${packageLabel(draft.packageType)}`,
+    `Başlangıç: ${starterLabel(draft.starterPack)}`,
+    `Yenileme: ${draft.autoRenew ? 'Otomatik' : 'Manuel'}`,
+  ], [draft]);
+
+  function updateDraft<Key extends keyof typeof draft>(key: Key, value: (typeof draft)[Key]) {
+    setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function goNext() {
+    setActiveStep(wizardSteps[Math.min(currentStepIndex + 1, wizardSteps.length - 1)].id);
+  }
+
+  function goBack() {
+    setActiveStep(wizardSteps[Math.max(currentStepIndex - 1, 0)].id);
+  }
+
   async function createSubscription() {
     setMessage('');
     const response = await fetch('/api/system-admin/tenants', {
       method: 'POST',
       credentials: 'include',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ companyName, adminUsername, adminPassword, packageType }),
+      body: JSON.stringify({
+        companyName: draft.companyName,
+        adminUsername: draft.adminUsername,
+        adminPassword: draft.adminPassword,
+        packageType: draft.packageType,
+      }),
     });
     if (!response.ok) {
-      setMessage('Abonelik oluşturulamadı.');
+      setMessage('Abonelik oluşturulamadı. Lütfen bilgileri kontrol edip tekrar deneyin.');
       return;
     }
-    setMessage('Provisioning kuyruğa alındı.');
-    setCompanyName('');
-    setAdminPassword('');
+    setMessage('Kurulum başlatıldı. Süreci aşağıdaki durum akışından izleyebilirsiniz.');
+    setActiveStep('provisioning');
     await loadJobs();
   }
 
@@ -51,56 +127,246 @@ export default function OnboardingCenterClient() {
     await loadJobs();
   }
 
-  const failedJobs = jobs.filter((job) => job.status === 'failed');
-  const tabs: Array<[TabId, string]> = [
-    ['new', 'Yeni Abonelik'],
-    ['jobs', 'Provisioning İşleri'],
-    ['failed', 'Başarısız İşlemler'],
-    ['retry', 'Retry Merkezi'],
-    ['rollback', 'Rollback Merkezi'],
-    ['templates', 'Template Import'],
-    ['health', 'Sağlık Kontrolü'],
-  ];
-
   return <main className="min-h-screen bg-[#08111f] p-6 text-white">
     <header className="mx-auto max-w-6xl">
       <Link href="/system-admin" className="text-sm text-slate-400">← Kontrol Merkezi</Link>
-      <h1 className="mt-3 text-3xl font-semibold">Onboarding Merkezi</h1>
-      <p className="mt-2 text-sm text-slate-400">Abonelik oluşturma, provisioning ve kurtarma akışları tek çalışma alanında.</p>
-    </header>
-    <section className="mx-auto mt-6 max-w-6xl">
-      <div className="flex gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.025] p-2">
-        {tabs.map(([id, label]) => <button key={id} type="button" onClick={() => setActiveTab(id)} className={`whitespace-nowrap rounded-xl px-3 py-2 text-sm font-semibold ${activeTab === id ? 'bg-cyan-400/15 text-cyan-100' : 'text-slate-300 hover:bg-white/5'}`}>{label}</button>)}
-      </div>
-      {activeTab === 'new' ? <article className="mt-5 max-w-2xl rounded-3xl border border-white/10 bg-slate-900 p-6">
-        <h2 className="text-xl font-semibold">Yeni abonelik oluştur</h2>
-        <div className="mt-5 grid gap-3">
-          <input value={companyName} onChange={(event) => setCompanyName(event.target.value)} placeholder="Firma adı" className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 outline-none" />
-          <div className="grid gap-3 md:grid-cols-2">
-            <input value={adminUsername} onChange={(event) => setAdminUsername(event.target.value)} placeholder="Admin kullanıcı adı" className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 outline-none" />
-            <input type="password" value={adminPassword} onChange={(event) => setAdminPassword(event.target.value)} placeholder="İlk şifre" className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 outline-none" />
-          </div>
-          <select value={packageType} onChange={(event) => setPackageType(event.target.value as typeof packageType)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 outline-none">
-            <option value="mini">Mini</option><option value="gold">Gold</option><option value="premium">Premium</option>
-          </select>
+      <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-semibold">Onboarding Merkezi</h1>
+          <p className="mt-2 text-sm text-slate-400">Yeni müşteriyi dakikalar içinde canlı kullanıma hazırlayan adım adım kurulum akışı.</p>
         </div>
-        <button type="button" onClick={() => void createSubscription()} className="mt-5 rounded-2xl bg-emerald-500/20 px-4 py-3 font-semibold text-emerald-100">Yeni Abonelik Oluştur</button>
-        {message ? <p className="mt-4 text-sm text-slate-300">{message}</p> : null}
-      </article> : null}
-      {activeTab === 'jobs' ? <JobCards jobs={jobs} /> : null}
-      {activeTab === 'failed' ? <JobCards jobs={failedJobs} /> : null}
-      {activeTab === 'retry' ? <ActionCards jobs={failedJobs} action="retry" onAction={runAction} /> : null}
-      {activeTab === 'rollback' ? <ActionCards jobs={jobs.filter((job) => job.status !== 'completed')} action="rollback" onAction={runAction} /> : null}
-      {activeTab === 'templates' ? <EmptyPanel title="Template Import" text="Template import akışları bu yüzeyde izole edilir." /> : null}
-      {activeTab === 'health' ? <EmptyPanel title="Sağlık Kontrolü" text={`${jobs.length} provisioning işi izleniyor, ${failedJobs.length} başarısız iş var.`} /> : null}
+        <Link href="/system-admin" className="rounded-2xl border border-white/10 px-4 py-3 text-sm text-slate-200">Aboneliklere dön</Link>
+      </div>
+    </header>
+
+    <section className="mx-auto mt-6 grid max-w-6xl gap-5 lg:grid-cols-[250px_minmax(0,1fr)]">
+      <aside className="rounded-3xl border border-white/10 bg-white/[0.025] p-3">
+        <p className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Kurulum Adımları</p>
+        <nav className="grid gap-1">
+          {wizardSteps.map((step, index) => (
+            <button
+              key={step.id}
+              type="button"
+              onClick={() => setActiveStep(step.id)}
+              className={`flex items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm ${activeStep === step.id ? 'bg-cyan-400/15 text-cyan-100' : 'text-slate-300 hover:bg-white/5'}`}
+            >
+              <span className="flex h-7 w-7 items-center justify-center rounded-full border border-white/10 text-xs">{index + 1}</span>
+              {step.label}
+            </button>
+          ))}
+        </nav>
+      </aside>
+
+      <div className="grid gap-5">
+        <article className="rounded-3xl border border-white/10 bg-slate-900 p-6">
+          {activeStep === 'company' ? <CompanyStep draft={draft} updateDraft={updateDraft} /> : null}
+          {activeStep === 'package' ? <PackageStep draft={draft} updateDraft={updateDraft} /> : null}
+          {activeStep === 'branch' ? <BranchStep draft={draft} updateDraft={updateDraft} /> : null}
+          {activeStep === 'users' ? <UsersStep draft={draft} updateDraft={updateDraft} /> : null}
+          {activeStep === 'starter' ? <StarterStep draft={draft} updateDraft={updateDraft} /> : null}
+          {activeStep === 'finance' ? <FinanceStep draft={draft} updateDraft={updateDraft} /> : null}
+          {activeStep === 'preview' ? <PreviewStep rows={previewRows} /> : null}
+          {activeStep === 'provisioning' ? <ProvisioningStep jobs={jobs} message={message} /> : null}
+          <div className="mt-6 flex flex-wrap justify-between gap-3 border-t border-white/10 pt-5">
+            <button type="button" onClick={goBack} disabled={currentStepIndex === 0} className="rounded-2xl border border-white/10 px-4 py-3 text-sm disabled:opacity-40">Geri</button>
+            {activeStep === 'preview' ? (
+              <button type="button" onClick={() => void createSubscription()} className="rounded-2xl bg-emerald-500/20 px-4 py-3 text-sm font-semibold text-emerald-100">Kurulumu Başlat</button>
+            ) : activeStep !== 'provisioning' ? (
+              <button type="button" onClick={goNext} className="rounded-2xl bg-cyan-400/15 px-4 py-3 text-sm font-semibold text-cyan-100">Devam Et</button>
+            ) : null}
+          </div>
+        </article>
+
+        <details className="rounded-3xl border border-white/10 bg-white/[0.025] p-5">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-200">Gelişmiş Operasyon Araçları</summary>
+          <p className="mt-2 text-sm text-slate-400">Destek ekibinin başarısız kurulumları incelemek, yeniden denemek veya geri almak için kullandığı teknik alan.</p>
+          <div className="mt-4 flex gap-2 overflow-x-auto">
+            {([
+              ['jobs', 'Kurulum İşleri'],
+              ['failed', 'Başarısız İşlemler'],
+              ['retry', 'Tekrar Deneme'],
+              ['rollback', 'Geri Alma'],
+              ['health', 'Sağlık Kontrolü'],
+            ] as Array<[AdvancedTab, string]>).map(([id, label]) => (
+              <button key={id} type="button" onClick={() => setAdvancedTab(id)} className={`whitespace-nowrap rounded-xl px-3 py-2 text-sm ${advancedTab === id ? 'bg-white/10 text-white' : 'text-slate-400'}`}>{label}</button>
+            ))}
+          </div>
+          {advancedTab === 'jobs' ? <JobCards jobs={jobs} /> : null}
+          {advancedTab === 'failed' ? <JobCards jobs={failedJobs} /> : null}
+          {advancedTab === 'retry' ? <ActionCards jobs={failedJobs} action="retry" onAction={runAction} /> : null}
+          {advancedTab === 'rollback' ? <ActionCards jobs={jobs.filter((job) => job.status !== 'completed')} action="rollback" onAction={runAction} /> : null}
+          {advancedTab === 'health' ? <EmptyPanel title="Sağlık Kontrolü" text={`${jobs.length} kurulum işi izleniyor, ${failedJobs.length} başarısız işlem var.`} /> : null}
+        </details>
+      </div>
     </section>
   </main>;
 }
 
+function CompanyStep({ draft, updateDraft }: StepProps) {
+  return <StepShell title="Firma Bilgileri" text="Müşteriyle ilgili ticari ve iletişim bilgilerini toplayın.">
+    <div className="grid gap-3 md:grid-cols-2">
+      <Field value={draft.companyName} onChange={(value) => updateDraft('companyName', value)} placeholder="Firma adı" />
+      <Field value={draft.contactName} onChange={(value) => updateDraft('contactName', value)} placeholder="Yetkili kişi" />
+      <Field value={draft.phone} onChange={(value) => updateDraft('phone', value)} placeholder="Telefon" />
+      <Field value={draft.email} onChange={(value) => updateDraft('email', value)} placeholder="E-posta" />
+      <Field value={draft.address} onChange={(value) => updateDraft('address', value)} placeholder="Adres" className="md:col-span-2" />
+      <Field value={draft.taxInfo} onChange={(value) => updateDraft('taxInfo', value)} placeholder="Vergi bilgileri" />
+      <Field value={draft.notes} onChange={(value) => updateDraft('notes', value)} placeholder="Notlar" />
+    </div>
+  </StepShell>;
+}
+
+function PackageStep({ draft, updateDraft }: StepProps) {
+  return <StepShell title="Paket Seçimi" text="İşletmenin ölçeğine uygun lisans paketini seçin.">
+    <div className="grid gap-3 md:grid-cols-3">
+      {(['mini', 'gold', 'premium'] as const).map((packageType) => (
+        <button key={packageType} type="button" onClick={() => updateDraft('packageType', packageType)} className={`rounded-2xl border p-4 text-left ${draft.packageType === packageType ? 'border-cyan-300/40 bg-cyan-400/10' : 'border-white/10 bg-white/[0.025]'}`}>
+          <p className="text-lg font-semibold">{packageLabel(packageType)}</p>
+          <p className="mt-2 text-sm text-slate-400">{packageType === 'mini' ? 'Tek şube başlangıcı' : packageType === 'gold' ? 'Büyüyen restoranlar' : 'Çok şubeli yapı'}</p>
+        </button>
+      ))}
+    </div>
+  </StepShell>;
+}
+
+function BranchStep({ draft, updateDraft }: StepProps) {
+  return <StepShell title="Şube Yapısı" text="Restoran tipini ve hizmet modelini belirleyin.">
+    <div className="grid gap-3 md:grid-cols-2">
+      <NumberField value={draft.branchCount} onChange={(value) => updateDraft('branchCount', value)} placeholder="Şube sayısı" />
+      <Select value={draft.restaurantType} onChange={(value) => updateDraft('restaurantType', value)} options={[['cafe', 'Cafe'], ['kebap', 'Kebapçı'], ['meyhane', 'Meyhane'], ['fish', 'Balık Restoranı']]} />
+      <Select value={draft.tableModel} onChange={(value) => updateDraft('tableModel', value)} options={[['standard', 'Standart masa yapısı'], ['fast', 'Hızlı servis'], ['mixed', 'Karma yapı']]} />
+      <Select value={draft.serviceModel} onChange={(value) => updateDraft('serviceModel', value)} options={[['table', 'Masaya servis'], ['takeaway', 'Paket servis'], ['mixed', 'Karma servis']]} />
+    </div>
+  </StepShell>;
+}
+
+function UsersStep({ draft, updateDraft }: StepProps) {
+  return <StepShell title="Kullanıcılar" text="İlk yönetici hesabını oluşturun.">
+    <div className="grid gap-3 md:grid-cols-2">
+      <Field value={draft.adminUsername} onChange={(value) => updateDraft('adminUsername', value)} placeholder="Admin kullanıcı adı" />
+      <Field type="password" value={draft.adminPassword} onChange={(value) => updateDraft('adminPassword', value)} placeholder="İlk şifre" />
+    </div>
+  </StepShell>;
+}
+
+function StarterStep({ draft, updateDraft }: StepProps) {
+  return <StepShell title="Template / Başlangıç" text="İşletmenin başlangıç verisini seçin.">
+    <div className="grid gap-3 md:grid-cols-2">
+      {(['empty', 'cafe', 'kebap', 'meyhane', 'fish', 'custom'] as const).map((pack) => (
+        <button key={pack} type="button" onClick={() => updateDraft('starterPack', pack)} className={`rounded-2xl border p-4 text-left ${draft.starterPack === pack ? 'border-cyan-300/40 bg-cyan-400/10' : 'border-white/10 bg-white/[0.025]'}`}>
+          <p className="font-semibold">{starterLabel(pack)}</p>
+        </button>
+      ))}
+    </div>
+  </StepShell>;
+}
+
+function FinanceStep({ draft, updateDraft }: StepProps) {
+  return <StepShell title="Finans" text="Satış ve yenileme koşullarını tanımlayın.">
+    <div className="grid gap-3 md:grid-cols-2">
+      <Field type="date" value={draft.startDate} onChange={(value) => updateDraft('startDate', value)} placeholder="Başlangıç tarihi" />
+      <NumberField value={draft.packageFee} onChange={(value) => updateDraft('packageFee', value)} placeholder="Paket ücreti" />
+      <Field value={draft.reseller} onChange={(value) => updateDraft('reseller', value)} placeholder="Bayi / temsilci" />
+      <NumberField value={draft.commissionRate} onChange={(value) => updateDraft('commissionRate', value)} placeholder="Komisyon %" />
+      <Select value={draft.paymentType} onChange={(value) => updateDraft('paymentType', value)} options={[['monthly', 'Aylık'], ['quarterly', '3 Aylık'], ['yearly', 'Yıllık']]} />
+      <label className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.025] px-4 py-3 text-sm">
+        Otomatik yenileme
+        <input type="checkbox" checked={draft.autoRenew} onChange={(event) => updateDraft('autoRenew', event.target.checked)} />
+      </label>
+    </div>
+  </StepShell>;
+}
+
+function PreviewStep({ rows }: { rows: string[] }) {
+  return <StepShell title="Önizleme" text="Kurulum başlamadan önce oluşturulacak yapıyı doğrulayın.">
+    <div className="grid gap-2">
+      {rows.map((row) => <p key={row} className="rounded-2xl bg-white/[0.035] px-4 py-3 text-sm text-slate-200">{row}</p>)}
+    </div>
+  </StepShell>;
+}
+
+function ProvisioningStep({ jobs, message }: { jobs: ProvisioningJob[]; message: string }) {
+  return <StepShell title="Kurulum" text="Müşteri hesabı hazırlanırken ilerlemeyi sade biçimde izleyin.">
+    {message ? <p className="rounded-2xl bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">{message}</p> : null}
+    <JobCards jobs={jobs.slice(0, 4)} />
+  </StepShell>;
+}
+
+type StepProps = {
+  draft: {
+    companyName: string;
+    contactName: string;
+    phone: string;
+    email: string;
+    address: string;
+    taxInfo: string;
+    notes: string;
+    packageType: 'mini' | 'gold' | 'premium';
+    branchCount: number;
+    restaurantType: string;
+    tableModel: string;
+    serviceModel: string;
+    adminUsername: string;
+    adminPassword: string;
+    starterPack: string;
+    startDate: string;
+    packageFee: number;
+    reseller: string;
+    commissionRate: number;
+    autoRenew: boolean;
+    paymentType: string;
+  };
+  updateDraft: <Key extends keyof StepProps['draft']>(key: Key, value: StepProps['draft'][Key]) => void;
+};
+
+function StepShell({ title, text, children }: { title: string; text: string; children: ReactNode }) {
+  return <>
+    <h2 className="text-xl font-semibold">{title}</h2>
+    <p className="mt-2 text-sm text-slate-400">{text}</p>
+    <div className="mt-5">{children}</div>
+  </>;
+}
+
+function Field({ value, onChange, placeholder, type = 'text', className = '' }: { value: string; onChange: (value: string) => void; placeholder: string; type?: string; className?: string }) {
+  return <input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className={`h-12 rounded-2xl border border-white/10 bg-white/5 px-4 outline-none ${className}`} />;
+}
+
+function NumberField({ value, onChange, placeholder }: { value: number; onChange: (value: number) => void; placeholder: string }) {
+  return <input type="number" value={value} onChange={(event) => onChange(Number(event.target.value))} placeholder={placeholder} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 outline-none" />;
+}
+
+function Select({ value, onChange, options }: { value: string; onChange: (value: string) => void; options: Array<[string, string]> }) {
+  return <select value={value} onChange={(event) => onChange(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 outline-none">
+    {options.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+  </select>;
+}
+
 function JobCards({ jobs }: { jobs: ProvisioningJob[] }) {
-  return <div className="mt-5 grid gap-3">{jobs.map((job) => <article key={job.id} className="rounded-2xl border border-white/10 bg-slate-900 p-4"><p className="font-semibold">{job.targetTenantId}</p><p className="mt-1 text-sm text-slate-400">{job.status} / {job.currentStep} / deneme {job.attemptCount}</p></article>)}</div>;
+  return <div className="mt-5 grid gap-3">{jobs.map((job) => <article key={job.id} className="rounded-2xl border border-white/10 bg-white/[0.025] p-4"><p className="font-semibold">{job.targetTenantId}</p><p className="mt-1 text-sm text-slate-400">{job.status} / {job.currentStep} / deneme {job.attemptCount}</p></article>)}</div>;
 }
+
 function ActionCards({ jobs, action, onAction }: { jobs: ProvisioningJob[]; action: 'retry' | 'rollback'; onAction: (jobId: string, action: 'retry' | 'rollback') => Promise<void> }) {
-  return <div className="mt-5 grid gap-3">{jobs.map((job) => <article key={job.id} className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-900 p-4"><div><p className="font-semibold">{job.targetTenantId}</p><p className="text-sm text-slate-400">{job.failureReason ?? job.currentStep}</p></div><button type="button" onClick={() => void onAction(job.id, action)} className="rounded-xl bg-white/10 px-3 py-2 text-sm">{action === 'retry' ? 'Tekrar Dene' : 'Rollback'}</button></article>)}</div>;
+  return <div className="mt-5 grid gap-3">{jobs.map((job) => <article key={job.id} className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.025] p-4"><div><p className="font-semibold">{job.targetTenantId}</p><p className="text-sm text-slate-400">{job.failureReason ?? job.currentStep}</p></div><button type="button" onClick={() => void onAction(job.id, action)} className="rounded-xl bg-white/10 px-3 py-2 text-sm">{action === 'retry' ? 'Tekrar Dene' : 'Geri Al'}</button></article>)}</div>;
 }
-function EmptyPanel({ title, text }: { title: string; text: string }) { return <article className="mt-5 rounded-2xl border border-white/10 bg-slate-900 p-5"><h2 className="text-xl font-semibold">{title}</h2><p className="mt-2 text-sm text-slate-400">{text}</p></article>; }
+
+function EmptyPanel({ title, text }: { title: string; text: string }) {
+  return <article className="mt-5 rounded-2xl border border-white/10 bg-white/[0.025] p-5"><h2 className="font-semibold">{title}</h2><p className="mt-2 text-sm text-slate-400">{text}</p></article>;
+}
+
+function packageLabel(value: 'mini' | 'gold' | 'premium') {
+  if (value === 'gold') return 'Premium';
+  if (value === 'premium') return 'Enterprise';
+  return 'Mini';
+}
+
+function starterLabel(value: string) {
+  const labels: Record<string, string> = {
+    empty: 'Boş sistem',
+    cafe: 'Cafe starter',
+    kebap: 'Kebapçı starter',
+    meyhane: 'Meyhane',
+    fish: 'Balık restoranı',
+    custom: 'Özel template',
+  };
+  return labels[value] ?? value;
+}

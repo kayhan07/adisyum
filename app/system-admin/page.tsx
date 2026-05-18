@@ -86,6 +86,24 @@ type ProvisioningMetrics = {
   failuresByStep: Array<{ step: string; count: number }>;
   eventCounts: Array<{ type: string; severity: string; count: number }>;
 };
+type JobsCenterMetric = {
+  queue: string;
+  waiting: number;
+  active: number;
+  completed: number;
+  dead: number;
+};
+type JobsCenterRow = {
+  id: string;
+  queue: string;
+  name: string;
+  tenantId?: string | null;
+  status: string;
+  attemptsMade: number;
+  maxAttempts: number;
+  failedReason?: string | null;
+  timestamp: number;
+};
 type TemplatePoolRow = {
   id: string;
   key: string;
@@ -220,7 +238,7 @@ type TenantDrawerTab = 'overview' | 'live' | 'finance' | 'branches' | 'users' | 
 
 const navGroups: Array<{ label: string; items: Array<{ id: AdminModule; label: string; icon: typeof LayoutDashboard }> }> = [
   {
-    label: 'YÃ¶netim',
+    label: 'Y?netim',
     items: [
       { id: 'command-center', label: 'Kontrol Merkezi', icon: LayoutDashboard },
       { id: 'tenants', label: 'Abonelikler', icon: Building2 },
@@ -230,8 +248,8 @@ const navGroups: Array<{ label: string; items: Array<{ id: AdminModule; label: s
     label: 'Operasyon',
     items: [
       { id: 'operations', label: 'Operasyon Merkezi', icon: Activity },
-      { id: 'incidents', label: 'Olay YÃ¶netimi', icon: BellRing },
-      { id: 'jobs', label: 'GÃ¶rev KuyruÄŸu', icon: Workflow },
+      { id: 'incidents', label: 'Olay Y?netimi', icon: BellRing },
+      { id: 'jobs', label: 'Görev Kuyruğu', icon: Workflow },
       { id: 'devices', label: 'Cihazlar', icon: Printer },
     ],
   },
@@ -253,10 +271,10 @@ const navGroups: Array<{ label: string; items: Array<{ id: AdminModule; label: s
   {
     label: 'Sistem',
     items: [
-      { id: 'observability', label: 'Sistem Ä°zleme', icon: Cpu },
-      { id: 'audit-explorer', label: 'Denetim KayÄ±tlarÄ±', icon: FileText },
-      { id: 'security', label: 'GÃ¼venlik Merkezi', icon: ShieldCheck },
-      { id: 'templates', label: 'Åablonlar', icon: Sparkles },
+      { id: 'observability', label: 'Sistem ?zleme', icon: Cpu },
+      { id: 'audit-explorer', label: 'Denetim Kay?tlar?', icon: FileText },
+      { id: 'security', label: 'G?venlik Merkezi', icon: ShieldCheck },
+      { id: 'templates', label: '?ablonlar', icon: Sparkles },
     ],
   },
 ];
@@ -306,7 +324,7 @@ function LoginCard({ onLogin }: { onLogin: () => void }) {
 
     setLoading(false);
     if (!response?.ok) {
-      setError('Admin kullanÄ±cÄ± adÄ± veya ÅŸifre hatalÄ±.');
+      setError('Admin kullanıcı adı veya şifre hatalı.');
       return;
     }
 
@@ -320,7 +338,7 @@ function LoginCard({ onLogin }: { onLogin: () => void }) {
           <ShieldCheck className="h-7 w-7 text-blue-300" />
           <div>
             <h1 className="text-2xl font-semibold">System Admin ERP</h1>
-            <p className="mt-1 text-sm text-slate-300">SatÄ±ÅŸ, fatura ve abonelik kontrol paneli.</p>
+            <p className="mt-1 text-sm text-slate-300">Satış, fatura ve abonelik kontrol paneli.</p>
           </div>
         </div>
         <div className="mt-6 grid gap-3">
@@ -328,7 +346,7 @@ function LoginCard({ onLogin }: { onLogin: () => void }) {
           <input type="password" value={adminPass} onChange={(event) => setAdminPass(event.target.value)} placeholder="admin123" className="h-12 rounded-2xl border border-white/10 bg-[#0B1220] px-4 font-semibold text-white outline-none" />
         </div>
         {error ? <p className="mt-3 rounded-2xl bg-rose-500/15 px-4 py-3 text-sm font-semibold text-rose-100">{error}</p> : null}
-        <button type="button" onClick={() => void login()} className="mt-5 h-12 w-full rounded-2xl bg-blue-600 text-sm font-semibold text-white disabled:opacity-60" disabled={loading}>{loading ? 'GiriÅŸ yapÄ±lÄ±yorâ€¦' : 'GiriÅŸ yap'}</button>
+        <button type="button" onClick={() => void login()} className="mt-5 h-12 w-full rounded-2xl bg-blue-600 text-sm font-semibold text-white disabled:opacity-60" disabled={loading}>{loading ? 'Giriş yapılıyor…' : 'Giriş yap'}</button>
       </section>
     </main>
   );
@@ -362,9 +380,9 @@ export default function SystemAdminPage() {
   const [tenantDraft, setTenantDraft] = useState<TenantDraft>(() => createAdminTenantDraft());
   const [dealerDraft, setDealerDraft] = useState<Omit<AdminDealer, 'id'>>({ name: '', type: 'dealer', commission_rate: 20, phone: '', email: '', active: true });
   const [packageDraft, setPackageDraft] = useState<AdminPackage>(() => createPackageDraft());
-  const [financeDraft, setFinanceDraft] = useState<Omit<AdminFinanceTransaction, 'id'>>({ type: 'income', source: 'Abonelik tahsilatÄ±', tenant_id: '', amount: 0, date: today(), note: '' });
+  const [financeDraft, setFinanceDraft] = useState<Omit<AdminFinanceTransaction, 'id'>>({ type: 'income', source: 'Abonelik tahsilat?', tenant_id: '', amount: 0, date: today(), note: '' });
   const [invoiceDraft, setInvoiceDraft] = useState<Omit<AdminInvoice, 'id' | 'invoice_no'>>({ tenant_id: '', type: 'subscription', amount: 0, status: 'draft', issue_date: today(), due_date: today() });
-  const [saleDraft, setSaleDraft] = useState<Omit<AdminSale, 'id' | 'commission_amount' | 'commission_status'>>({ tenant_id: '', package_id: 'pkg-mini', seller: 'Merkez SatÄ±ÅŸ', dealer_id: 'dealer-center', amount: 0, commission_rate: 0, date: today() });
+  const [saleDraft, setSaleDraft] = useState<Omit<AdminSale, 'id' | 'commission_amount' | 'commission_status'>>({ tenant_id: '', package_id: 'pkg-mini', seller: 'Merkez Satış', dealer_id: 'dealer-center', amount: 0, commission_rate: 0, date: today() });
   const [paymentDraft, setPaymentDraft] = useState<Omit<AdminPayment, 'id' | 'status' | 'transaction_id' | 'date'>>({ tenant_id: '', invoice_id: '', amount: 0, provider: 'manual' });
 
   useEffect(() => {
@@ -567,7 +585,7 @@ export default function SystemAdminPage() {
         startsAt: tenantDraft.start_date,
         endsAt: tenantDraft.end_date || addDays(tenantDraft.start_date, pkg.duration_days),
         branchId: 'mrk',
-        branchName: 'Merkez Åube',
+        branchName: 'Merkez ?ube',
         adminUsername: tenantDraft.admin_username.trim(),
         adminPassword: tenantDraft.admin_password.trim(),
         adminName: 'Tenant Admin',
@@ -647,7 +665,7 @@ export default function SystemAdminPage() {
     const sale: AdminSale = { id: saleId, ...saleDraft, dealer_id: dealer?.id, seller: dealer?.name ?? saleDraft.seller, commission_rate: commissionRate, commission_amount: commissionAmount, commission_status: commissionAmount > 0 ? 'pending' : 'paid' };
     const commission = { id: `com-${Date.now()}`, sale_id: saleId, dealer_id: dealer?.id ?? '', tenant_id: sale.tenant_id, amount: commissionAmount, rate: commissionRate, status: sale.commission_status, due_date: addDays(today(), 7) } as const;
     commit({ ...state, sales: [sale, ...state.sales], commissions: [commission, ...state.commissions] });
-    setSaleDraft({ tenant_id: '', package_id: 'pkg-mini', seller: 'Merkez SatÄ±ÅŸ', dealer_id: 'dealer-center', amount: 0, commission_rate: 0, date: today() });
+    setSaleDraft({ tenant_id: '', package_id: 'pkg-mini', seller: 'Merkez Satış', dealer_id: 'dealer-center', amount: 0, commission_rate: 0, date: today() });
   }
 
   function processPayment(success: boolean) {
@@ -659,7 +677,7 @@ export default function SystemAdminPage() {
       status: success ? 'success' : 'failed',
       transaction_id: `${paymentDraft.provider.toUpperCase()}-${Date.now()}`,
       date: today(),
-      error: success ? undefined : 'Ã–deme saÄŸlayÄ±cÄ± baÅŸarÄ±sÄ±z yanÄ±t dÃ¶ndÃ¼rdÃ¼.',
+      error: success ? undefined : 'Ödeme sağlayıcı başarısız yanıt döndürdü.',
     };
 
     let nextState: SystemAdminState = {
@@ -685,7 +703,7 @@ export default function SystemAdminPage() {
       nextState = {
         ...nextState,
         invoices: [invoice, ...state.invoices.map((item) => item.id === payment.invoice_id ? { ...item, status: 'paid' as const } : item)],
-        finance: [{ id: `fin-${Date.now()}`, type: 'income', source: 'Online Ã¶deme', tenant_id: payment.tenant_id, amount: payment.amount, date: today(), note: payment.transaction_id }, ...state.finance],
+        finance: [{ id: `fin-${Date.now()}`, type: 'income', source: 'Online ?deme', tenant_id: payment.tenant_id, amount: payment.amount, date: today(), note: payment.transaction_id }, ...state.finance],
         renewals: tenant ? [{ id: `ren-${Date.now()}`, tenant_id: tenant.tenant_id, old_end_date: oldEndDate, new_end_date: newEndDate, payment_id: payment.id, status: 'completed', completed_at: today() }, ...state.renewals] : state.renewals,
         tenants: tenant ? state.tenants.map((item) => item.tenant_id === tenant.tenant_id ? { ...item, end_date: newEndDate, status: item.demo_enabled ? 'demo' : 'active' } : item) : state.tenants,
       };
@@ -698,7 +716,7 @@ export default function SystemAdminPage() {
   function addFinanceTransaction() {
     if (!financeDraft.source.trim() || financeDraft.amount <= 0) return;
     commit({ ...state, finance: [{ id: `fin-${Date.now()}`, ...financeDraft }, ...state.finance] });
-    setFinanceDraft({ type: 'income', source: 'Abonelik tahsilatÄ±', tenant_id: '', amount: 0, date: today(), note: '' });
+    setFinanceDraft({ type: 'income', source: 'Abonelik tahsilat?', tenant_id: '', amount: 0, date: today(), note: '' });
   }
 
   function addInvoice() {
@@ -726,7 +744,7 @@ export default function SystemAdminPage() {
         <aside className="border-r border-white/10 bg-[#0d1626] p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-200">Adisyum Control Tower</p>
           <h1 className="mt-2 text-2xl font-semibold">System Admin</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-400">SaaS operasyon, gelir ve tenant zekasÄ±.</p>
+          <p className="mt-2 text-sm leading-6 text-slate-400">SaaS operasyon, gelir ve tenant zekas?.</p>
           <nav className="mt-8 grid gap-6">
             {navGroups.map((group, index) => (
               <details key={group.label} open={index < 3} className="group">
@@ -767,7 +785,7 @@ export default function SystemAdminPage() {
                   disabled={loggingOut}
                   className="rounded-2xl border border-rose-300/35 bg-rose-500/15 px-4 py-3 text-sm font-semibold text-rose-100 disabled:opacity-60"
                 >
-                  {loggingOut ? 'Ã‡Ä±kÄ±lÄ±yorâ€¦' : 'GÃ¼venli Ã‡Ä±kÄ±ÅŸ'}
+                  {loggingOut ? 'Çıkılıyor…' : 'Güvenli Çıkış'}
                 </button>
               </div>
             </header>
@@ -803,10 +821,10 @@ function CommandBar({ dashboard, saasSummary, provisioningMetrics, liveOps, stat
   }).length;
   const metrics = [
     ['Aktif tenant', String(saasSummary?.activeTenants ?? dashboard.activeSubscriptions)],
-    ['Online kullanÄ±cÄ±', String(liveOps?.summary.onlineUsers ?? 0)],
+    ['Online kullan?c?', String(liveOps?.summary.onlineUsers ?? 0)],
     ['MRR', formatAdminMoney(state.packages.reduce((sum, pkg) => sum + pkg.price, 0))],
-    ['BugÃ¼n ciro', formatAdminMoney(saasSummary?.liveRevenue ?? dashboard.revenue)],
-    ['YakÄ±n yenileme', String(expiring)],
+    ['Bug?n ciro', formatAdminMoney(saasSummary?.liveRevenue ?? dashboard.revenue)],
+    ['Yak?n yenileme', String(expiring)],
     ['Failed payment', String(state.payments.filter((payment) => payment.status === 'failed').length)],
     ['Aktif onboarding', String(provisioningMetrics?.activeJobs ?? 0)],
     ['Aktif masa', String(liveOps?.summary.activeTables ?? 0)],
@@ -832,14 +850,14 @@ function CommandCenter({ dashboard, state, saasSummary, liveOps, provisioningJob
     <div className="mt-6 grid gap-5">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Metric label="Toplam tenant" value={String(saasSummary?.totalTenants ?? state.tenants.length)} />
-        <Metric label="CanlÄ± ciro" value={formatAdminMoney(saasSummary?.liveRevenue ?? dashboard.revenue)} />
+        <Metric label="Canl? ciro" value={formatAdminMoney(saasSummary?.liveRevenue ?? dashboard.revenue)} />
         <Metric label="Aktif sipariÅŸ" value={String(liveOps?.summary.activeOrders ?? 0)} />
         <Metric label="Failed onboarding" value={String(provisioningJobs.filter((job) => job.status === 'failed').length)} />
       </div>
       <div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
         <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Live activity</p>
-          <h3 className="mt-2 text-xl font-semibold">Operasyon akÄ±ÅŸÄ±</h3>
+          <h3 className="mt-2 text-xl font-semibold">Operasyon akışı</h3>
           <div className="mt-4 grid gap-3">
             {latestEvents.length ? latestEvents.map((event) => (
               <div key={event.id} className="flex items-start gap-3 rounded-2xl bg-white/[0.035] p-3">
@@ -849,18 +867,18 @@ function CommandCenter({ dashboard, state, saasSummary, liveOps, provisioningJob
                   <p className="mt-1 text-xs text-slate-400">{event.type} / {event.tenantId ?? 'global'} / {new Date(event.createdAt).toLocaleTimeString('tr-TR')}</p>
                 </div>
               </div>
-            )) : <p className="text-sm text-slate-400">HenÃ¼z canlÄ± operasyon olayÄ± yok.</p>}
+            )) : <p className="text-sm text-slate-400">Hen?z canl? operasyon olay? yok.</p>}
           </div>
         </article>
         <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Control posture</p>
-          <h3 className="mt-2 text-xl font-semibold">AnlÄ±k saÄŸlÄ±k</h3>
+          <h3 className="mt-2 text-xl font-semibold">Anlık sağlık</h3>
           <div className="mt-4 grid gap-3">
             {[
               ['Online tenant', liveOps?.summary.onlineTenants ?? 0],
               ['Aktif cihaz', liveOps?.summary.activeDevices ?? 0],
               ['Online ÅŸube', liveOps?.summary.onlineBranches ?? 0],
-              ['BaÅŸarÄ±sÄ±z login / 24s', liveOps?.summary.failedLogins24h ?? 0],
+              ['Başarısız giriş / 24s', liveOps?.summary.failedLogins24h ?? 0],
             ].map(([label, value]) => (
               <div key={String(label)} className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
                 <span className="text-sm text-slate-300">{label}</span>
@@ -879,15 +897,15 @@ function Dashboard({ dashboard, state, saasSummary }: { dashboard: any; state: S
     ? [
       ['Toplam tenant', saasSummary.totalTenants],
       ['Aktif tenant', saasSummary.activeTenants],
-      ['Aktif kullanÄ±cÄ±', saasSummary.activeUsers],
-      ['GÃ¼nlÃ¼k sipariÅŸ', saasSummary.dailyOrders],
-      ['CanlÄ± ciro', formatAdminMoney(saasSummary.liveRevenue)],
+      ['Aktif kullan?c?', saasSummary.activeUsers],
+      ['Günlük sipariş', saasSummary.dailyOrders],
+      ['Canl? ciro', formatAdminMoney(saasSummary.liveRevenue)],
     ]
     : [
       ['Toplam gelir', formatAdminMoney(dashboard.revenue)],
       ['Aktif abonelik', dashboard.activeSubscriptions],
       ['Komisyon', formatAdminMoney(dashboard.commissions)],
-      ['Bekleyen Ã¶deme', formatAdminMoney(dashboard.pendingPayments)],
+      ['Bekleyen ?deme', formatAdminMoney(dashboard.pendingPayments)],
       ['Bekleyen hak ediÅŸ', formatAdminMoney(dashboard.pendingCommissions)],
     ];
 
@@ -896,7 +914,7 @@ function Dashboard({ dashboard, state, saasSummary }: { dashboard: any; state: S
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         {operationalMetrics.map(([label, value]) => <Metric key={label} label={String(label)} value={String(value)} />)}
       </div>
-      <DataTable headers={['Abone', 'BitiÅŸ', 'Yenileme', 'UyarÄ±']} rows={state.tenants.map((tenant) => [tenant.company_name, tenant.end_date, tenant.auto_renew ? 'Otomatik' : 'Manuel', createRenewalNotice(tenant)])} />
+      <DataTable headers={['Abone', 'Bitiş', 'Yenileme', 'Uyarı']} rows={state.tenants.map((tenant) => [tenant.company_name, tenant.end_date, tenant.auto_renew ? 'Otomatik' : 'Manuel', createRenewalNotice(tenant)])} />
     </div>
   );
 }
@@ -928,297 +946,82 @@ function DataTable({ headers, rows }: { headers: string[]; rows: Array<Array<Rea
   );
 }
 
-function TenantsModule({ state, saasTenants, provisioningJobs, provisioningMetrics, tenantDraft, setTenantDraft, selectedPackage, saveTenant, runProvisioningAction, commit, provisioningLoading, provisioningMessage, liveOps, onOpenTenant, savedTenantIds, onToggleSavedTenant }: any) {
-  const [selectedTenantId, setSelectedTenantId] = useState<string>(state.tenants[0]?.tenant_id ?? '');
-  const [selectedProvisioningJobId, setSelectedProvisioningJobId] = useState<string>('');
-  const [editDraft, setEditDraft] = useState<AdminTenant | null>(null);
-  const [editSaved, setEditSaved] = useState(false);
+function TenantsModule({ saasTenants, liveOps }: any) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [packageFilter, setPackageFilter] = useState('all');
+  const [renewalFilter, setRenewalFilter] = useState('all');
 
-  useEffect(() => {
-    if (!state.tenants.some((tenant: AdminTenant) => tenant.tenant_id === selectedTenantId)) {
-      setSelectedTenantId(state.tenants[0]?.tenant_id ?? '');
-    }
-  }, [selectedTenantId, state.tenants]);
+  const visibleSubscriptions = saasTenants.filter((tenant: SaasTenantRow) => {
+    const matchesSearch = `${tenant.companyName} ${tenant.tenantId}`.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = statusFilter === 'all' || tenant.status === statusFilter;
+    const matchesPackage = packageFilter === 'all' || tenant.plan === packageFilter;
+    const renewalDate = tenant.expiresAt ? new Date(tenant.expiresAt) : null;
+    const daysToRenewal = renewalDate ? Math.ceil((renewalDate.getTime() - Date.now()) / 86400000) : null;
+    const matchesRenewal = renewalFilter === 'all'
+      || (renewalFilter === 'soon' && daysToRenewal !== null && daysToRenewal <= 30)
+      || (renewalFilter === 'expired' && daysToRenewal !== null && daysToRenewal < 0);
+    return matchesSearch && matchesStatus && matchesPackage && matchesRenewal;
+  });
 
-  useEffect(() => {
-    if (!selectedProvisioningJobId && provisioningJobs[0]?.id) {
-      setSelectedProvisioningJobId(provisioningJobs[0].id);
-    }
-  }, [provisioningJobs, selectedProvisioningJobId]);
-
-  const selectedTenant = state.tenants.find((tenant: AdminTenant) => tenant.tenant_id === selectedTenantId) ?? null;
-  const selectedProvisioningJob = provisioningJobs.find((job: ProvisioningJobRow) => job.id === selectedProvisioningJobId) ?? provisioningJobs[0] ?? null;
-  const selectedProvisioningEvents = [...(selectedProvisioningJob?.events ?? [])].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
-  const visibleTenants = saasTenants.filter((tenant: SaasTenantRow) => `${tenant.companyName} ${tenant.tenantId}`.toLowerCase().includes(searchTerm.toLowerCase()));
-
-  useEffect(() => {
-    setEditDraft(selectedTenant ? { ...selectedTenant } : null);
-    setEditSaved(false);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTenantId]);
-
-  function saveEditDraft() {
-    if (!editDraft) return;
-    const pkg = state.packages.find((item: AdminPackage) => item.id === editDraft!.package_id);
-    const updated = state.tenants.map((t: AdminTenant) => t.tenant_id === editDraft!.tenant_id ? { ...editDraft, package_type: pkg?.package_type ?? editDraft!.package_type } : t);
-    commit({ ...state, tenants: updated });
-    setEditSaved(true);
-    setTimeout(() => setEditSaved(false), 2000);
-  }
-
-  function exportProvisioningLog(job: ProvisioningJobRow) {
-    const blob = new Blob([JSON.stringify(job, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `provisioning-${job.targetTenantId}-${job.id}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }
+  const packageOptions: string[] = Array.from(new Set<string>(saasTenants.map((tenant: SaasTenantRow) => String(tenant.plan))));
 
   return (
     <div className="mt-6 grid gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <label className="relative min-w-[280px] flex-1 max-w-xl">
-          <Search className="pointer-events-none absolute left-4 top-3.5 h-4 w-4 text-slate-500" />
-          <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Tenant ara, tenantId filtrele..." className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 pl-11 pr-4 text-sm outline-none" />
-        </label>
-        <Link href="/system-admin/onboarding" className="rounded-2xl bg-cyan-400/15 px-4 py-3 text-sm font-semibold text-cyan-100">Yeni Abonelik OluÅŸtur</Link>
-        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">{visibleTenants.length} tenant gÃ¶rÃ¼nÃ¼r</div>
+        <div>
+          <h2 className="text-2xl font-semibold">Abonelikler</h2>
+          <p className="mt-1 text-sm text-slate-400">Firma portföyünü, yenileme durumunu ve sağlık görünümünü tek yerde yönetin.</p>
+        </div>
+        <Link href="/system-admin/onboarding" className="rounded-2xl bg-cyan-400/15 px-4 py-3 text-sm font-semibold text-cyan-100">Yeni Abonelik Oluştur</Link>
       </div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {visibleTenants.map((tenant: SaasTenantRow) => {
+
+      <div className="grid gap-3 rounded-[1.5rem] border border-white/10 bg-slate-900 p-4 md:grid-cols-2 xl:grid-cols-5">
+        <label className="relative xl:col-span-2">
+          <Search className="pointer-events-none absolute left-4 top-3.5 h-4 w-4 text-slate-500" />
+          <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Firma veya abonelik no ara..." className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 pl-11 pr-4 text-sm outline-none" />
+        </label>
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="input-dark">
+          <option value="all">Tüm durumlar</option>
+          <option value="active">Aktif</option>
+          <option value="trial">Deneme</option>
+          <option value="suspended">Askıda</option>
+        </select>
+        <select value={packageFilter} onChange={(event) => setPackageFilter(event.target.value)} className="input-dark">
+          <option value="all">Tüm paketler</option>
+          {packageOptions.map((plan) => <option key={plan} value={plan}>{plan}</option>)}
+        </select>
+        <select value={renewalFilter} onChange={(event) => setRenewalFilter(event.target.value)} className="input-dark">
+          <option value="all">Tüm yenilemeler</option>
+          <option value="soon">30 gün içinde</option>
+          <option value="expired">Süresi dolmuş</option>
+        </select>
+      </div>
+
+      <DataTable
+        headers={['Firma', 'Paket', 'Durum', 'Son Ödeme', 'Yenileme', 'Online Kullanıcı', 'Health', 'Oluşturulma Tarihi']}
+        rows={visibleSubscriptions.map((tenant: SaasTenantRow) => {
           const onlineUsers = liveOps?.presence.filter((presence: LivePresenceRow) => presence.tenantId === tenant.tenantId && presence.status === 'online').length ?? 0;
           const health = tenant.status === 'active' ? 92 : tenant.status === 'trial' ? 81 : 54;
-          return (
-            <div key={tenant.tenantId} className={`rounded-[1.4rem] border p-4 text-left transition ${selectedTenantId === tenant.tenantId ? 'border-cyan-300/40 bg-cyan-400/10' : 'border-white/10 bg-slate-900 hover:border-white/20'}`}>
-              <div className="flex items-start justify-between gap-3">
-                <div><p className="font-semibold">{tenant.companyName}</p><p className="mt-1 text-xs text-slate-400">{tenant.tenantId}</p></div>
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => onToggleSavedTenant(tenant.tenantId)} className="rounded-full border border-white/10 px-2 py-1 text-xs">{savedTenantIds.includes(tenant.tenantId) ? 'â˜…' : 'â˜†'}</button>
-                  <StatusPill status={tenant.status} />
-                </div>
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                <MiniMetric label="Paket" value={String(tenant.plan)} />
-                <MiniMetric label="Online" value={String(onlineUsers)} />
-                <MiniMetric label="BugÃ¼n ciro" value={formatAdminMoney(tenant.dailyRevenue)} />
-                <MiniMetric label="Health" value={`${health}%`} />
-              </div>
-              <div className="mt-4 flex gap-2">
-                <button type="button" onClick={() => setSelectedTenantId(tenant.tenantId)} className="rounded-xl border border-white/10 px-3 py-2 text-xs">SeÃ§</button>
-                <Link href={`/system-admin/tenants/${tenant.tenantId}`} className="rounded-xl bg-cyan-400/15 px-3 py-2 text-xs font-semibold text-cyan-100">Workspace aÃ§</Link>
-              </div>
-            </div>
-          );
+          return [
+            <Link key={`${tenant.tenantId}-company`} href={`/system-admin/abonelikler/${tenant.tenantId}`} className="block rounded-xl px-3 py-2 transition hover:bg-white/5">
+              <p className="font-semibold">{tenant.companyName}</p>
+              <p className="text-xs text-slate-400">{tenant.tenantId}</p>
+            </Link>,
+            String(tenant.plan),
+            <StatusPill key={`${tenant.tenantId}-status`} status={tenant.status} />,
+            tenant.lastActivity?.slice(0, 10) ?? '-',
+            tenant.expiresAt?.slice(0, 10) ?? '-',
+            onlineUsers,
+            `${health}%`,
+            tenant.createdAt?.slice(0, 10) ?? '-',
+          ];
         })}
-      </div>
-      {editDraft && false ? <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
-      <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
-        <h3 className="text-xl font-semibold">Yeni abone oluÅŸtur</h3>
-        <div className="mt-5 grid gap-3">
-          <input value={tenantDraft.tenant_id} onChange={(e) => setTenantDraft((c: TenantDraft) => ({ ...c, tenant_id: e.target.value }))} className="input-dark" />
-          <input value={tenantDraft.company_name} onChange={(e) => setTenantDraft((c: TenantDraft) => ({ ...c, company_name: e.target.value }))} placeholder="Firma adÄ±" className="input-dark" />
-          <select value={tenantDraft.package_id} onChange={(e) => { const pkg = selectedPackage(e.target.value); setTenantDraft((c: TenantDraft) => ({ ...c, package_id: pkg.id, end_date: addDays(c.start_date, pkg.duration_days) })); }} className="input-dark">
-            {state.packages.map((pkg: AdminPackage) => <option key={pkg.id} value={pkg.id}>{pkg.name} - {formatAdminMoney(pkg.price)}</option>)}
-          </select>
-          <select value={tenantDraft.dealer_id} onChange={(e) => setTenantDraft((c: TenantDraft) => ({ ...c, dealer_id: e.target.value }))} className="input-dark">
-            <option value="">Bayi / temsilci yok</option>
-            {state.dealers.map((dealer: AdminDealer) => <option key={dealer.id} value={dealer.id}>{dealer.name}</option>)}
-          </select>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <input type="date" value={tenantDraft.start_date} onChange={(e) => setTenantDraft((c: TenantDraft) => ({ ...c, start_date: e.target.value }))} className="input-dark" />
-            <input type="date" value={tenantDraft.end_date} onChange={(e) => setTenantDraft((c: TenantDraft) => ({ ...c, end_date: e.target.value }))} className="input-dark" />
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <input value={tenantDraft.admin_username} onChange={(e) => setTenantDraft((c: TenantDraft) => ({ ...c, admin_username: e.target.value }))} placeholder="Ä°lk kullanÄ±cÄ± adÄ±" className="input-dark" />
-            <input type="password" value={tenantDraft.admin_password} onChange={(e) => setTenantDraft((c: TenantDraft) => ({ ...c, admin_password: e.target.value }))} placeholder="Ä°lk ÅŸifre" className="input-dark" />
-          </div>
-          <label className="check-row">Otomatik yenileme <input type="checkbox" checked={tenantDraft.auto_renew} onChange={(e) => setTenantDraft((c: TenantDraft) => ({ ...c, auto_renew: e.target.checked }))} /></label>
-          <label className="check-row">Demo abonelik <input type="checkbox" checked={tenantDraft.demo_enabled} onChange={(e) => setTenantDraft((c: TenantDraft) => ({ ...c, demo_enabled: e.target.checked }))} /></label>
-        </div>
-        <button type="button" onClick={() => void saveTenant()} disabled={provisioningLoading} className="btn-green disabled:cursor-wait disabled:opacity-60"><Plus className="h-4 w-4" /> {provisioningLoading ? 'Provision ediliyor' : 'Abone oluÅŸtur'}</button>
-        {provisioningMessage ? <p className="mt-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs leading-5 text-slate-200">{provisioningMessage}</p> : null}
-        <p className="mt-3 text-xs leading-5 text-slate-400">Yeni abone DB Ã¼zerinde tenant, ana ÅŸube, tenant_admin kullanÄ±cÄ±sÄ±, roller, abonelik lisansÄ± ve POS varsayÄ±lanlarÄ±yla birlikte provision edilir.</p>
-      </article>
-      <div className="grid gap-4">
-        {provisioningMetrics ? (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <StatCard label="Provisioning basari" value={`%${provisioningMetrics.successRate}`} sub={`${provisioningMetrics.completedJobs}/${provisioningMetrics.totalJobs} tamamlandi`} />
-            <StatCard label="Ortalama sure" value={`${Math.round(provisioningMetrics.averageDurationMs / 1000)} sn`} sub={`${provisioningMetrics.activeJobs} aktif job`} />
-            <StatCard label="Retry orani" value={`%${provisioningMetrics.retryRate}`} sub={`${provisioningMetrics.retryCount} retry`} />
-            <StatCard label="Rollback orani" value={`%${provisioningMetrics.rollbackRate}`} sub={`${provisioningMetrics.rollbackCount} rollback`} />
-          </div>
-        ) : null}
-        {saasTenants?.length ? (
-          <DataTable headers={['Tenant', 'Plan', 'Sube', 'Kullanici', 'Durum', 'Bugun', 'Bitis']} rows={saasTenants.map((tenant: SaasTenantRow) => [
-            <button key="tenant" type="button" onClick={() => setSelectedTenantId(tenant.tenantId)} className={`w-full rounded-xl px-3 py-2 text-left transition ${selectedTenantId === tenant.tenantId ? 'bg-blue-600/20 ring-1 ring-blue-400/40' : 'bg-white/0 hover:bg-white/5'}`}><p className="font-semibold">{tenant.companyName}</p><p className="text-xs text-slate-400">{tenant.tenantId}</p></button>,
-            `${tenant.plan} / ${tenant.billingPeriod}`,
-            `${tenant.activeBranchCount}/${tenant.branchCount}`,
-            tenant.activeUsers,
-            tenant.status,
-            `${tenant.dailyOrders} siparis / ${formatAdminMoney(tenant.dailyRevenue)}`,
-            tenant.expiresAt ? tenant.expiresAt.slice(0, 10) : '-',
-          ])} />
-        ) : null}
-        <DataTable headers={['Firma', 'KullanÄ±cÄ±', 'Paket', 'Bayi', 'Tarih', 'Yenileme', '']} rows={state.tenants.map((tenant: AdminTenant) => [
-        <button key="firm" type="button" onClick={() => setSelectedTenantId(tenant.tenant_id)} className={`w-full rounded-xl px-3 py-2 text-left transition ${selectedTenantId === tenant.tenant_id ? 'bg-blue-600/20 ring-1 ring-blue-400/40' : 'bg-white/0 hover:bg-white/5'}`}><p className="font-semibold">{tenant.company_name}</p><p className="text-xs text-slate-400">{tenant.tenant_id}</p></button>,
-        tenant.admin_username,
-        selectedPackage(tenant.package_id)?.name ?? tenant.package_type,
-        state.dealers.find((dealer: AdminDealer) => dealer.id === tenant.dealer_id)?.name ?? '-',
-        `${tenant.start_date} / ${tenant.end_date}`,
-        tenant.auto_renew ? 'Otomatik' : 'Manuel',
-        <button key="delete" type="button" onClick={() => commit({ ...state, tenants: state.tenants.filter((item: AdminTenant) => item.tenant_id !== tenant.tenant_id) })} className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-semibold"><Trash2 className="h-3.5 w-3.5" /></button>,
-      ])} />
-        <DataTable headers={['Job', 'Tenant', 'Durum', 'Adim', 'Deneme', 'Hata', 'Aksiyon']} rows={provisioningJobs.map((job: ProvisioningJobRow) => [
-          <button key="job" type="button" onClick={() => setSelectedProvisioningJobId(job.id)} className={`rounded-lg px-2 py-1 text-left ${selectedProvisioningJobId === job.id ? 'bg-blue-600/25 text-blue-100' : 'hover:bg-white/5'}`}>{job.id.slice(0, 8)}</button>,
-          job.targetTenantId,
-          job.status,
-          job.currentStep,
-          job.attemptCount,
-          job.failureReason ?? '-',
-          <div key={job.id} className="flex gap-2"><button type="button" onClick={() => void runProvisioningAction(job.id, 'retry')} className="rounded-lg bg-blue-600 px-2 py-1 text-xs">Retry</button><button type="button" onClick={() => void runProvisioningAction(job.id, 'rollback')} className="rounded-lg bg-rose-600 px-2 py-1 text-xs">Rollback</button></div>,
-        ])} />
-
-        {selectedProvisioningJob ? (
-          <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Operations timeline</p>
-                <h3 className="mt-2 text-xl font-semibold">{selectedProvisioningJob.targetTenantId}</h3>
-                <p className="mt-1 text-sm text-slate-400">{selectedProvisioningJob.status} / {selectedProvisioningJob.currentStep}</p>
-              </div>
-              <button type="button" onClick={() => exportProvisioningLog(selectedProvisioningJob)} className="rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/5">Log export</button>
-            </div>
-            <div className="mt-5 grid gap-3">
-              {selectedProvisioningEvents.length ? selectedProvisioningEvents.map((event: ProvisioningJobEventRow) => (
-                <div key={event.id} className="grid gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4 md:grid-cols-[128px_minmax(0,1fr)]">
-                  <div>
-                    <p className="text-sm font-semibold">{new Date(event.createdAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
-                    <p className={`mt-2 inline-flex rounded-full px-2 py-1 text-[11px] font-semibold uppercase ${event.severity === 'error' || event.severity === 'critical' ? 'bg-rose-500/15 text-rose-200' : event.severity === 'warning' ? 'bg-amber-500/15 text-amber-200' : 'bg-emerald-500/15 text-emerald-200'}`}>{event.severity}</p>
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-semibold">{event.message}</p>
-                      <span className="rounded-full bg-white/5 px-2 py-1 text-[11px] text-slate-300">{event.type}</span>
-                      {event.durationMs != null ? <span className="text-xs text-slate-400">{event.durationMs} ms</span> : null}
-                    </div>
-                    <p className="mt-1 text-xs text-slate-400">{event.source}</p>
-                    {event.metadata && Object.keys(event.metadata).length ? (
-                      <pre className="mt-3 overflow-x-auto rounded-xl bg-black/20 p-3 text-xs leading-5 text-slate-300">{JSON.stringify(event.metadata, null, 2)}</pre>
-                    ) : null}
-                  </div>
-                </div>
-              )) : (
-                <p className="rounded-2xl border border-dashed border-white/10 px-4 py-5 text-sm text-slate-400">Bu job icin henuz journal event kaydi yok.</p>
-              )}
-            </div>
-          </article>
-        ) : null}
-
-        {editDraft ? (
-          <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Abone dÃ¼zenle</p>
-                <h3 className="mt-2 text-2xl font-semibold">{editDraft!.company_name || editDraft!.tenant_id}</h3>
-              </div>
-              <button type="button" onClick={saveEditDraft} className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${editSaved ? 'bg-emerald-600' : 'bg-blue-600 hover:bg-blue-500'}`}>
-                {editSaved ? 'Kaydedildi' : 'Kaydet'}
-              </button>
-            </div>
-            <div className="mt-5 grid gap-3">
-              <label className="grid gap-1">
-                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Firma adÄ±</span>
-                <input value={editDraft!.company_name} onChange={(e) => setEditDraft((c) => c ? { ...c, company_name: e.target.value } : c)} className="input-dark" />
-              </label>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="grid gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">KullanÄ±cÄ± adÄ±</span>
-                  <input value={editDraft!.admin_username} onChange={(e) => setEditDraft((c) => c ? { ...c, admin_username: e.target.value } : c)} className="input-dark" />
-                </label>
-                <label className="grid gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Åifre</span>
-                  <input type="password" value={editDraft!.admin_password} onChange={(e) => setEditDraft((c) => c ? { ...c, admin_password: e.target.value } : c)} placeholder="********" className="input-dark" />
-                </label>
-              </div>
-              <label className="grid gap-1">
-                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Paket</span>
-                <select value={editDraft!.package_id} onChange={(e) => setEditDraft((c) => c ? { ...c, package_id: e.target.value } : c)} className="input-dark">
-                  {state.packages.map((pkg: AdminPackage) => <option key={pkg.id} value={pkg.id}>{pkg.name}</option>)}
-                </select>
-              </label>
-              <label className="grid gap-1">
-                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Bayi / Temsilci</span>
-                <select value={editDraft!.dealer_id} onChange={(e) => setEditDraft((c) => c ? { ...c, dealer_id: e.target.value } : c)} className="input-dark">
-                  <option value="">Bayi / temsilci yok</option>
-                  {state.dealers.map((dealer: AdminDealer) => <option key={dealer.id} value={dealer.id}>{dealer.name}</option>)}
-                </select>
-              </label>
-              <label className="grid gap-1">
-                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Durum</span>
-                <select value={editDraft!.status} onChange={(e) => setEditDraft((c) => c ? { ...c, status: e.target.value as AdminTenant['status'] } : c)} className="input-dark">
-                  <option value="active">Aktif</option>
-                  <option value="suspended">AskÄ±ya alÄ±ndÄ±</option>
-                  <option value="cancelled">Ä°ptal edildi</option>
-                  <option value="trial">Deneme</option>
-                </select>
-              </label>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="grid gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">BaÅŸlangÄ±Ã§</span>
-                  <input type="date" value={editDraft!.start_date} onChange={(e) => setEditDraft((c) => c ? { ...c, start_date: e.target.value } : c)} className="input-dark" />
-                </label>
-                <label className="grid gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">BitiÅŸ</span>
-                  <input type="date" value={editDraft!.end_date} onChange={(e) => setEditDraft((c) => c ? { ...c, end_date: e.target.value } : c)} className="input-dark" />
-                </label>
-              </div>
-              <div className="flex flex-wrap gap-4">
-                <label className="check-row">Otomatik yenileme <input type="checkbox" checked={editDraft!.auto_renew} onChange={(e) => setEditDraft((c) => c ? { ...c, auto_renew: e.target.checked } : c)} /></label>
-                <label className="check-row">Demo abonelik <input type="checkbox" checked={editDraft!.demo_enabled} onChange={(e) => setEditDraft((c) => c ? { ...c, demo_enabled: e.target.checked } : c)} /></label>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Abone No</p>
-                <p className="mt-1 text-sm font-semibold text-slate-300">{editDraft!.tenant_id}</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">OluÅŸturulma</p>
-                <p className="mt-1 text-sm font-semibold text-slate-300">{new Date(editDraft!.created_at).toLocaleString('tr-TR')}</p>
-              </div>
-            </div>
-          </article>
-        ) : null}
-      </div>
-      </div> : null}
+      />
+      <p className="text-sm text-slate-400">{visibleSubscriptions.length} abonelik gösteriliyor.</p>
     </div>
   );
 }
-
-type JobsCenterMetric = {
-  queue: string;
-  waiting: number;
-  active: number;
-  completed: number;
-  failed: number;
-  delayed: number;
-  paused: number;
-  dead: number;
-};
-type JobsCenterRow = {
-  id: string;
-  queue: string;
-  name: string;
-  status: string;
-  tenantId?: string | null;
-  provisioningJobId?: string | null;
-  attemptsMade: number;
-  maxAttempts: number;
-  failedReason?: string | null;
-  timestamp: number;
-};
-
 function JobsCenterModule() {
   const [metrics, setMetrics] = useState<JobsCenterMetric[]>([]);
   const [jobs, setJobs] = useState<JobsCenterRow[]>([]);
@@ -1337,12 +1140,12 @@ function FinanceCenter({ state, dashboard, saleDraft, setSaleDraft, addSale, pay
         <Metric label="MRR" value={formatAdminMoney(dashboard.revenue)} />
         <Metric label="ARR" value={formatAdminMoney(arr)} />
         <Metric label="Failed payment" value={String(failedPayments)} />
-        <Metric label="Ã–denmemiÅŸ fatura" value={String(unpaidInvoices)} />
+        <Metric label="Ödenmemiş fatura" value={String(unpaidInvoices)} />
       </div>
       <DomainTabs value={activeTab} onChange={setActiveTab} tabs={[
-        ['overview', 'Genel BakÄ±ÅŸ'],
-        ['sales', 'SatÄ±ÅŸlar'],
-        ['payments', 'Ã–demeler'],
+        ['overview', 'Genel Bakış'],
+        ['sales', 'Satışlar'],
+        ['payments', 'Ödemeler'],
         ['invoices', 'Faturalar'],
         ['collections', 'Tahsilatlar'],
         ['reports', 'Raporlar'],
@@ -1352,7 +1155,7 @@ function FinanceCenter({ state, dashboard, saleDraft, setSaleDraft, addSale, pay
       {activeTab === 'payments' ? <PaymentsModule state={state} paymentDraft={paymentDraft} setPaymentDraft={setPaymentDraft} processPayment={processPayment} /> : null}
       {activeTab === 'invoices' ? <InvoiceModule state={state} invoiceDraft={invoiceDraft} setInvoiceDraft={setInvoiceDraft} addInvoice={addInvoice} /> : null}
       {activeTab === 'collections' ? <FinanceModule state={state} financeDraft={financeDraft} setFinanceDraft={setFinanceDraft} addFinanceTransaction={addFinanceTransaction} /> : null}
-      {activeTab === 'reports' ? <DrawerSimple title="Finans raporlarÄ±" rows={['MRR, ARR ve tahsilat trendleri bu sekmede odaklanÄ±r.', 'DetaylÄ± raporlar ayrÄ± yÃ¼zeylerde tutulur.']} /> : null}
+      {activeTab === 'reports' ? <DrawerSimple title="Finans raporlar?" rows={['MRR, ARR ve tahsilat trendleri bu sekmede odaklan?r.', 'Detayl? raporlar ayr? y?zeylerde tutulur.']} /> : null}
     </div>
   );
 }
@@ -1366,7 +1169,7 @@ function DeviceCenter({ liveOps }: { liveOps: LiveOperationsPayload | null }) {
         <Metric label="Online user" value={String(liveOps?.summary.onlineUsers ?? 0)} />
       </div>
       <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
-        <h3 className="text-xl font-semibold">Cihaz saÄŸlÄ±ÄŸÄ±</h3>
+        <h3 className="text-xl font-semibold">Cihaz sağlığı</h3>
         <div className="mt-4 grid gap-3">
           {(liveOps?.devices ?? []).slice(0, 24).map((device) => (
             <div key={device.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white/[0.035] p-4">
@@ -1409,16 +1212,16 @@ function AiInsightsCenter({ state, saasTenants, liveOps }: { state: SystemAdminS
     <div className="mt-6 grid gap-5">
       <div className="grid gap-4 md:grid-cols-3">
         <Metric label="Churn risk" value={String(expired.length)} />
-        <Metric label="Upgrade fÄ±rsatÄ±" value={String(state.tenants.filter((tenant) => tenant.package_type === 'mini').length)} />
-        <Metric label="Operasyon alarmÄ±" value={String(liveOps?.summary.failedLogins24h ?? 0)} />
+        <Metric label="Upgrade f?rsat?" value={String(state.tenants.filter((tenant) => tenant.package_type === 'mini').length)} />
+        <Metric label="Operasyon alarm?" value={String(liveOps?.summary.failedLogins24h ?? 0)} />
       </div>
       <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
-        <h3 className="text-xl font-semibold">AI-ready Ã¶neri kuyruÄŸu</h3>
+        <h3 className="text-xl font-semibold">AI öneri kuyruğu</h3>
         <div className="mt-4 grid gap-3">
           {expired.map((tenant) => (
             <div key={tenant.tenantId} className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
               <p className="font-semibold">{tenant.companyName}</p>
-              <p className="mt-1 text-sm text-slate-300">Abonelik veya operasyon riski mevcut. Yenileme ve saÄŸlÄ±k kontrolÃ¼ Ã¶nerilir.</p>
+              <p className="mt-1 text-sm text-slate-300">Abonelik veya operasyon riski mevcut. Yenileme ve sağlık kontrolü önerilir.</p>
             </div>
           ))}
         </div>
@@ -1496,15 +1299,15 @@ function TenantOperationsDrawer({ tenantId, tenant, liveOps, provisioningJobs, s
           {activeTab === 'live' ? <DrawerLiveOps presence={presence} events={events} /> : null}
           {activeTab === 'finance' ? <DrawerFinance tenantId={tenantId} state={state} /> : null}
           {activeTab === 'branches' ? <DrawerSimple title="Branches" rows={[`${tenant?.activeBranchCount ?? 0}/${tenant?.branchCount ?? 0} aktif ÅŸube`, `Ana ÅŸube: ${tenant?.mainBranchId ?? '-'}`]} /> : null}
-          {activeTab === 'users' ? <DrawerSimple title="Users" rows={[`${tenant?.activeUsers ?? 0} aktif kullanÄ±cÄ±`, `${presence.length} canlÄ± session`]} /> : null}
+          {activeTab === 'users' ? <DrawerSimple title="Users" rows={[`${tenant?.activeUsers ?? 0} aktif kullan?c?`, `${presence.length} canl? session`]} /> : null}
           {activeTab === 'devices' || activeTab === 'printers' ? <DrawerDevices devices={devices} title={activeTab === 'printers' ? 'Printers' : 'Devices'} /> : null}
           {activeTab === 'queues' ? <DrawerQueues jobs={jobs} /> : null}
           {activeTab === 'audit' ? <DrawerAudit events={events} /> : null}
           {activeTab === 'activity' ? <DrawerActivity events={events} /> : null}
           {activeTab === 'billing' ? <DrawerSimple title="Billing" rows={[`Plan: ${tenant?.plan ?? '-'}`, `BitiÅŸ: ${tenant?.expiresAt?.slice(0, 10) ?? '-'}`, `Bakiye: ${tenant?.balance ?? 0}`]} /> : null}
           {activeTab === 'ai' ? <DrawerAi tenant={tenant} events={events} /> : null}
-          {activeTab === 'security' ? <DrawerSimple title="Security" rows={[`${events.filter((event) => event.type === 'auth.login_failed').length} baÅŸarÄ±sÄ±z giriÅŸ`, `${presence.length} aktif oturum`]} /> : null}
-          {activeTab === 'settings' ? <DrawerSimple title="Settings" rows={['Tenant isolation aktif', 'Runtime tenant scope doÄŸrulandÄ±', 'Destek iÅŸlemleri kontrollÃ¼']} /> : null}
+          {activeTab === 'security' ? <DrawerSimple title="Security" rows={[`${events.filter((event) => event.type === 'auth.login_failed').length} baÅŸar?s?z giriÅŸ`, `${presence.length} aktif oturum`]} /> : null}
+          {activeTab === 'settings' ? <DrawerSimple title="Settings" rows={['Tenant isolation aktif', 'Runtime tenant scope doÄŸruland?', 'Destek iÅŸlemleri kontroll?']} /> : null}
         </div>
       </aside>
     </div>
@@ -1513,8 +1316,8 @@ function TenantOperationsDrawer({ tenantId, tenant, liveOps, provisioningJobs, s
 
 function DrawerOverview({ tenant, tenantState, presence, devices, jobs, events }: { tenant: SaasTenantRow | null; tenantState?: AdminTenant; presence: LivePresenceRow[]; devices: LiveDeviceRow[]; jobs: ProvisioningJobRow[]; events: LiveEventRow[] }) {
   return <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-    <Metric label="BugÃ¼n ciro" value={formatAdminMoney(tenant?.dailyRevenue ?? 0)} />
-    <Metric label="Aktif kullanÄ±cÄ±" value={String(presence.length)} />
+    <Metric label="Bug?n ciro" value={formatAdminMoney(tenant?.dailyRevenue ?? 0)} />
+    <Metric label="Aktif kullan?c?" value={String(presence.length)} />
     <Metric label="Aktif cihaz" value={String(devices.length)} />
     <Metric label="Aktif ÅŸube" value={String(tenant?.activeBranchCount ?? 0)} />
     <Metric label="Failed ops" value={String(events.filter((event) => event.severity === 'error' || event.severity === 'critical').length)} />
@@ -1522,14 +1325,14 @@ function DrawerOverview({ tenant, tenantState, presence, devices, jobs, events }
     <div className="md:col-span-2 xl:col-span-3"><DrawerSimple title="Subscription" rows={[`Durum: ${tenant?.subscriptionStatus ?? '-'}`, `Yenileme: ${tenantState ? createRenewalNotice(tenantState) : '-'}`, `BitiÅŸ: ${tenant?.expiresAt?.slice(0, 10) ?? '-'}`]} /></div>
   </div>;
 }
-function DrawerLiveOps({ presence, events }: { presence: LivePresenceRow[]; events: LiveEventRow[] }) { return <div className="grid gap-5"><DrawerSimple title="Aktif kullanÄ±cÄ±lar" rows={presence.map((row) => `${row.username} / ${row.role} / ${row.currentRoute ?? '-'}`)} /><DrawerActivity events={events} /></div>; }
+function DrawerLiveOps({ presence, events }: { presence: LivePresenceRow[]; events: LiveEventRow[] }) { return <div className="grid gap-5"><DrawerSimple title="Aktif kullan?c?lar" rows={presence.map((row) => `${row.username} / ${row.role} / ${row.currentRoute ?? '-'}`)} /><DrawerActivity events={events} /></div>; }
 function DrawerFinance({ tenantId, state }: { tenantId: string; state: SystemAdminState }) { return <DrawerSimple title="Finance" rows={state.payments.filter((p) => p.tenant_id === tenantId).map((p) => `${p.date} / ${formatAdminMoney(p.amount)} / ${p.status}`)} />; }
 function DrawerDevices({ devices, title }: { devices: LiveDeviceRow[]; title: string }) { return <DrawerSimple title={title} rows={devices.map((device) => `${device.deviceId} / ${device.status} / ${device.latencyMs ?? '-'} ms`)} />; }
 function DrawerQueues({ jobs }: { jobs: ProvisioningJobRow[] }) { return <DrawerSimple title="Queues" rows={jobs.map((job) => `${job.id.slice(0, 8)} / ${job.status} / ${job.currentStep}`)} />; }
 function DrawerAudit({ events }: { events: LiveEventRow[] }) { return <DrawerSimple title="Audit Logs" rows={events.map((event) => `${event.type} / ${event.message}`)} />; }
 function DrawerActivity({ events }: { events: LiveEventRow[] }) { return <DrawerSimple title="Activity Stream" rows={events.map((event) => `${new Date(event.createdAt).toLocaleTimeString('tr-TR')} / ${event.message}`)} />; }
 function DrawerAi({ tenant, events }: { tenant: SaasTenantRow | null; events: LiveEventRow[] }) { return <DrawerSimple title="AI Insights" rows={[`Churn risk: ${tenant?.status === 'active' ? 'low' : 'elevated'}`, `Evidence: ${events.length} recent operational events`, `Upgrade opportunity: ${tenant?.plan === 'mini' ? 'present' : 'watch'}`]} />; }
-function DrawerSimple({ title, rows }: { title: string; rows: string[] }) { return <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5"><h3 className="text-lg font-semibold">{title}</h3><div className="mt-4 grid gap-2">{rows.length ? rows.map((row, index) => <p key={`${title}-${index}`} className="rounded-xl bg-white/[0.035] px-3 py-2 text-sm text-slate-300">{row}</p>) : <p className="text-sm text-slate-400">KayÄ±t yok.</p>}</div></article>; }
+function DrawerSimple({ title, rows }: { title: string; rows: string[] }) { return <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5"><h3 className="text-lg font-semibold">{title}</h3><div className="mt-4 grid gap-2">{rows.length ? rows.map((row, index) => <p key={`${title}-${index}`} className="rounded-xl bg-white/[0.035] px-3 py-2 text-sm text-slate-300">{row}</p>) : <p className="text-sm text-slate-400">Kay?t yok.</p>}</div></article>; }
 
 function CommandPalette({ tenants, onClose, onSelectTenant }: { tenants: SaasTenantRow[]; onClose: () => void; onSelectTenant: (tenantId: string) => void }) {
   const [query, setQuery] = useState('');
@@ -1568,17 +1371,17 @@ function IncidentCenter({ incidents, summary, refresh, onOpenTenant }: { inciden
   return <section className="grid gap-5">
     <div className="grid gap-4 md:grid-cols-4">
       <Metric label="Toplam incident" value={String(summary?.total ?? 0)} />
-      <Metric label="AÃ§Ä±k" value={String(summary?.open ?? 0)} />
+      <Metric label="A??k" value={String(summary?.open ?? 0)} />
       <Metric label="Kritik" value={String(summary?.critical ?? 0)} />
       <Metric label="Outage" value={String(summary?.outage ?? 0)} />
     </div>
     <DomainTabs value={activeTab} onChange={setActiveTab} tabs={[
       ['active', 'Aktif Olaylar'],
       ['critical', 'Kritik Olaylar'],
-      ['history', 'GeÃ§miÅŸ'],
+      ['history', 'Ge?miÅŸ'],
       ['root', 'Root Cause'],
       ['escalation', 'Eskalasyon'],
-      ['resolved', 'Ã‡Ã¶zÃ¼lmÃ¼ÅŸ Olaylar'],
+      ['resolved', 'Ã‡?z?lm?ÅŸ Olaylar'],
     ]} />
     <div className="grid gap-5 xl:grid-cols-[minmax(320px,0.8fr)_minmax(420px,1.2fr)]">
       <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-4">
@@ -1591,7 +1394,7 @@ function IncidentCenter({ incidents, summary, refresh, onOpenTenant }: { inciden
             <div className="flex items-center justify-between gap-3"><p className="font-semibold">{incident.title}</p><StatusPill status={incident.severity} /></div>
             <p className="mt-2 text-sm text-slate-400">{incident.tenantId ?? 'platform'} / {incident.status}</p>
           </button>)}
-          {!visibleIncidents.length ? <p className="text-sm text-slate-400">Bu gÃ¶rÃ¼nÃ¼mde olay yok.</p> : null}
+          {!visibleIncidents.length ? <p className="text-sm text-slate-400">Bu g?r?n?mde olay yok.</p> : null}
         </div>
       </article>
       <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
@@ -1603,15 +1406,15 @@ function IncidentCenter({ incidents, summary, refresh, onOpenTenant }: { inciden
               <p className="mt-2 text-sm text-slate-300">{selected.summary}</p>
             </div>
             <div className="flex gap-2">
-              {selected.tenantId ? <button type="button" onClick={() => onOpenTenant(selected.tenantId!)} className="rounded-xl border border-white/10 px-3 py-2 text-xs">Tenant aÃ§</button> : null}
+              {selected.tenantId ? <button type="button" onClick={() => onOpenTenant(selected.tenantId!)} className="rounded-xl border border-white/10 px-3 py-2 text-xs">Tenant a?</button> : null}
               {selected.status === 'open' ? <button type="button" onClick={() => void act('acknowledge', selected.id)} className="rounded-xl bg-amber-400/15 px-3 py-2 text-xs text-amber-100">Onayla</button> : null}
-              {selected.status !== 'resolved' ? <button type="button" onClick={() => void act('resolve', selected.id)} className="rounded-xl bg-emerald-400/15 px-3 py-2 text-xs text-emerald-100">Ã‡Ã¶z</button> : null}
+              {selected.status !== 'resolved' ? <button type="button" onClick={() => void act('resolve', selected.id)} className="rounded-xl bg-emerald-400/15 px-3 py-2 text-xs text-emerald-100">Ã‡?z</button> : null}
             </div>
           </div>
           <div className="mt-5 grid gap-3 md:grid-cols-3">
             <MiniMetric label="Tenant" value={selected.tenantId ?? 'platform'} />
             <MiniMetric label="Correlation" value={selected.correlationId ?? '-'} />
-            <MiniMetric label="AÃ§Ä±lÄ±ÅŸ" value={new Date(selected.openedAt).toLocaleString('tr-TR')} />
+            <MiniMetric label="A??l?ÅŸ" value={new Date(selected.openedAt).toLocaleString('tr-TR')} />
           </div>
           <div className="mt-5">
             <h4 className="font-semibold">Root timeline</h4>
@@ -1622,7 +1425,7 @@ function IncidentCenter({ incidents, summary, refresh, onOpenTenant }: { inciden
               </div>)}
             </div>
           </div>
-        </> : <p className="text-sm text-slate-400">Ä°ncelemek iÃ§in incident seÃ§in.</p>}
+        </> : <p className="text-sm text-slate-400">?ncelemek i?in incident se?in.</p>}
       </article>
     </div>
   </section>;
@@ -1673,7 +1476,7 @@ function AuditExplorer() {
             <AuditJson title="Before" value={selected.before} />
             <AuditJson title="After" value={selected.after} />
           </div>
-        </> : <p className="text-sm text-slate-400">Audit kaydÄ± seÃ§in.</p>}
+        </> : <p className="text-sm text-slate-400">Audit kayd? se?in.</p>}
       </article>
     </div>
   </section>;
@@ -1880,8 +1683,8 @@ function TemplatesModule({ templates, packs, recipes, recipeItems, stocks, categ
   return (
     <div className="mt-6 grid gap-5">
       <div className="grid gap-4 md:grid-cols-4">
-        <Metric label="Åablon sayÄ±sÄ±" value={String(templates.length)} />
-        <Metric label="Paket sayÄ±sÄ±" value={String(packs.length)} />
+        <Metric label="?ablon say?s?" value={String(templates.length)} />
+        <Metric label="Paket say?s?" value={String(packs.length)} />
         <Metric label="Restoran tipi" value={String(new Set(templates.map((template) => template.restaurantType)).size)} />
         <Metric label="Toplam import" value={String(importStats.reduce((sum, item) => sum + item.importCount, 0))} />
       </div>
@@ -1947,7 +1750,7 @@ function TemplatesModule({ templates, packs, recipes, recipeItems, stocks, categ
         <Metric label="Recete satiri" value={String(recipeItems.length)} />
       </div>
       <DataTable
-        headers={['Paket', 'Tip', 'Ã–lÃ§ek', 'Versiyon', 'Durum']}
+        headers={['Paket', 'Tip', 'Ã–l?ek', 'Versiyon', 'Durum']}
         rows={packs.map((pack) => [
           pack.name,
           pack.restaurantType,
@@ -1957,7 +1760,7 @@ function TemplatesModule({ templates, packs, recipes, recipeItems, stocks, categ
         ])}
       />
       <DataTable
-        headers={['Åablon', 'Tip', 'VarsayÄ±lan fiyat', 'HazÄ±rlÄ±k', 'YazÄ±cÄ±', 'Versiyon', 'Import']}
+        headers={['?ablon', 'Tip', 'Varsay?lan fiyat', 'Haz?rl?k', 'Yaz?c?', 'Versiyon', 'Import']}
         rows={templates.map((template) => [
           template.name,
           template.restaurantType,
@@ -1989,16 +1792,16 @@ function PackagesModule({ state, packageDraft, setPackageDraft, savePackage, edi
     <div className="mt-6 grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
       <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-xl font-semibold">{isEditing ? 'Paket dÃ¼zenle' : 'Paket oluÅŸtur'}</h3>
+          <h3 className="text-xl font-semibold">{isEditing ? 'Paket d?zenle' : 'Paket oluÅŸtur'}</h3>
           {isEditing ? <button type="button" onClick={resetPackageDraft} className="rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold text-slate-100">Yeni paket</button> : null}
         </div>
         <div className="mt-5 grid gap-3">
-          <input value={packageDraft.name} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, name: e.target.value }))} placeholder="Paket adÄ±" className="input-dark" />
+          <input value={packageDraft.name} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, name: e.target.value }))} placeholder="Paket ad?" className="input-dark" />
           <select value={packageDraft.package_type} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, package_type: e.target.value as PackageType, modules: getDefaultModulesForPackageType(e.target.value as PackageType) }))} className="input-dark"><option value="mini">Mini</option><option value="gold">Gold</option><option value="premium">Premium</option></select>
-          <input type="number" value={packageDraft.price} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, price: Number(e.target.value) }))} placeholder="AylÄ±k fiyat" className="input-dark" />
-          <input type="number" value={packageDraft.duration_days} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, duration_days: Number(e.target.value) }))} placeholder="SÃ¼re / gÃ¼n" className="input-dark" />
+          <input type="number" value={packageDraft.price} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, price: Number(e.target.value) }))} placeholder="Ayl?k fiyat" className="input-dark" />
+          <input type="number" value={packageDraft.duration_days} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, duration_days: Number(e.target.value) }))} placeholder="S?re / g?n" className="input-dark" />
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Pakete dahil modÃ¼ller</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Pakete dahil mod?ller</p>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {PACKAGE_MODULE_OPTIONS.map((module) => (
                 <label key={module.key} className="flex items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/40 px-3 py-3 text-sm text-slate-200">
@@ -2017,7 +1820,7 @@ function PackagesModule({ state, packageDraft, setPackageDraft, savePackage, edi
       </article>
       <div className="grid gap-4 md:grid-cols-3">{state.packages.map((pkg: AdminPackage) => {
         const usageCount = state.tenants.filter((tenant: AdminTenant) => tenant.package_id === pkg.id).length;
-        return <article key={pkg.id} className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5"><p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-200">{pkg.package_type}</p><h3 className="mt-2 text-2xl font-semibold">{pkg.name}</h3><p className="mt-2 text-sm text-slate-400">Paket fiyatÄ±</p><p className="mt-1 text-3xl font-semibold">{formatAdminMoney(pkg.price)}</p><p className="mt-1 text-sm text-slate-400">{pkg.duration_days} gÃ¼n</p><div className="mt-3 text-xs font-semibold text-slate-400">BaÄŸlÄ± abone: {usageCount}</div><div className="mt-4 flex flex-wrap gap-2">{pkg.modules.map((module) => <span key={module} className="rounded-full bg-blue-500/15 px-3 py-1 text-xs font-semibold text-blue-100">{PACKAGE_MODULE_OPTIONS.find((item) => item.key === module)?.label ?? module}</span>)}</div><div className="mt-4 space-y-2">{pkg.features.map((f) => <p key={f} className="rounded-xl bg-white/5 px-3 py-2 text-sm text-slate-300">{f}</p>)}</div><div className="mt-4 grid grid-cols-2 gap-2"><button type="button" onClick={() => editPackage(pkg)} className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white">DÃ¼zenle</button><button type="button" onClick={() => deletePackage(pkg.id)} disabled={usageCount > 0} className={`rounded-xl px-3 py-2 text-xs font-semibold text-white ${usageCount > 0 ? 'bg-slate-700/60 cursor-not-allowed' : 'bg-rose-600'}`}>Sil</button></div>{usageCount > 0 ? <p className="mt-2 text-xs text-amber-200">Bu paket kullanÄ±mda olduÄŸu iÃ§in silinemez.</p> : null}</article>;
+        return <article key={pkg.id} className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5"><p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-200">{pkg.package_type}</p><h3 className="mt-2 text-2xl font-semibold">{pkg.name}</h3><p className="mt-2 text-sm text-slate-400">Paket fiyat?</p><p className="mt-1 text-3xl font-semibold">{formatAdminMoney(pkg.price)}</p><p className="mt-1 text-sm text-slate-400">{pkg.duration_days} g?n</p><div className="mt-3 text-xs font-semibold text-slate-400">BaÄŸl? abone: {usageCount}</div><div className="mt-4 flex flex-wrap gap-2">{pkg.modules.map((module) => <span key={module} className="rounded-full bg-blue-500/15 px-3 py-1 text-xs font-semibold text-blue-100">{PACKAGE_MODULE_OPTIONS.find((item) => item.key === module)?.label ?? module}</span>)}</div><div className="mt-4 space-y-2">{pkg.features.map((f) => <p key={f} className="rounded-xl bg-white/5 px-3 py-2 text-sm text-slate-300">{f}</p>)}</div><div className="mt-4 grid grid-cols-2 gap-2"><button type="button" onClick={() => editPackage(pkg)} className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white">D?zenle</button><button type="button" onClick={() => deletePackage(pkg.id)} disabled={usageCount > 0} className={`rounded-xl px-3 py-2 text-xs font-semibold text-white ${usageCount > 0 ? 'bg-slate-700/60 cursor-not-allowed' : 'bg-rose-600'}`}>Sil</button></div>{usageCount > 0 ? <p className="mt-2 text-xs text-amber-200">Bu paket kullan?mda olduÄŸu i?in silinemez.</p> : null}</article>;
       })}</div>
     </div>
   );
@@ -2030,7 +1833,7 @@ function DealersModule({ state, dealerDraft, setDealerDraft, saveDealer, commit 
         <h3 className="text-xl font-semibold">Bayi / temsilci oluÅŸtur</h3>
         <div className="mt-5 grid gap-3">
           <input value={dealerDraft.name} onChange={(e) => setDealerDraft((c: any) => ({ ...c, name: e.target.value }))} placeholder="Ad / firma" className="input-dark" />
-          <select value={dealerDraft.type} onChange={(e) => setDealerDraft((c: any) => ({ ...c, type: e.target.value }))} className="input-dark"><option value="dealer">Bayi</option><option value="representative">SatÄ±ÅŸ temsilcisi</option></select>
+          <select value={dealerDraft.type} onChange={(e) => setDealerDraft((c: any) => ({ ...c, type: e.target.value }))} className="input-dark"><option value="dealer">Bayi</option><option value="representative">Sat?ÅŸ temsilcisi</option></select>
           <input type="number" value={dealerDraft.commission_rate} onChange={(e) => setDealerDraft((c: any) => ({ ...c, commission_rate: Number(e.target.value) }))} placeholder="Komisyon %" className="input-dark" />
           <input value={dealerDraft.phone} onChange={(e) => setDealerDraft((c: any) => ({ ...c, phone: e.target.value }))} placeholder="Telefon" className="input-dark" />
           <input value={dealerDraft.email} onChange={(e) => setDealerDraft((c: any) => ({ ...c, email: e.target.value }))} placeholder="E-posta" className="input-dark" />
@@ -2041,7 +1844,7 @@ function DealersModule({ state, dealerDraft, setDealerDraft, saveDealer, commit 
         const pending = state.commissions.filter((item: any) => item.dealer_id === dealer.id && item.status === 'pending').reduce((sum: number, item: any) => sum + item.amount, 0);
         return [dealer.name, dealer.type === 'dealer' ? 'Bayi' : 'Temsilci', `%${dealer.commission_rate}`, formatAdminMoney(pending), dealer.active ? 'Aktif' : 'Pasif'];
       })} />
-      <DataTable headers={['SatÄ±ÅŸ', 'Bayi', 'Abone', 'Hak ediÅŸ', 'Durum']} rows={state.commissions.map((item: any) => [
+      <DataTable headers={['Sat?ÅŸ', 'Bayi', 'Abone', 'Hak ediÅŸ', 'Durum']} rows={state.commissions.map((item: any) => [
         item.sale_id,
         state.dealers.find((dealer: AdminDealer) => dealer.id === item.dealer_id)?.name ?? '-',
         item.tenant_id,
@@ -2056,7 +1859,7 @@ function SalesModule({ state, saleDraft, setSaleDraft, addSale }: any) {
   return (
     <div className="mt-6 grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
       <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
-        <h3 className="text-xl font-semibold">SatÄ±ÅŸ kaydÄ±</h3>
+        <h3 className="text-xl font-semibold">Sat?ÅŸ kayd?</h3>
         <div className="mt-5 grid gap-3">
           <SelectTenant state={state} value={saleDraft.tenant_id} onChange={(value) => setSaleDraft((c: any) => ({ ...c, tenant_id: value }))} />
           <select value={saleDraft.package_id} onChange={(e) => setSaleDraft((c: any) => ({ ...c, package_id: e.target.value, amount: state.packages.find((pkg: AdminPackage) => pkg.id === e.target.value)?.price ?? c.amount }))} className="input-dark">{state.packages.map((pkg: AdminPackage) => <option key={pkg.id} value={pkg.id}>{pkg.name}</option>)}</select>
@@ -2065,9 +1868,9 @@ function SalesModule({ state, saleDraft, setSaleDraft, addSale }: any) {
           <input type="number" value={saleDraft.commission_rate} onChange={(e) => setSaleDraft((c: any) => ({ ...c, commission_rate: Number(e.target.value) }))} placeholder="Komisyon %" className="input-dark" />
           <input type="date" value={saleDraft.date} onChange={(e) => setSaleDraft((c: any) => ({ ...c, date: e.target.value }))} className="input-dark" />
         </div>
-        <button type="button" onClick={addSale} className="btn-violet">SatÄ±ÅŸ ekle ve komisyon oluÅŸtur</button>
+        <button type="button" onClick={addSale} className="btn-violet">Sat?ÅŸ ekle ve komisyon oluÅŸtur</button>
       </article>
-      <DataTable headers={['Abone', 'Paket', 'SatÄ±ÅŸÃ§Ä±', 'Tutar', 'Komisyon', 'Durum']} rows={state.sales.map((item: AdminSale) => [item.tenant_id, item.package_id, item.seller, formatAdminMoney(item.amount), formatAdminMoney(item.commission_amount), item.commission_status])} />
+      <DataTable headers={['Abone', 'Paket', 'Sat?ÅŸ??', 'Tutar', 'Komisyon', 'Durum']} rows={state.sales.map((item: AdminSale) => [item.tenant_id, item.package_id, item.seller, formatAdminMoney(item.amount), formatAdminMoney(item.commission_amount), item.commission_status])} />
     </div>
   );
 }
@@ -2083,17 +1886,17 @@ function PaymentsModule({ state, paymentDraft, setPaymentDraft, processPayment }
             const pkg = state.packages.find((item: AdminPackage) => item.id === tenant?.package_id);
             setPaymentDraft((c: any) => ({ ...c, tenant_id: value, amount: pkg?.price ?? c.amount }));
           }} />
-          <select value={paymentDraft.invoice_id ?? ''} onChange={(e) => setPaymentDraft((c: any) => ({ ...c, invoice_id: e.target.value }))} className="input-dark"><option value="">Fatura seÃ§me</option>{state.invoices.map((inv: AdminInvoice) => <option key={inv.id} value={inv.id}>{inv.invoice_no} - {formatAdminMoney(inv.amount)}</option>)}</select>
+          <select value={paymentDraft.invoice_id ?? ''} onChange={(e) => setPaymentDraft((c: any) => ({ ...c, invoice_id: e.target.value }))} className="input-dark"><option value="">Fatura se?me</option>{state.invoices.map((inv: AdminInvoice) => <option key={inv.id} value={inv.id}>{inv.invoice_no} - {formatAdminMoney(inv.amount)}</option>)}</select>
           <select value={paymentDraft.provider} onChange={(e) => setPaymentDraft((c: any) => ({ ...c, provider: e.target.value }))} className="input-dark"><option value="manual">Manuel</option><option value="iyzico">Iyzico</option><option value="paytr">PayTR</option></select>
           <input type="number" value={paymentDraft.amount} onChange={(e) => setPaymentDraft((c: any) => ({ ...c, amount: Number(e.target.value) }))} placeholder="Tutar" className="input-dark" />
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <button type="button" onClick={() => processPayment(true)} className="btn-green">BaÅŸarÄ±lÄ± Ã¶deme</button>
-          <button type="button" onClick={() => processPayment(false)} className="h-12 rounded-2xl bg-rose-600 text-sm font-semibold">BaÅŸarÄ±sÄ±z Ã¶deme</button>
+          <button type="button" onClick={() => processPayment(true)} className="btn-green">BaÅŸar?l? ?deme</button>
+          <button type="button" onClick={() => processPayment(false)} className="h-12 rounded-2xl bg-rose-600 text-sm font-semibold">BaÅŸar?s?z ?deme</button>
         </div>
-        <p className="mt-3 text-xs text-slate-400">BaÅŸarÄ±lÄ± Ã¶deme aboneliÄŸi otomatik uzatÄ±r, fatura ve gelir kaydÄ± oluÅŸturur.</p>
+        <p className="mt-3 text-xs text-slate-400">BaÅŸar?l? ?deme aboneliÄŸi otomatik uzat?r, fatura ve gelir kayd? oluÅŸturur.</p>
       </article>
-      <DataTable headers={['Abone', 'SaÄŸlayÄ±cÄ±', 'Tutar', 'Durum', 'Ä°ÅŸlem No']} rows={state.payments.map((item: AdminPayment) => [item.tenant_id, item.provider, formatAdminMoney(item.amount), item.status, item.transaction_id])} />
+      <DataTable headers={['Abone', 'SaÄŸlay?c?', 'Tutar', 'Durum', '?ÅŸlem No']} rows={state.payments.map((item: AdminPayment) => [item.tenant_id, item.provider, formatAdminMoney(item.amount), item.status, item.transaction_id])} />
       <DataTable headers={['Abone', 'Eski bitiÅŸ', 'Yeni bitiÅŸ', 'Durum']} rows={state.renewals.map((item: any) => [item.tenant_id, item.old_end_date, item.new_end_date, item.status])} />
     </div>
   );
@@ -2111,7 +1914,7 @@ function FinanceModule({ state, financeDraft, setFinanceDraft, addFinanceTransac
 function InvoiceModule({ state, invoiceDraft, setInvoiceDraft, addInvoice }: any) {
   return (
     <div className="mt-6 grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
-      <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5"><h3 className="text-xl font-semibold">Fatura oluÅŸtur</h3><div className="mt-5 grid gap-3"><SelectTenant state={state} value={invoiceDraft.tenant_id} onChange={(value) => setInvoiceDraft((c: any) => ({ ...c, tenant_id: value }))} /><select value={invoiceDraft.type} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, type: e.target.value }))} className="input-dark"><option value="subscription">Abonelik</option><option value="payment">Tahsilat</option></select><input type="number" value={invoiceDraft.amount} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, amount: Number(e.target.value) }))} placeholder="Tutar" className="input-dark" /><select value={invoiceDraft.status} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, status: e.target.value }))} className="input-dark"><option value="draft">Taslak</option><option value="issued">Kesildi</option><option value="paid">Ã–dendi</option><option value="cancelled">Ä°ptal</option></select><input type="date" value={invoiceDraft.issue_date} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, issue_date: e.target.value }))} className="input-dark" /><input type="date" value={invoiceDraft.due_date} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, due_date: e.target.value }))} className="input-dark" /></div><button type="button" onClick={addInvoice} className="btn-blue">Fatura ekle</button></article>
+      <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5"><h3 className="text-xl font-semibold">Fatura oluÅŸtur</h3><div className="mt-5 grid gap-3"><SelectTenant state={state} value={invoiceDraft.tenant_id} onChange={(value) => setInvoiceDraft((c: any) => ({ ...c, tenant_id: value }))} /><select value={invoiceDraft.type} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, type: e.target.value }))} className="input-dark"><option value="subscription">Abonelik</option><option value="payment">Tahsilat</option></select><input type="number" value={invoiceDraft.amount} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, amount: Number(e.target.value) }))} placeholder="Tutar" className="input-dark" /><select value={invoiceDraft.status} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, status: e.target.value }))} className="input-dark"><option value="draft">Taslak</option><option value="issued">Kesildi</option><option value="paid">Ã–dendi</option><option value="cancelled">?ptal</option></select><input type="date" value={invoiceDraft.issue_date} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, issue_date: e.target.value }))} className="input-dark" /><input type="date" value={invoiceDraft.due_date} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, due_date: e.target.value }))} className="input-dark" /></div><button type="button" onClick={addInvoice} className="btn-blue">Fatura ekle</button></article>
       <DataTable headers={['No', 'Tenant', 'Tip', 'Tutar', 'Durum']} rows={state.invoices.map((item: AdminInvoice) => [item.invoice_no, item.tenant_id, item.type, formatAdminMoney(item.amount), item.status])} />
     </div>
   );
@@ -2126,14 +1929,14 @@ function ReportsModule({ state, dashboard }: { state: SystemAdminState; dashboar
   });
   return (
     <div className="mt-6 grid gap-5">
-      <div className="grid gap-4 md:grid-cols-3"><Metric label="Net kÃ¢r" value={formatAdminMoney(dashboard.net)} /><Metric label="AÃ§Ä±k fatura" value={formatAdminMoney(dashboard.unpaidInvoices)} /><Metric label="Bekleyen hak ediÅŸ" value={formatAdminMoney(dashboard.pendingCommissions)} /></div>
-      <DataTable headers={['Bayi / temsilci', 'Tip', 'SatÄ±ÅŸ adedi', 'SatÄ±ÅŸ tutarÄ±', 'Hak ediÅŸ']} rows={dealerRows} />
+      <div className="grid gap-4 md:grid-cols-3"><Metric label="Net kÃ¢r" value={formatAdminMoney(dashboard.net)} /><Metric label="A??k fatura" value={formatAdminMoney(dashboard.unpaidInvoices)} /><Metric label="Bekleyen hak ediÅŸ" value={formatAdminMoney(dashboard.pendingCommissions)} /></div>
+      <DataTable headers={['Bayi / temsilci', 'Tip', 'Sat?ÅŸ adedi', 'Sat?ÅŸ tutar?', 'Hak ediÅŸ']} rows={dealerRows} />
     </div>
   );
 }
 
 function SelectTenant({ state, value, onChange, allowEmpty = false }: { state: SystemAdminState; value: string; onChange: (value: string) => void; allowEmpty?: boolean }) {
-  return <select value={value} onChange={(e) => onChange(e.target.value)} className="input-dark">{allowEmpty ? <option value="">Tenant yok / genel</option> : <option value="">Abone seÃ§</option>}{state.tenants.map((tenant) => <option key={tenant.tenant_id} value={tenant.tenant_id}>{tenant.company_name}</option>)}</select>;
+  return <select value={value} onChange={(e) => onChange(e.target.value)} className="input-dark">{allowEmpty ? <option value="">Tenant yok / genel</option> : <option value="">Abone se?</option>}{state.tenants.map((tenant) => <option key={tenant.tenant_id} value={tenant.tenant_id}>{tenant.company_name}</option>)}</select>;
 }
 
 // Monitoring Module
@@ -3001,4 +2804,5 @@ function MonitoringModule() {
     </div>
   );
 }
+
 
