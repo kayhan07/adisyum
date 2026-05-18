@@ -75,4 +75,7 @@ ipcMain.handle('desktop:test-print', (_event, printerName) => bridgeJson('/print
   }),
 }));
 ipcMain.handle('desktop:fiscal-status', () => bridgeJson('/pos/status'));
+ipcMain.handle('desktop:queues', () => bridgeJson('/queues'));
+ipcMain.handle('desktop:updater-status', () => bridgeJson('/updater/status'));
+ipcMain.handle('desktop:service-status', () => bridgeJson('/service/status'));
 ipcMain.handle('desktop:open-external', (_event, url) => shell.openExternal(url));

@@ -19,7 +19,7 @@ header p {
 h1 { font-size: 38px; margin: 8px 0 24px; }
 .steps {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 8px;
   margin-bottom: 20px;
 }
@@ -76,4 +76,9 @@ pre {
   border-radius: 16px;
   background: rgba(0,0,0,0.28);
   padding: 16px;
+}
+.grid-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }

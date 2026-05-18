@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Activity, Boxes, Printer, Wifi } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
+import { DeviceCertificationPanel } from '@/components/device-certification-panel';
 import type { OperationalHealth } from '@/lib/operational-intelligence/engine';
 
 export default function OperationsPage() {
@@ -55,6 +56,7 @@ export default function OperationsPage() {
               </div>
             </article>
           </section>
+          <DeviceCertificationPanel />
         </div>
       )}
     </AppShell>

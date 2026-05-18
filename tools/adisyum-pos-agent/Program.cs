@@ -571,20 +571,30 @@ namespace AdisyumPosAgent
             var tenantId = string.IsNullOrWhiteSpace(payload.tenantId) ? state.Session?.tenantId : payload.tenantId.Trim();
             if (string.IsNullOrWhiteSpace(tenantId)) throw new InvalidOperationException("tenantId zorunlu.");
 
+            var mutationId = string.IsNullOrWhiteSpace(payload.mutationId)
+                ? (string.IsNullOrWhiteSpace(payload.requestId) ? LocalCrypto.Hash(tenantId + "::" + payload.type + "::" + (payload.bodyJson ?? "{}")) : payload.requestId.Trim())
+                : payload.mutationId.Trim();
             var item = new SyncJob
             {
                 id = "sync-" + Guid.NewGuid().ToString("N"),
                 tenantId = tenantId,
                 type = string.IsNullOrWhiteSpace(payload.type) ? "offline-order" : payload.type.Trim(),
                 bodyJson = payload.bodyJson ?? "{}",
+                mutationId = mutationId,
+                requestId = string.IsNullOrWhiteSpace(payload.requestId) ? mutationId : payload.requestId.Trim(),
                 status = "pending",
                 attempts = 0,
                 maxAttempts = payload.maxAttempts <= 0 ? 12 : payload.maxAttempts,
                 createdAt = DateTimeOffset.UtcNow,
                 updatedAt = DateTimeOffset.UtcNow,
             };
-            store.Mutate(next => next.SyncQueue.Add(item));
-            return new { ok = true, queued = true, jobId = item.id, tenantId };
+            var duplicate = false;
+            store.Mutate(next =>
+            {
+                duplicate = next.SyncQueue.Any(job => job.tenantId == tenantId && job.mutationId == mutationId && job.status != "dead");
+                if (!duplicate) next.SyncQueue.Add(item);
+            });
+            return new { ok = true, queued = !duplicate, duplicate, jobId = duplicate ? null : item.id, tenantId, mutationId };
         }
 
         public object GetMetrics()
@@ -1225,13 +1235,13 @@ namespace AdisyumPosAgent
 
         public object Enqueue(FiscalTransactionPayload payload)
         {
-            return EnqueueInternal(payload.tenantId, payload.transactionId, "payment", payload.mode, payload.bodyJson);
+            return EnqueueInternal(payload.tenantId, payload.transactionId, payload.mutationId, "payment", payload.mode, payload.bodyJson);
         }
 
         public object EnqueueReport(FiscalReportPayload payload)
         {
             var reportType = string.IsNullOrWhiteSpace(payload.reportType) ? "x-report" : payload.reportType.Trim();
-            return EnqueueInternal(payload.tenantId, "report-" + Guid.NewGuid().ToString("N"), reportType, payload.mode, payload.bodyJson);
+            return EnqueueInternal(payload.tenantId, "report-" + Guid.NewGuid().ToString("N"), null, reportType, payload.mode, payload.bodyJson);
         }
 
         public async Task RunWorker(CancellationToken token)
@@ -1259,7 +1269,7 @@ namespace AdisyumPosAgent
             }
         }
 
-        private object EnqueueInternal(string tenantId, string transactionId, string operation, string mode, string bodyJson)
+        private object EnqueueInternal(string tenantId, string transactionId, string mutationId, string operation, string mode, string bodyJson)
         {
             var state = store.Snapshot();
             var resolvedTenant = string.IsNullOrWhiteSpace(tenantId) ? state.Session?.tenantId : tenantId.Trim();
@@ -1269,6 +1279,7 @@ namespace AdisyumPosAgent
                 id = "fiscal-" + Guid.NewGuid().ToString("N"),
                 tenantId = resolvedTenant,
                 transactionId = string.IsNullOrWhiteSpace(transactionId) ? "txn-" + Guid.NewGuid().ToString("N") : transactionId,
+                mutationId = string.IsNullOrWhiteSpace(mutationId) ? (string.IsNullOrWhiteSpace(transactionId) ? "txn-" + Guid.NewGuid().ToString("N") : transactionId) : mutationId,
                 operation = operation,
                 mode = string.IsNullOrWhiteSpace(mode) ? "auto" : mode,
                 bodyJson = bodyJson ?? "{}",
@@ -1278,8 +1289,13 @@ namespace AdisyumPosAgent
                 createdAt = DateTimeOffset.UtcNow,
                 updatedAt = DateTimeOffset.UtcNow,
             };
-            store.Mutate(next => next.FiscalQueue.Add(job));
-            return new { ok = true, queued = true, jobId = job.id, tenantId = resolvedTenant, operation = job.operation };
+            var duplicate = false;
+            store.Mutate(next =>
+            {
+                duplicate = next.FiscalQueue.Any(item => item.tenantId == resolvedTenant && item.mutationId == job.mutationId && item.status != "dead");
+                if (!duplicate) next.FiscalQueue.Add(job);
+            });
+            return new { ok = true, queued = !duplicate, duplicate, jobId = duplicate ? null : job.id, tenantId = resolvedTenant, operation = job.operation, mutationId = job.mutationId };
         }
     }
 
@@ -1575,6 +1591,8 @@ namespace AdisyumPosAgent
         public string tenantId { get; set; }
         public string type { get; set; }
         public string bodyJson { get; set; }
+        public string mutationId { get; set; }
+        public string requestId { get; set; }
         public string status { get; set; }
         public int attempts { get; set; }
         public int maxAttempts { get; set; }
@@ -1727,6 +1745,7 @@ namespace AdisyumPosAgent
         public string id { get; set; }
         public string tenantId { get; set; }
         public string transactionId { get; set; }
+        public string mutationId { get; set; }
         public string operation { get; set; }
         public string mode { get; set; }
         public string bodyJson { get; set; }
@@ -1767,6 +1786,8 @@ namespace AdisyumPosAgent
         public string tenantId { get; set; }
         public string type { get; set; }
         public string bodyJson { get; set; }
+        public string requestId { get; set; }
+        public string mutationId { get; set; }
         public int maxAttempts { get; set; }
     }
 
@@ -1774,6 +1795,7 @@ namespace AdisyumPosAgent
     {
         public string tenantId { get; set; }
         public string transactionId { get; set; }
+        public string mutationId { get; set; }
         public string mode { get; set; }
         public string bodyJson { get; set; }
     }

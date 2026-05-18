@@ -19,6 +19,7 @@
         <button data-step="printers">3. Yazıcılar</button>
         <button data-step="fiscal">4. Mali POS</button>
         <button data-step="verify">5. Doğrulama</button>
+        <button data-step="support">6. Destek</button>
       </section>
 
       <section id="login" class="panel active">
@@ -55,6 +56,20 @@
         <button id="checkBridge">Bridge kontrol et</button>
         <pre id="healthResult"></pre>
         <button id="openPos">POS'u aç</button>
+      </section>
+
+      <section id="support" class="panel">
+        <div class="row">
+          <h2>Destek ve tanılama</h2>
+          <button id="exportDiagnostics">Tanılama dışa aktar</button>
+        </div>
+        <div class="grid-actions">
+          <button id="supportHealth">Bridge özeti</button>
+          <button id="supportQueues">Kuyrukları incele</button>
+          <button id="supportUpdater">Güncelleme durumu</button>
+          <button id="supportService">Servis durumu</button>
+        </div>
+        <pre id="supportResult"></pre>
       </section>
     </main>
     <script src="./renderer.js"></script>

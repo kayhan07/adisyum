@@ -15,6 +15,13 @@ export type PilotEventType =
   | 'queue_snapshot'
   | 'ux_flow'
   | 'chaos_result';
+export type FieldReliabilityMetric = {
+  printerFailureRate: number;
+  reconnectRate: number;
+  offlineDurationSec: number;
+  fiscalErrorFrequency: number;
+  deviceInstabilityScore: number;
+};
 
 export type PilotProgramConfig = {
   tenantId: string;
@@ -200,6 +207,7 @@ export function ingestPilotDiagnostics(input: {
     dataLossIncidents?: number;
     syncReconcileFailures?: number;
   };
+  reliability?: Partial<FieldReliabilityMetric>;
   logs?: Array<{ type: PilotEventType; message: string; severity?: PilotSeverity; metrics?: Record<string, number | string | boolean> }>;
 }) {
   enablePilotTenant({ tenantId: input.tenantId, restaurantName: input.restaurantName });
@@ -240,6 +248,17 @@ export function ingestPilotDiagnostics(input: {
 
   if (input.offline) {
     events.push(recordPilotEvent({ tenantId: input.tenantId, restaurantName: input.restaurantName, type: 'offline_session', source, message: 'Offline validation telemetry ingested', metrics: input.offline as Record<string, number> }));
+  }
+
+  if (input.reliability) {
+    events.push(recordPilotEvent({
+      tenantId: input.tenantId,
+      restaurantName: input.restaurantName,
+      type: 'queue_snapshot',
+      source,
+      message: 'Field reliability metrics ingested',
+      metrics: input.reliability as Record<string, number>,
+    }));
   }
 
   for (const log of input.logs ?? []) {

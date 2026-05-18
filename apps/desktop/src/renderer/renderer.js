@@ -53,4 +53,24 @@ openPos.addEventListener('click', async () => {
   await api.openCloud();
 });
 
+async function showSupport(work) {
+  supportResult.textContent = JSON.stringify(await work().catch((error) => ({ ok: false, error: error.message })), null, 2);
+}
+
+supportHealth.addEventListener('click', () => showSupport(() => api.bridgeHealth()));
+supportQueues.addEventListener('click', () => showSupport(() => api.queues()));
+supportUpdater.addEventListener('click', () => showSupport(() => api.updaterStatus()));
+supportService.addEventListener('click', () => showSupport(() => api.serviceStatus()));
+exportDiagnostics.addEventListener('click', async () => {
+  const [health, queues, fiscal, service, updater] = await Promise.all([
+    api.bridgeHealth().catch((error) => ({ ok: false, error: error.message })),
+    api.queues().catch((error) => ({ ok: false, error: error.message })),
+    api.fiscalStatus().catch((error) => ({ ok: false, error: error.message })),
+    api.serviceStatus().catch((error) => ({ ok: false, error: error.message })),
+    api.updaterStatus().catch((error) => ({ ok: false, error: error.message })),
+  ]);
+  const bundle = { exportedAt: new Date().toISOString(), health, queues, fiscal, service, updater };
+  supportResult.textContent = JSON.stringify(bundle, null, 2);
+});
+
 void hydrate();

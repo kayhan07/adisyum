@@ -9,5 +9,8 @@ contextBridge.exposeInMainWorld('adisyumDesktop', {
   listPrinters: () => ipcRenderer.invoke('desktop:list-printers'),
   testPrint: (printerName) => ipcRenderer.invoke('desktop:test-print', printerName),
   fiscalStatus: () => ipcRenderer.invoke('desktop:fiscal-status'),
+  queues: () => ipcRenderer.invoke('desktop:queues'),
+  updaterStatus: () => ipcRenderer.invoke('desktop:updater-status'),
+  serviceStatus: () => ipcRenderer.invoke('desktop:service-status'),
   openExternal: (url) => ipcRenderer.invoke('desktop:open-external', url),
 });
