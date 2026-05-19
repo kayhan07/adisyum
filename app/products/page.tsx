@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { AlertTriangle, ArrowRightLeft, Boxes, Building2, CheckSquare, Copy, Download, Layers3, Package, PackageCheck, Plus, Printer, Save, Search, Sparkles, Trash2, Upload, Warehouse } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { ProductCardForm } from '@/components/product-card-form';
@@ -97,7 +98,7 @@ const DEFAULT_PRODUCT_CATEGORIES = ['Kahve', 'Soğuk İçecek', 'Alkol', 'Burger
 const RAW_STOCK_COUNT_STORAGE_KEY = 'adisyon-raw-stock-counts';
 
 type ProductWindow = 'raw' | 'sale' | 'quick' | 'bar' | 'recipe' | 'warehouse';
-type CreateItemType = 'sale' | 'raw';
+type CreateItemType = 'sale' | 'raw' | 'semi' | 'combo' | 'modifier' | 'variant';
 type RawUnit = 'kg' | 'lt' | 'adet';
 type SaleStockProcurementType = 'recipe' | 'direct';
 type BarStockMode = 'none' | 'bottle-glass';
@@ -154,6 +155,7 @@ type SaleProductCard = {
 type CreatedRawIngredient = {
   id: string;
   name: string;
+  productType?: 'stock_item' | 'semi_product';
   unit: RawUnit;
   purchasePrice: string;
   minimumQuantity: string;
@@ -180,6 +182,15 @@ type NewItemDraft = {
   unit: RawUnit;
   minimumQuantity: string;
   currentQuantity: string;
+};
+
+type ProductCreationOption = {
+  id: CreateItemType;
+  title: string;
+  subtitle: string;
+  targetWindow: ProductWindow;
+  icon: typeof Package;
+  tone: string;
 };
 
 type QuickSaleDraft = {
@@ -267,10 +278,61 @@ type BarOpenBottleRow = {
 const productWindows = [
   { id: 'raw' as const, label: 'Hammaddeler', description: 'Depo ve üretim stoku', icon: Boxes },
   { id: 'sale' as const, label: 'Satış Ürünleri', description: 'Ürün kartı ve reçete', icon: Package },
-  { id: 'quick' as const, label: 'Hızlı İşlemler', description: 'Liste bazlı hızlı ekleme', icon: Plus },
+  { id: 'quick' as const, label: 'Product Studio', description: 'Domain bazlı oluşturma', icon: Plus },
   { id: 'bar' as const, label: 'Bar Kontrol', description: 'Açık şişe ve varyans takibi', icon: Sparkles },
   { id: 'recipe' as const, label: 'Reçete Havuzu', description: 'Merkezi reçete yönetimi', icon: Layers3 },
   { id: 'warehouse' as const, label: 'Depo Transfer', description: 'Ana depo ve departman sevkleri', icon: Warehouse },
+];
+
+const productCreationOptions: ProductCreationOption[] = [
+  {
+    id: 'raw',
+    title: 'Hammadde',
+    subtitle: 'Sadece stok, reçete ve satın alma akışında kullanılır.',
+    targetWindow: 'raw',
+    icon: Boxes,
+    tone: 'border-emerald-400/25 bg-emerald-500/10 text-emerald-100',
+  },
+  {
+    id: 'sale',
+    title: 'Satış Ürünü',
+    subtitle: 'POS, adisyon, QR menü ve online satışta görünür.',
+    targetWindow: 'sale',
+    icon: Package,
+    tone: 'border-blue-400/25 bg-blue-500/10 text-blue-100',
+  },
+  {
+    id: 'semi',
+    title: 'Yarı Mamül',
+    subtitle: 'Sos, hamur, marinasyon gibi reçetede kullanılan ara üretim.',
+    targetWindow: 'raw',
+    icon: PackageCheck,
+    tone: 'border-amber-400/25 bg-amber-500/10 text-amber-100',
+  },
+  {
+    id: 'combo',
+    title: 'Combo',
+    subtitle: 'Birden fazla satış ürününü tek POS kartında birleştirir.',
+    targetWindow: 'sale',
+    icon: Copy,
+    tone: 'border-violet-400/25 bg-violet-500/10 text-violet-100',
+  },
+  {
+    id: 'modifier',
+    title: 'Modifier',
+    subtitle: 'Ekstra, çıkarılacak içerik ve opsiyon grupları.',
+    targetWindow: 'quick',
+    icon: CheckSquare,
+    tone: 'border-cyan-400/25 bg-cyan-500/10 text-cyan-100',
+  },
+  {
+    id: 'variant',
+    title: 'Varyant',
+    subtitle: 'Boy, porsiyon, gramaj veya fiyat varyasyonları.',
+    targetWindow: 'quick',
+    icon: ArrowRightLeft,
+    tone: 'border-slate-400/25 bg-slate-500/10 text-slate-100',
+  },
 ];
 
 const ingredientPurchaseHistory: IngredientPurchaseHistory[] = [
@@ -915,6 +977,7 @@ function findExactPrinterMapping(category: string, mappings: PrinterMappingRecor
 }
 
 export default function ProductsPage() {
+  const searchParams = useSearchParams();
   const quickCreateFileInputRef = useRef<HTMLInputElement | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
@@ -1007,8 +1070,19 @@ export default function ProductsPage() {
   const deferredRecipeIngredientQuery = useDeferredValue(newRecipeIngredientQuery);
   const deferredBarActionProductQuery = useDeferredValue(barActionProductQuery);
   const quickCreateEnabled = activeWindow === 'raw';
+  const activeCreationOption = productCreationOptions.find((option) => option.id === newItemDraft.itemType) ?? productCreationOptions[1];
   const importWindow: 'raw' = 'raw';
   const deferredQuickCreateText = useDeferredValue(quickCreateEnabled ? bulkDrafts[importWindow] : '');
+
+  useEffect(() => {
+    const domain = searchParams.get('domain');
+    if (domain === 'stock_item') changeActiveWindow('raw');
+    if (domain === 'sale_product') changeActiveWindow('sale');
+    if (domain === 'semi_product') openProductCreationStudio('semi');
+    if (domain === 'combo_product') openProductCreationStudio('combo');
+    // The query param is only an entry hint for split domain routes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const saleStocks = useMemo(
     () => erpSnapshot.saleStockResult.stocks.filter((stock) => stock.branchId === branchId),
@@ -2150,6 +2224,14 @@ export default function ProductsPage() {
     setNewItemDraft((current) => ({ ...current, [field]: value }));
   }
 
+  function openProductCreationStudio(type: CreateItemType) {
+    const option = productCreationOptions.find((item) => item.id === type);
+    resetNewItemDraft(type);
+    setActiveWindow(option?.targetWindow ?? 'quick');
+    setShowQuickCreate(false);
+    setShowNewItemForm(true);
+  }
+
   function updateSelectedProduct(patch: Partial<SaleProductCard>) {
     if (!selectedProduct) return;
     setSaleProducts((current) => current.map((product) => product.id === selectedProduct.id ? { ...product, ...patch } : product));
@@ -2685,14 +2767,23 @@ export default function ProductsPage() {
   }
 
   function resetNewItemDraft(nextType: CreateItemType = 'sale') {
+    const defaultCategory = nextType === 'raw'
+      ? 'Hammadde / Stok'
+      : nextType === 'semi'
+        ? 'Yarı Mamül'
+        : nextType === 'modifier'
+          ? 'Modifier'
+          : nextType === 'variant'
+            ? 'Varyant'
+            : categories[0] ?? 'Diğer';
     setNewItemDraft({
       itemType: nextType,
       name: '',
-      category: categories[0] ?? 'Diğer',
+      category: defaultCategory,
       salesUnit: 'portion',
       salePrice: '0',
       purchasePrice: '0',
-      vatRate: nextType === 'raw' ? 20 : 10,
+      vatRate: nextType === 'raw' || nextType === 'semi' ? 20 : 10,
       unit: 'adet',
       minimumQuantity: '0',
       currentQuantity: '0',
@@ -2878,6 +2969,7 @@ export default function ProductsPage() {
         additions.push({
           id: `raw-bulk-${createdAt}-${index}`,
           name,
+          productType: 'stock_item',
           unit: normalizedUnit.unit,
           purchasePrice,
           minimumQuantity,
@@ -2983,7 +3075,7 @@ export default function ProductsPage() {
   function saveNewItem() {
     if (!newItemDraft.name.trim()) return;
 
-    if (newItemDraft.itemType === 'raw') {
+    if (newItemDraft.itemType === 'raw' || newItemDraft.itemType === 'semi') {
       const rawId = `raw-${Date.now()}`;
       const createdRaw: CreatedRawIngredient = {
         id: rawId,
@@ -2993,12 +3085,28 @@ export default function ProductsPage() {
         minimumQuantity: newItemDraft.minimumQuantity,
         currentQuantity: newItemDraft.currentQuantity,
         vatRate: newItemDraft.vatRate,
+        productType: newItemDraft.itemType === 'semi' ? 'semi_product' : 'stock_item',
       };
       setCreatedRawIngredients((current) => [createdRaw, ...current]);
       setNewRecipeIngredientId(rawId);
       setSelectedRawId(rawId);
-      setSavedNotes((current) => [`${createdRaw.name} hammaddesi oluşturuldu.`, ...current]);
+      setSavedNotes((current) => [
+        newItemDraft.itemType === 'semi'
+          ? `${createdRaw.name} yarı mamülü oluşturuldu. POS kataloğuna eklenmedi.`
+          : `${createdRaw.name} hammaddesi oluşturuldu. POS kataloğuna eklenmedi.`,
+        ...current,
+      ]);
       changeActiveWindow('raw');
+      setShowNewItemForm(false);
+      resetNewItemDraft('sale');
+      return;
+    }
+
+    if (newItemDraft.itemType === 'modifier' || newItemDraft.itemType === 'variant') {
+      setSavedNotes((current) => [
+        `${newItemDraft.name.trim()} ${newItemDraft.itemType === 'modifier' ? 'modifier grubu' : 'varyant grubu'} oluşturma taslağı kaydedildi. Bu domain POS ürün kartından bağımsız tutulur.`,
+        ...current,
+      ]);
       setShowNewItemForm(false);
       resetNewItemDraft('sale');
       return;
@@ -3010,7 +3118,7 @@ export default function ProductsPage() {
       id: nextId,
       name: newItemDraft.name.trim(),
       category: newItemDraft.category,
-      productType: 'sale_product',
+      productType: newItemDraft.itemType === 'combo' ? 'combo_product' : 'sale_product',
       salesUnit: newItemDraft.salesUnit,
       currentStock: '0',
       lastCountedAt: undefined,
@@ -3489,15 +3597,52 @@ export default function ProductsPage() {
           ))}
         </section>
 
-        {showNewItemForm && quickCreateEnabled ? (
+        <section className="rounded-[1.75rem] border border-white/10 bg-[#101B30] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_18px_42px_rgba(2,6,23,0.28)]">
+          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-blue-300">Product Creation Studio</p>
+              <h2 className="mt-2 text-2xl font-semibold text-white">Ne oluşturmak istiyorsunuz?</h2>
+              <p className="mt-2 text-sm text-slate-400">Her domain kendi kurallarıyla açılır; hammadde POS'a, satış ürünü stok girişine karışmaz.</p>
+            </div>
+            <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-100">
+              productType kilitli
+            </span>
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {productCreationOptions.map((option) => {
+              const Icon = option.icon;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => openProductCreationStudio(option.id)}
+                  className={`rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 active:scale-[0.98] ${option.tone}`}
+                >
+                  <span className="flex items-start gap-3">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10">
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <span>
+                      <span className="block font-semibold">{option.title}</span>
+                      <span className="mt-1 block text-xs leading-5 text-current/75">{option.subtitle}</span>
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        {showNewItemForm ? (
           <ProductCardForm
-            eyebrow="Yeni hammadde"
-            title="Hammadde kartı oluştur"
-            description="Satış ürünleri bu formdan değil, reçete havuzundan seçilerek POS ürünlerine aktarılır. Bu alan sadece hammadde kartları içindir."
+            eyebrow="Product Creation Studio"
+            title={`${activeCreationOption.title} oluştur`}
+            description={activeCreationOption.subtitle}
             onClose={() => setShowNewItemForm(false)}
-            itemType="raw"
-            onItemTypeChange={() => resetNewItemDraft('raw')}
-            itemTypeOptions={['raw']}
+            itemType={newItemDraft.itemType}
+            onItemTypeChange={(value) => resetNewItemDraft(value)}
+            itemTypeOptions={productCreationOptions.map((option) => option.id)}
             name={newItemDraft.name}
             onNameChange={(value) => updateNewItemDraft('name', value)}
             category={newItemDraft.category}
@@ -3509,7 +3654,7 @@ export default function ProductsPage() {
             onSalePriceChange={(value) => updateNewItemDraft('salePrice', value)}
             purchasePrice={newItemDraft.purchasePrice}
             onPurchasePriceChange={(value) => updateNewItemDraft('purchasePrice', value)}
-            showPurchasePrice={newItemDraft.itemType === 'raw'}
+            showPurchasePrice={newItemDraft.itemType === 'raw' || newItemDraft.itemType === 'semi'}
             vatRate={newItemDraft.vatRate}
             onVatRateChange={(value) => updateNewItemDraft('vatRate', value)}
             showVat
@@ -3519,44 +3664,12 @@ export default function ProductsPage() {
             onMinimumQuantityChange={(value) => updateNewItemDraft('minimumQuantity', value)}
             currentQuantity={newItemDraft.currentQuantity}
             onCurrentQuantityChange={(value) => updateNewItemDraft('currentQuantity', value)}
-            showCurrentQuantity
+            showCurrentQuantity={newItemDraft.itemType === 'raw' || newItemDraft.itemType === 'semi'}
             newCategoryName={newCategoryName}
             onNewCategoryNameChange={setNewCategoryName}
             categoryCount={categories.length}
-            onCreateCategory={addCategory}
-            submitLabel="Kartı oluştur"
-            onSubmit={saveNewItem}
-          />
-        ) : null}
-
-        {showNewItemForm && activeWindow === 'sale' ? (
-          <ProductCardForm
-            eyebrow="Yeni satış ürünü"
-            title="Satış ürünü oluştur"
-            description="Satış ekranından hızlı ürün kartı aç. İstersen sonra reçete havuzundan bağlayıp reçetesini tamamla."
-            onClose={() => setShowNewItemForm(false)}
-            itemType="sale"
-            onItemTypeChange={() => resetNewItemDraft('sale')}
-            itemTypeOptions={['sale']}
-            name={newItemDraft.name}
-            onNameChange={(value) => updateNewItemDraft('name', value)}
-            category={newItemDraft.category}
-            onCategoryChange={(value) => updateNewItemDraft('category', value)}
-            categoryOptions={[...categories]}
-            saleUnit={newItemDraft.salesUnit}
-            onSaleUnitChange={(value) => updateNewItemDraft('salesUnit', value)}
-            salePrice={newItemDraft.salePrice}
-            onSalePriceChange={(value) => updateNewItemDraft('salePrice', value)}
-            purchasePrice={newItemDraft.purchasePrice}
-            onPurchasePriceChange={(value) => updateNewItemDraft('purchasePrice', value)}
-            vatRate={newItemDraft.vatRate}
-            onVatRateChange={(value) => updateNewItemDraft('vatRate', value)}
-            showVat
-            newCategoryName={newCategoryName}
-            onNewCategoryNameChange={setNewCategoryName}
-            categoryCount={categories.length}
-            onCreateCategory={addCategory}
-            submitLabel="Satış ürünü oluştur"
+            onCreateCategory={newItemDraft.itemType === 'sale' || newItemDraft.itemType === 'combo' ? addCategory : undefined}
+            submitLabel={`${activeCreationOption.title} oluştur`}
             onSubmit={saveNewItem}
           />
         ) : null}

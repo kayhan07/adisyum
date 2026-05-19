@@ -472,6 +472,7 @@ model ProductCategory {
   sortOrder    Int      @default(0) @map("sort_order")
   imageUrl     String?  @map("image_url") @db.VarChar(500)
   thumbnailUrl String?  @map("thumbnail_url") @db.VarChar(500)
+  allowedProductTypes Json @default("[]") @map("allowed_product_types")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -844,6 +845,7 @@ model ProductTemplate {
   defaultPrice       Decimal  @default(0) @map("default_price") @db.Decimal(12, 2)
   vatRate            Int      @default(10) @map("vat_rate")
   unitType           String   @default("adet") @map("unit_type") @db.VarChar(32)
+  productType        String   @default("sale_product") @map("product_type") @db.VarChar(32)
   printerGroupName   String?  @map("printer_group_name") @db.VarChar(140)
   preparationGroup   String?  @map("preparation_group") @db.VarChar(120)
   active             Boolean  @default(true)

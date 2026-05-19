@@ -769,8 +769,9 @@ function InvoiceWindow() {
               onClose={() => { setShowStockCardForm(false); resetNewStockCardForm(mode === 'purchase' ? 'raw' : 'sale'); }}
               itemType={newStockItemType}
               onItemTypeChange={(value) => {
-                setNewStockItemType(value);
-                setNewStockVatRate(value === 'raw' ? 20 : 10);
+                const nextType = value === 'raw' ? 'raw' : 'sale';
+                setNewStockItemType(nextType);
+                setNewStockVatRate(nextType === 'raw' ? 20 : 10);
               }}
               name={newStockName}
               onNameChange={setNewStockName}
@@ -1183,8 +1184,9 @@ function StockProductsWindow() {
           onClose={closeStockCardForm}
           itemType={stockCardItemType}
           onItemTypeChange={(value) => {
-            setStockCardItemType(value);
-            setStockCardVatRate(value === 'raw' ? 20 : 10);
+            const nextType = value === 'raw' ? 'raw' : 'sale';
+            setStockCardItemType(nextType);
+            setStockCardVatRate(nextType === 'raw' ? 20 : 10);
           }}
           name={stockCardName}
           onNameChange={setStockCardName}

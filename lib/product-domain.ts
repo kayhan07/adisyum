@@ -71,6 +71,17 @@ export function isRawMaterialCategory(category?: string | null) {
   return rawMaterialCategoryKeywords.some((keyword) => normalized === keyword || normalized.includes(keyword));
 }
 
+export function getAllowedProductTypesForCategory(category?: string | null): ProductDomainType[] {
+  if (isRawMaterialCategory(category)) return ['stock_item', 'semi_product'];
+  const normalized = normalizeProductDomainText(category ?? '');
+  if (normalized.includes('combo') || normalized.includes('menu')) return ['sale_product', 'combo_product'];
+  return ['sale_product', 'combo_product'];
+}
+
+export function canCategoryAcceptProductType(category: string | null | undefined, productType: ProductDomainType) {
+  return getAllowedProductTypesForCategory(category).includes(productType);
+}
+
 export function inferProductDomainType(input: { name: string; category?: string | null; explicitType?: string | null }): ProductDomainType {
   const explicit = input.explicitType as ProductDomainType | undefined;
   if (explicit && ALL_PRODUCT_DOMAIN_TYPES.includes(explicit)) return explicit;

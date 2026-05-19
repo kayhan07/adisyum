@@ -2,10 +2,11 @@
 
 import type { ReactNode } from 'react';
 
-type CardItemType = 'sale' | 'raw';
+type CardItemType = 'sale' | 'raw' | 'semi' | 'combo' | 'modifier' | 'variant';
 type RawUnit = 'kg' | 'lt' | 'adet';
 type SaleUnitType = 'portion' | 'kg' | 'bottle' | 'glass';
 type VatRate = 1 | 10 | 20;
+type ItemTypeChangeHandler = { bivarianceHack(value: CardItemType): void }['bivarianceHack'];
 
 type ProductCardFormProps = {
   eyebrow: string;
@@ -14,7 +15,7 @@ type ProductCardFormProps = {
   closeLabel?: string;
   onClose: () => void;
   itemType: CardItemType;
-  onItemTypeChange: (value: CardItemType) => void;
+  onItemTypeChange: ItemTypeChangeHandler;
   itemTypeOptions?: CardItemType[];
   name: string;
   onNameChange: (value: string) => void;
@@ -103,6 +104,8 @@ export function ProductCardForm({
   onCancel,
 }: ProductCardFormProps) {
   const saleUsesSelect = Boolean(categoryOptions?.length);
+  const isSellableFlow = itemType === 'sale' || itemType === 'combo';
+  const isInventoryFlow = itemType === 'raw' || itemType === 'semi';
 
   return (
     <section className="rounded-[1.75rem] border border-blue-400/20 bg-[#13213A] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_0_38px_rgba(59,130,246,0.12)]">
@@ -132,6 +135,10 @@ export function ProductCardForm({
             >
               {itemTypeOptions.includes('sale') ? <option value="sale">Satış ürünü</option> : null}
               {itemTypeOptions.includes('raw') ? <option value="raw">Hammadde</option> : null}
+              {itemTypeOptions.includes('semi') ? <option value="semi">Yarı mamül</option> : null}
+              {itemTypeOptions.includes('combo') ? <option value="combo">Combo ürün</option> : null}
+              {itemTypeOptions.includes('modifier') ? <option value="modifier">Modifier grubu</option> : null}
+              {itemTypeOptions.includes('variant') ? <option value="variant">Varyant ürünü</option> : null}
             </select>
           </InputShell>
         </label>
@@ -161,7 +168,7 @@ export function ProductCardForm({
         ) : null}
       </div>
 
-      {itemType === 'sale' ? (
+      {isSellableFlow ? (
         <>
           {onCreateCategory ? (
             <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_220px_auto]">
@@ -282,7 +289,7 @@ export function ProductCardForm({
             ) : null}
           </div>
         </>
-      ) : (
+      ) : isInventoryFlow ? (
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           {showPurchasePrice ? (
             <label className="block">
@@ -331,6 +338,37 @@ export function ProductCardForm({
               <input
                 value={minimumQuantity}
                 onChange={(event) => onMinimumQuantityChange?.(event.target.value)}
+                className="h-12 w-full rounded-2xl border border-white/10 bg-[#0B1220] px-4 font-semibold text-white outline-none"
+              />
+            </InputShell>
+          </label>
+
+          {showVat ? (
+            <label className="block">
+              <FieldLabel>KDV</FieldLabel>
+              <InputShell>
+                <select
+                  value={vatRate}
+                  onChange={(event) => onVatRateChange?.(Number(event.target.value) as VatRate)}
+                  className="h-12 w-full rounded-2xl border border-white/10 bg-[#0B1220] px-4 font-semibold text-white outline-none"
+                >
+                  <option value={1}>%1</option>
+                  <option value={10}>%10</option>
+                  <option value={20}>%20</option>
+                </select>
+              </InputShell>
+            </label>
+          ) : null}
+        </div>
+      ) : (
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <label className="block">
+            <FieldLabel>Grup / bağlam</FieldLabel>
+            <InputShell>
+              <input
+                value={category}
+                onChange={(event) => onCategoryChange?.(event.target.value)}
+                placeholder={itemType === 'modifier' ? 'Örn: Süt seçenekleri' : 'Örn: Boy / porsiyon'}
                 className="h-12 w-full rounded-2xl border border-white/10 bg-[#0B1220] px-4 font-semibold text-white outline-none"
               />
             </InputShell>

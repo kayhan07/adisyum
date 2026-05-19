@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+  canCategoryAcceptProductType,
   filterSellableProducts,
   inferProductDomainType,
   isSellableProductType,
@@ -74,6 +75,8 @@ const comboProduct = {
 assert.equal(inferProductDomainType({ name: 'Sut', category: 'Hammadde / Stok' }), 'stock_item');
 assert.equal(inferProductDomainType({ name: 'Hazir Sos', category: 'Hazirlik' }), 'semi_product');
 assert.equal(inferProductDomainType({ name: 'Aile Paketi', category: 'Menuler' }), 'combo_product');
+assert.equal(canCategoryAcceptProductType('Hammadde / Stok', 'sale_product'), false);
+assert.equal(canCategoryAcceptProductType('Mutfak Satis', 'sale_product'), true);
 assert.equal(isSellableProductType(resolveProductDomainType(baseSaleProduct)), true);
 assert.equal(isSellableProductType(resolveProductDomainType(stockItem)), false);
 

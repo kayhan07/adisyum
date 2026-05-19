@@ -6,6 +6,7 @@ export type RawUnit = 'kg' | 'lt' | 'adet';
 export type StoredRawIngredient = {
   id: string;
   name: string;
+  productType?: 'stock_item' | 'semi_product';
   unit: RawUnit;
   purchasePrice: string;
   minimumQuantity: string;
