@@ -21,9 +21,11 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
+import { compileCanonicalPosCatalog } from '@/lib/canonical-pos-catalog';
 import { erpSnapshot, formatTRY, productRecipes } from '@/lib/erp-engine';
 import {
   DEFAULT_SALE_PRODUCT_BASE,
+  buildPosCatalogFromStored,
   loadStoredSaleProducts,
   normalizeStoredSaleProduct,
   subscribeToStoredSaleProductsChanges,
@@ -189,6 +191,12 @@ export function ProductOperationsCenter() {
   }), [rawIngredients, saleProducts]);
 
   const summary = useMemo(() => summarizeProductOperations(rows), [rows]);
+  const runtimeCatalog = useMemo(() => compileCanonicalPosCatalog(buildPosCatalogFromStored(saleProducts), {
+    channel: 'pos',
+    deviceSync: [
+      { deviceId: 'cashier-main', catalogRevision: 'CAT-LOCAL', lastSeenAt: new Date().toISOString(), status: 'stale', syncLagMs: 2400 },
+    ],
+  }), [saleProducts]);
   const usageGraph = useMemo(() => buildRecipeUsageGraph(rows), [rows]);
   const visibleRows = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase('tr-TR');
@@ -239,6 +247,7 @@ export function ProductOperationsCenter() {
             ['Reçetesiz satış', summary.missingRecipes, ChefHat, 'text-amber-200'],
             ['Düşük marj', summary.lowMargin, BarChart3, 'text-blue-200'],
             ['POS sızıntısı', summary.posLeakage, AlertTriangle, summary.posLeakage ? 'text-rose-200' : 'text-emerald-200'],
+            ['Katalog revizyon', runtimeCatalog.catalogRevision, GitBranch, 'text-cyan-200'],
           ] satisfies KpiCard[]).map(([label, value, Icon, tone]) => (
             <article key={String(label)} className="rounded-2xl border border-line bg-panel p-4 shadow-soft">
               <Icon className={`h-5 w-5 ${tone}`} />

@@ -59,6 +59,7 @@ type ProductCard = {
   id: string;
   productId?: string;
   posKey?: string;
+  catalogRevision?: string;
   sku?: string;
   barcode?: string;
   externalId?: string;
@@ -233,6 +234,7 @@ async function addProductToAuthoritativeOrder(input: {
     id: string;
     productId?: string;
     posKey?: string;
+    catalogRevision?: string;
     sku?: string;
     barcode?: string;
     externalId?: string;
@@ -263,6 +265,7 @@ async function addProductToAuthoritativeOrder(input: {
     tableId: input.tableId,
     productId: input.product.id,
     posKey: input.product.posKey,
+    catalogRevision: input.product.catalogRevision,
     legacyKey: input.product.legacyKey,
     productName: input.product.name,
     quantity: input.product.quantity ?? 1,
@@ -1560,6 +1563,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           id: product.id,
           productId: product.productId,
           posKey: product.posKey ?? product.id,
+          catalogRevision: product.catalogRevision,
           sku: product.sku,
           barcode: product.barcode,
           externalId: product.externalId,
@@ -1703,6 +1707,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           id: productCardProduct.id,
           productId: productCardProduct.productId,
           posKey: productCardProduct.posKey ?? productCardProduct.id,
+          catalogRevision: productCardProduct.catalogRevision,
           sku: productCardProduct.sku,
           barcode: productCardProduct.barcode,
           externalId: productCardProduct.externalId,

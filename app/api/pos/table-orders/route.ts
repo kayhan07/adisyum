@@ -15,6 +15,10 @@ const VAT_RATE = 0.1;
 type OrderLinePayload = {
   id: string;
   productId?: string;
+  posKey?: string;
+  catalogRevision?: string;
+  productRevision?: number;
+  productSnapshot?: Record<string, unknown>;
   name: string;
   qty: number;
   note: string;
@@ -113,6 +117,14 @@ function itemToLine(item: {
   return {
     id: item.id,
     productId: item.productId ?? (typeof metadata.productKey === 'string' ? metadata.productKey : undefined),
+    posKey: typeof metadata.posKey === 'string'
+      ? metadata.posKey
+      : typeof metadata.productKey === 'string'
+        ? metadata.productKey
+        : undefined,
+    catalogRevision: typeof metadata.catalogRevision === 'string' ? metadata.catalogRevision : undefined,
+    productRevision: typeof metadata.productRevision === 'number' ? metadata.productRevision : undefined,
+    productSnapshot: normalizeMetadata(metadata.productSnapshot as Prisma.JsonValue),
     name: item.name,
     qty: decimalToNumber(item.quantity),
     note: item.notes ?? '',
@@ -218,6 +230,7 @@ export async function POST(request: Request) {
         id?: string;
         productId?: string;
         posKey?: string;
+        catalogRevision?: string;
         sku?: string;
         barcode?: string;
         externalId?: string;
@@ -267,6 +280,7 @@ export async function POST(request: Request) {
       productId: product?.id,
       productUuid: product?.productId,
       posKey: identity.posKey,
+      catalogRevision: product?.catalogRevision,
       legacyKey: identity.legacyKey,
       productName,
       price,
@@ -346,6 +360,7 @@ export async function POST(request: Request) {
     const productInput = {
       id: dbProductId,
       posKey: identity.posKey,
+      catalogRevision: product?.catalogRevision,
       legacyKey: identity.legacyKey,
       sku: identity.sku,
       barcode: identity.barcode,
@@ -453,11 +468,26 @@ export async function POST(request: Request) {
               productId: productInput.id || undefined,
               productKey: productInput.posKey,
               posKey: productInput.posKey,
+              catalogRevision: productInput.catalogRevision,
               legacyKey: productInput.legacyKey,
               sku: productInput.sku,
               barcode: productInput.barcode,
               externalId: productInput.externalId,
               productRevision: productInput.revision,
+              productSnapshot: {
+                productId: productInput.id || undefined,
+                posKey: productInput.posKey,
+                name: productInput.name,
+                category: productInput.category,
+                printCategory: productInput.printCategory,
+                price: productInput.price,
+                revision: productInput.revision,
+                catalogRevision: productInput.catalogRevision,
+                sku: productInput.sku,
+                barcode: productInput.barcode,
+                externalId: productInput.externalId,
+                legacyKey: productInput.legacyKey,
+              },
               category: productInput.category,
               printCategory: productInput.printCategory,
               guestName: productInput.guestName || undefined,
@@ -501,11 +531,26 @@ export async function POST(request: Request) {
               productId: productInput.id || undefined,
               productKey: productInput.posKey,
               posKey: productInput.posKey,
+              catalogRevision: productInput.catalogRevision,
               legacyKey: productInput.legacyKey,
               sku: productInput.sku,
               barcode: productInput.barcode,
               externalId: productInput.externalId,
               productRevision: productInput.revision,
+              productSnapshot: {
+                productId: productInput.id || undefined,
+                posKey: productInput.posKey,
+                name: productInput.name,
+                category: productInput.category,
+                printCategory: productInput.printCategory,
+                price: productInput.price,
+                revision: productInput.revision,
+                catalogRevision: productInput.catalogRevision,
+                sku: productInput.sku,
+                barcode: productInput.barcode,
+                externalId: productInput.externalId,
+                legacyKey: productInput.legacyKey,
+              },
               category: productInput.category,
               printCategory: productInput.printCategory,
               sentQty: 0,
@@ -602,6 +647,8 @@ export async function POST(request: Request) {
         tableId,
         mutationId,
         productId: product?.id,
+        posKey: identity.posKey,
+        catalogRevision: product?.catalogRevision,
         quantityToAdd,
         lineCount: updatedLineCount,
       },

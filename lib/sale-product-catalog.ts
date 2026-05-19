@@ -1,5 +1,6 @@
 import type { ProductRecipeOverride, RecipePoolUnit } from '@/lib/recipe-pool';
 import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
+import { compileCanonicalPosCatalog } from '@/lib/canonical-pos-catalog';
 import {
   filterSellableProducts,
   inferProductDomainType,
@@ -81,6 +82,7 @@ export type PosCatalogProduct = {
   id: string;
   productId?: string;
   posKey: string;
+  catalogRevision?: string;
   sku?: string;
   barcode?: string;
   externalId?: string;
@@ -92,6 +94,7 @@ export type PosCatalogProduct = {
   printCategory?: string;
   salesUnit: SaleUnitType;
   price: number;
+  vatRate?: number;
   allowComplimentary: boolean;
   allowDiscount: boolean;
   happyHourEligible: boolean;
@@ -335,7 +338,7 @@ export function subscribeToStoredSaleProductsChanges(callback: () => void) {
 }
 
 export function buildPosCatalogFromStored(products: StoredSaleProduct[], context: SalePriceContext = {}): PosCatalogProduct[] {
-  return filterSellableProducts(products, 'pos-catalog-build')
+  const items = filterSellableProducts(products, 'pos-catalog-build')
     .map((item) => {
       const normalized = normalizeStoredSaleProduct(item);
       return {
@@ -366,6 +369,7 @@ export function buildPosCatalogFromStored(products: StoredSaleProduct[], context
       printCategory: product.category,
       salesUnit: product.salesUnit,
       price: resolveSaleProductPrice(product, context),
+      vatRate: product.vatRate,
       allowComplimentary: product.allowComplimentary,
       allowDiscount: product.allowDiscount,
       happyHourEligible: product.happyHourEligible,
@@ -373,10 +377,11 @@ export function buildPosCatalogFromStored(products: StoredSaleProduct[], context
       thumbnailUrl: product.thumbnailUrl,
       description: product.description,
     }));
+  return compileCanonicalPosCatalog(items, { channel: 'pos' }).items;
 }
 
 export function getDefaultPosCatalog(): PosCatalogProduct[] {
-  return DEFAULT_SALE_PRODUCT_BASE.map((product) => {
+  const items = DEFAULT_SALE_PRODUCT_BASE.map((product) => {
     const normalized = normalizeStoredSaleProduct(product);
     return {
       id: normalized.posKey ?? normalized.id,
@@ -393,11 +398,13 @@ export function getDefaultPosCatalog(): PosCatalogProduct[] {
       printCategory: normalized.category,
       salesUnit: normalized.salesUnit,
       price: resolveSaleProductPrice(normalized),
+      vatRate: normalized.vatRate,
       allowComplimentary: normalized.allowComplimentary,
       allowDiscount: normalized.allowDiscount,
       happyHourEligible: normalized.happyHourEligible,
     };
   });
+  return compileCanonicalPosCatalog(items, { channel: 'pos' }).items;
 }
 
 export function getCatalogPriceByName(name: string, products: Array<{ name: string; price: number }>) {
