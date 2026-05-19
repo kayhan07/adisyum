@@ -783,6 +783,10 @@ export default function SystemAdminPage() {
                   <RefreshCw className="h-4 w-4" />
                   Release Operations
                 </Link>
+                <Link href="/system-admin/disaster-recovery" className="inline-flex items-center gap-2 rounded-2xl border border-red-300/20 bg-red-400/10 px-4 py-3 text-sm font-semibold text-red-100">
+                  <ShieldCheck className="h-4 w-4" />
+                  Disaster Recovery
+                </Link>
                 <button
                   type="button"
                   onClick={() => void handleAdminLogout()}
