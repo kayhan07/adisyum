@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { runtimeStateTenantKey } from '@/lib/db/compound-keys';
 import { prisma } from '@/lib/db/prisma';
 import type { PosUnitType, ProductMapping, ProductMappingStatus } from '@/lib/pos-mapping-store';
+import { isSellableProductType, resolveProductDomainType } from '@/lib/product-domain';
 
 const RUNTIME_KEY = 'product-mappings';
 
@@ -21,9 +22,17 @@ function normalizeProductKey(value: string) {
 
 function validate(mapping: Partial<ProductMapping>) {
   const errors: string[] = [];
+  const rawMapping = mapping as Partial<ProductMapping> & { category?: unknown; product_type?: unknown };
   if (!mapping.pos_plu_code?.trim()) errors.push('POS PLU kodu zorunlu.');
   if (![1, 10, 20].includes(Number(mapping.vat_rate))) errors.push('KDV orani %1, %10 veya %20 olmali.');
   if (!mapping.unit_type) errors.push('Birim tipi zorunlu.');
+  const productType = resolveProductDomainType({
+    id: mapping.product_id,
+    name: mapping.product_name ?? mapping.product_id,
+    category: typeof rawMapping.category === 'string' ? rawMapping.category : null,
+    productType: typeof rawMapping.product_type === 'string' ? rawMapping.product_type : null,
+  });
+  if (!isSellableProductType(productType)) errors.push('Stok kalemleri POS PLU eslemesine eklenemez.');
   return { valid: errors.length === 0, errors };
 }
 

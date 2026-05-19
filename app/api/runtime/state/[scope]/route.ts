@@ -8,17 +8,32 @@ import { isSuperAdmin } from '@/lib/tenant';
 import { isSessionActive } from '@/lib/server/session-guard';
 import { logError, logInfo } from '@/lib/observability/structured-logger';
 import { recordRequestMetric, recordTenantError } from '@/lib/observability/metrics-store';
+import { filterSellableProducts } from '@/lib/product-domain';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 const SYSTEM_ADMIN_TENANT_ID = '__system_admin__';
+const SALE_PRODUCTS_RUNTIME_KEY = 'adisyon-sale-products';
 
 function normalizeSnapshot(input: unknown) {
   if (!input || typeof input !== 'object') return {} as Record<string, string>;
-  return Object.fromEntries(
+  const state = Object.fromEntries(
     Object.entries(input).filter((entry): entry is [string, string] => typeof entry[0] === 'string' && typeof entry[1] === 'string'),
   );
+  const rawSaleProducts = state[SALE_PRODUCTS_RUNTIME_KEY];
+  if (!rawSaleProducts) return state;
+
+  try {
+    const parsed = JSON.parse(rawSaleProducts);
+    if (!Array.isArray(parsed)) return state;
+    const filtered = filterSellableProducts(parsed, 'runtime-state-sale-products');
+    state[SALE_PRODUCTS_RUNTIME_KEY] = JSON.stringify(filtered);
+  } catch {
+    delete state[SALE_PRODUCTS_RUNTIME_KEY];
+  }
+
+  return state;
 }
 
 async function resolveScope(request: Request, scope: string) {

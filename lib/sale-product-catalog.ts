@@ -1,6 +1,11 @@
 import type { ProductRecipeOverride, RecipePoolUnit } from '@/lib/recipe-pool';
 import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
-import { inferProductDomainType, isSellableProductType, type ProductDomainType } from '@/lib/product-domain';
+import {
+  filterSellableProducts,
+  inferProductDomainType,
+  isSellableProductType,
+  type ProductDomainType,
+} from '@/lib/product-domain';
 
 export type VatRate = 1 | 10 | 20;
 export type SaleUnitType = 'portion' | 'kg' | 'bottle' | 'glass';
@@ -68,6 +73,7 @@ export type PosCatalogProduct = {
   id: string;
   name: string;
   category: string;
+  productType: ProductDomainType;
   printCategory?: string;
   salesUnit: SaleUnitType;
   price: number;
@@ -231,13 +237,14 @@ export function loadStoredSaleProducts() {
     const raw = readRuntimeItem('tenant', STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed)
+    const products = Array.isArray(parsed)
       ? parsed
           .filter((item): item is Partial<StoredSaleProduct> & Pick<StoredSaleProduct, 'id' | 'name' | 'category'> =>
             Boolean(item && typeof item === 'object' && item.id && item.name && item.category),
           )
           .map((item) => normalizeStoredSaleProduct(item))
       : null;
+    return products ? filterSellableProducts(products, 'sale-product-storage-load') : null;
   } catch {
     return null;
   }
@@ -247,8 +254,11 @@ export function saveStoredSaleProducts(products: StoredSaleProduct[]) {
   if (typeof window === 'undefined') return;
 
   try {
-    const incoming = products.map((item) => normalizeStoredSaleProduct(item));
-    const existing = loadStoredSaleProducts() ?? [];
+    const incoming = filterSellableProducts(
+      products.map((item) => normalizeStoredSaleProduct(item)),
+      'sale-product-storage-save-incoming',
+    );
+    const existing = filterSellableProducts(loadStoredSaleProducts() ?? [], 'sale-product-storage-save-existing');
     const incomingKeys = new Set(
       incoming.flatMap((item) => [item.id, normalizeProductKey(item.name)]),
     );
@@ -281,13 +291,14 @@ export function subscribeToStoredSaleProductsChanges(callback: () => void) {
 }
 
 export function buildPosCatalogFromStored(products: StoredSaleProduct[], context: SalePriceContext = {}): PosCatalogProduct[] {
-  return products
+  return filterSellableProducts(products, 'pos-catalog-build')
     .map((item) => normalizeStoredSaleProduct(item))
     .filter((product) => isSellableProductType(product.productType))
     .map((product) => ({
       id: product.id,
       name: product.name,
       category: normalizePosCategory(product.category),
+      productType: product.productType ?? 'sale_product',
       printCategory: product.category,
       salesUnit: product.salesUnit,
       price: resolveSaleProductPrice(product, context),
@@ -307,6 +318,7 @@ export function getDefaultPosCatalog(): PosCatalogProduct[] {
       id: normalized.id,
       name: normalized.name,
       category: normalizePosCategory(normalized.category),
+      productType: normalized.productType ?? 'sale_product',
       printCategory: normalized.category,
       salesUnit: normalized.salesUnit,
       price: resolveSaleProductPrice(normalized),

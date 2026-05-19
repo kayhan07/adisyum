@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { posBackendJson } from '@/lib/server/pos-api';
 import { requireTenant, tenantAuthErrorResponse } from '@/lib/requireTenant';
 import { getTenantCache, setTenantCache, tenantCacheKey } from '@/lib/db/cache';
+import { filterSellableProducts } from '@/lib/product-domain';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +21,27 @@ type DeviceIndexPayload = {
 type MappingIndexPayload = {
   data?: unknown[];
 };
+
+function filterPosFacingProducts(products: unknown[]) {
+  const productObjects = products.filter((product): product is Record<string, unknown> =>
+    Boolean(product && typeof product === 'object'),
+  );
+
+  return filterSellableProducts(
+    productObjects.map((product) => ({
+      ...product,
+      id: typeof product.id === 'string' ? product.id : typeof product.product_id === 'string' ? product.product_id : null,
+      name: typeof product.name === 'string' ? product.name : typeof product.product_name === 'string' ? product.product_name : null,
+      category: typeof product.category === 'string' ? product.category : typeof product.category_name === 'string' ? product.category_name : null,
+      productType: typeof product.productType === 'string'
+        ? product.productType
+        : typeof product.product_type === 'string'
+          ? product.product_type
+          : null,
+    })),
+    'settings-pos-overview-products',
+  );
+}
 
 export async function GET(request: Request) {
   let tenantId = '';
@@ -54,6 +76,7 @@ export async function GET(request: Request) {
   const mappingsPayload = mappingsResult.status === 'fulfilled' ? mappingsResult.value : [];
   const logs = logsResult.status === 'fulfilled' ? logsResult.value : [];
   const products = productsResult.status === 'fulfilled' ? productsResult.value : [];
+  const sellableProducts = Array.isArray(products) ? filterPosFacingProducts(products) : [];
   const mappings = Array.isArray(mappingsPayload) ? mappingsPayload : (mappingsPayload.data ?? []);
 
   const responsePayload = {
@@ -63,7 +86,7 @@ export async function GET(request: Request) {
     queue: devicesPayload?.queue ?? null,
     agentsOnline: devicesPayload?.agents_online ?? 0,
     logs: Array.isArray(logs) ? logs.slice(0, logsLimit) : [],
-    products: Array.isArray(products) ? products.slice(0, productsLimit) : [],
+    products: sellableProducts.slice(0, productsLimit),
     mappings: Array.isArray(mappings) ? mappings.slice(0, mappingsLimit) : [],
     coverage: coverageResult.status === 'fulfilled' ? coverageResult.value : null,
   };

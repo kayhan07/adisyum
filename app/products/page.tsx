@@ -22,6 +22,7 @@ import {
   type StoredSaleProduct,
   type VatRate,
 } from '@/lib/sale-product-catalog';
+import { isSellableProductType, type SellableProductDomainType } from '@/lib/product-domain';
 import {
   loadStoredRawIngredients,
   saveStoredRawIngredients,
@@ -111,6 +112,7 @@ type SaleProductCard = {
   id: string;
   name: string;
   category: string;
+  productType: SellableProductDomainType;
   salesUnit: SaleUnitType;
   currentStock: string;
   lastCountedAt?: string;
@@ -656,7 +658,8 @@ function getCompatibleUnits(unit: Ingredient['unit']) {
 }
 
 function buildInitialSaleProducts(storedProducts: StoredSaleProduct[] | null) {
-  const storedByName = new Map((storedProducts ?? []).map((product) => [product.name, product]));
+  const sellableStoredProducts = (storedProducts ?? []).filter((product) => isSellableProductType(product.productType));
+  const storedByName = new Map(sellableStoredProducts.map((product) => [product.name, product]));
   const baseByName = new Map(DEFAULT_SALE_PRODUCT_BASE.map((product) => [product.name, product]));
   const recipeProductNames = new Set(productRecipes.map((recipe) => recipe.productName));
 
@@ -676,6 +679,7 @@ function buildInitialSaleProducts(storedProducts: StoredSaleProduct[] | null) {
       id: stored?.id ?? recipe.productName,
       name: stored?.name ?? recipe.productName,
       category,
+      productType: (stored?.productType === 'combo_product' ? 'combo_product' : 'sale_product') as SellableProductDomainType,
       salesUnit: stored?.salesUnit ?? 'portion',
       currentStock: stored?.currentStock ?? '0',
       lastCountedAt: stored?.lastCountedAt,
@@ -730,7 +734,7 @@ function buildInitialSaleProducts(storedProducts: StoredSaleProduct[] | null) {
     };
   });
 
-  const storedOnlyProducts = (storedProducts ?? [])
+  const storedOnlyProducts = sellableStoredProducts
     .filter((stored) => !recipeProductNames.has(stored.name))
     .map((stored) => {
       const defaultDirect = inferDirectStockDefault(stored.name, stored.category);
@@ -740,6 +744,7 @@ function buildInitialSaleProducts(storedProducts: StoredSaleProduct[] | null) {
         id: stored.id,
         name: stored.name,
         category: stored.category,
+        productType: (stored.productType === 'combo_product' ? 'combo_product' : 'sale_product') as SellableProductDomainType,
         salesUnit: stored.salesUnit ?? 'portion',
         currentStock: stored.currentStock ?? '0',
         lastCountedAt: stored.lastCountedAt,
@@ -2509,6 +2514,7 @@ export default function ProductsPage() {
           id: nextId,
           name: recipeProductName,
           category: recipeCategory,
+          productType: 'sale_product',
           salesUnit: 'portion',
           currentStock: '0',
           lastCountedAt: undefined,
@@ -2920,6 +2926,7 @@ export default function ProductsPage() {
         id: `sale-bulk-${createdAt}-${index}`,
         name,
         category,
+        productType: 'sale_product',
         salesUnit: 'portion',
         currentStock: '0',
         lastCountedAt: undefined,
@@ -3003,6 +3010,7 @@ export default function ProductsPage() {
       id: nextId,
       name: newItemDraft.name.trim(),
       category: newItemDraft.category,
+      productType: 'sale_product',
       salesUnit: newItemDraft.salesUnit,
       currentStock: '0',
       lastCountedAt: undefined,
@@ -3065,6 +3073,7 @@ export default function ProductsPage() {
       id: nextId,
       name: trimmedName,
       category: quickSaleDraft.category,
+      productType: 'sale_product',
       salesUnit: quickSaleDraft.salesUnit,
       currentStock: '0',
       lastCountedAt: undefined,
@@ -3145,6 +3154,7 @@ export default function ProductsPage() {
       ...source,
       id: nextId,
       name: duplicatedName,
+      productType: source.productType ?? 'sale_product',
       currentStock: '0',
       lastCountedAt: undefined,
       initialBottleCount: '0',

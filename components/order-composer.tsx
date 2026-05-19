@@ -40,6 +40,7 @@ import {
   resolveSaleProductPrice,
   type StoredSaleProduct,
 } from '@/lib/sale-product-catalog';
+import { isSellableProductType, type ProductDomainType } from '@/lib/product-domain';
 import { appendStoredFinanceAccountTransaction, buildFinanceTransaction } from '@/lib/finance-runtime-store';
 import { erpAccounts, type Account } from '@/lib/erp-engine';
 import { appendPaymentJournalEntries, buildPaymentJournalEntry } from '@/lib/payment-journal-store';
@@ -58,6 +59,7 @@ type ProductCard = {
   id: string;
   name: string;
   category: string;
+  productType: ProductDomainType;
   printCategory?: string;
   price: number;
   allowComplimentary?: boolean;
@@ -223,6 +225,7 @@ async function addProductToAuthoritativeOrder(input: {
   product: {
     id: string;
     name: string;
+    productType?: ProductDomainType;
     price: number;
     category: string;
     printCategory?: string;
@@ -1482,6 +1485,18 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       });
       return;
     }
+    if (!isSellableProductType(product.productType)) {
+      logOrderFlow('add-product-blocked', {
+        source,
+        reason: 'inventory-product-in-pos-catalog',
+        productId: product.id,
+        productName: product.name,
+        productType: product.productType,
+        tableId: currentTable.id,
+      });
+      setFeedbackMessage(`${product.name} stok kalemi; adisyona eklenemez`);
+      return;
+    }
     const mappingResult = ensureOrderProductMapping(product);
     if (mappingResult.autoCreated) {
       setPosMappingWarning(`${product.name} için otomatik POS PLU eşleştirmesi oluşturuldu.`);
@@ -1528,6 +1543,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         product: {
           id: product.id,
           name: product.name,
+          productType: product.productType,
           price: resolvedUnitPrice,
           category: product.category,
           printCategory: storedProduct?.category ?? product.printCategory ?? product.category,
@@ -1619,6 +1635,10 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
   const addProduct = async () => {
     if (!currentTable || !productCardProduct || !hasPermission('orders.create')) return;
+    if (!isSellableProductType(productCardProduct.productType)) {
+      setFeedbackMessage(`${productCardProduct.name} stok kalemi; adisyona eklenemez`);
+      return;
+    }
     const mappingResult = ensureOrderProductMapping(productCardProduct);
     setPosMappingWarning(mappingResult.autoCreated ? `${productCardProduct.name} için otomatik POS PLU eşleştirmesi oluşturuldu.` : '');
     orderMutationGuardRef.current = { tableId: currentTable.id, at: Date.now(), source: 'product-card' };
@@ -1659,6 +1679,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         product: {
           id: productCardProduct.id,
           name: productCardProduct.name,
+          productType: productCardProduct.productType,
           price: resolvedUnitPrice,
           category: productCardProduct.category,
           printCategory: productCardStoredProduct?.category ?? productCardProduct.printCategory ?? productCardProduct.category,
