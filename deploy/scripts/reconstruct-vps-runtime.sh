@@ -10,6 +10,8 @@ ROOT_ASSET_PREFIX="${ROOT_ASSET_PREFIX:-/adisyum-root-assets}"
 SSL_CERT="${SSL_CERT:-/etc/ssl/cloudflare/origin.pem}"
 SSL_KEY="${SSL_KEY:-/etc/ssl/cloudflare/origin.key}"
 BACKUP_ROOT="${BACKUP_ROOT:-/var/backups/adisyum-clean-reconstruct}"
+DOWNLOADS_ROOT="${DOWNLOADS_ROOT:-/var/lib/adisyum}"
+DOWNLOADS_DIR="${DOWNLOADS_DIR:-${DOWNLOADS_ROOT}/downloads}"
 TS="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="${BACKUP_ROOT}/${TS}"
 LOG_DIR="${APP_DIR}/deploy/logs"
@@ -541,6 +543,61 @@ build_apps() {
   log "Website BUILD_ID=$(cat apps/website/.next/BUILD_ID)"
 }
 
+validate_and_publish_windows_downloads() {
+  log "Validating and publishing persistent Windows download artifacts"
+  cd "${APP_DIR}"
+
+  local source_dir="${APP_DIR}/public/downloads/windows"
+  local desktop="${source_dir}/latest/AdisyumDesktopSetup.exe"
+  local printer="${source_dir}/latest/PrinterBridgeSetup.exe"
+  local fiscal="${source_dir}/latest/FiscalPosBridgeSetup.exe"
+  local manifest="${source_dir}/latest.json"
+
+  [[ -d "${source_dir}" ]] || fail "Windows download source missing: ${source_dir}"
+  [[ -s "${manifest}" ]] || fail "Windows download manifest missing: ${manifest}"
+
+  node - "${desktop}" "${printer}" "${fiscal}" "${manifest}" <<'NODE'
+const fs = require('fs');
+const [desktop, printer, fiscal, manifest] = process.argv.slice(2);
+const checks = [
+  { name: 'AdisyumDesktopSetup.exe', file: desktop, min: 50 * 1024 * 1024 },
+  { name: 'PrinterBridgeSetup.exe', file: printer, min: 100 * 1024 },
+  { name: 'FiscalPosBridgeSetup.exe', file: fiscal, min: 100 * 1024 },
+];
+for (const check of checks) {
+  if (!fs.existsSync(check.file)) throw new Error(`${check.name} missing at ${check.file}`);
+  const stat = fs.statSync(check.file);
+  if (stat.size < check.min) throw new Error(`${check.name} is too small: ${stat.size} bytes`);
+  const fd = fs.openSync(check.file, 'r');
+  const head = Buffer.alloc(2);
+  try {
+    fs.readSync(fd, head, 0, 2, 0);
+  } finally {
+    fs.closeSync(fd);
+  }
+  const sig = head.toString('ascii');
+  if (sig !== 'MZ') throw new Error(`${check.name} is not a Windows PE executable`);
+  console.log(`${check.name} OK ${stat.size} bytes`);
+}
+const parsed = JSON.parse(fs.readFileSync(manifest, 'utf8'));
+if (!Array.isArray(parsed.files) || parsed.files.length < 3) throw new Error('latest.json does not list all Windows artifacts');
+console.log(`manifest OK ${parsed.version} ${parsed.buildId}`);
+NODE
+
+  mkdir -p "${DOWNLOADS_DIR}"
+  local staging="${DOWNLOADS_DIR}.staging-${TS}"
+  rm -rf "${staging}"
+  mkdir -p "${staging}"
+  cp -a "${source_dir}" "${staging}/windows"
+  rm -rf "${DOWNLOADS_DIR}/windows"
+  mv "${staging}/windows" "${DOWNLOADS_DIR}/windows"
+  rm -rf "${staging}"
+
+  [[ -s "${DOWNLOADS_DIR}/windows/latest/AdisyumDesktopSetup.exe" ]] || fail "Persistent Windows desktop installer publish failed"
+  log "Windows downloads published to ${DOWNLOADS_DIR}/windows"
+  find "${DOWNLOADS_DIR}/windows" -maxdepth 3 -type f \( -name "*.exe" -o -name "*.json" \) -printf '%p %s bytes\n' | sort
+}
+
 start_pm2_clean() {
   log "Starting canonical PM2 apps"
   cd "${APP_DIR}"
@@ -587,26 +644,16 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     client_max_body_size 50M;
 
-    location ~* ^/downloads/.+\.(exe|msi|zip)\$ {
-        proxy_pass http://127.0.0.1:${WEBSITE_PORT};
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header Range \$http_range;
-        proxy_set_header If-Range \$http_if_range;
-        add_header Content-Type application/octet-stream always;
-        add_header Cache-Control "public, max-age=31536000, immutable" always;
-        add_header Accept-Ranges bytes always;
-    }
-
     location ^~ /downloads/ {
-        proxy_pass http://127.0.0.1:${WEBSITE_PORT};
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        add_header Cache-Control "public, max-age=300" always;
+        root ${DOWNLOADS_ROOT};
+        types {
+            application/octet-stream exe msi;
+            application/zip zip;
+            application/json json;
+        }
+        default_type application/octet-stream;
+        try_files \$uri =404;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
         add_header Accept-Ranges bytes always;
     }
 
@@ -838,6 +885,7 @@ main() {
   validate_ecosystem
   rebuild_prisma_and_typecheck
   build_apps
+  validate_and_publish_windows_downloads
   start_pm2_clean
   run_auth_verification
   write_nginx
