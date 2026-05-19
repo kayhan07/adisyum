@@ -1,9 +1,12 @@
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('node:path');
-const Store = require('electron-store');
+const ElectronStore = require('electron-store');
+
+const Store = ElectronStore.default || ElectronStore;
 
 const store = new Store({
   name: 'desktop-config',
+  projectName: 'Adisyum Desktop',
   defaults: {
     cloudUrl: 'https://adisyum.com/app',
     bridgeUrl: 'http://127.0.0.1:4891',

@@ -10,7 +10,7 @@ const RELEASE_VERSION = process.env.NEXT_PUBLIC_ADISYUM_WINDOWS_VERSION || '1.0.
 const INSTALLER_SIZE = process.env.NEXT_PUBLIC_ADISYUM_WINDOWS_INSTALLER_SIZE || 'See manifest';
 const INSTALLER_URL =
   process.env.NEXT_PUBLIC_ADISYUM_WINDOWS_INSTALLER_URL ||
-  '/downloads/windows/v0.1.0/AdisyumDesktopSetup.exe?v=windows-1779185257056';
+  '/downloads/windows/v0.1.1/AdisyumDesktopSetup.exe?v=windows-0.1.1-storefix';
 
 export function DownloadSection() {
   return (

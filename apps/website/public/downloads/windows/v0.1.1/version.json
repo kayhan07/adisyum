@@ -1,0 +1,46 @@
+{
+  "version": "0.1.1",
+  "buildId": "windows-0.1.1-storefix",
+  "releasedAt": "2026-05-19T11:23:51.912Z",
+  "mandatory": false,
+  "channel": "latest",
+  "appVersion": "0.1.0",
+  "baseUrl": "https://adisyum.com/downloads/windows/latest",
+  "autoUpdate": {
+    "provider": "generic",
+    "url": "https://adisyum.com/downloads/windows/latest/",
+    "stagedRollout": false
+  },
+  "files": [
+    {
+      "name": "Adisyum Desktop",
+      "fileName": "AdisyumDesktopSetup.exe",
+      "sha256": "1b62d0739603be8e0d549b5ec9362d9fc6a413b4470aa8db75fc387b64b69c17",
+      "sizeBytes": 85925918,
+      "mandatory": false,
+      "component": "desktop",
+      "path": "/downloads/windows/latest/AdisyumDesktopSetup.exe",
+      "versionedPath": "/downloads/windows/v0.1.1/AdisyumDesktopSetup.exe"
+    },
+    {
+      "name": "Printer Bridge",
+      "fileName": "PrinterBridgeSetup.exe",
+      "sha256": "606f02fa5d4f3d1b830f0c2bb5fef9f9870bdbd28bf08cb5fc886260171af2f0",
+      "sizeBytes": 158208,
+      "mandatory": false,
+      "component": "printer-bridge",
+      "path": "/downloads/windows/latest/PrinterBridgeSetup.exe",
+      "versionedPath": "/downloads/windows/v0.1.1/PrinterBridgeSetup.exe"
+    },
+    {
+      "name": "Fiscal POS Bridge",
+      "fileName": "FiscalPosBridgeSetup.exe",
+      "sha256": "606f02fa5d4f3d1b830f0c2bb5fef9f9870bdbd28bf08cb5fc886260171af2f0",
+      "sizeBytes": 158208,
+      "mandatory": false,
+      "component": "fiscal-pos-bridge",
+      "path": "/downloads/windows/latest/FiscalPosBridgeSetup.exe",
+      "versionedPath": "/downloads/windows/v0.1.1/FiscalPosBridgeSetup.exe"
+    }
+  ]
+}
