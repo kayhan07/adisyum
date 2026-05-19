@@ -8,6 +8,9 @@ const TRUST_ITEMS = [
 
 const RELEASE_VERSION = process.env.NEXT_PUBLIC_ADISYUM_WINDOWS_VERSION || '1.0.0';
 const INSTALLER_SIZE = process.env.NEXT_PUBLIC_ADISYUM_WINDOWS_INSTALLER_SIZE || 'See manifest';
+const INSTALLER_URL =
+  process.env.NEXT_PUBLIC_ADISYUM_WINDOWS_INSTALLER_URL ||
+  '/downloads/windows/v0.1.0/AdisyumDesktopSetup.exe?v=windows-1779185257056';
 
 export function DownloadSection() {
   return (
@@ -33,7 +36,7 @@ export function DownloadSection() {
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <a
-                href="/downloads/windows/latest/AdisyumDesktopSetup.exe"
+                href={INSTALLER_URL}
                 className="inline-flex min-h-14 items-center justify-center rounded-2xl bg-emerald-500 px-7 text-sm font-black text-slate-950 shadow-[0_6px_30px_rgba(16,185,129,0.35)] transition hover:bg-emerald-400 active:scale-[0.98]"
               >
                 Windows icin indir
@@ -86,7 +89,7 @@ export function DownloadSection() {
               </div>
 
               <p className="mt-5 text-xs leading-6 text-slate-500">
-                Downloads are served from adisyum.com/downloads with versioned latest and v1.0.0 paths.
+                Downloads are served from adisyum.com/downloads with immutable versioned paths and cache-safe release manifests.
               </p>
             </div>
           </div>

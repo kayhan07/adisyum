@@ -644,6 +644,30 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     client_max_body_size 50M;
 
+    location = /downloads/windows/latest.json {
+        root ${DOWNLOADS_ROOT};
+        default_type application/json;
+        try_files \$uri =404;
+        add_header Cache-Control "no-store, max-age=0, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+    }
+
+    location ^~ /downloads/windows/latest/ {
+        root ${DOWNLOADS_ROOT};
+        types {
+            application/octet-stream exe msi;
+            application/zip zip;
+            application/json json;
+        }
+        default_type application/octet-stream;
+        try_files \$uri =404;
+        add_header Cache-Control "no-store, max-age=0, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+        add_header Accept-Ranges bytes always;
+    }
+
     location ^~ /downloads/ {
         root ${DOWNLOADS_ROOT};
         types {

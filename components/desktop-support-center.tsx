@@ -8,28 +8,30 @@ type DownloadMetadata = {
   version: string;
   buildId: string;
   releasedAt: string;
-  files: Array<{
-    name: string;
-    fileName: string;
-    path: string;
-    url: string;
-    exists: boolean;
-    executable?: boolean;
-    healthy?: boolean;
-    sizeBytes: number;
-    sizeLabel: string;
-    sha256: string;
-  }>;
+  files: DownloadItem[];
 };
 
-type DownloadItem = DownloadMetadata['files'][number];
+type DownloadItem = {
+  name: string;
+  fileName: string;
+  path: string;
+  versionedPath?: string;
+  url: string;
+  exists: boolean;
+  executable?: boolean;
+  healthy?: boolean;
+  sizeBytes: number;
+  sizeLabel: string;
+  sha256: string;
+};
 
 const fallbackDownloads: DownloadItem[] = [
   {
     name: 'Adisyum Desktop',
     fileName: 'AdisyumDesktopSetup.exe',
-    path: '/downloads/windows/latest/AdisyumDesktopSetup.exe',
-    url: 'https://adisyum.com/downloads/windows/latest/AdisyumDesktopSetup.exe',
+    path: '/downloads/windows/v0.1.0/AdisyumDesktopSetup.exe',
+    versionedPath: '/downloads/windows/v0.1.0/AdisyumDesktopSetup.exe',
+    url: 'https://adisyum.com/downloads/windows/v0.1.0/AdisyumDesktopSetup.exe',
     exists: false,
     sizeBytes: 0,
     sizeLabel: 'Kontrol ediliyor',
@@ -38,8 +40,9 @@ const fallbackDownloads: DownloadItem[] = [
   {
     name: 'Printer Bridge',
     fileName: 'PrinterBridgeSetup.exe',
-    path: '/downloads/windows/latest/PrinterBridgeSetup.exe',
-    url: 'https://adisyum.com/downloads/windows/latest/PrinterBridgeSetup.exe',
+    path: '/downloads/windows/v0.1.0/PrinterBridgeSetup.exe',
+    versionedPath: '/downloads/windows/v0.1.0/PrinterBridgeSetup.exe',
+    url: 'https://adisyum.com/downloads/windows/v0.1.0/PrinterBridgeSetup.exe',
     exists: false,
     sizeBytes: 0,
     sizeLabel: 'Kontrol ediliyor',
@@ -48,8 +51,9 @@ const fallbackDownloads: DownloadItem[] = [
   {
     name: 'Fiscal POS Bridge',
     fileName: 'FiscalPosBridgeSetup.exe',
-    path: '/downloads/windows/latest/FiscalPosBridgeSetup.exe',
-    url: 'https://adisyum.com/downloads/windows/latest/FiscalPosBridgeSetup.exe',
+    path: '/downloads/windows/v0.1.0/FiscalPosBridgeSetup.exe',
+    versionedPath: '/downloads/windows/v0.1.0/FiscalPosBridgeSetup.exe',
+    url: 'https://adisyum.com/downloads/windows/v0.1.0/FiscalPosBridgeSetup.exe',
     exists: false,
     sizeBytes: 0,
     sizeLabel: 'Kontrol ediliyor',
@@ -62,6 +66,13 @@ const details: Record<string, string> = {
   'Printer Bridge': 'Yazıcı keşfi, ESC/POS ve yerel kuyruk servisi',
   'Fiscal POS Bridge': 'Mali POS sürücü katmanı ve vendor adaptör paketi',
 };
+
+function cacheBustedUrl(item: DownloadItem, buildId?: string) {
+  const path = item.versionedPath || item.path;
+  const originSafePath = path.startsWith('http') ? path : `https://adisyum.com${path}`;
+  const separator = originSafePath.includes('?') ? '&' : '?';
+  return `${originSafePath}${separator}v=${encodeURIComponent(buildId || item.sha256 || 'latest')}`;
+}
 
 export function DesktopSupportCenter() {
   const [metadata, setMetadata] = useState<DownloadMetadata | null>(null);
@@ -113,10 +124,11 @@ export function DesktopSupportCenter() {
         {downloads.map((item, index) => {
           const Icon = index === 0 ? MonitorCog : index === 1 ? Printer : ShieldCheck;
           const ready = item.exists && (item.healthy ?? item.executable ?? item.sizeBytes > 100 * 1024);
+          const href = cacheBustedUrl(item, metadata?.buildId);
           return (
             <a
               key={item.fileName}
-              href={ready ? item.url : undefined}
+              href={ready ? href : undefined}
               aria-disabled={!ready}
               onClick={() => ready && trackDownload(item.fileName)}
               className={`rounded-2xl border border-white/10 bg-white/[0.035] p-4 transition ${ready ? 'hover:border-cyan-300/30 hover:bg-cyan-400/10' : 'pointer-events-none opacity-60'}`}

@@ -9,6 +9,7 @@ type DownloadFile = {
   name: string;
   fileName: string;
   path: string;
+  versionedPath?: string;
   sha256: string;
   mandatory: boolean;
   component?: string;
@@ -55,9 +56,11 @@ export function GET() {
     const exists = existsSync(filePath);
     const stat = exists ? statSync(filePath) : null;
     const executable = exists && stat ? isWindowsExecutable(filePath, stat.size) : false;
+    const publicPath = file.versionedPath || file.path;
     return {
       ...file,
-      url: `https://adisyum.com${file.path}`,
+      url: `https://adisyum.com${publicPath}?v=${encodeURIComponent(manifest.buildId)}`,
+      latestUrl: `https://adisyum.com${file.path}?v=${encodeURIComponent(manifest.buildId)}`,
       exists,
       sizeBytes: stat?.size ?? 0,
       sizeLabel: stat ? formatBytes(stat.size) : 'Yok',
