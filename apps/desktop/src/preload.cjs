@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('adisyumDesktop', {
   getConfig: () => ipcRenderer.invoke('desktop:get-config'),
   saveConfig: (input) => ipcRenderer.invoke('desktop:save-config', input),
+  activate: (input) => ipcRenderer.invoke('desktop:activate', input),
+  resetActivation: () => ipcRenderer.invoke('desktop:reset-activation'),
   openCloud: () => ipcRenderer.invoke('desktop:open-cloud'),
   showShell: () => ipcRenderer.invoke('desktop:show-shell'),
   bridgeHealth: () => ipcRenderer.invoke('desktop:bridge-health'),

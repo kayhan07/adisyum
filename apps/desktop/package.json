@@ -1,7 +1,7 @@
 {
   "name": "@adisyum/desktop",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Adisyum Desktop shell for Windows restaurant operations",
   "author": "Adisyum",
   "main": "src/main.cjs",

@@ -1,35 +1,66 @@
 const api = window.adisyumDesktop;
-const panels = [...document.querySelectorAll('.panel')];
-const stepButtons = [...document.querySelectorAll('[data-step]')];
 
-function showStep(id) {
-  panels.forEach((panel) => panel.classList.toggle('active', panel.id === id));
-  stepButtons.forEach((button) => button.classList.toggle('active', button.dataset.step === id));
+function write(target, payload) {
+  target.textContent = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
 }
-
-stepButtons.forEach((button) => button.addEventListener('click', () => showStep(button.dataset.step)));
 
 async function hydrate() {
   const config = await api.getConfig();
-  cloudUrl.value = config.cloudUrl;
-  bridgeUrl.value = config.bridgeUrl;
+  cloudUrl.value = config.cloudUrl || 'https://adisyum.com/floor';
+  bridgeUrl.value = config.bridgeUrl || 'http://127.0.0.1:4891';
   kiosk.checked = Boolean(config.kiosk);
+  tenantId.value = config.tenantId || '';
+  username.value = config.username || '';
   branchId.value = config.branchId || '';
+  deviceBadge.textContent = config.deviceId ? `Cihaz: ${config.deviceId}` : 'Yeni cihaz';
+
+  if (config.setupCompleted && config.deviceId && config.tenantId) {
+    write(activationResult, {
+      ok: true,
+      message: 'Bu cihaz aktive edilmiş. POS doğrudan operasyon ekranına açılır.',
+      tenantId: config.tenantId,
+      branchId: config.branchId,
+      lastValidationAt: config.lastValidationAt,
+    });
+  }
 }
 
-saveConfig.addEventListener('click', async () => {
-  await api.saveConfig({
-    cloudUrl: cloudUrl.value.trim(),
-    bridgeUrl: bridgeUrl.value.trim(),
-    kiosk: kiosk.checked,
-    branchId: branchId.value.trim(),
-  });
-  showStep('branch');
+activateDevice.addEventListener('click', async () => {
+  activateDevice.disabled = true;
+  write(activationResult, 'Aktivasyon doğrulanıyor...');
+  try {
+    const result = await api.activate({
+      tenantId: tenantId.value.trim(),
+      username: username.value.trim(),
+      password: password.value,
+      branchId: branchId.value.trim(),
+      cloudUrl: cloudUrl.value.trim(),
+      bridgeUrl: bridgeUrl.value.trim(),
+      kiosk: kiosk.checked,
+    });
+    write(activationResult, result);
+    await api.openCloud();
+  } catch (error) {
+    write(activationResult, { ok: false, error: error.message });
+  } finally {
+    activateDevice.disabled = false;
+  }
 });
+
+resetActivation.addEventListener('click', async () => {
+  await api.resetActivation();
+  await hydrate();
+});
+
+openPos.addEventListener('click', () => api.openCloud());
 
 scanPrinters.addEventListener('click', async () => {
   printerList.innerHTML = '';
-  const printers = await api.listPrinters().catch(() => []);
+  const printers = await api.listPrinters().catch((error) => ({ ok: false, error: error.message }));
+  if (!Array.isArray(printers)) {
+    write(supportResult, printers);
+    return;
+  }
   for (const printer of printers) {
     const name = typeof printer === 'string' ? printer : printer.Name || printer.name;
     const row = document.createElement('div');
@@ -40,24 +71,12 @@ scanPrinters.addEventListener('click', async () => {
   }
 });
 
-checkFiscal.addEventListener('click', async () => {
-  fiscalResult.textContent = JSON.stringify(await api.fiscalStatus().catch((error) => ({ ok: false, error: error.message })), null, 2);
-});
-
-checkBridge.addEventListener('click', async () => {
-  healthResult.textContent = JSON.stringify(await api.bridgeHealth().catch((error) => ({ ok: false, error: error.message })), null, 2);
-});
-
-openPos.addEventListener('click', async () => {
-  await api.saveConfig({ setupCompleted: true });
-  await api.openCloud();
-});
-
 async function showSupport(work) {
-  supportResult.textContent = JSON.stringify(await work().catch((error) => ({ ok: false, error: error.message })), null, 2);
+  write(supportResult, await work().catch((error) => ({ ok: false, error: error.message })));
 }
 
-supportHealth.addEventListener('click', () => showSupport(() => api.bridgeHealth()));
+checkBridge.addEventListener('click', () => showSupport(() => api.bridgeHealth()));
+checkFiscal.addEventListener('click', () => showSupport(() => api.fiscalStatus()));
 supportQueues.addEventListener('click', () => showSupport(() => api.queues()));
 supportUpdater.addEventListener('click', () => showSupport(() => api.updaterStatus()));
 supportService.addEventListener('click', () => showSupport(() => api.serviceStatus()));
@@ -69,8 +88,7 @@ exportDiagnostics.addEventListener('click', async () => {
     api.serviceStatus().catch((error) => ({ ok: false, error: error.message })),
     api.updaterStatus().catch((error) => ({ ok: false, error: error.message })),
   ]);
-  const bundle = { exportedAt: new Date().toISOString(), health, queues, fiscal, service, updater };
-  supportResult.textContent = JSON.stringify(bundle, null, 2);
+  write(supportResult, { exportedAt: new Date().toISOString(), health, queues, fiscal, service, updater });
 });
 
 void hydrate();

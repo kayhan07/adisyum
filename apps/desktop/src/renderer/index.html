@@ -10,65 +10,53 @@
     <main class="shell">
       <header>
         <p>Adisyum Desktop</p>
-        <h1>İlk kurulum</h1>
+        <h1>İlk aktivasyon</h1>
+        <span id="deviceBadge" class="badge">Cihaz hazırlanıyor</span>
       </header>
 
-      <section class="steps">
-        <button data-step="login" class="active">1. Giriş</button>
-        <button data-step="branch">2. Şube</button>
-        <button data-step="printers">3. Yazıcılar</button>
-        <button data-step="fiscal">4. Mali POS</button>
-        <button data-step="verify">5. Doğrulama</button>
-        <button data-step="support">6. Destek</button>
+      <section class="hero">
+        <div>
+          <h2>Bir kez bağlan, her açılışta POS'a gir.</h2>
+          <p>
+            Bu sihirbaz yalnızca ilk kurulumda çalışır. Aktivasyon tamamlandıktan sonra cihaz kimliği,
+            şube bilgisi ve yerel oturum güvenli şekilde saklanır.
+          </p>
+        </div>
+        <button id="openPos" class="secondary">POS'u aç</button>
       </section>
 
-      <section id="login" class="panel active">
-        <h2>Bulut bağlantısı</h2>
-        <label>Bulut URL <input id="cloudUrl" /></label>
-        <label>Bridge URL <input id="bridgeUrl" /></label>
+      <section class="panel active">
+        <h2>Abonelik aktivasyonu</h2>
+        <div class="form-grid">
+          <label>Abone No <input id="tenantId" autocomplete="organization" placeholder="ABN-48291" /></label>
+          <label>Kullanıcı <input id="username" autocomplete="username" placeholder="admin" /></label>
+          <label>Şifre <input id="password" type="password" autocomplete="current-password" /></label>
+          <label>Şube kodu <input id="branchId" placeholder="mrk" /></label>
+          <label>Bulut URL <input id="cloudUrl" /></label>
+          <label>Bridge URL <input id="bridgeUrl" /></label>
+        </div>
         <label class="check"><input id="kiosk" type="checkbox" /> Kiosk / tam ekran modunda aç</label>
-        <button id="saveConfig">Kaydet</button>
-      </section>
-
-      <section id="branch" class="panel">
-        <h2>Şube seçimi</h2>
-        <label>Şube kodu <input id="branchId" placeholder="MRK" /></label>
-      </section>
-
-      <section id="printers" class="panel">
-        <div class="row">
-          <h2>Yazıcı kurulumu</h2>
-          <button id="scanPrinters">Yazıcı tara</button>
+        <div class="actions">
+          <button id="activateDevice">Cihazı aktive et</button>
+          <button id="resetActivation" class="secondary">Aktivasyonu sıfırla</button>
         </div>
-        <div id="printerList" class="list"></div>
+        <pre id="activationResult"></pre>
       </section>
 
-      <section id="fiscal" class="panel">
+      <section class="panel">
         <div class="row">
-          <h2>Mali POS hazırlığı</h2>
-          <button id="checkFiscal">Durumu kontrol et</button>
-        </div>
-        <pre id="fiscalResult"></pre>
-      </section>
-
-      <section id="verify" class="panel">
-        <h2>Bağlantı doğrulama</h2>
-        <button id="checkBridge">Bridge kontrol et</button>
-        <pre id="healthResult"></pre>
-        <button id="openPos">POS'u aç</button>
-      </section>
-
-      <section id="support" class="panel">
-        <div class="row">
-          <h2>Destek ve tanılama</h2>
-          <button id="exportDiagnostics">Tanılama dışa aktar</button>
+          <h2>Yerel servis ve tanılama</h2>
+          <button id="checkBridge">Bridge kontrol et</button>
         </div>
         <div class="grid-actions">
-          <button id="supportHealth">Bridge özeti</button>
-          <button id="supportQueues">Kuyrukları incele</button>
-          <button id="supportUpdater">Güncelleme durumu</button>
+          <button id="scanPrinters">Yazıcıları tara</button>
+          <button id="checkFiscal">Mali POS durumu</button>
+          <button id="supportQueues">Kuyruklar</button>
           <button id="supportService">Servis durumu</button>
+          <button id="supportUpdater">Güncelleme durumu</button>
+          <button id="exportDiagnostics">Tanılama dışa aktar</button>
         </div>
+        <div id="printerList" class="list"></div>
         <pre id="supportResult"></pre>
       </section>
     </main>
