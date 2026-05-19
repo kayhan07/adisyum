@@ -16,7 +16,7 @@ Recommended stack:
 | --- | --- |
 | `AdisyumPosAgent.exe` | local bridge runtime |
 | `AdisyumTray.exe` | status tray + launcher |
-| `AdisyumSetup.exe` | customer installer |
+| `AdisyumDesktopSetup.exe` | customer installer |
 | `.url` shortcuts | POS/Admin desktop links |
 
 ## Install locations

@@ -36,7 +36,7 @@ A signed manifest drives background updates for the Windows runtime.
   "channel": "stable",
   "track": "stable",
   "changelog": "Printer reconnect hardening, tray health improvements, update rollback safety.",
-  "downloadUrl": "https://downloads.adisyum.com/windows/AdisyumSetup-1.4.2.exe",
+  "downloadUrl": "https://adisyum.com/downloads/windows/v1.4.2/AdisyumDesktopSetup.exe",
   "checksum": "sha256:...",
   "signature": "base64-signature",
   "stagedRolloutPercent": 100,

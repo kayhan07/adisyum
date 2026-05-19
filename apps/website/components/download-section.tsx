@@ -6,8 +6,8 @@ const TRUST_ITEMS = [
   'Windows Compatible',
 ];
 
-const RELEASE_VERSION = process.env.NEXT_PUBLIC_ADISYUM_WINDOWS_VERSION || 'Latest stable';
-const INSTALLER_SIZE = process.env.NEXT_PUBLIC_ADISYUM_WINDOWS_INSTALLER_SIZE || 'Signed package';
+const RELEASE_VERSION = process.env.NEXT_PUBLIC_ADISYUM_WINDOWS_VERSION || '1.0.0';
+const INSTALLER_SIZE = process.env.NEXT_PUBLIC_ADISYUM_WINDOWS_INSTALLER_SIZE || 'See manifest';
 
 export function DownloadSection() {
   return (
@@ -33,13 +33,13 @@ export function DownloadSection() {
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <a
-                href="/downloads/latest"
+                href="/downloads/windows/latest/AdisyumDesktopSetup.exe"
                 className="inline-flex min-h-14 items-center justify-center rounded-2xl bg-emerald-500 px-7 text-sm font-black text-slate-950 shadow-[0_6px_30px_rgba(16,185,129,0.35)] transition hover:bg-emerald-400 active:scale-[0.98]"
               >
                 Windows icin indir
               </a>
               <a
-                href="https://downloads.adisyum.com/windows/release-manifest.json"
+                href="/downloads/windows/latest.json"
                 className="inline-flex min-h-14 items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-7 text-sm font-bold text-white transition hover:border-white/20 hover:bg-white/10"
               >
                 Release manifest
@@ -47,7 +47,7 @@ export function DownloadSection() {
             </div>
 
             <div className="mt-5 flex flex-wrap gap-2 text-xs text-slate-500">
-              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">AdisyumSetup.exe</span>
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">AdisyumDesktopSetup.exe</span>
               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">{RELEASE_VERSION}</span>
               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">{INSTALLER_SIZE}</span>
               <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1.5 text-emerald-300">
@@ -61,7 +61,7 @@ export function DownloadSection() {
               <div className="flex items-center justify-between border-b border-white/8 pb-4">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Stable release</p>
-                  <h3 className="mt-1 text-xl font-black text-white">AdisyumSetup.exe</h3>
+                  <h3 className="mt-1 text-xl font-black text-white">AdisyumDesktopSetup.exe</h3>
                 </div>
                 <div className="rounded-full bg-emerald-500/12 px-3 py-1 text-xs font-bold text-emerald-300 ring-1 ring-emerald-500/25">
                   Verified
@@ -86,8 +86,7 @@ export function DownloadSection() {
               </div>
 
               <p className="mt-5 text-xs leading-6 text-slate-500">
-                Downloads are routed through the stable release manifest and can be moved to a dedicated
-                downloads.adisyum.com origin without changing the website button.
+                Downloads are served from adisyum.com/downloads with versioned latest and v1.0.0 paths.
               </p>
             </div>
           </div>

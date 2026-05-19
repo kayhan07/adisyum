@@ -36,7 +36,7 @@ The installer seeds runtime metadata from [deploy/windows/release-manifest.sampl
 
 ## Installer versioning
 
-- `AdisyumSetup.exe` should be stamped with the same SemVer as the release
+- `AdisyumDesktopSetup.exe` should be stamped with the same SemVer as the release
 - increment patch for compatibility fixes
 - increment minor for features
 - increment major for breaking changes

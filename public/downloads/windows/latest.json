@@ -1,0 +1,38 @@
+{
+  "version": "1.0.0",
+  "buildId": "adisyon-1779143696280",
+  "releasedAt": "2026-05-19T00:00:00.000Z",
+  "mandatory": false,
+  "channel": "latest",
+  "baseUrl": "https://adisyum.com/downloads/windows/latest",
+  "files": [
+    {
+      "name": "Adisyum Desktop",
+      "fileName": "AdisyumDesktopSetup.exe",
+      "path": "/downloads/windows/latest/AdisyumDesktopSetup.exe",
+      "sha256": "pending-signed-installer",
+      "mandatory": false
+    },
+    {
+      "name": "Printer Bridge",
+      "fileName": "PrinterBridgeSetup.exe",
+      "path": "/downloads/windows/latest/PrinterBridgeSetup.exe",
+      "sha256": "pending-signed-installer",
+      "mandatory": false
+    },
+    {
+      "name": "Fiscal POS Bridge",
+      "fileName": "FiscalPosBridgeSetup.exe",
+      "path": "/downloads/windows/latest/FiscalPosBridgeSetup.exe",
+      "sha256": "pending-signed-installer",
+      "mandatory": false
+    },
+    {
+      "name": "Alpemix",
+      "fileName": "AlpemixSetup.exe",
+      "path": "/downloads/windows/latest/AlpemixSetup.exe",
+      "sha256": "pending-approved-installer",
+      "mandatory": false
+    }
+  ]
+}

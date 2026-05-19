@@ -5,7 +5,7 @@
   "channel": "stable",
   "track": "stable",
   "changelog": "Printer reconnect hardening, tray health improvements, and rollback safety.",
-  "downloadUrl": "https://downloads.adisyum.com/windows/AdisyumSetup-1.4.2.exe",
+  "downloadUrl": "https://adisyum.com/downloads/windows/v1.4.2/AdisyumDesktopSetup.exe",
   "checksum": "sha256:REPLACE_ME",
   "signature": "base64-signature-placeholder",
   "manifestDigest": "sha256-of-release-governance-payload",

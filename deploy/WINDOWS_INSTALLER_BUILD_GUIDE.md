@@ -2,7 +2,7 @@
 
 ## Goal
 
-A single `AdisyumSetup.exe` should install:
+A single `AdisyumDesktopSetup.exe` should install:
 
 - Adisyum desktop bridge runtime
 - tray monitor
@@ -36,7 +36,7 @@ Expected output:
 
 - `deploy/artifacts/windows/bridge/AdisyumPosAgent.exe`
 - `deploy/artifacts/windows/tray/AdisyumTray.exe`
-- `deploy/artifacts/windows/AdisyumSetup.exe`
+- `deploy/artifacts/windows/AdisyumDesktopSetup.exe`
 
 If `ISCC.exe` is not installed, the script still publishes both binaries and exits safely.
 

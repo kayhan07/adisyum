@@ -6,6 +6,7 @@ const PUBLIC_PREFIXES = [
   '/adisyonsistemi',
   '/site',
   '/api/auth',
+  '/api/downloads',
   '/_next',
   '/favicon.ico',
   '/downloads',

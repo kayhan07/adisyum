@@ -586,6 +586,29 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     client_max_body_size 50M;
 
+    location ~* ^/downloads/.+\.(exe|msi|zip)\$ {
+        proxy_pass http://127.0.0.1:${WEBSITE_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Range \$http_range;
+        proxy_set_header If-Range \$http_if_range;
+        add_header Content-Type application/octet-stream always;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header Accept-Ranges bytes always;
+    }
+
+    location ^~ /downloads/ {
+        proxy_pass http://127.0.0.1:${WEBSITE_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        add_header Cache-Control "public, max-age=300" always;
+        add_header Accept-Ranges bytes always;
+    }
+
     location ^~ ${ROOT_ASSET_PREFIX}/_next/ {
         rewrite ^${ROOT_ASSET_PREFIX}(/_next/.*)\$ \$1 break;
         proxy_pass http://127.0.0.1:${ROOT_PORT};
