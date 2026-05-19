@@ -9,7 +9,7 @@
     "lint": "next lint",
     "bootstrap:admin": "node --experimental-strip-types scripts/bootstrap-admin.ts",
     "auth:verify": "node --experimental-strip-types scripts/verify-auth.ts",
-    "products:classify-types": "node --experimental-strip-types scripts/classify-product-types.ts",
+    "products:classify-types": "tsx scripts/classify-product-types.ts",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",
