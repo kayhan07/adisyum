@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "Adisyum Desktop shell for Windows restaurant operations",
+  "author": "Adisyum",
   "main": "src/main.cjs",
   "scripts": {
     "start": "electron .",
@@ -20,7 +21,7 @@
   "build": {
     "appId": "com.adisyum.desktop",
     "productName": "Adisyum Desktop",
-    "artifactName": "AdisyumDesktop-${version}-${arch}.${ext}",
+    "artifactName": "AdisyumDesktopSetup.${ext}",
     "files": [
       "src/**/*",
       "assets/**/*"
@@ -39,6 +40,12 @@
         }
       ]
     },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://adisyum.com/downloads/windows/latest/"
+      }
+    ],
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,

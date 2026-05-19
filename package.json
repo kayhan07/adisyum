@@ -40,7 +40,9 @@
     "enterprise:generate-report": "node tools/enterprise-stress-test/generate-report.mjs",
     "desktop:start": "npm --prefix apps/desktop start",
     "desktop:pack": "npm --prefix apps/desktop run pack",
-    "desktop:dist": "npm --prefix apps/desktop run dist"
+    "desktop:dist": "npm --prefix apps/desktop run dist",
+    "desktop:publish-windows": "node tools/release-governance/publish-windows-downloads.mjs",
+    "desktop:release-windows": "npm --prefix apps/desktop install && npm --prefix apps/desktop run dist && npm run desktop:publish-windows"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
