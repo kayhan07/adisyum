@@ -4,6 +4,12 @@ import {
   resolveProductDomainType,
   type ProductDomainType,
 } from '@/lib/product-domain';
+import {
+  analyzeProductLifecycleAction,
+  createProductRevisionSnapshot,
+  type ProductLifecycleStatus,
+  type ProductPublishState,
+} from '@/lib/product-lifecycle-governance';
 
 export type ProductOperationDomain =
   | 'sale_products'
@@ -30,6 +36,10 @@ export type ProductOperationInput = {
   externalId?: string | null;
   legacyKey?: string | null;
   revision?: number | null;
+  lifecycleStatus?: ProductLifecycleStatus | string | null;
+  publishStatus?: ProductPublishState | string | null;
+  deletedAt?: string | Date | null;
+  archivedAt?: string | Date | null;
   name: string;
   category?: string | null;
   productType?: ProductDomainType | string | null;
@@ -88,6 +98,9 @@ export type ProductOperationRow = {
   posVisible: boolean;
   branchVisibility: Array<{ branchId: string; label: string; enabled: boolean; priceOverride?: number }>;
   version: number;
+  lifecycleStatus: ProductLifecycleStatus;
+  publishStatus: ProductPublishState;
+  lifecycle: ReturnType<typeof analyzeProductLifecycleAction>;
 };
 
 export type ProductOperationsSummary = {
@@ -176,6 +189,22 @@ export function buildProductOperationRows(
     const productType = resolveProductDomainType(product);
     const domain = resolveProductOperationDomain(productType);
     const salePrice = parseOperationalNumber(product.salePrice);
+    const lifecycleStatus: ProductLifecycleStatus = (
+      product.lifecycleStatus === 'draft'
+      || product.lifecycleStatus === 'active'
+      || product.lifecycleStatus === 'published'
+      || product.lifecycleStatus === 'archived'
+      || product.lifecycleStatus === 'deprecated'
+      || product.lifecycleStatus === 'deleted'
+    ) ? product.lifecycleStatus : 'active';
+    const publishStatus: ProductPublishState = (
+      product.publishStatus === 'draft'
+      || product.publishStatus === 'validating'
+      || product.publishStatus === 'staged'
+      || product.publishStatus === 'published'
+      || product.publishStatus === 'failed'
+      || product.publishStatus === 'rolled_back'
+    ) ? product.publishStatus : 'published';
     const recipeLines = product.recipeLines?.length ? product.recipeLines : recipeFallbacks[product.name] ?? [];
     const { totalCost, costLines } = calculateProductCost(recipeLines, ingredientCosts);
     const marginPercent = salePrice > 0 ? ((salePrice - totalCost) / salePrice) * 100 : null;
@@ -295,6 +324,17 @@ export function buildProductOperationRows(
         priceOverride: salePrice > 0 && index > 0 ? Math.round(salePrice * (1 + (index * 0.04))) : undefined,
       })),
       version: product.revision ?? version,
+      lifecycleStatus,
+      publishStatus,
+      lifecycle: analyzeProductLifecycleAction(
+        { ...product, productType, lifecycleStatus, publishStatus, revision: product.revision ?? version },
+        'archive',
+        {
+          recipeReferenceCount: recipeLines.length,
+          branchReferenceCount: DEFAULT_BRANCHES.length,
+          affectedBranches: DEFAULT_BRANCHES,
+        },
+      ),
     };
   });
 }
@@ -343,5 +383,17 @@ export function simulateProductOperationImpact(row: ProductOperationRow, allRows
     cacheTargets,
     requiresManagerApproval: row.severity === 'critical' || directDependents.length > 5,
     runtimePropagation: row.posVisible ? 'Websocket ürün kataloğu yenileme + offline katalog versiyon artışı' : 'Stok ve reçete bağımlılık grafiği yenileme',
+    lifecycleDecision: row.lifecycle,
+    revisionSnapshot: createProductRevisionSnapshot({
+      id: row.id,
+      posKey: row.posKey,
+      name: row.name,
+      productType: row.productType,
+      lifecycleStatus: row.lifecycleStatus,
+      publishStatus: row.publishStatus,
+      revision: row.version,
+      price: row.salePrice,
+      categoryId: row.category,
+    }),
   };
 }

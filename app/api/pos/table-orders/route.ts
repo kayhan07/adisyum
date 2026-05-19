@@ -6,6 +6,7 @@ import { publishTenantEvent } from '@/lib/realtime/tenant-events';
 import { recordOperationalEvent } from '@/lib/operations/live-ops';
 import { inferProductDomainType, isSellableProductType, resolvePosFacingProductDomainType } from '@/lib/product-domain';
 import { isUuidIdentity, resolveProductIdentity } from '@/lib/product-identity';
+import { isRuntimeVisibleProduct } from '@/lib/product-lifecycle-governance';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -320,7 +321,17 @@ export async function POST(request: Request) {
     if (dbProductId) {
       const persistedProduct = await prisma.product.findFirst({
         where: { tenantId, id: dbProductId },
-        select: { id: true, productType: true, active: true, name: true, categoryId: true, price: true },
+        select: {
+          id: true,
+          productType: true,
+          active: true,
+          lifecycleStatus: true,
+          publishStatus: true,
+          deletedAt: true,
+          name: true,
+          categoryId: true,
+          price: true,
+        },
       });
       const category = persistedProduct?.categoryId
         ? await prisma.productCategory.findFirst({ where: { tenantId, id: persistedProduct.categoryId }, select: { name: true } })
@@ -334,16 +345,18 @@ export async function POST(request: Request) {
             price: persistedProduct.price.toString(),
           })
         : null;
-      if (persistedProduct && (!persistedProduct.active || !isSellableProductType(persistedProductType))) {
+      if (persistedProduct && (!isRuntimeVisibleProduct(persistedProduct) || !isSellableProductType(persistedProductType))) {
         return NextResponse.json({
           ok: false,
-          error: 'This product is not sellable in POS.',
-          code: 'product_not_sellable',
+          error: 'This product is not published for POS runtime.',
+          code: 'product_not_runtime_visible',
           traceId,
           tableId,
           productId: persistedProduct.id,
           productName: persistedProduct.name,
           productType: persistedProduct.productType,
+          lifecycleStatus: persistedProduct.lifecycleStatus,
+          publishStatus: persistedProduct.publishStatus,
           resolvedProductType: persistedProductType,
         }, { status: 400 });
       }

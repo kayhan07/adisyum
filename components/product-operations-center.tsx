@@ -118,6 +118,9 @@ function toProductInputs(saleProducts: StoredSaleProduct[], rawIngredients: Stor
     externalId: product.externalId,
     legacyKey: product.legacyKey,
     revision: product.revision,
+    lifecycleStatus: product.lifecycleStatus,
+    publishStatus: product.publishStatus,
+    deletedAt: product.deletedAt,
     name: product.name,
     category: product.category,
     productType: product.productType,
@@ -485,6 +488,7 @@ export function ProductOperationsCenter() {
                 ['Websocket bildirim', 'Tenant cihazları ürün kataloğunu yeniden çeker.'],
                 ['Offline güvenlik', 'Geçersiz domain ürünleri offline pakete yazılmaz.'],
                 ['Versiyon geri alma', 'Önceki reçete/fiyat revizyonuna dönülebilir.'],
+                ['Lifecycle güvenliği', `${selectedRow?.lifecycleStatus ?? 'active'} / ${selectedRow?.publishStatus ?? 'published'} durumuna göre arşiv-silme kararı verilir.`],
               ].map(([title, detail]) => (
                 <div key={title} className="rounded-2xl border border-line bg-canvas p-3">
                   <p className="flex items-center gap-2 font-semibold text-ink"><CheckCircle2 className="h-4 w-4 text-emerald-300" /> {title}</p>

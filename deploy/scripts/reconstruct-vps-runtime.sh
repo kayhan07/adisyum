@@ -600,6 +600,9 @@ rebuild_prisma_and_typecheck() {
   run_app npx prisma generate
   run_app npx prisma db push
   run_app npm run products:classify-types
+  run_app env DRY_RUN=0 npm run products:migrate-lifecycle
+  run_app npm run products:lifecycle-test
+  run_app npm run products:catalog-test
   run_bootstrap_admin
   run_auth_verification db-only
   run_app npx tsc --noEmit

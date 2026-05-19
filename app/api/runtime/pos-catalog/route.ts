@@ -20,7 +20,14 @@ function readChannel(value: string | null): CatalogChannel {
 
 async function compileTenantCatalog(tenantId: string, branchId?: string, channel: CatalogChannel = 'pos') {
   const products = await prisma.product.findMany({
-    where: { tenantId, active: true },
+    where: {
+      tenantId,
+      active: true,
+      deletedAt: null,
+      lifecycleStatus: { in: ['active', 'published'] },
+      publishStatus: 'published',
+      productType: { in: ['sale_product', 'combo_product'] },
+    },
     orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
     select: {
       id: true,
@@ -31,6 +38,9 @@ async function compileTenantCatalog(tenantId: string, branchId?: string, channel
       externalId: true,
       legacyKey: true,
       revision: true,
+      lifecycleStatus: true,
+      publishStatus: true,
+      deletedAt: true,
       price: true,
       vatRate: true,
       unitType: true,
@@ -77,6 +87,9 @@ async function compileTenantCatalog(tenantId: string, branchId?: string, channel
       externalId: product.externalId ?? undefined,
       legacyKey: product.legacyKey ?? product.name,
       revision: product.revision,
+      lifecycleStatus: product.lifecycleStatus as 'active' | 'published',
+      publishStatus: product.publishStatus as 'published',
+      deletedAt: product.deletedAt?.toISOString() ?? null,
       name: product.name,
       category,
       productType,

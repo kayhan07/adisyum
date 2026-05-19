@@ -493,6 +493,8 @@ model Product {
   externalId   String?  @map("external_id") @db.VarChar(120)
   legacyKey    String?  @map("legacy_key") @db.VarChar(180)
   revision     Int      @default(1)
+  lifecycleStatus String @default("active") @map("lifecycle_status") @db.VarChar(32)
+  publishStatus String  @default("published") @map("publish_status") @db.VarChar(32)
   price        Decimal  @default(0) @db.Decimal(12, 2)
   vatRate      Int      @default(10) @map("vat_rate")
   unitType     String   @default("adet") @map("unit_type") @db.VarChar(32)
@@ -502,6 +504,10 @@ model Product {
   thumbnailUrl String?  @map("thumbnail_url") @db.VarChar(500)
   description  String?  @db.VarChar(600)
   metadata     Json     @default("{}")
+  publishedAt  DateTime? @map("published_at")
+  archivedAt   DateTime? @map("archived_at")
+  deprecatedAt DateTime? @map("deprecated_at")
+  deletedAt    DateTime? @map("deleted_at")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -510,10 +516,33 @@ model Product {
   @@index([tenantId, createdAt])
   @@index([tenantId, active])
   @@index([tenantId, productType, active])
+  @@index([tenantId, lifecycleStatus])
+  @@index([tenantId, publishStatus])
+  @@index([tenantId, deletedAt])
   @@unique([tenantId, posKey], name: "tenantId_posKey", map: "products_tenant_id_pos_key_key")
   @@index([tenantId, legacyKey])
   @@index([tenantId, externalId])
   @@map("products")
+}
+
+model ProductRevision {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.VarChar(64)
+  productId       String   @map("product_id") @db.Uuid
+  productPosKey   String?  @map("product_pos_key") @db.VarChar(40)
+  revision        Int
+  lifecycleStatus String   @map("lifecycle_status") @db.VarChar(32)
+  publishStatus   String   @map("publish_status") @db.VarChar(32)
+  snapshot        Json
+  source          String   @default("product-lifecycle") @db.VarChar(80)
+  createdBy       String?  @map("created_by") @db.VarChar(120)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, productId, revision], name: "tenantId_productId_revision", map: "product_revisions_tenant_id_product_id_revision_key")
+  @@index([tenantId, productId])
+  @@index([tenantId, productPosKey])
+  @@index([tenantId, createdAt])
+  @@map("product_revisions")
 }
 
 model MediaAsset {

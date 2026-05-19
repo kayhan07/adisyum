@@ -1,5 +1,6 @@
 import { hashProductIdentity, resolveProductIdentity } from '@/lib/product-identity';
 import { isSellableProductType } from '@/lib/product-domain';
+import { isRuntimeVisibleProduct, type ProductLifecycleStatus, type ProductPublishState } from '@/lib/product-lifecycle-governance';
 import type { PosCatalogProduct } from '@/lib/sale-product-catalog';
 
 export type CatalogChannel = 'pos' | 'qr' | 'kiosk' | 'delivery' | 'waiter_tablet' | 'mobile_pos';
@@ -29,6 +30,8 @@ export type CanonicalPosCatalogItem = PosCatalogProduct & {
     barcode?: string;
     externalId?: string;
     legacyKey?: string;
+    lifecycleStatus?: ProductLifecycleStatus;
+    publishStatus?: ProductPublishState;
   };
   branchOverlay: {
     branchId?: string;
@@ -81,6 +84,8 @@ function stableCatalogPayload(products: PosCatalogProduct[]) {
       sku: product.sku,
       barcode: product.barcode,
       externalId: product.externalId,
+      lifecycleStatus: product.lifecycleStatus,
+      publishStatus: product.publishStatus,
     }))
     .sort((a, b) => a.posKey.localeCompare(b.posKey)));
 }
@@ -94,7 +99,7 @@ export function compileCanonicalPosCatalog(products: PosCatalogProduct[], option
   const startedAt = Date.now();
   const channel = options.channel ?? 'pos';
   const compiledAt = options.compiledAt ?? new Date().toISOString();
-  const validProducts = products.filter((product) => isSellableProductType(product.productType));
+  const validProducts = products.filter((product) => isSellableProductType(product.productType) && isRuntimeVisibleProduct(product));
   const catalogRevision = createCatalogRevision(validProducts, options);
   const items = validProducts.map((product): CanonicalPosCatalogItem => {
     const identity = resolveProductIdentity({
@@ -126,6 +131,8 @@ export function compileCanonicalPosCatalog(products: PosCatalogProduct[], option
         barcode: identity.barcode,
         externalId: identity.externalId,
         legacyKey: identity.legacyKey,
+        lifecycleStatus: product.lifecycleStatus,
+        publishStatus: product.publishStatus,
       },
       branchOverlay: {
         branchId: options.branchId,

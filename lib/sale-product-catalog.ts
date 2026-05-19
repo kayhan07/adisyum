@@ -1,6 +1,7 @@
 import type { ProductRecipeOverride, RecipePoolUnit } from '@/lib/recipe-pool';
 import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
 import { compileCanonicalPosCatalog } from '@/lib/canonical-pos-catalog';
+import type { ProductLifecycleStatus, ProductPublishState } from '@/lib/product-lifecycle-governance';
 import {
   filterSellableProducts,
   inferProductDomainType,
@@ -33,6 +34,10 @@ export type StoredSaleProduct = {
   externalId?: string;
   legacyKey?: string;
   revision?: number;
+  lifecycleStatus?: ProductLifecycleStatus;
+  publishStatus?: ProductPublishState;
+  deletedAt?: string | null;
+  archivedAt?: string | null;
   name: string;
   category: string;
   productType?: ProductDomainType;
@@ -88,6 +93,9 @@ export type PosCatalogProduct = {
   externalId?: string;
   legacyKey?: string;
   revision: number;
+  lifecycleStatus?: ProductLifecycleStatus;
+  publishStatus?: ProductPublishState;
+  deletedAt?: string | null;
   name: string;
   category: string;
   productType: ProductDomainType;
@@ -178,6 +186,10 @@ export function normalizeStoredSaleProduct(product: Partial<StoredSaleProduct> &
     externalId: identity.externalId,
     legacyKey: identity.legacyKey,
     revision: product.revision ?? 1,
+    lifecycleStatus: product.lifecycleStatus ?? 'published',
+    publishStatus: product.publishStatus ?? 'published',
+    deletedAt: product.deletedAt ?? null,
+    archivedAt: product.archivedAt ?? null,
     name: product.name,
     category: product.category,
     productType: inferProductDomainType({ name: product.name, category: product.category, explicitType: product.productType }),
@@ -363,6 +375,9 @@ export function buildPosCatalogFromStored(products: StoredSaleProduct[], context
       externalId: product.externalId,
       legacyKey: product.legacyKey,
       revision: product.revision ?? 1,
+      lifecycleStatus: product.lifecycleStatus ?? 'published',
+      publishStatus: product.publishStatus ?? 'published',
+      deletedAt: product.deletedAt ?? null,
       name: product.name,
       category: normalizePosCategory(product.category),
       productType: product.productType ?? 'sale_product',
@@ -392,6 +407,9 @@ export function getDefaultPosCatalog(): PosCatalogProduct[] {
       externalId: normalized.externalId,
       legacyKey: normalized.legacyKey,
       revision: normalized.revision ?? 1,
+      lifecycleStatus: normalized.lifecycleStatus ?? 'published',
+      publishStatus: normalized.publishStatus ?? 'published',
+      deletedAt: normalized.deletedAt ?? null,
       name: normalized.name,
       category: normalizePosCategory(normalized.category),
       productType: normalized.productType ?? 'sale_product',
