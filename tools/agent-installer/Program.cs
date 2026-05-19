@@ -94,7 +94,10 @@ namespace AdisyumPosAgentInstaller
     internal static class Program
     {
         private const string ListenPrefix = "http://127.0.0.1:3001/";
+        private const string LocalApiPrefix = "http://127.0.0.1:4891/";
         private const string RunArg = "--run-agent";
+        private const string ServiceName = "AdisyumDesktopBridge";
+        private const string TaskName = "AdisyumDesktopBridge";
 
         private static int Main(string[] args)
         {
@@ -126,17 +129,20 @@ namespace AdisyumPosAgentInstaller
 
         private static void InstallAndStartAgent()
         {
-            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            var installDir = Path.Combine(localAppData, "AdisyumPosAgent");
+            var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+            var installDir = Path.Combine(programData, "Adisyum", "DesktopBridge");
             Directory.CreateDirectory(installDir);
 
             var currentExe = Process.GetCurrentProcess().MainModule.FileName;
-            var targetExe = Path.Combine(installDir, "adisyum-pos-agent.exe");
+            var targetExe = Path.Combine(installDir, "AdisyumDesktopBridge.exe");
 
             if (!string.Equals(currentExe, targetExe, StringComparison.OrdinalIgnoreCase))
             {
                 File.Copy(currentExe, targetExe, true);
             }
+
+            RegisterWindowsService(targetExe);
+            RegisterStartupTask(targetExe);
 
             using (var runKey = Registry.CurrentUser.OpenSubKey("Software\\Microsoft\\Windows\\CurrentVersion\\Run", true))
             {
@@ -147,6 +153,31 @@ namespace AdisyumPosAgentInstaller
 
                 runKey.SetValue("AdisyumPosAgent", "\"" + targetExe + "\" " + RunArg, RegistryValueKind.String);
             }
+
+            StartServiceOrFallback(targetExe, installDir);
+            WaitForHealth();
+        }
+
+        private static void RegisterWindowsService(string targetExe)
+        {
+            if (!IsAdministrator()) return;
+
+            RunProcess("sc.exe", "stop " + ServiceName, false);
+            RunProcess("sc.exe", "delete " + ServiceName, false);
+            RunProcess("sc.exe", "create " + ServiceName + " binPath= \"" + targetExe + " " + RunArg + "\" start= auto DisplayName= \"Adisyum Desktop Bridge\"", true);
+            RunProcess("sc.exe", "description " + ServiceName + " \"Adisyum local printer, fiscal POS and offline queue bridge\"", false);
+            RunProcess("sc.exe", "failure " + ServiceName + " reset= 60 actions= restart/5000/restart/10000/restart/30000", false);
+        }
+
+        private static void RegisterStartupTask(string targetExe)
+        {
+            var args = "/Create /TN \"" + TaskName + "\" /TR \"\\\"" + targetExe + "\\\" " + RunArg + "\" /SC ONLOGON /RL HIGHEST /F";
+            RunProcess("schtasks.exe", args, false);
+        }
+
+        private static void StartServiceOrFallback(string targetExe, string installDir)
+        {
+            if (IsAdministrator()) RunProcess("sc.exe", "start " + ServiceName, false);
 
             var info = new ProcessStartInfo
             {
@@ -161,10 +192,65 @@ namespace AdisyumPosAgentInstaller
             Process.Start(info);
         }
 
+        private static bool IsAdministrator()
+        {
+            try
+            {
+                var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+                var principal = new System.Security.Principal.WindowsPrincipal(identity);
+                return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+            }
+            catch { return false; }
+        }
+
+        private static void RunProcess(string fileName, string arguments, bool throwOnFailure)
+        {
+            try
+            {
+                var info = new ProcessStartInfo
+                {
+                    FileName = fileName,
+                    Arguments = arguments,
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    WindowStyle = ProcessWindowStyle.Hidden,
+                };
+                using (var process = Process.Start(info))
+                {
+                    process.WaitForExit(15000);
+                    if (throwOnFailure && process.ExitCode != 0)
+                        throw new InvalidOperationException(fileName + " failed with exit code " + process.ExitCode);
+                }
+            }
+            catch
+            {
+                if (throwOnFailure) throw;
+            }
+        }
+
+        private static void WaitForHealth()
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(12);
+            while (DateTime.UtcNow < deadline)
+            {
+                try
+                {
+                    var request = WebRequest.Create(LocalApiPrefix + "health");
+                    request.Timeout = 1500;
+                    using (var response = request.GetResponse()) { return; }
+                }
+                catch
+                {
+                    System.Threading.Thread.Sleep(500);
+                }
+            }
+        }
+
         private static void RunAgent()
         {
             var listener = new HttpListener();
             listener.Prefixes.Add(ListenPrefix);
+            listener.Prefixes.Add(LocalApiPrefix);
             listener.Start();
 
             while (true)

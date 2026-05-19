@@ -41,8 +41,9 @@
     "desktop:start": "npm --prefix apps/desktop start",
     "desktop:pack": "npm --prefix apps/desktop run pack",
     "desktop:dist": "npm --prefix apps/desktop run dist",
+    "desktop:build-bridges": "dotnet publish tools/agent-installer/AdisyumPosAgentInstaller.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -o tools/agent-installer/publish",
     "desktop:publish-windows": "node tools/release-governance/publish-windows-downloads.mjs",
-    "desktop:release-windows": "npm --prefix apps/desktop install && npm --prefix apps/desktop run dist && npm run desktop:publish-windows"
+    "desktop:release-windows": "npm --prefix apps/desktop install && npm --prefix apps/desktop run dist && npm run desktop:build-bridges && npm run desktop:publish-windows"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

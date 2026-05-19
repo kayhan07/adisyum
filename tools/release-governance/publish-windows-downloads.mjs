@@ -10,7 +10,7 @@ const desktopReleaseDir = path.join(desktopRoot, 'release');
 const windowsDownloadsRoot = path.join(repoRoot, 'public', 'downloads', 'windows');
 const websiteWindowsDownloadsRoot = path.join(repoRoot, 'apps', 'website', 'public', 'downloads', 'windows');
 const minInstallerBytes = 10 * 1024 * 1024;
-const minBridgeBytes = 100 * 1024;
+const minBridgeBytes = 1024 * 1024;
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf8'));
@@ -72,7 +72,7 @@ function findBridgeInstaller() {
   const found = candidates.find((candidate) => existsSync(candidate));
   if (!found) {
     throw new Error(
-      'Bridge installer not found. Run: dotnet publish tools/agent-installer/AdisyumPosAgentInstaller.csproj -c Release -r win-x64 --self-contained false -o tools/agent-installer/publish',
+      'Bridge installer not found. Run: dotnet publish tools/agent-installer/AdisyumPosAgentInstaller.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -o tools/agent-installer/publish',
     );
   }
 
