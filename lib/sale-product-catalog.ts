@@ -4,6 +4,7 @@ import {
   filterSellableProducts,
   inferProductDomainType,
   isSellableProductType,
+  resolvePosFacingProductDomainType,
   type ProductDomainType,
 } from '@/lib/product-domain';
 
@@ -244,7 +245,18 @@ export function loadStoredSaleProducts() {
           )
           .map((item) => normalizeStoredSaleProduct(item))
       : null;
-    return products ? filterSellableProducts(products, 'sale-product-storage-load') : null;
+    return products
+      ? filterSellableProducts(products, 'sale-product-storage-load').map((product) => ({
+          ...product,
+          productType: resolvePosFacingProductDomainType({
+            id: product.id,
+            name: product.name,
+            category: product.category,
+            productType: product.productType,
+            salePrice: product.salePrice1 || product.salePrice,
+          }),
+        }))
+      : null;
   } catch {
     return null;
   }
@@ -257,7 +269,16 @@ export function saveStoredSaleProducts(products: StoredSaleProduct[]) {
     const incoming = filterSellableProducts(
       products.map((item) => normalizeStoredSaleProduct(item)),
       'sale-product-storage-save-incoming',
-    );
+    ).map((product) => ({
+      ...product,
+      productType: resolvePosFacingProductDomainType({
+        id: product.id,
+        name: product.name,
+        category: product.category,
+        productType: product.productType,
+        salePrice: product.salePrice1 || product.salePrice,
+      }),
+    }));
     const existing = filterSellableProducts(loadStoredSaleProducts() ?? [], 'sale-product-storage-save-existing');
     const incomingKeys = new Set(
       incoming.flatMap((item) => [item.id, normalizeProductKey(item.name)]),
@@ -292,7 +313,19 @@ export function subscribeToStoredSaleProductsChanges(callback: () => void) {
 
 export function buildPosCatalogFromStored(products: StoredSaleProduct[], context: SalePriceContext = {}): PosCatalogProduct[] {
   return filterSellableProducts(products, 'pos-catalog-build')
-    .map((item) => normalizeStoredSaleProduct(item))
+    .map((item) => {
+      const normalized = normalizeStoredSaleProduct(item);
+      return {
+        ...normalized,
+        productType: resolvePosFacingProductDomainType({
+          id: normalized.id,
+          name: normalized.name,
+          category: normalized.category,
+          productType: normalized.productType,
+          salePrice: normalized.salePrice1 || normalized.salePrice,
+        }),
+      };
+    })
     .filter((product) => isSellableProductType(product.productType))
     .map((product) => ({
       id: product.id,

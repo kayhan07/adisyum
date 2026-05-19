@@ -1,6 +1,11 @@
 import { PrismaClient } from '@prisma/client';
 import { existsSync, readFileSync } from 'node:fs';
-import { inferProductDomainType, isSellableProductType } from '../lib/product-domain';
+import {
+  inferProductDomainType,
+  isInventoryOnlyProductType,
+  isRawMaterialCategory,
+  isSellableProductType,
+} from '../lib/product-domain';
 
 function loadEnvFile(path: string) {
   if (!existsSync(path)) return;
@@ -34,6 +39,7 @@ async function main() {
       id: true,
       tenantId: true,
       name: true,
+      price: true,
       productType: true,
       categoryId: true,
       metadata: true,
@@ -50,10 +56,21 @@ async function main() {
 
   for (const product of products) {
     const metadata = normalizeMetadata(product.metadata);
-    const explicit = typeof metadata.productType === 'string' ? metadata.productType : product.productType;
+    const category = categoryById.get(product.categoryId ?? '') ?? (typeof metadata.category === 'string' ? metadata.category : null);
+    const price = Number(product.price);
+    const suspiciousInventoryType = isInventoryOnlyProductType(product.productType)
+      && Boolean(category)
+      && !isRawMaterialCategory(category)
+      && Number.isFinite(price)
+      && price > 0;
+    const explicit = suspiciousInventoryType
+      ? null
+      : typeof metadata.productType === 'string'
+        ? metadata.productType
+        : product.productType;
     const nextType = inferProductDomainType({
       name: product.name,
-      category: categoryById.get(product.categoryId ?? '') ?? (typeof metadata.category === 'string' ? metadata.category : null),
+      category,
       explicitType: explicit,
     });
 

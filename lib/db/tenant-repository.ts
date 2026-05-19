@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db/prisma';
 import { Prisma } from '@prisma/client';
 import type { TenantContext } from '@/lib/tenant';
+import { isSellableProductType, resolvePosFacingProductDomainType } from '@/lib/product-domain';
 
 type TenantScopedWhere = {
   tenantId: string;
@@ -37,8 +38,8 @@ export async function assertTenantIsActive(tenantId: string) {
 }
 
 export async function listTenantProducts(tenant: TenantContext, options: { take?: number; skip?: number } = {}) {
-  return prisma.product.findMany({
-    where: tenantWhere(tenant, { active: true, productType: { in: ['sale_product', 'combo_product'] } }),
+  const products = await prisma.product.findMany({
+    where: tenantWhere(tenant, { active: true }),
     orderBy: { createdAt: 'desc' },
     take: options.take ?? 100,
     skip: options.skip ?? 0,
@@ -50,9 +51,43 @@ export async function listTenantProducts(tenant: TenantContext, options: { take?
       vatRate: true,
       unitType: true,
       productType: true,
+      categoryId: true,
       updatedAt: true,
     },
   });
+
+  const categoryIds = [...new Set(products.map((product) => product.categoryId).filter((id): id is string => Boolean(id)))];
+  const categories = categoryIds.length > 0
+    ? await prisma.productCategory.findMany({ where: { tenantId: tenant.tenantId, id: { in: categoryIds } }, select: { id: true, name: true } })
+    : [];
+  const categoryById = new Map(categories.map((category) => [category.id, category.name]));
+
+  const filtered = products
+    .map((product) => {
+      const productType = resolvePosFacingProductDomainType({
+        id: product.id,
+        name: product.name,
+        category: categoryById.get(product.categoryId ?? '') ?? null,
+        productType: product.productType,
+        price: product.price.toString(),
+      });
+      return { ...product, productType };
+    })
+    .filter((product) => isSellableProductType(product.productType));
+
+  if (products.length > 0 && filtered.length === 0) {
+    console.error('[pos-catalog] tenant product catalog empty after productType filtering', {
+      tenantId: tenant.tenantId,
+      scanned: products.length,
+      sample: products.slice(0, 20).map((product) => ({
+        id: product.id,
+        name: product.name,
+        productType: product.productType,
+      })),
+    });
+  }
+
+  return filtered;
 }
 
 export async function listTenantTables(tenant: TenantContext, options: { take?: number; skip?: number } = {}) {

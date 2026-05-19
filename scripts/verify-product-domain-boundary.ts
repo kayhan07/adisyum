@@ -72,7 +72,18 @@ const comboProduct = {
   productType: 'combo_product' as const,
 };
 
+const legacyMisclassifiedSaleProduct = {
+  ...baseSaleProduct,
+  id: 'sutlac',
+  name: 'Sutlac',
+  category: 'Tatli',
+  productType: 'stock_item' as const,
+  salePrice: '180',
+  salePrice1: '180',
+};
+
 assert.equal(inferProductDomainType({ name: 'Sut', category: 'Hammadde / Stok' }), 'stock_item');
+assert.equal(inferProductDomainType({ name: 'Sutlac', category: 'Tatli' }), 'sale_product');
 assert.equal(inferProductDomainType({ name: 'Hazir Sos', category: 'Hazirlik' }), 'semi_product');
 assert.equal(inferProductDomainType({ name: 'Aile Paketi', category: 'Menuler' }), 'combo_product');
 assert.equal(canCategoryAcceptProductType('Hammadde / Stok', 'sale_product'), false);
@@ -80,10 +91,11 @@ assert.equal(canCategoryAcceptProductType('Mutfak Satis', 'sale_product'), true)
 assert.equal(isSellableProductType(resolveProductDomainType(baseSaleProduct)), true);
 assert.equal(isSellableProductType(resolveProductDomainType(stockItem)), false);
 
-const sellable = filterSellableProducts([baseSaleProduct, stockItem, semiProduct, comboProduct], 'product-boundary-test');
-assert.deepEqual(sellable.map((item) => item.id), ['latte', 'family-combo']);
+const sellable = filterSellableProducts([baseSaleProduct, stockItem, semiProduct, comboProduct, legacyMisclassifiedSaleProduct], 'product-boundary-test');
+assert.deepEqual(sellable.map((item) => item.id), ['latte', 'family-combo', 'sutlac']);
 
-const posCatalog = buildPosCatalogFromStored([baseSaleProduct, stockItem, semiProduct, comboProduct]);
-assert.deepEqual(posCatalog.map((item) => item.id), ['latte', 'family-combo']);
+const posCatalog = buildPosCatalogFromStored([baseSaleProduct, stockItem, semiProduct, comboProduct, legacyMisclassifiedSaleProduct]);
+assert.deepEqual(posCatalog.map((item) => item.id), ['latte', 'family-combo', 'sutlac']);
+assert.deepEqual(posCatalog.map((item) => item.productType), ['sale_product', 'combo_product', 'sale_product']);
 
 console.log('product domain boundary valid');

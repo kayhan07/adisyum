@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { createRequire } from 'node:module';
-import { inferProductDomainType } from '../lib/product-domain.ts';
+import { inferProductDomainType, isInventoryOnlyProductType, isRawMaterialCategory } from '../lib/product-domain.ts';
 
 const require = createRequire(import.meta.url);
 const { loadEnvConfig } = require('@next/env') as typeof import('@next/env');
@@ -18,18 +18,37 @@ async function main() {
       id: true,
       tenantId: true,
       name: true,
+      price: true,
       productType: true,
       metadata: true,
       categoryId: true,
     },
   });
 
+  const categoryIds = [...new Set(products.map((product) => product.categoryId).filter((id): id is string => Boolean(id)))];
+  const categories = categoryIds.length > 0
+    ? await prisma.productCategory.findMany({ where: { id: { in: categoryIds } }, select: { id: true, name: true } })
+    : [];
+  const categoryById = new Map(categories.map((category) => [category.id, category.name]));
+
   let changed = 0;
   for (const product of products) {
     const metadata = metadataObject(product.metadata);
-    const explicit = typeof metadata.productType === 'string' ? metadata.productType : product.productType;
+    const category = categoryById.get(product.categoryId ?? '') ?? (typeof metadata.category === 'string' ? metadata.category : null);
+    const price = Number(product.price);
+    const suspiciousInventoryType = isInventoryOnlyProductType(product.productType)
+      && Boolean(category)
+      && !isRawMaterialCategory(category)
+      && Number.isFinite(price)
+      && price > 0;
+    const explicit = suspiciousInventoryType
+      ? null
+      : typeof metadata.productType === 'string'
+        ? metadata.productType
+        : product.productType;
     const nextType = inferProductDomainType({
       name: product.name,
+      category,
       explicitType: explicit,
     });
 

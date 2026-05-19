@@ -39,6 +39,7 @@ const rawMaterialCategoryKeywords = [
 
 const semiProductKeywords = ['hazir sos', 'marine', 'marinasyon', 'pizza hamuru', 'kofte harci'];
 const comboKeywords = ['menu', 'combo', 'aile paketi', 'set'];
+const rawMaterialKeywordSet = new Set(rawMaterialKeywords);
 
 export function normalizeProductDomainText(value: string) {
   return value
@@ -62,7 +63,13 @@ export function normalizeProductDomainText(value: string) {
 
 export function isLikelyRawMaterialName(name: string) {
   const normalized = normalizeProductDomainText(name);
-  return rawMaterialKeywords.some((keyword) => normalized === keyword || normalized.includes(keyword));
+  return rawMaterialKeywords.some((keyword) => {
+    if (normalized === keyword) return true;
+    if (rawMaterialKeywordSet.has(keyword) && !keyword.includes(' ')) {
+      return false;
+    }
+    return new RegExp(`(^|[^a-z0-9])${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`).test(normalized);
+  });
 }
 
 export function isRawMaterialCategory(category?: string | null) {
@@ -90,7 +97,7 @@ export function inferProductDomainType(input: { name: string; category?: string 
   if (comboKeywords.some((keyword) => text.includes(keyword))) return 'combo_product';
   if (semiProductKeywords.some((keyword) => text.includes(keyword))) return 'semi_product';
   if (isRawMaterialCategory(input.category)) return 'stock_item';
-  if (isLikelyRawMaterialName(input.name)) return 'stock_item';
+  if (!input.category && isLikelyRawMaterialName(input.name)) return 'stock_item';
   return 'sale_product';
 }
 
@@ -107,7 +114,18 @@ type ProductDomainCandidate = {
   name?: string | null;
   category?: string | null;
   productType?: string | null;
+  price?: number | string | null;
+  salePrice?: number | string | null;
 };
+
+function isKnownProductDomainType(value?: string | null): value is ProductDomainType {
+  return Boolean(value && ALL_PRODUCT_DOMAIN_TYPES.includes(value as ProductDomainType));
+}
+
+function parsePriceCandidate(value: unknown) {
+  const parsed = Number(String(value ?? '').replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
 export function resolveProductDomainType(product: ProductDomainCandidate): ProductDomainType {
   return inferProductDomainType({
@@ -117,9 +135,30 @@ export function resolveProductDomainType(product: ProductDomainCandidate): Produ
   });
 }
 
+export function resolvePosFacingProductDomainType(product: ProductDomainCandidate): ProductDomainType {
+  if (isSellableProductType(product.productType)) return product.productType as ProductDomainType;
+
+  const hasSalesCategory = Boolean(product.category && !isRawMaterialCategory(product.category));
+  const price = parsePriceCandidate(product.price ?? product.salePrice);
+  if (
+    isKnownProductDomainType(product.productType)
+    && isInventoryOnlyProductType(product.productType)
+    && hasSalesCategory
+    && price > 0
+  ) {
+    return inferProductDomainType({
+      name: product.name ?? '',
+      category: product.category,
+      explicitType: null,
+    });
+  }
+
+  return resolveProductDomainType(product);
+}
+
 export function warnIfInventoryProductsInPosPayload<T extends ProductDomainCandidate>(source: string, products: T[]) {
   const leaked = products
-    .map((product) => ({ product, productType: resolveProductDomainType(product) }))
+    .map((product) => ({ product, productType: resolvePosFacingProductDomainType(product) }))
     .filter((entry) => isInventoryOnlyProductType(entry.productType));
 
   if (leaked.length === 0) return;
@@ -138,5 +177,18 @@ export function warnIfInventoryProductsInPosPayload<T extends ProductDomainCandi
 
 export function filterSellableProducts<T extends ProductDomainCandidate>(products: T[], source = 'unknown') {
   warnIfInventoryProductsInPosPayload(source, products);
-  return products.filter((product) => isSellableProductType(resolveProductDomainType(product)));
+  const filtered = products.filter((product) => isSellableProductType(resolvePosFacingProductDomainType(product)));
+  if (products.length > 0 && filtered.length === 0) {
+    console.error('[product-domain-boundary] POS catalog empty after productType filtering', {
+      source,
+      count: products.length,
+      sample: products.slice(0, 20).map((product) => ({
+        id: product.id,
+        name: product.name,
+        category: product.category,
+        productType: product.productType,
+      })),
+    });
+  }
+  return filtered;
 }

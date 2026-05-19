@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db/prisma';
 import { requireTenant, TenantAuthError, tenantAuthErrorResponse } from '@/lib/requireTenant';
 import { publishTenantEvent } from '@/lib/realtime/tenant-events';
 import { recordOperationalEvent } from '@/lib/operations/live-ops';
-import { inferProductDomainType, isSellableProductType } from '@/lib/product-domain';
+import { inferProductDomainType, isSellableProductType, resolvePosFacingProductDomainType } from '@/lib/product-domain';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -40,6 +40,10 @@ function tableOrderNo(tableId: string) {
 
 function mutationTraceId(mutationId?: string) {
   return mutationId || `pos-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function isUuid(value: string | undefined) {
+  return Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
 }
 
 function logTableOrderEvent(event: string, payload: Record<string, unknown>) {
@@ -278,12 +282,24 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    if (product?.id) {
+    if (product?.id && isUuid(product.id)) {
       const persistedProduct = await prisma.product.findFirst({
         where: { tenantId, id: product.id },
-        select: { id: true, productType: true, active: true, name: true },
+        select: { id: true, productType: true, active: true, name: true, categoryId: true, price: true },
       });
-      if (persistedProduct && (!persistedProduct.active || !isSellableProductType(persistedProduct.productType))) {
+      const category = persistedProduct?.categoryId
+        ? await prisma.productCategory.findFirst({ where: { tenantId, id: persistedProduct.categoryId }, select: { name: true } })
+        : null;
+      const persistedProductType = persistedProduct
+        ? resolvePosFacingProductDomainType({
+            id: persistedProduct.id,
+            name: persistedProduct.name,
+            category: category?.name ?? product?.category ?? null,
+            productType: persistedProduct.productType,
+            price: persistedProduct.price.toString(),
+          })
+        : null;
+      if (persistedProduct && (!persistedProduct.active || !isSellableProductType(persistedProductType))) {
         return NextResponse.json({
           ok: false,
           error: 'This product is not sellable in POS.',
@@ -293,8 +309,17 @@ export async function POST(request: Request) {
           productId: persistedProduct.id,
           productName: persistedProduct.name,
           productType: persistedProduct.productType,
+          resolvedProductType: persistedProductType,
         }, { status: 400 });
       }
+    } else if (product?.id) {
+      logTableOrderEvent('product-db-lookup-skipped', {
+        traceId,
+        tenantId,
+        tableId,
+        productId: product.id,
+        reason: 'non-uuid-pos-catalog-key',
+      });
     }
 
     const productInput = {

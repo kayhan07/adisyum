@@ -1,6 +1,6 @@
 import { OrderStatus, PaymentStatus, Prisma, type PrismaClient } from '@prisma/client';
 import { runtimeStateTenantKey } from '@/lib/db/compound-keys';
-import { isSellableProductType } from '@/lib/product-domain';
+import { isSellableProductType, resolvePosFacingProductDomainType } from '@/lib/product-domain';
 import { prisma } from '@/lib/db/prisma';
 import type { TenantContext } from '@/lib/tenant';
 
@@ -39,9 +39,9 @@ export class TableRepository {
 export class ProductRepository {
   constructor(private readonly db: DbClient = prisma) {}
 
-  list(tenant: TenantContext, options: PageOptions = {}) {
-    return this.db.product.findMany({
-      where: scoped(tenant, { active: true, productType: { in: ['sale_product', 'combo_product'] } }),
+  async list(tenant: TenantContext, options: PageOptions = {}) {
+    const products = await this.db.product.findMany({
+      where: scoped(tenant, { active: true }),
       orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
       take: take(options),
       skip: options.cursor ? 1 : options.skip ?? 0,
@@ -59,11 +59,56 @@ export class ProductRepository {
         updatedAt: true,
       },
     });
+
+    const categoryIds = [...new Set(products.map((product) => product.categoryId).filter((id): id is string => Boolean(id)))];
+    const categories = categoryIds.length > 0
+      ? await this.db.productCategory.findMany({ where: { tenantId: tenant.tenantId, id: { in: categoryIds } }, select: { id: true, name: true } })
+      : [];
+    const categoryById = new Map(categories.map((category) => [category.id, category.name]));
+
+    const filtered = products
+      .map((product) => {
+        const productType = resolvePosFacingProductDomainType({
+          id: product.id,
+          name: product.name,
+          category: categoryById.get(product.categoryId ?? '') ?? null,
+          productType: product.productType,
+          price: product.price.toString(),
+        });
+        return { ...product, productType };
+      })
+      .filter((product) => isSellableProductType(product.productType));
+
+    if (products.length > 0 && filtered.length === 0) {
+      console.error('[pos-catalog] product repository returned empty sellable catalog after filtering', {
+        tenantId: tenant.tenantId,
+        scanned: products.length,
+        sample: products.slice(0, 20).map((product) => ({
+          id: product.id,
+          name: product.name,
+          productType: product.productType,
+          categoryId: product.categoryId,
+        })),
+      });
+    }
+
+    return filtered;
   }
 
-  findById(tenant: TenantContext, id: string) {
-    return this.db.product.findFirst({ where: scoped(tenant, { id, active: true }) })
-      .then((product) => product && isSellableProductType(product.productType) ? product : null);
+  async findById(tenant: TenantContext, id: string) {
+    const product = await this.db.product.findFirst({ where: scoped(tenant, { id, active: true }) });
+    if (!product) return null;
+    const category = product.categoryId
+      ? await this.db.productCategory.findFirst({ where: { tenantId: tenant.tenantId, id: product.categoryId }, select: { name: true } })
+      : null;
+    const productType = resolvePosFacingProductDomainType({
+      id: product.id,
+      name: product.name,
+      category: category?.name ?? null,
+      productType: product.productType,
+      price: product.price.toString(),
+    });
+    return isSellableProductType(productType) ? { ...product, productType } : null;
   }
 }
 
