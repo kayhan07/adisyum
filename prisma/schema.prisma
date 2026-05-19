@@ -489,6 +489,10 @@ model Product {
   name         String   @db.VarChar(180)
   sku          String?  @db.VarChar(80)
   barcode      String?  @db.VarChar(80)
+  posKey       String?  @map("pos_key") @db.VarChar(40)
+  externalId   String?  @map("external_id") @db.VarChar(120)
+  legacyKey    String?  @map("legacy_key") @db.VarChar(180)
+  revision     Int      @default(1)
   price        Decimal  @default(0) @db.Decimal(12, 2)
   vatRate      Int      @default(10) @map("vat_rate")
   unitType     String   @default("adet") @map("unit_type") @db.VarChar(32)
@@ -506,6 +510,9 @@ model Product {
   @@index([tenantId, createdAt])
   @@index([tenantId, active])
   @@index([tenantId, productType, active])
+  @@unique([tenantId, posKey], name: "tenantId_posKey", map: "products_tenant_id_pos_key_key")
+  @@index([tenantId, legacyKey])
+  @@index([tenantId, externalId])
   @@map("products")
 }
 

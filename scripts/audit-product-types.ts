@@ -28,6 +28,12 @@ async function main() {
       name: true,
       categoryId: true,
       price: true,
+      posKey: true,
+      sku: true,
+      barcode: true,
+      externalId: true,
+      legacyKey: true,
+      revision: true,
       productType: true,
     },
     take: 10000,
@@ -43,6 +49,9 @@ async function main() {
   const sellable = [];
   const blocked = [];
   const suspiciousLegacy = [];
+  const missingPosKey = [];
+  const duplicateRuntimeKeys = new Map<string, typeof products>();
+  const duplicateBarcodes = new Map<string, typeof products>();
 
   for (const product of products) {
     const category = categoryById.get(product.categoryId ?? '') ?? null;
@@ -65,7 +74,24 @@ async function main() {
     ) {
       suspiciousLegacy.push({ ...product, category, resolvedType });
     }
+
+    if (!product.posKey) missingPosKey.push({ ...product, category, resolvedType });
+    if (product.posKey) {
+      const key = `${product.tenantId}:${product.posKey}`;
+      const current = duplicateRuntimeKeys.get(key) ?? [];
+      current.push(product);
+      duplicateRuntimeKeys.set(key, current);
+    }
+    if (product.barcode) {
+      const key = `${product.tenantId}:${product.barcode}`;
+      const current = duplicateBarcodes.get(key) ?? [];
+      current.push(product);
+      duplicateBarcodes.set(key, current);
+    }
   }
+
+  const duplicatedPosKeys = [...duplicateRuntimeKeys.entries()].filter(([, entries]) => entries.length > 1);
+  const duplicatedBarcodes = [...duplicateBarcodes.entries()].filter(([, entries]) => entries.length > 1);
 
   console.log(JSON.stringify({
     ok: true,
@@ -74,6 +100,9 @@ async function main() {
     posVisibleAfterFailsafe: sellable.length,
     inventoryBlocked: blocked.length,
     suspiciousLegacySellable: suspiciousLegacy.length,
+    missingPosKey: missingPosKey.length,
+    duplicatedPosKeys: duplicatedPosKeys.length,
+    duplicatedBarcodes: duplicatedBarcodes.length,
     suspiciousLegacySample: suspiciousLegacy.slice(0, 30).map((product) => ({
       tenantId: product.tenantId,
       id: product.id,
@@ -81,6 +110,18 @@ async function main() {
       category: product.category,
       productType: product.productType,
       resolvedType: product.resolvedType,
+    })),
+    missingPosKeySample: missingPosKey.slice(0, 30).map((product) => ({
+      tenantId: product.tenantId,
+      id: product.id,
+      name: product.name,
+      category: product.category,
+      productType: product.productType,
+      resolvedType: product.resolvedType,
+    })),
+    duplicatedPosKeySample: duplicatedPosKeys.slice(0, 10).map(([key, entries]) => ({
+      key,
+      products: entries.map((product) => ({ id: product.id, name: product.name })),
     })),
   }, null, 2));
 }

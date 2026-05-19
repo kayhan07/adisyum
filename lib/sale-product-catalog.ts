@@ -7,6 +7,7 @@ import {
   resolvePosFacingProductDomainType,
   type ProductDomainType,
 } from '@/lib/product-domain';
+import { resolveProductIdentity } from '@/lib/product-identity';
 
 export type VatRate = 1 | 10 | 20;
 export type SaleUnitType = 'portion' | 'kg' | 'bottle' | 'glass';
@@ -25,6 +26,12 @@ export type StoredOpenBottleSnapshot = {
 
 export type StoredSaleProduct = {
   id: string;
+  posKey?: string;
+  sku?: string;
+  barcode?: string;
+  externalId?: string;
+  legacyKey?: string;
+  revision?: number;
   name: string;
   category: string;
   productType?: ProductDomainType;
@@ -72,6 +79,13 @@ export type StoredSaleProduct = {
 
 export type PosCatalogProduct = {
   id: string;
+  productId?: string;
+  posKey: string;
+  sku?: string;
+  barcode?: string;
+  externalId?: string;
+  legacyKey?: string;
+  revision: number;
   name: string;
   category: string;
   productType: ProductDomainType;
@@ -151,9 +165,16 @@ export function normalizeStoredSaleProduct(product: Partial<StoredSaleProduct> &
   const salePrice1 = String(product.salePrice1 ?? product.salePrice ?? '0');
   const salePrice2 = String(product.salePrice2 ?? salePrice1);
   const salePrice3 = String(product.salePrice3 ?? salePrice1);
+  const identity = resolveProductIdentity(product);
 
   return {
     id: product.id,
+    posKey: identity.posKey,
+    sku: identity.sku,
+    barcode: identity.barcode,
+    externalId: identity.externalId,
+    legacyKey: identity.legacyKey,
+    revision: product.revision ?? 1,
     name: product.name,
     category: product.category,
     productType: inferProductDomainType({ name: product.name, category: product.category, explicitType: product.productType }),
@@ -248,10 +269,11 @@ export function loadStoredSaleProducts() {
     return products
       ? filterSellableProducts(products, 'sale-product-storage-load').map((product) => ({
           ...product,
-          productType: resolvePosFacingProductDomainType({
-            id: product.id,
-            name: product.name,
-            category: product.category,
+        productType: resolvePosFacingProductDomainType({
+          id: product.id,
+          posKey: product.posKey,
+          name: product.name,
+          category: product.category,
             productType: product.productType,
             salePrice: product.salePrice1 || product.salePrice,
           }),
@@ -271,10 +293,11 @@ export function saveStoredSaleProducts(products: StoredSaleProduct[]) {
       'sale-product-storage-save-incoming',
     ).map((product) => ({
       ...product,
-      productType: resolvePosFacingProductDomainType({
-        id: product.id,
-        name: product.name,
-        category: product.category,
+        productType: resolvePosFacingProductDomainType({
+          id: product.id,
+          posKey: product.posKey,
+          name: product.name,
+          category: product.category,
         productType: product.productType,
         salePrice: product.salePrice1 || product.salePrice,
       }),
@@ -319,6 +342,7 @@ export function buildPosCatalogFromStored(products: StoredSaleProduct[], context
         ...normalized,
         productType: resolvePosFacingProductDomainType({
           id: normalized.id,
+          posKey: normalized.posKey,
           name: normalized.name,
           category: normalized.category,
           productType: normalized.productType,
@@ -328,7 +352,14 @@ export function buildPosCatalogFromStored(products: StoredSaleProduct[], context
     })
     .filter((product) => isSellableProductType(product.productType))
     .map((product) => ({
-      id: product.id,
+      id: product.posKey ?? product.id,
+      productId: product.id,
+      posKey: product.posKey ?? product.id,
+      sku: product.sku,
+      barcode: product.barcode,
+      externalId: product.externalId,
+      legacyKey: product.legacyKey,
+      revision: product.revision ?? 1,
       name: product.name,
       category: normalizePosCategory(product.category),
       productType: product.productType ?? 'sale_product',
@@ -348,7 +379,14 @@ export function getDefaultPosCatalog(): PosCatalogProduct[] {
   return DEFAULT_SALE_PRODUCT_BASE.map((product) => {
     const normalized = normalizeStoredSaleProduct(product);
     return {
-      id: normalized.id,
+      id: normalized.posKey ?? normalized.id,
+      productId: normalized.id,
+      posKey: normalized.posKey ?? normalized.id,
+      sku: normalized.sku,
+      barcode: normalized.barcode,
+      externalId: normalized.externalId,
+      legacyKey: normalized.legacyKey,
+      revision: normalized.revision ?? 1,
       name: normalized.name,
       category: normalizePosCategory(normalized.category),
       productType: normalized.productType ?? 'sale_product',

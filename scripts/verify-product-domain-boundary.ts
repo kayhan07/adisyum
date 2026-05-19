@@ -6,6 +6,7 @@ import {
   isSellableProductType,
   resolveProductDomainType,
 } from '../lib/product-domain';
+import { createPosKey } from '../lib/product-identity';
 import { buildPosCatalogFromStored, type StoredSaleProduct } from '../lib/sale-product-catalog';
 
 const baseSaleProduct: StoredSaleProduct = {
@@ -95,7 +96,8 @@ const sellable = filterSellableProducts([baseSaleProduct, stockItem, semiProduct
 assert.deepEqual(sellable.map((item) => item.id), ['latte', 'family-combo', 'sutlac']);
 
 const posCatalog = buildPosCatalogFromStored([baseSaleProduct, stockItem, semiProduct, comboProduct, legacyMisclassifiedSaleProduct]);
-assert.deepEqual(posCatalog.map((item) => item.id), ['latte', 'family-combo', 'sutlac']);
+assert.deepEqual(posCatalog.map((item) => item.id), [createPosKey('latte'), createPosKey('family-combo'), createPosKey('sutlac')]);
+assert.deepEqual(posCatalog.map((item) => item.productId), ['latte', 'family-combo', 'sutlac']);
 assert.deepEqual(posCatalog.map((item) => item.productType), ['sale_product', 'combo_product', 'sale_product']);
 
 console.log('product domain boundary valid');

@@ -57,6 +57,13 @@ import type { BranchId } from '@/lib/erp-engine';
 type Category = { id: string; label: string };
 type ProductCard = {
   id: string;
+  productId?: string;
+  posKey?: string;
+  sku?: string;
+  barcode?: string;
+  externalId?: string;
+  legacyKey?: string;
+  revision?: number;
   name: string;
   category: string;
   productType: ProductDomainType;
@@ -224,6 +231,13 @@ async function addProductToAuthoritativeOrder(input: {
   mutationId: string;
   product: {
     id: string;
+    productId?: string;
+    posKey?: string;
+    sku?: string;
+    barcode?: string;
+    externalId?: string;
+    legacyKey?: string;
+    revision?: number;
     name: string;
     productType?: ProductDomainType;
     price: number;
@@ -248,6 +262,8 @@ async function addProductToAuthoritativeOrder(input: {
     mutationId: input.mutationId,
     tableId: input.tableId,
     productId: input.product.id,
+    posKey: input.product.posKey,
+    legacyKey: input.product.legacyKey,
     productName: input.product.name,
     quantity: input.product.quantity ?? 1,
     price: input.product.price,
@@ -1542,6 +1558,13 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         mutationId,
         product: {
           id: product.id,
+          productId: product.productId,
+          posKey: product.posKey ?? product.id,
+          sku: product.sku,
+          barcode: product.barcode,
+          externalId: product.externalId,
+          legacyKey: product.legacyKey,
+          revision: product.revision,
           name: product.name,
           productType: product.productType,
           price: resolvedUnitPrice,
@@ -1678,6 +1701,13 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         mutationId,
         product: {
           id: productCardProduct.id,
+          productId: productCardProduct.productId,
+          posKey: productCardProduct.posKey ?? productCardProduct.id,
+          sku: productCardProduct.sku,
+          barcode: productCardProduct.barcode,
+          externalId: productCardProduct.externalId,
+          legacyKey: productCardProduct.legacyKey,
+          revision: productCardProduct.revision,
           name: productCardProduct.name,
           productType: productCardProduct.productType,
           price: resolvedUnitPrice,

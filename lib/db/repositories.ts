@@ -51,6 +51,10 @@ export class ProductRepository {
         name: true,
         sku: true,
         barcode: true,
+        posKey: true,
+        externalId: true,
+        legacyKey: true,
+        revision: true,
         price: true,
         vatRate: true,
         unitType: true,
@@ -70,12 +74,18 @@ export class ProductRepository {
       .map((product) => {
         const productType = resolvePosFacingProductDomainType({
           id: product.id,
+          posKey: product.posKey,
           name: product.name,
           category: categoryById.get(product.categoryId ?? '') ?? null,
           productType: product.productType,
           price: product.price.toString(),
         });
-        return { ...product, productType };
+        return {
+          ...product,
+          productType,
+          posKey: product.posKey ?? undefined,
+          legacyKey: product.legacyKey ?? product.name,
+        };
       })
       .filter((product) => isSellableProductType(product.productType));
 
@@ -103,6 +113,7 @@ export class ProductRepository {
       : null;
     const productType = resolvePosFacingProductDomainType({
       id: product.id,
+      posKey: product.posKey,
       name: product.name,
       category: category?.name ?? null,
       productType: product.productType,

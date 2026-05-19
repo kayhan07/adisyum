@@ -110,6 +110,12 @@ function buildRecipeFallbacks() {
 function toProductInputs(saleProducts: StoredSaleProduct[], rawIngredients: StoredRawIngredient[]): ProductOperationInput[] {
   const saleInputs = saleProducts.map((product) => ({
     id: product.id,
+    posKey: product.posKey,
+    sku: product.sku,
+    barcode: product.barcode,
+    externalId: product.externalId,
+    legacyKey: product.legacyKey,
+    revision: product.revision,
     name: product.name,
     category: product.category,
     productType: product.productType,
@@ -188,7 +194,7 @@ export function ProductOperationsCenter() {
     const normalizedQuery = query.trim().toLocaleLowerCase('tr-TR');
     return rows
       .filter((row) => row.domain === activeDomain)
-      .filter((row) => !normalizedQuery || `${row.name} ${row.category} ${row.productType}`.toLocaleLowerCase('tr-TR').includes(normalizedQuery));
+      .filter((row) => !normalizedQuery || `${row.name} ${row.category} ${row.productType} ${row.posKey ?? ''} ${row.sku ?? ''} ${row.barcode ?? ''}`.toLocaleLowerCase('tr-TR').includes(normalizedQuery));
   }, [activeDomain, query, rows]);
 
   const selectedRow = rows.find((row) => row.id === selectedRowId) ?? visibleRows[0] ?? null;
@@ -337,7 +343,7 @@ export function ProductOperationsCenter() {
                     </span>
                     <span className="min-w-0">
                       <span className="block truncate font-semibold text-ink">{row.name}</span>
-                      <span className="mt-1 block truncate text-xs text-muted">{row.category} · v{row.version}</span>
+                      <span className="mt-1 block truncate text-xs text-muted">{row.category} · {row.posKey ?? 'POS key bekliyor'} · v{row.version}</span>
                     </span>
                     <span className="text-muted">{row.productType}</span>
                     <span>

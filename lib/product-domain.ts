@@ -111,6 +111,7 @@ export function isInventoryOnlyProductType(productType?: string | null) {
 
 type ProductDomainCandidate = {
   id?: string | null;
+  posKey?: string | null;
   name?: string | null;
   category?: string | null;
   productType?: string | null;

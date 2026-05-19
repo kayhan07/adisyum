@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { writeAuditLog } from '@/lib/db/audit';
 import type { TenantContext } from '@/lib/tenant';
+import { createPosKey } from '@/lib/product-identity';
 
 const SYSTEM_TENANT_ID = 'system';
 
@@ -628,12 +629,17 @@ export async function importProductTemplatesToTenant(tenant: TenantContext, temp
         })
         : null;
 
+      const posKey = createPosKey(`${tenant.tenantId}:${template.key}:${template.version}`);
       const product = await tx.product.create({
         data: {
           tenantId: tenant.tenantId,
           sourceTemplateId: template.id,
           categoryId: category?.id ?? null,
           name: template.name,
+          posKey,
+          legacyKey: template.name,
+          externalId: template.key,
+          revision: 1,
           productType: 'sale_product',
           price: template.defaultPrice,
           vatRate: template.vatRate,

@@ -24,6 +24,12 @@ export type ProductOperationRecipeLine = {
 
 export type ProductOperationInput = {
   id: string;
+  posKey?: string | null;
+  sku?: string | null;
+  barcode?: string | null;
+  externalId?: string | null;
+  legacyKey?: string | null;
+  revision?: number | null;
   name: string;
   category?: string | null;
   productType?: ProductDomainType | string | null;
@@ -62,6 +68,11 @@ export type ProductOperationCostLine = {
 
 export type ProductOperationRow = {
   id: string;
+  posKey?: string;
+  sku?: string;
+  barcode?: string;
+  externalId?: string;
+  legacyKey?: string;
   name: string;
   category: string;
   productType: ProductDomainType;
@@ -260,6 +271,11 @@ export function buildProductOperationRows(
 
     return {
       id: product.id,
+      posKey: product.posKey ?? undefined,
+      sku: product.sku ?? undefined,
+      barcode: product.barcode ?? undefined,
+      externalId: product.externalId ?? undefined,
+      legacyKey: product.legacyKey ?? undefined,
       name: product.name,
       category: product.category?.trim() || 'Kategorisiz',
       productType,
@@ -278,7 +294,7 @@ export function buildProductOperationRows(
         enabled: productType !== 'stock_item' || index === 0,
         priceOverride: salePrice > 0 && index > 0 ? Math.round(salePrice * (1 + (index * 0.04))) : undefined,
       })),
-      version,
+      version: product.revision ?? version,
     };
   });
 }

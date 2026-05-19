@@ -5,6 +5,7 @@ import { requireTenant, TenantAuthError, tenantAuthErrorResponse } from '@/lib/r
 import { publishTenantEvent } from '@/lib/realtime/tenant-events';
 import { recordOperationalEvent } from '@/lib/operations/live-ops';
 import { inferProductDomainType, isSellableProductType, resolvePosFacingProductDomainType } from '@/lib/product-domain';
+import { isUuidIdentity, resolveProductIdentity } from '@/lib/product-identity';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -43,7 +44,7 @@ function mutationTraceId(mutationId?: string) {
 }
 
 function isUuid(value: string | undefined) {
-  return Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
+  return isUuidIdentity(value);
 }
 
 function logTableOrderEvent(event: string, payload: Record<string, unknown>) {
@@ -215,6 +216,13 @@ export async function POST(request: Request) {
       mutationId?: string;
       product?: {
         id?: string;
+        productId?: string;
+        posKey?: string;
+        sku?: string;
+        barcode?: string;
+        externalId?: string;
+        legacyKey?: string;
+        revision?: number;
         name?: string;
         productType?: string;
         price?: number;
@@ -240,6 +248,15 @@ export async function POST(request: Request) {
     tableId = body?.tableId?.trim() ?? '';
     const product = body?.product;
     const productName = product?.name?.trim();
+    const identity = resolveProductIdentity({
+      id: product?.productId || product?.id,
+      posKey: product?.posKey,
+      sku: product?.sku,
+      barcode: product?.barcode,
+      externalId: product?.externalId,
+      legacyKey: product?.legacyKey,
+      name: productName,
+    });
     const price = Number(product?.price ?? 0);
     const quantityToAdd = Math.max(1, Number(product?.quantity ?? 1) || 1);
 
@@ -248,6 +265,9 @@ export async function POST(request: Request) {
       tenantId,
       tableId,
       productId: product?.id,
+      productUuid: product?.productId,
+      posKey: identity.posKey,
+      legacyKey: identity.legacyKey,
       productName,
       price,
       quantityToAdd,
@@ -282,9 +302,10 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    if (product?.id && isUuid(product.id)) {
+    const dbProductId = product?.productId || (isUuid(product?.id) ? product?.id : undefined);
+    if (dbProductId) {
       const persistedProduct = await prisma.product.findFirst({
-        where: { tenantId, id: product.id },
+        where: { tenantId, id: dbProductId },
         select: { id: true, productType: true, active: true, name: true, categoryId: true, price: true },
       });
       const category = persistedProduct?.categoryId
@@ -318,12 +339,18 @@ export async function POST(request: Request) {
         tenantId,
         tableId,
         productId: product.id,
-        reason: 'non-uuid-pos-catalog-key',
+        reason: 'runtime-pos-key-or-legacy-key',
       });
     }
 
     const productInput = {
-      id: product?.id,
+      id: dbProductId,
+      posKey: identity.posKey,
+      legacyKey: identity.legacyKey,
+      sku: identity.sku,
+      barcode: identity.barcode,
+      externalId: identity.externalId,
+      revision: product?.revision ?? 1,
       name: productName,
       price,
       category: product?.category ?? 'mutfak',
@@ -423,7 +450,14 @@ export async function POST(request: Request) {
             }),
             metadata: compactJsonObject({
               ...normalizeMetadata(matching.metadata),
-              productKey: productInput.id,
+              productId: productInput.id || undefined,
+              productKey: productInput.posKey,
+              posKey: productInput.posKey,
+              legacyKey: productInput.legacyKey,
+              sku: productInput.sku,
+              barcode: productInput.barcode,
+              externalId: productInput.externalId,
+              productRevision: productInput.revision,
               category: productInput.category,
               printCategory: productInput.printCategory,
               guestName: productInput.guestName || undefined,
@@ -452,7 +486,7 @@ export async function POST(request: Request) {
           data: {
             tenantId,
             orderId: order.id,
-            productId: null,
+            productId: productInput.id && isUuid(productInput.id) ? productInput.id : null,
             name: productInput.name,
             quantity: quantityToAdd,
             unitPrice: price,
@@ -464,7 +498,14 @@ export async function POST(request: Request) {
             }),
             notes: productInput.note || null,
             metadata: compactJsonObject({
-              productKey: productInput.id,
+              productId: productInput.id || undefined,
+              productKey: productInput.posKey,
+              posKey: productInput.posKey,
+              legacyKey: productInput.legacyKey,
+              sku: productInput.sku,
+              barcode: productInput.barcode,
+              externalId: productInput.externalId,
+              productRevision: productInput.revision,
               category: productInput.category,
               printCategory: productInput.printCategory,
               sentQty: 0,
