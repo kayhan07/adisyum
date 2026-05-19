@@ -323,6 +323,84 @@ validate_environment() {
   log "Production environment validation OK."
 }
 
+mask_secret() {
+  local value="${1:-}"
+  if [[ -z "${value}" ]]; then
+    printf '<missing>'
+  elif (( ${#value} <= 4 )); then
+    printf '%*s' "${#value}" '' | tr ' ' '*'
+  else
+    printf '%s%s%s' "${value:0:2}" "$(printf '%*s' "$(( ${#value} - 4 ))" '' | tr ' ' '*')" "${value: -2}"
+  fi
+}
+
+preflight_database_auth() {
+  log "Preflight PostgreSQL authentication check"
+  cd "${APP_DIR}"
+
+  local parsed db_host db_port db_name db_user db_password db_sslmode
+  parsed="$(
+    node - <<'NODE'
+const raw = process.env.DATABASE_URL;
+try {
+  const u = new URL(raw);
+  const out = {
+    db_host: u.hostname || '127.0.0.1',
+    db_port: u.port || '5432',
+    db_name: decodeURIComponent(u.pathname.replace(/^\//, '')),
+    db_user: decodeURIComponent(u.username || ''),
+    db_password: decodeURIComponent(u.password || ''),
+    db_sslmode: u.searchParams.get('sslmode') || u.searchParams.get('ssl') || 'not-set',
+  };
+  for (const [key, value] of Object.entries(out)) {
+    console.log(`${key}=${JSON.stringify(value)}`);
+  }
+} catch (error) {
+  console.error(error.message);
+  process.exit(1);
+}
+NODE
+  )" || fail "DATABASE_URL parse failed during PostgreSQL auth preflight."
+  eval "${parsed}"
+
+  log "DB preflight target host=${db_host} port=${db_port} database=${db_name} user=${db_user} sslmode=${db_sslmode} password=$(mask_secret "${db_password}")"
+  [[ -n "${db_user}" ]] || fail "DATABASE_URL user is empty."
+  [[ -n "${db_password}" ]] || fail "DATABASE_URL password is empty."
+  [[ -n "${db_name}" ]] || fail "DATABASE_URL database name is empty."
+
+  if command -v pg_isready >/dev/null 2>&1; then
+    pg_isready -h "${db_host}" -p "${db_port}" -d "${db_name}" -U "${db_user}" || true
+  fi
+
+  if command -v psql >/dev/null 2>&1; then
+    local auth_error
+    auth_error="$(mktemp)"
+    if PGPASSWORD="${db_password}" psql -X -v ON_ERROR_STOP=1 -h "${db_host}" -p "${db_port}" -U "${db_user}" -d "${db_name}" -Atc "select current_user || '@' || current_database();" >/tmp/adisyum-db-preflight.out 2>"${auth_error}"; then
+      log "PostgreSQL auth preflight OK: $(cat /tmp/adisyum-db-preflight.out)"
+      rm -f "${auth_error}" /tmp/adisyum-db-preflight.out
+      return 0
+    fi
+
+    log "PostgreSQL auth preflight failed: $(cat "${auth_error}")"
+    rm -f "${auth_error}" /tmp/adisyum-db-preflight.out
+    cat >&2 <<EOF
+
+Database credentials are invalid or not authorized.
+
+Safe diagnostics:
+  APP_DIR=${APP_DIR} bash deploy/scripts/diagnose-postgres-auth.sh
+
+Safe repair, if DATABASE_URL contains the intended production password:
+  APP_DIR=${APP_DIR} bash deploy/scripts/repair-postgres-role.sh
+
+This deploy is stopped before PM2/runtime cleanup to avoid partial production state.
+EOF
+    fail "PostgreSQL authentication preflight failed."
+  fi
+
+  log "psql not found; falling back to npm db:test-connection after dependency installation."
+}
+
 backup_preserved_state() {
   log "Creating reconstruction backup at ${BACKUP_DIR}"
   mkdir -p "${BACKUP_DIR}/project" "${BACKUP_DIR}/nginx" "${BACKUP_DIR}/pm2"
@@ -516,6 +594,8 @@ NODE
 rebuild_prisma_and_typecheck() {
   log "Regenerating Prisma Client and validating TypeScript"
   cd "${APP_DIR}"
+  run_app npm run db:inspect-env
+  run_app npm run db:test-connection
   run_app npx prisma validate
   run_app npx prisma generate
   run_app npx prisma db push
@@ -901,6 +981,7 @@ main() {
   backup_preserved_state
   inspect_drift_before_cleanup
   load_env
+  preflight_database_auth
   stop_all_runtime
   clean_pm2_state
   clean_filesystem_runtime

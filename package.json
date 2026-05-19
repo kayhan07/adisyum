@@ -21,6 +21,8 @@
     "prisma:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",
     "db:push": "prisma db push",
+    "db:inspect-env": "node scripts/db-inspect-env.mjs",
+    "db:test-connection": "node scripts/db-test-connection.mjs",
     "db:seed": "node prisma/seed.mjs",
     "deploy:production": "bash deploy-production.sh",
     "tenant:db-smoke": "node deploy/scripts/tenant-db-isolation-smoke.mjs",

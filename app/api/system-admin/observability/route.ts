@@ -47,8 +47,43 @@ import { buildAllTenantOperationalHealth } from '@/lib/operational-intelligence/
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+function maskDbPassword(password: string) {
+  if (!password) return '<missing>';
+  if (password.length <= 4) return '*'.repeat(password.length);
+  return `${password.slice(0, 2)}${'*'.repeat(Math.max(4, password.length - 4))}${password.slice(-2)}`;
+}
+
+function inspectDatabaseEnv() {
+  const raw = process.env.DATABASE_URL;
+  if (!raw) return { configured: false, validUrl: false, reason: 'DATABASE_URL missing' };
+  if (raw.includes('${') || /\$DATABASE_URL/.test(raw)) {
+    return { configured: true, validUrl: false, reason: 'DATABASE_URL unresolved variable syntax' };
+  }
+  try {
+    const url = new URL(raw);
+    return {
+      configured: true,
+      validUrl: url.protocol === 'postgresql:' || url.protocol === 'postgres:',
+      host: url.hostname || '<missing>',
+      port: url.port || '5432',
+      database: decodeURIComponent(url.pathname.replace(/^\//, '')) || '<missing>',
+      user: decodeURIComponent(url.username || '') || '<missing>',
+      password: maskDbPassword(decodeURIComponent(url.password || '')),
+      passwordPresent: Boolean(url.password),
+      sslMode: url.searchParams.get('sslmode') ?? url.searchParams.get('ssl') ?? 'not-set',
+    };
+  } catch (error) {
+    return {
+      configured: true,
+      validUrl: false,
+      reason: error instanceof Error ? error.message : 'DATABASE_URL parse failed',
+    };
+  }
+}
+
 async function getPostgresMetrics() {
   const startedAt = Date.now();
+  const env = inspectDatabaseEnv();
   try {
     await prisma.$queryRaw`SELECT 1`;
     let activeConnections = 0;
@@ -66,11 +101,15 @@ async function getPostgresMetrics() {
       healthy: true,
       latencyMs: Date.now() - startedAt,
       activeConnections,
+      authValid: true,
+      env,
     };
   } catch (error) {
     return {
       healthy: false,
+      authValid: false,
       message: error instanceof Error ? error.message : 'PostgreSQL check failed',
+      env,
     };
   }
 }
