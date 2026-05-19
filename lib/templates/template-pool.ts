@@ -634,6 +634,7 @@ export async function importProductTemplatesToTenant(tenant: TenantContext, temp
           sourceTemplateId: template.id,
           categoryId: category?.id ?? null,
           name: template.name,
+          productType: 'sale_product',
           price: template.defaultPrice,
           vatRate: template.vatRate,
           unitType: template.unitType,

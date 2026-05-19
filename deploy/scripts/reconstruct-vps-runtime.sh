@@ -517,6 +517,7 @@ rebuild_prisma_and_typecheck() {
   run_app npx prisma validate
   run_app npx prisma generate
   run_app npx prisma db push
+  run_app npm run products:classify-types
   run_bootstrap_admin
   run_auth_verification db-only
   run_app npx tsc --noEmit

@@ -73,7 +73,7 @@ export async function buildTenantOperationalHealth(tenantId: string): Promise<Op
     recentStockMovements,
     templateImports,
   ] = await Promise.all([
-    prisma.product.findMany({ where: { tenantId, active: true }, select: { id: true, name: true, categoryId: true } }),
+    prisma.product.findMany({ where: { tenantId, active: true, productType: { in: ['sale_product', 'combo_product'] } }, select: { id: true, name: true, categoryId: true, productType: true } }),
     prisma.recipe.findMany({ where: { tenantId }, select: { id: true, productId: true } }),
     prisma.recipeItem.findMany({ where: { tenantId }, select: { recipeId: true, stockItemId: true } }),
     prisma.stockItem.findMany({ where: { tenantId }, select: { id: true, name: true, quantity: true, minLevel: true } }),

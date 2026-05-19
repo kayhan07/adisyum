@@ -1,5 +1,6 @@
 import type { ProductRecipeOverride, RecipePoolUnit } from '@/lib/recipe-pool';
 import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
+import { inferProductDomainType, isSellableProductType, type ProductDomainType } from '@/lib/product-domain';
 
 export type VatRate = 1 | 10 | 20;
 export type SaleUnitType = 'portion' | 'kg' | 'bottle' | 'glass';
@@ -20,6 +21,7 @@ export type StoredSaleProduct = {
   id: string;
   name: string;
   category: string;
+  productType?: ProductDomainType;
   salesUnit: SaleUnitType;
   currentStock?: string;
   lastCountedAt?: string;
@@ -147,6 +149,7 @@ export function normalizeStoredSaleProduct(product: Partial<StoredSaleProduct> &
     id: product.id,
     name: product.name,
     category: product.category,
+    productType: inferProductDomainType({ name: product.name, category: product.category, explicitType: product.productType }),
     salesUnit: product.salesUnit ?? 'portion',
     currentStock: product.currentStock ?? '0',
     lastCountedAt: product.lastCountedAt,
@@ -280,6 +283,7 @@ export function subscribeToStoredSaleProductsChanges(callback: () => void) {
 export function buildPosCatalogFromStored(products: StoredSaleProduct[], context: SalePriceContext = {}): PosCatalogProduct[] {
   return products
     .map((item) => normalizeStoredSaleProduct(item))
+    .filter((product) => isSellableProductType(product.productType))
     .map((product) => ({
       id: product.id,
       name: product.name,

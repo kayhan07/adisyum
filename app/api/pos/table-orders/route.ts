@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db/prisma';
 import { requireTenant, TenantAuthError, tenantAuthErrorResponse } from '@/lib/requireTenant';
 import { publishTenantEvent } from '@/lib/realtime/tenant-events';
 import { recordOperationalEvent } from '@/lib/operations/live-ops';
+import { inferProductDomainType, isSellableProductType } from '@/lib/product-domain';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -211,6 +212,7 @@ export async function POST(request: Request) {
       product?: {
         id?: string;
         name?: string;
+        productType?: string;
         price?: number;
         category?: string;
         printCategory?: string;
@@ -257,6 +259,42 @@ export async function POST(request: Request) {
         price,
         quantityToAdd,
       }, { status: 400 });
+    }
+
+    const requestedProductType = inferProductDomainType({
+      name: productName,
+      category: product?.category,
+      explicitType: product?.productType,
+    });
+    if (!isSellableProductType(requestedProductType)) {
+      return NextResponse.json({
+        ok: false,
+        error: 'Inventory-only stock items cannot be added to POS orders.',
+        code: 'inventory_item_not_sellable',
+        traceId,
+        tableId,
+        productName,
+        productType: requestedProductType,
+      }, { status: 400 });
+    }
+
+    if (product?.id) {
+      const persistedProduct = await prisma.product.findFirst({
+        where: { tenantId, id: product.id },
+        select: { id: true, productType: true, active: true, name: true },
+      });
+      if (persistedProduct && (!persistedProduct.active || !isSellableProductType(persistedProduct.productType))) {
+        return NextResponse.json({
+          ok: false,
+          error: 'This product is not sellable in POS.',
+          code: 'product_not_sellable',
+          traceId,
+          tableId,
+          productId: persistedProduct.id,
+          productName: persistedProduct.name,
+          productType: persistedProduct.productType,
+        }, { status: 400 });
+      }
     }
 
     const productInput = {

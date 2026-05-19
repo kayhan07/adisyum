@@ -491,6 +491,7 @@ model Product {
   price        Decimal  @default(0) @db.Decimal(12, 2)
   vatRate      Int      @default(10) @map("vat_rate")
   unitType     String   @default("adet") @map("unit_type") @db.VarChar(32)
+  productType  String   @default("sale_product") @map("product_type") @db.VarChar(32)
   active       Boolean  @default(true)
   imageUrl     String?  @map("image_url") @db.VarChar(500)
   thumbnailUrl String?  @map("thumbnail_url") @db.VarChar(500)
@@ -503,6 +504,7 @@ model Product {
   @@index([tenantId, sourceTemplateId])
   @@index([tenantId, createdAt])
   @@index([tenantId, active])
+  @@index([tenantId, productType, active])
   @@map("products")
 }
 

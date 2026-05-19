@@ -38,7 +38,7 @@ export async function assertTenantIsActive(tenantId: string) {
 
 export async function listTenantProducts(tenant: TenantContext, options: { take?: number; skip?: number } = {}) {
   return prisma.product.findMany({
-    where: tenantWhere(tenant, { active: true }),
+    where: tenantWhere(tenant, { active: true, productType: { in: ['sale_product', 'combo_product'] } }),
     orderBy: { createdAt: 'desc' },
     take: options.take ?? 100,
     skip: options.skip ?? 0,
@@ -49,6 +49,7 @@ export async function listTenantProducts(tenant: TenantContext, options: { take?
       price: true,
       vatRate: true,
       unitType: true,
+      productType: true,
       updatedAt: true,
     },
   });

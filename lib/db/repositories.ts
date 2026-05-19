@@ -1,5 +1,6 @@
 import { OrderStatus, PaymentStatus, Prisma, type PrismaClient } from '@prisma/client';
 import { runtimeStateTenantKey } from '@/lib/db/compound-keys';
+import { isSellableProductType } from '@/lib/product-domain';
 import { prisma } from '@/lib/db/prisma';
 import type { TenantContext } from '@/lib/tenant';
 
@@ -40,7 +41,7 @@ export class ProductRepository {
 
   list(tenant: TenantContext, options: PageOptions = {}) {
     return this.db.product.findMany({
-      where: scoped(tenant, { active: true }),
+      where: scoped(tenant, { active: true, productType: { in: ['sale_product', 'combo_product'] } }),
       orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
       take: take(options),
       skip: options.cursor ? 1 : options.skip ?? 0,
@@ -53,6 +54,7 @@ export class ProductRepository {
         price: true,
         vatRate: true,
         unitType: true,
+        productType: true,
         categoryId: true,
         updatedAt: true,
       },
@@ -60,7 +62,8 @@ export class ProductRepository {
   }
 
   findById(tenant: TenantContext, id: string) {
-    return this.db.product.findFirst({ where: scoped(tenant, { id, active: true }) });
+    return this.db.product.findFirst({ where: scoped(tenant, { id, active: true }) })
+      .then((product) => product && isSellableProductType(product.productType) ? product : null);
   }
 }
 
