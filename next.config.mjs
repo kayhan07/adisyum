@@ -5,6 +5,7 @@ const appDir = path.dirname(fileURLToPath(import.meta.url));
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone',
   outputFileTracingRoot: appDir,
   generateBuildId: async () => `adisyon-${Date.now()}`,
   assetPrefix: process.env.ADISYUM_ROOT_ASSET_PREFIX || '',

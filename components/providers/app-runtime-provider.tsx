@@ -13,6 +13,7 @@ import { processPrintQueue, runPrinterHeartbeat, type PrintResilienceSummary } f
 import { subscribeKdsConnectionState } from '@/lib/realtime/kds-echo';
 import { resetSystemAdminIsolation, resetTenantIsolation } from '@/lib/client/isolation';
 import { isLogoutInProgress, secureLogout, subscribeSecureLogoutSync } from '@/lib/client/secure-logout';
+import { getLocalBridgeHealthUrl } from '@/lib/local-agent';
 
 function ingestObservability(tenantId: string, payload: Record<string, unknown>) {
   void fetch('/api/system-admin/observability/ingest', {
@@ -177,8 +178,10 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     });
 
     const ingestBridgeRelease = async () => {
+      const bridgeHealthUrl = getLocalBridgeHealthUrl();
+      if (!bridgeHealthUrl) return;
       try {
-        const response = await fetch('http://127.0.0.1:3001/health', {
+        const response = await fetch(bridgeHealthUrl, {
           cache: 'no-store',
           mode: 'cors',
         });

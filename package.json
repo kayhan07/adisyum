@@ -8,6 +8,7 @@
     "pos:trace-reconciliation": "node scripts/pos-trace-reconciliation.mjs",
     "pos:reconciliation-test": "tsx scripts/verify-pos-order-reconciliation.ts",
     "routes:audit": "node scripts/audit-next-routes.mjs",
+    "runtime:audit-production": "node scripts/audit-production-runtime.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

@@ -17,13 +17,14 @@ module.exports = {
     {
       name: 'adisyum-root-app',
       cwd: '.',
-      script: 'node_modules/next/dist/bin/next',
-      args: 'start -p 3000',
+      script: '.next/standalone/server.js',
       exec_mode: 'fork',
       autorestart: true,
       watch: false,
       env: {
         NODE_ENV: 'production',
+        PORT: '3000',
+        HOSTNAME: '127.0.0.1',
         ADISYUM_ROOT_ASSET_PREFIX: '/adisyum-root-assets',
       },
     },

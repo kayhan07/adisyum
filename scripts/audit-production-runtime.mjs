@@ -1,0 +1,121 @@
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const root = process.cwd();
+const failures = [];
+const warnings = [];
+
+function read(file) {
+  const absolute = path.join(root, file);
+  return fs.existsSync(absolute) ? fs.readFileSync(absolute, 'utf8') : '';
+}
+
+function exists(file) {
+  return fs.existsSync(path.join(root, file));
+}
+
+function walk(dir, matcher, matches = []) {
+  const absolute = path.join(root, dir);
+  if (!fs.existsSync(absolute)) return matches;
+  for (const entry of fs.readdirSync(absolute, { withFileTypes: true })) {
+    const relative = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (['node_modules', '.git'].includes(entry.name)) continue;
+      walk(relative, matcher, matches);
+    } else if (matcher(relative.replaceAll('\\', '/'))) {
+      matches.push(relative.replaceAll('\\', '/'));
+    }
+  }
+  return matches;
+}
+
+function run(command, args) {
+  const result = spawnSync(command, args, { cwd: root, stdio: 'pipe', shell: process.platform === 'win32', encoding: 'utf8' });
+  if (result.status !== 0) {
+    failures.push(`${command} ${args.join(' ')} failed: ${result.stderr || result.stdout}`);
+  }
+  return result;
+}
+
+run('npm', ['run', 'routes:audit']);
+
+const nextConfig = read('next.config.mjs') || read('next.config.js');
+const ecosystemConfig = read('ecosystem.config.cjs') || read('ecosystem.config.js');
+const middleware = read('middleware.ts');
+
+if (!/output\s*:\s*['"]standalone['"]/.test(nextConfig)) {
+  failures.push('next.config does not enable output: standalone');
+}
+if (!exists('.next/standalone/server.js')) {
+  failures.push('Missing .next/standalone/server.js');
+}
+if (!exists('.next/standalone/.next/server/app/api/pos/table-orders/route.js')) {
+  failures.push('Missing standalone POS table-orders route artifact');
+}
+if (!/script:\s*['"]\.next\/standalone\/server\.js['"]/.test(ecosystemConfig)) {
+  failures.push('PM2 root app is not configured to run .next/standalone/server.js');
+}
+if (!/PORT:\s*['"]3000['"]/.test(ecosystemConfig)) {
+  failures.push('PM2 root app does not set PORT=3000 for standalone runtime');
+}
+if (!/connect-src 'self' https: ws: wss:/.test(middleware)) {
+  failures.push('CSP connect-src governance changed unexpectedly');
+}
+if (/connect-src[^"]*(127\.0\.0\.1|localhost)/.test(middleware)) {
+  failures.push('CSP allows localhost in production connect-src');
+}
+
+const browserSourceWithDirectBridge = walk('.', (file) => (
+  /\.(ts|tsx|js|jsx)$/.test(file)
+  && !file.startsWith('app/api/')
+  && !file.startsWith('apps/desktop/')
+  && !file.startsWith('tools/')
+  && !file.startsWith('scripts/')
+  && !file.startsWith('deploy/')
+  && !file.startsWith('.next/')
+)).filter((file) => /http:\/\/(127\.0\.0\.1|localhost):3001/.test(read(file)));
+
+if (browserSourceWithDirectBridge.length > 0) {
+  failures.push(`Browser/runtime source contains direct 3001 bridge URLs: ${browserSourceWithDirectBridge.join(', ')}`);
+}
+
+const builtClientChunks = walk('.next/static', (file) => /\.(js|mjs)$/.test(file));
+const builtDirectBridgeChunks = builtClientChunks.filter((file) => /http:\/\/(127\.0\.0\.1|localhost):3001/.test(read(file)));
+if (builtDirectBridgeChunks.length > 0) {
+  failures.push(`Built browser chunks contain direct 3001 bridge URLs: ${builtDirectBridgeChunks.join(', ')}`);
+}
+
+if (!exists('.next/server/middleware-manifest.json')) {
+  failures.push('Missing middleware manifest');
+}
+if (!exists('.next/server/app-paths-manifest.json')) {
+  failures.push('Missing app paths manifest');
+}
+
+const report = {
+  ok: failures.length === 0,
+  checkedAt: new Date().toISOString(),
+  standalone: {
+    enabled: /output\s*:\s*['"]standalone['"]/.test(nextConfig),
+    serverExists: exists('.next/standalone/server.js'),
+    posRouteExists: exists('.next/standalone/.next/server/app/api/pos/table-orders/route.js'),
+  },
+  pm2: {
+    rootScript: '.next/standalone/server.js',
+    configured: /script:\s*['"]\.next\/standalone\/server\.js['"]/.test(ecosystemConfig),
+  },
+  csp: {
+    localhostAllowed: /connect-src[^"]*(127\.0\.0\.1|localhost)/.test(middleware),
+  },
+  browserSourceWithDirectBridge,
+  builtDirectBridgeChunks,
+  warnings,
+  failures,
+};
+
+console.log(JSON.stringify(report, null, 2));
+
+if (failures.length > 0) {
+  process.exitCode = 1;
+}

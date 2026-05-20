@@ -34,6 +34,26 @@ const criticalRoutes = [
   },
 ];
 
+function routeFromSource(source) {
+  if (source.startsWith('app/api/') && source.endsWith('/route.ts')) {
+    return {
+      route: `/${source.replace(/^app\//, '').replace(/\/route\.ts$/, '')}`,
+      manifestKey: `/${source.replace(/^app\//, '').replace(/\.ts$/, '')}`,
+      source,
+      artifact: `.next/server/${source.replace(/\.ts$/, '.js')}`,
+    };
+  }
+  if (source.startsWith('pages/api/')) {
+    return {
+      route: `/${source.replace(/\.(ts|tsx|js|mjs|cjs)$/, '')}`,
+      manifestKey: null,
+      source,
+      artifact: `.next/server/${source.replace(/\.(ts|tsx|js|mjs|cjs)$/, '.js')}`,
+    };
+  }
+  return null;
+}
+
 function readJson(file) {
   const absolute = path.join(root, file);
   if (!fs.existsSync(absolute)) return null;
@@ -66,6 +86,7 @@ function walkFiles(dir, matcher, matches = []) {
 
 const appPathsManifest = readJson('.next/server/app-paths-manifest.json');
 assert(appPathsManifest, 'Missing .next/server/app-paths-manifest.json. Run next build before routes:audit.');
+const middlewareManifest = readJson('.next/server/middleware-manifest.json');
 
 const failures = [];
 const results = [];
@@ -79,6 +100,19 @@ const duplicateTableOrderRoutes = walkFiles('.', (file) => (
   /(^|\/)(app|pages|apps)\/.*api\/pos\/table-orders\/route\.(ts|tsx|js|mjs|cjs)$/.test(file)
   || /(^|\/)(pages|apps)\/.*api\/pos\/table-orders\.(ts|tsx|js|mjs|cjs)$/.test(file)
 ));
+const discoveredApiRoutes = walkFiles('.', (file) => (
+  /^app\/api\/.*\/route\.ts$/.test(file)
+  || /^pages\/api\/.*\.(ts|tsx|js|mjs|cjs)$/.test(file)
+))
+  .map(routeFromSource)
+  .filter(Boolean);
+const routesBySource = new Map();
+
+for (const route of [...discoveredApiRoutes, ...criticalRoutes]) {
+  const previous = routesBySource.get(route.source);
+  routesBySource.set(route.source, { ...previous, ...route, methods: route.methods ?? previous?.methods });
+}
+const auditedRoutes = [...routesBySource.values()];
 
 if (duplicateTableOrderRoutes.length !== 1 || duplicateTableOrderRoutes[0] !== 'app/api/pos/table-orders/route.ts') {
   failures.push(`/api/pos/table-orders: duplicate or misplaced route files detected: ${duplicateTableOrderRoutes.join(', ') || '(none)'}`);
@@ -92,24 +126,31 @@ if (pm2UsesStandalone && !standaloneExists) {
   failures.push('PM2 config appears to use standalone runtime, but .next/standalone is missing');
 }
 
+if (!middlewareManifest) {
+  failures.push('Missing .next/server/middleware-manifest.json. Middleware build output is not auditable.');
+}
+
 if (!standaloneExpected && !pm2UsesStandalone) {
   warnings.push('Standalone output is not enabled; PM2 is expected to run next start against .next.');
 }
 
-for (const route of criticalRoutes) {
+for (const route of auditedRoutes) {
   const sourcePath = path.join(root, route.source);
   const artifactPath = path.join(root, route.artifact);
   const standaloneArtifactPath = path.join(root, '.next/standalone/.next/server', route.artifact.replace('.next/server/', ''));
   const source = fs.existsSync(sourcePath) ? fs.readFileSync(sourcePath, 'utf8') : '';
   const manifestValue = appPathsManifest[route.manifestKey];
-  const methodResults = route.methods.map((method) => ({
+  const routeMethods = route.methods ?? ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].filter((method) => (
+    new RegExp(`export\\s+async\\s+function\\s+${method}\\b|export\\s+function\\s+${method}\\b|export\\s+const\\s+${method}\\b`).test(source)
+  ));
+  const methodResults = routeMethods.map((method) => ({
     method,
     exported: new RegExp(`export\\s+async\\s+function\\s+${method}\\b|export\\s+function\\s+${method}\\b|export\\s+const\\s+${method}\\b`).test(source),
   }));
   const missingMethods = methodResults.filter((item) => !item.exported).map((item) => item.method);
   const ok = Boolean(source)
     && fs.existsSync(artifactPath)
-    && manifestValue === route.artifact.replace('.next/server/', '')
+    && (!route.manifestKey || manifestValue === route.artifact.replace('.next/server/', ''))
     && missingMethods.length === 0;
 
   results.push({
@@ -125,7 +166,7 @@ for (const route of criticalRoutes) {
 
   if (!source) failures.push(`${route.route}: source missing at ${route.source}`);
   if (!fs.existsSync(artifactPath)) failures.push(`${route.route}: build artifact missing at ${route.artifact}`);
-  if (manifestValue !== route.artifact.replace('.next/server/', '')) {
+  if (route.manifestKey && manifestValue !== route.artifact.replace('.next/server/', '')) {
     failures.push(`${route.route}: manifest mismatch, got ${manifestValue ?? '(missing)'}`);
   }
   if (missingMethods.length > 0) failures.push(`${route.route}: missing method exports ${missingMethods.join(', ')}`);

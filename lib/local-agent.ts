@@ -1,6 +1,6 @@
 'use client';
 
-const HTTP_BASES = ['http://127.0.0.1:4891', 'http://localhost:4891', 'http://127.0.0.1:3001', 'http://localhost:3001'];
+const HTTP_BASES = ['http://127.0.0.1:4891', 'http://localhost:4891'];
 const HTTPS_BASES = ['https://127.0.0.1:3443', 'https://localhost:3443'];
 
 type LocalAgentRequestOptions = {
@@ -13,6 +13,24 @@ const PROXY_ROUTES: Record<string, string> = {
   '/printers': '/api/printers/local-agent',
   '/print': '/api/printers/local-agent/print',
 };
+
+declare global {
+  interface Window {
+    adisyumDesktop?: unknown;
+  }
+}
+
+export function isLocalBridgeBrowserRuntimeEnabled() {
+  if (typeof window === 'undefined') return false;
+  if (process.env.NEXT_PUBLIC_ENABLE_LOCAL_BRIDGE === '1') return true;
+  return Boolean(window.adisyumDesktop);
+}
+
+export function getLocalBridgeHealthUrl() {
+  if (!isLocalBridgeBrowserRuntimeEnabled()) return null;
+  const port = process.env.NEXT_PUBLIC_LOCAL_BRIDGE_PORT ?? '4891';
+  return ['http://', '127.0.0.1', ':', port, '/health'].join('');
+}
 
 export function getLocalAgentBaseHint() {
   return `${HTTP_BASES[0]} / ${HTTP_BASES[1]} veya ${HTTPS_BASES[0]} / ${HTTPS_BASES[1]} (proxy: /api/printers/local-agent)`;

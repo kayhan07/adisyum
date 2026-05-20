@@ -617,9 +617,16 @@ build_apps() {
   [[ -s ".next/BUILD_ID" ]] || fail "Root .next/BUILD_ID missing"
   [[ -d ".next/server" ]] || fail "Root .next/server missing"
   [[ -d ".next/static" ]] || fail "Root .next/static missing"
+  [[ -s ".next/standalone/server.js" ]] || fail "Root standalone server missing"
+  mkdir -p ".next/standalone/.next"
+  rm -rf ".next/standalone/.next/static" ".next/standalone/public"
+  cp -a ".next/static" ".next/standalone/.next/static"
+  cp -a "public" ".next/standalone/public"
+  [[ -s ".next/standalone/.next/server/app/api/pos/table-orders/route.js" ]] || fail "Standalone /api/pos/table-orders artifact missing"
   [[ -d ".next/server/app/app" || -f ".next/server/app/app.html" || -f ".next/server/app/app/page.js" ]] || fail "Root /app build artifact missing"
   [[ -d ".next/server/app/system-admin" || -f ".next/server/app/system-admin.html" || -f ".next/server/app/system-admin/page.js" ]] || fail "Root /system-admin build artifact missing"
   run_app npm run routes:audit
+  run_app npm run runtime:audit-production
   log "Root BUILD_ID=$(cat .next/BUILD_ID)"
 
   run_app npm --prefix apps/website run build
@@ -696,7 +703,7 @@ start_pm2_clean() {
 validate_pm2() {
   log "Validating PM2 exact app set and restart stability"
   local names
-  names="$(pm2 jlist | node -e "let s=''; process.stdin.on('data',d=>s+=d); process.stdin.on('end',()=>{const apps=JSON.parse(s||'[]'); const names=apps.map(a=>a.name).sort(); console.log(names.join(',')); if(apps.length!==3) process.exit(2); if(names.join(',')!=='adisyum-root-app,adisyum-website,adisyum-worker') process.exit(3); if(names.includes('adisyum-pos-app')||names.includes('adisyum-system-admin')) process.exit(4); if(apps.some(a=>a.pm2_env.status!=='online')) process.exit(5); if(apps.some(a=>Number(a.pm2_env.restart_time||0)>2||Number(a.pm2_env.unstable_restarts||0)>0)) process.exit(6);})")"
+  names="$(pm2 jlist | node -e "let s=''; process.stdin.on('data',d=>s+=d); process.stdin.on('end',()=>{const apps=JSON.parse(s||'[]'); const names=apps.map(a=>a.name).sort(); console.log(names.join(',')); if(apps.length!==3) process.exit(2); if(names.join(',')!=='adisyum-root-app,adisyum-website,adisyum-worker') process.exit(3); if(names.includes('adisyum-pos-app')||names.includes('adisyum-system-admin')) process.exit(4); if(apps.some(a=>a.pm2_env.status!=='online')) process.exit(5); if(apps.some(a=>Number(a.pm2_env.restart_time||0)>2||Number(a.pm2_env.unstable_restarts||0)>0)) process.exit(6); const root=apps.find(a=>a.name==='adisyum-root-app'); if(!root || !String(root.pm2_env.pm_exec_path||'').endsWith('.next/standalone/server.js')) process.exit(7); if(String(root.pm2_env.cwd||'')==='') process.exit(8);})")"
   [[ "${names}" == "adisyum-root-app,adisyum-website,adisyum-worker" ]] || fail "Unexpected PM2 state: ${names}"
   pm2 list
 }

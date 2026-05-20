@@ -60,7 +60,7 @@ export function getAppOrigin() {
     return window.location.origin;
   }
 
-  return process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3001';
+  return process.env.NEXT_PUBLIC_APP_URL ?? '';
 }
 
 export function buildTableQrUrl(tableId: string, origin = getAppOrigin()) {
