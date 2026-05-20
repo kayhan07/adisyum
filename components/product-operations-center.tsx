@@ -404,9 +404,27 @@ export function ProductOperationsCenter() {
                       <span key={target} className="rounded-full border border-line bg-canvas px-3 py-1 text-xs font-semibold text-muted">{target}</span>
                     ))}
                   </div>
-                  <button type="button" onClick={() => appendAudit('Yayın simülasyonu', `${selectedRow.name} için runtime-safe ürün yayını simüle edildi.`)} className="inline-flex h-11 items-center justify-center rounded-2xl bg-accent text-sm font-semibold text-white">
-                    Yayın Öncesi Kontrol
-                  </button>
+                  <div className="grid gap-2">
+                    <button type="button" onClick={() => appendAudit('Yayın simülasyonu', `${selectedRow.name} için runtime-safe ürün yayını simüle edildi.`)} className="inline-flex h-11 items-center justify-center rounded-2xl bg-accent text-sm font-semibold text-white">
+                      Yayın Öncesi Kontrol
+                    </button>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        ['Arşivle', 'Aktif oturum varsa silme ertelenir, POS kataloğundan çıkarılır.'],
+                        ['Safe Delete', 'Hard delete yerine soft delete talebi ve audit izi oluşur.'],
+                        ['Rollback', 'Önceki immutable revizyon snapshotına dönüş simüle edilir.'],
+                      ].map(([label, detail]) => (
+                        <button
+                          key={label}
+                          type="button"
+                          onClick={() => appendAudit(label, `${selectedRow.name}: ${detail}`)}
+                          className="rounded-2xl border border-line bg-canvas px-3 py-2 text-xs font-semibold text-muted transition hover:border-accent hover:text-ink"
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               ) : null}
             </article>

@@ -47,6 +47,11 @@ const snapshot = createProductRevisionSnapshot(saleProduct);
 assert(snapshot.revision === 3, 'revision snapshot must preserve revision');
 assert(snapshot.posKey === 'POS-AAAA11', 'revision snapshot must preserve posKey');
 
+const rollbackDecision = analyzeProductLifecycleAction(saleProduct, 'rollback');
+assert(rollbackDecision.allowed, 'revisioned product rollback must be allowed');
+const firstRevisionRollback = analyzeProductLifecycleAction({ ...saleProduct, revision: 1 }, 'rollback');
+assert(!firstRevisionRollback.allowed, 'first product revision rollback must be blocked');
+
 const catalog = compileCanonicalPosCatalog([
   {
     id: 'POS-AAAA11',
