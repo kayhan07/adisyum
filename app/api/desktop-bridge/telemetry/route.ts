@@ -5,6 +5,9 @@ import { getSessionFromRequest, forbiddenResponse, unauthorizedResponse } from '
 import { ingestPilotDiagnostics } from '@/lib/pilot-field/field-validation';
 import { isSessionActive } from '@/lib/server/session-guard';
 import { trackUpdateSecurityEvent } from '@/lib/security/security-telemetry';
+import { prisma } from '@/lib/db/prisma';
+import { hashDeviceToken, normalizePrinterInventory, summarizeDeviceCapabilities } from '@/lib/device-runtime';
+import { Prisma } from '@prisma/client';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,7 +15,11 @@ export const dynamic = 'force-dynamic';
 type DesktopBridgeTelemetryPayload = {
   tenantId?: string;
   bridgeId?: string;
+  branchId?: string;
   version?: string;
+  hostname?: string;
+  localIp?: string;
+  deviceToken?: string;
   healthScore?: number;
   websocket?: {
     cloudConnected?: boolean;
@@ -24,6 +31,19 @@ type DesktopBridgeTelemetryPayload = {
     total?: number;
     failedJobs?: number;
     deadJobs?: number;
+    inventory?: Array<{
+      name?: string;
+      driver?: string;
+      status?: string;
+      online?: boolean;
+      connectionType?: string;
+      default?: boolean;
+      paperWidthMm?: number;
+      escpos?: boolean;
+      turkishCharset?: boolean;
+      cut?: boolean;
+      drawerPulse?: boolean;
+    }>;
   };
   sync?: {
     pending?: number;
@@ -99,6 +119,22 @@ export async function POST(request: Request) {
   const printerTotal = boundedMetric(body?.printers?.total);
   const printerOnline = boundedMetric(body?.printers?.online);
   const syncFailed = boundedMetric(body?.sync?.failed) + boundedMetric(body?.sync?.dead);
+  const printerInventory = normalizePrinterInventory((body?.printers?.inventory ?? []).map((printer) => ({
+    name: printer.name ?? '',
+    driver: printer.driver,
+    status: printer.status,
+    online: printer.online,
+    connectionType: printer.connectionType,
+    default: printer.default,
+    paperWidthMm: printer.paperWidthMm,
+    escpos: printer.escpos,
+    turkishCharset: printer.turkishCharset,
+    cut: printer.cut,
+    drawerPulse: printer.drawerPulse,
+  })));
+  const printerCapabilities = summarizeDeviceCapabilities(printerInventory);
+  const deviceId = (body?.bridgeId || `bridge-${session.userId}`).slice(0, 160);
+  const branchId = body?.branchId ?? session.branchId ?? null;
 
   recordTenantRealtimeHealth({
     tenantId,
@@ -178,6 +214,55 @@ export async function POST(request: Request) {
     });
   }
 
+  await prisma.tenantDeviceRegistry.upsert({
+    where: { tenantId_deviceId: { tenantId, deviceId } },
+    update: {
+      branchId,
+      hostname: body?.hostname?.slice(0, 180),
+      localIp: body?.localIp?.slice(0, 80),
+      bridgeVersion: body?.version?.slice(0, 80),
+      deviceTokenHash: hashDeviceToken(body?.deviceToken),
+      installedPrinters: JSON.parse(JSON.stringify(printerInventory)) as Prisma.InputJsonValue,
+      status: 'online',
+      reconnectCount: boundedMetric(body?.websocket?.reconnects) + boundedMetric(body?.devices && 'reconnectAttempts' in body.devices ? body.devices.reconnectAttempts : 0),
+      queueDepth: boundedMetric(body?.sync?.pending),
+      spoolerHealth: syncFailed > 0 || boundedMetric(body?.printers?.failedJobs) > 0 ? 'degraded' : 'healthy',
+      escposCapable: printerCapabilities.escposCapable,
+      fiscalCapable: Boolean(body?.devices && 'inventory' in body.devices && Array.isArray(body.devices.inventory) && body.devices.inventory.some((device) => device.type === 'fiscal')),
+      lastHeartbeatAt: new Date(),
+      metadata: JSON.parse(JSON.stringify({
+        printerCapabilities,
+        resources: body?.resources,
+        release: body?.release,
+        sync: body?.sync,
+        websocket: body?.websocket,
+      })) as Prisma.InputJsonValue,
+    },
+    create: {
+      tenantId,
+      branchId,
+      deviceId,
+      hostname: body?.hostname?.slice(0, 180),
+      localIp: body?.localIp?.slice(0, 80),
+      bridgeVersion: body?.version?.slice(0, 80),
+      deviceTokenHash: hashDeviceToken(body?.deviceToken),
+      installedPrinters: JSON.parse(JSON.stringify(printerInventory)) as Prisma.InputJsonValue,
+      status: 'online',
+      reconnectCount: boundedMetric(body?.websocket?.reconnects) + boundedMetric(body?.devices && 'reconnectAttempts' in body.devices ? body.devices.reconnectAttempts : 0),
+      queueDepth: boundedMetric(body?.sync?.pending),
+      spoolerHealth: syncFailed > 0 || boundedMetric(body?.printers?.failedJobs) > 0 ? 'degraded' : 'healthy',
+      escposCapable: printerCapabilities.escposCapable,
+      fiscalCapable: Boolean(body?.devices && 'inventory' in body.devices && Array.isArray(body.devices.inventory) && body.devices.inventory.some((device) => device.type === 'fiscal')),
+      metadata: JSON.parse(JSON.stringify({
+        printerCapabilities,
+        resources: body?.resources,
+        release: body?.release,
+        sync: body?.sync,
+        websocket: body?.websocket,
+      })) as Prisma.InputJsonValue,
+    },
+  });
+
   const healthScore = Number(body?.healthScore ?? 100);
   const deviceTelemetry = body?.devices && 'inventory' in body.devices
     ? {
@@ -193,6 +278,7 @@ export async function POST(request: Request) {
     message: 'Desktop bridge telemetry ingested',
     context: {
       bridgeId: body?.bridgeId,
+      registryDeviceId: deviceId,
       version: body?.version,
       healthScore,
       resources: body?.resources,

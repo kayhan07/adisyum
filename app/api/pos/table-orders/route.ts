@@ -255,6 +255,7 @@ export async function POST(request: Request) {
         allowDiscount?: boolean;
         allowComplimentary?: boolean;
         happyHourEligible?: boolean;
+        productSnapshot?: Record<string, unknown>;
       };
     } | null;
 
@@ -300,6 +301,27 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
+    if (!product?.posKey || !product.catalogRevision) {
+      logTableOrderEvent('product-runtime-identity-rejected', {
+        traceId,
+        tenantId,
+        tableId,
+        productId: product?.id,
+        productName,
+        posKey: product?.posKey,
+        catalogRevision: product?.catalogRevision,
+        reason: 'missing_posKey_or_catalogRevision',
+      });
+      return NextResponse.json({
+        ok: false,
+        error: 'POS insertion requires canonical posKey and catalogRevision.',
+        code: 'runtime_identity_required',
+        traceId,
+        tableId,
+        productName,
+      }, { status: 400 });
+    }
+
     const requestedProductType = inferProductDomainType({
       name: productName,
       category: product?.category,
@@ -317,22 +339,27 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    const dbProductId = product?.productId || (isUuid(product?.id) ? product?.id : undefined);
-    if (dbProductId) {
-      const persistedProduct = await prisma.product.findFirst({
-        where: { tenantId, id: dbProductId },
-        select: {
-          id: true,
-          productType: true,
-          active: true,
-          lifecycleStatus: true,
-          publishStatus: true,
-          deletedAt: true,
-          name: true,
-          categoryId: true,
-          price: true,
-        },
-      });
+    let dbProductId = product?.productId || (isUuid(product?.id) ? product?.id : undefined);
+    const persistedProduct = await prisma.product.findFirst({
+      where: dbProductId
+        ? { tenantId, id: dbProductId }
+        : { tenantId, posKey: identity.posKey },
+      select: {
+        id: true,
+        posKey: true,
+        productType: true,
+        active: true,
+        lifecycleStatus: true,
+        publishStatus: true,
+        deletedAt: true,
+        revision: true,
+        name: true,
+        categoryId: true,
+        price: true,
+      },
+    });
+    if (persistedProduct) {
+      dbProductId = persistedProduct.id;
       const category = persistedProduct?.categoryId
         ? await prisma.productCategory.findFirst({ where: { tenantId, id: persistedProduct.categoryId }, select: { name: true } })
         : null;
@@ -360,6 +387,26 @@ export async function POST(request: Request) {
           resolvedProductType: persistedProductType,
         }, { status: 400 });
       }
+      if (Number.isFinite(Number(product?.revision)) && Number(product?.revision) !== persistedProduct.revision) {
+        logTableOrderEvent('product-revision-mismatch', {
+          traceId,
+          tenantId,
+          tableId,
+          posKey: identity.posKey,
+          clientRevision: product?.revision,
+          serverRevision: persistedProduct.revision,
+        });
+        return NextResponse.json({
+          ok: false,
+          error: 'Product revision mismatch. Refresh POS catalog before inserting.',
+          code: 'product_revision_mismatch',
+          traceId,
+          tableId,
+          posKey: identity.posKey,
+          clientRevision: product?.revision,
+          serverRevision: persistedProduct.revision,
+        }, { status: 409 });
+      }
     } else if (product?.id) {
       logTableOrderEvent('product-db-lookup-skipped', {
         traceId,
@@ -379,6 +426,7 @@ export async function POST(request: Request) {
       barcode: identity.barcode,
       externalId: identity.externalId,
       revision: product?.revision ?? 1,
+      productType: requestedProductType,
       name: productName,
       price,
       category: product?.category ?? 'mutfak',
@@ -494,6 +542,7 @@ export async function POST(request: Request) {
                 category: productInput.category,
                 printCategory: productInput.printCategory,
                 price: productInput.price,
+                productType: productInput.productType,
                 revision: productInput.revision,
                 catalogRevision: productInput.catalogRevision,
                 sku: productInput.sku,
@@ -557,6 +606,7 @@ export async function POST(request: Request) {
                 category: productInput.category,
                 printCategory: productInput.printCategory,
                 price: productInput.price,
+                productType: productInput.productType,
                 revision: productInput.revision,
                 catalogRevision: productInput.catalogRevision,
                 sku: productInput.sku,

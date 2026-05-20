@@ -400,6 +400,61 @@ model DeviceHeartbeat {
   @@map("device_heartbeats")
 }
 
+model TenantDeviceRegistry {
+  id                 String   @id @default(uuid()) @db.Uuid
+  tenantId           String   @map("tenant_id") @db.VarChar(64)
+  branchId           String?  @map("branch_id") @db.VarChar(64)
+  deviceId           String   @map("device_id") @db.VarChar(160)
+  hostname           String?  @db.VarChar(180)
+  localIp            String?  @map("local_ip") @db.VarChar(80)
+  bridgeVersion      String?  @map("bridge_version") @db.VarChar(80)
+  deviceTokenHash    String?  @map("device_token_hash") @db.VarChar(255)
+  installedPrinters  Json     @default("[]") @map("installed_printers")
+  status             String   @default("offline") @db.VarChar(32)
+  reconnectCount     Int      @default(0) @map("reconnect_count")
+  queueDepth         Int      @default(0) @map("queue_depth")
+  spoolerHealth      String   @default("unknown") @map("spooler_health") @db.VarChar(32)
+  escposCapable      Boolean  @default(false) @map("escpos_capable")
+  fiscalCapable      Boolean  @default(false) @map("fiscal_capable")
+  revokedAt          DateTime? @map("revoked_at")
+  lastHeartbeatAt    DateTime @default(now()) @map("last_heartbeat_at")
+  metadata           Json     @default("{}")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, deviceId], name: "tenantId_deviceId", map: "tenant_device_registry_tenant_id_device_id_key")
+  @@index([tenantId, branchId])
+  @@index([tenantId, status])
+  @@index([tenantId, lastHeartbeatAt])
+  @@map("tenant_device_registry")
+}
+
+model TenantPrintJob {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.VarChar(64)
+  branchId        String?  @map("branch_id") @db.VarChar(64)
+  targetDeviceId  String?  @map("target_device_id") @db.VarChar(160)
+  printerName     String   @map("printer_name") @db.VarChar(180)
+  printerRole     String   @default("cashier") @map("printer_role") @db.VarChar(80)
+  payload         Json
+  source          String   @default("cloud") @db.VarChar(80)
+  status          String   @default("pending") @db.VarChar(32)
+  mutationId      String   @map("mutation_id") @db.VarChar(160)
+  attempts        Int      @default(0)
+  lastError       String?  @map("last_error")
+  lockedBy        String?  @map("locked_by") @db.VarChar(160)
+  lockedAt        DateTime? @map("locked_at")
+  printedAt       DateTime? @map("printed_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, mutationId], name: "tenantId_mutationId", map: "tenant_print_jobs_tenant_id_mutation_id_key")
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, targetDeviceId, status])
+  @@index([tenantId, branchId])
+  @@map("tenant_print_jobs")
+}
+
 model OperationalMetricBucket {
   id             String   @id @default(uuid()) @db.Uuid
   tenantId       String   @map("tenant_id") @db.VarChar(64)

@@ -59,4 +59,13 @@ assert.equal(catalogSafeModeReason(catalog), null);
 const emptyCatalog = compileCanonicalPosCatalog([], { tenantId: 'ABN-48291' });
 assert.equal(catalogSafeModeReason(emptyCatalog), 'empty_catalog');
 
+const hardened = compileCanonicalPosCatalog([
+  ...items,
+  { ...items[0], id: 'duplicate', productId: 'duplicate-product' },
+  { ...items[0], id: 'negative', productId: 'negative-product', posKey: createPosKey('negative'), price: -1 },
+  { ...items[0], id: 'draft', productId: 'draft-product', posKey: createPosKey('draft'), lifecycleStatus: 'draft', publishStatus: 'draft' },
+], { tenantId: 'ABN-48291' });
+assert.equal(hardened.itemCount, 2);
+assert.equal(hardened.observability.invalidItemCount, 3);
+
 console.log('canonical pos catalog valid');

@@ -99,7 +99,25 @@ export function compileCanonicalPosCatalog(products: PosCatalogProduct[], option
   const startedAt = Date.now();
   const channel = options.channel ?? 'pos';
   const compiledAt = options.compiledAt ?? new Date().toISOString();
-  const validProducts = products.filter((product) => isSellableProductType(product.productType) && isRuntimeVisibleProduct(product));
+  const rejected = new Set<PosCatalogProduct>();
+  const validProducts = products
+    .filter((product) => {
+      const valid = isSellableProductType(product.productType)
+        && isRuntimeVisibleProduct(product)
+        && Number.isFinite(product.price)
+        && product.price >= 0
+        && Number.isFinite(product.revision)
+        && product.revision >= 1
+        && Boolean(product.posKey);
+      if (!valid) rejected.add(product);
+      return valid;
+    })
+    .filter((product, index, all) => {
+      const firstIndex = all.findIndex((candidate) => candidate.posKey === product.posKey);
+      const keep = firstIndex === index;
+      if (!keep) rejected.add(product);
+      return keep;
+    });
   const catalogRevision = createCatalogRevision(validProducts, options);
   const items = validProducts.map((product): CanonicalPosCatalogItem => {
     const identity = resolveProductIdentity({

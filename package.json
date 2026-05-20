@@ -18,6 +18,7 @@
     "products:identity-test": "tsx scripts/verify-product-identity.ts",
     "products:catalog-test": "tsx scripts/verify-canonical-pos-catalog.ts",
     "products:lifecycle-test": "tsx scripts/verify-product-lifecycle-governance.ts",
+    "devices:runtime-test": "tsx scripts/verify-device-runtime.ts",
     "products:repair-domain-boundaries": "tsx scripts/repair-product-domain-boundaries.ts",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
