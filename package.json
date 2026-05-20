@@ -6,6 +6,7 @@
     "dev": "next dev",
     "pos:debug-click-pipeline": "node scripts/pos-debug-click-pipeline.mjs",
     "pos:trace-reconciliation": "node scripts/pos-trace-reconciliation.mjs",
+    "pos:reconciliation-test": "tsx scripts/verify-pos-order-reconciliation.ts",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

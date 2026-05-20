@@ -49,6 +49,7 @@ import { createAutoProductMapping, getProductMapping, upsertProductMapping, vali
 import { queueOfflinePaymentSnapshot, syncOfflineOrders } from '@/lib/offline-sync-store';
 import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
 import { replaceAuthoritativeOrdersByTable } from '@/lib/client/authoritative-table-orders';
+import { mergeAuthoritativeOrders, orderRevision, type PosOrderReconciliationSource } from '@/lib/pos-order-reconciliation';
 import { fetchLocalAgentJson } from '@/lib/local-agent';
 import { printCustomerReceipt, printKitchenTicket, printBarTicket } from '@/lib/receipt-formatter';
 import { recordOrderForSmartStock } from '@/lib/smart-recipe-stock-engine';
@@ -117,7 +118,6 @@ type OrderLine = {
   happyHourEligible?: boolean;
   productSnapshot?: Record<string, unknown>;
 };
-type OrderReconciliationSource = 'initial-hydration' | 'focus' | 'interval' | 'mutation-result';
 type TableStatus = 'available' | 'occupied' | 'reserved';
 type PosTable = {
   id: string;
@@ -161,7 +161,6 @@ const categories: Category[] = [
 const VAT_RATE = 0.1;
 const RECENT_ACCOUNT_KEY = 'adisyon-recent-charge-accounts';
 const EMPTY_ORDER_LINES: OrderLine[] = [];
-const ACTIVE_TABLE_EMPTY_PAYLOAD_GRACE_MS = 15_000;
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat('tr-TR', {
@@ -291,109 +290,6 @@ function buildOptimisticOrderLine(input: {
     happyHourEligible: input.happyHourEligible ?? false,
     productSnapshot: input.product.productSnapshot,
   } satisfies OrderLine;
-}
-
-function lineRevision(line: OrderLine) {
-  return Math.max(Number(line.orderRevision ?? 0), Number(line.updatedAtMs ?? 0));
-}
-
-function orderRevision(lines: OrderLine[]) {
-  return lines.reduce((max, line) => Math.max(max, lineRevision(line)), 0);
-}
-
-function hasOptimisticLines(lines: OrderLine[]) {
-  return lines.some((line) => line.id.startsWith('optimistic-'));
-}
-
-function mergeOptimisticLines(localLines: OrderLine[], authoritativeLines: OrderLine[]) {
-  const authoritativeMutationIds = new Set(
-    authoritativeLines
-      .map((line) => line.clientMutationId)
-      .filter((value): value is string => Boolean(value)),
-  );
-  const authoritativeProductKeys = new Set(
-    authoritativeLines.map((line) => `${line.productId ?? ''}:${line.name}:${line.note}:${line.price}:${line.qty}`),
-  );
-  const survivingOptimisticLines = localLines.filter((line) => {
-    if (!line.id.startsWith('optimistic-')) return false;
-    if (line.clientMutationId && authoritativeMutationIds.has(line.clientMutationId)) return false;
-    const productKey = `${line.productId ?? ''}:${line.name}:${line.note}:${line.price}:${line.qty}`;
-    return !authoritativeProductKeys.has(productKey);
-  });
-
-  return [...authoritativeLines, ...survivingOptimisticLines];
-}
-
-function mergeAuthoritativeOrders(input: {
-  current: Record<string, OrderLine[]>;
-  incoming: Record<string, OrderLine[]>;
-  activeTableId?: string | null;
-  source: OrderReconciliationSource;
-  pendingMutation?: { tableId: string; at: number; source: string } | null;
-  now: number;
-}) {
-  const next: Record<string, OrderLine[]> = { ...input.current };
-  const tableIds = new Set([...Object.keys(input.current), ...Object.keys(input.incoming)]);
-  const decisions: Array<Record<string, unknown>> = [];
-
-  tableIds.forEach((tableId) => {
-    const localLines = input.current[tableId] ?? EMPTY_ORDER_LINES;
-    const incomingLines = input.incoming[tableId] ?? EMPTY_ORDER_LINES;
-    const localCount = localLines.length;
-    const incomingCount = incomingLines.length;
-    const localRevision = orderRevision(localLines);
-    const incomingRevision = orderRevision(incomingLines);
-    const active = tableId === input.activeTableId;
-    const pendingForTable = input.pendingMutation?.tableId === tableId && input.now - input.pendingMutation.at < ACTIVE_TABLE_EMPTY_PAYLOAD_GRACE_MS;
-    const localHasOptimistic = hasOptimisticLines(localLines);
-
-    if (incomingCount === 0 && localCount > 0 && (active || pendingForTable || localHasOptimistic)) {
-      next[tableId] = localLines;
-      decisions.push({
-        tableId,
-        action: 'preserve-local-nonempty',
-        source: input.source,
-        localCount,
-        incomingCount,
-        localRevision,
-        incomingRevision,
-        active,
-        pendingForTable,
-        localHasOptimistic,
-      });
-      return;
-    }
-
-    if (incomingCount > 0 && localHasOptimistic) {
-      next[tableId] = mergeOptimisticLines(localLines, incomingLines);
-      decisions.push({
-        tableId,
-        action: 'merge-authoritative-with-optimistic',
-        source: input.source,
-        localCount,
-        incomingCount,
-        mergedCount: next[tableId]?.length ?? 0,
-        localRevision,
-        incomingRevision,
-      });
-      return;
-    }
-
-    if (incomingCount > 0 || localCount === 0 || !active) {
-      next[tableId] = incomingLines;
-      decisions.push({
-        tableId,
-        action: 'accept-authoritative',
-        source: input.source,
-        localCount,
-        incomingCount,
-        localRevision,
-        incomingRevision,
-      });
-    }
-  });
-
-  return { orders: next, decisions };
 }
 
 async function readJsonResponse(response: Response) {
@@ -1184,7 +1080,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const reconcileAuthoritativeOrders = useCallback((
     current: Record<string, OrderLine[]>,
     incoming: Record<string, OrderLine[]>,
-    source: OrderReconciliationSource,
+    source: PosOrderReconciliationSource,
   ) => {
     const activeTableId = currentTable?.id ?? selectedTableId;
     const result = mergeAuthoritativeOrders({
