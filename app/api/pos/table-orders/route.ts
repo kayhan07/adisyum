@@ -301,27 +301,6 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    if (!product?.posKey || !product.catalogRevision) {
-      logTableOrderEvent('product-runtime-identity-rejected', {
-        traceId,
-        tenantId,
-        tableId,
-        productId: product?.id,
-        productName,
-        posKey: product?.posKey,
-        catalogRevision: product?.catalogRevision,
-        reason: 'missing_posKey_or_catalogRevision',
-      });
-      return NextResponse.json({
-        ok: false,
-        error: 'POS insertion requires canonical posKey and catalogRevision.',
-        code: 'runtime_identity_required',
-        traceId,
-        tableId,
-        productName,
-      }, { status: 400 });
-    }
-
     const requestedProductType = inferProductDomainType({
       name: productName,
       category: product?.category,
@@ -337,6 +316,24 @@ export async function POST(request: Request) {
         productName,
         productType: requestedProductType,
       }, { status: 400 });
+    }
+
+    const clientCatalogRevision = product?.catalogRevision?.trim();
+    const catalogRevision = clientCatalogRevision || `CAT-SERVER-REPAIRED-${identity.posKey}`;
+    const repairedRuntimeIdentity = !product?.posKey || !clientCatalogRevision;
+    if (repairedRuntimeIdentity) {
+      logTableOrderEvent('product-runtime-identity-repaired', {
+        traceId,
+        tenantId,
+        tableId,
+        productId: product?.id,
+        productName,
+        requestedPosKey: product?.posKey,
+        resolvedPosKey: identity.posKey,
+        requestedCatalogRevision: product?.catalogRevision,
+        catalogRevision,
+        reason: 'legacy_or_unversioned_pos_payload',
+      });
     }
 
     let dbProductId = product?.productId || (isUuid(product?.id) ? product?.id : undefined);
@@ -387,7 +384,7 @@ export async function POST(request: Request) {
           resolvedProductType: persistedProductType,
         }, { status: 400 });
       }
-      if (Number.isFinite(Number(product?.revision)) && Number(product?.revision) !== persistedProduct.revision) {
+      if (clientCatalogRevision && Number.isFinite(Number(product?.revision)) && Number(product?.revision) !== persistedProduct.revision) {
         logTableOrderEvent('product-revision-mismatch', {
           traceId,
           tenantId,
@@ -420,12 +417,13 @@ export async function POST(request: Request) {
     const productInput = {
       id: dbProductId,
       posKey: identity.posKey,
-      catalogRevision: product?.catalogRevision,
+      catalogRevision,
       legacyKey: identity.legacyKey,
       sku: identity.sku,
       barcode: identity.barcode,
       externalId: identity.externalId,
-      revision: product?.revision ?? 1,
+      revision: persistedProduct?.revision ?? product?.revision ?? 1,
+      runtimeIdentityMode: repairedRuntimeIdentity ? 'server-repaired' : 'catalog',
       productType: requestedProductType,
       name: productName,
       price,
@@ -535,6 +533,7 @@ export async function POST(request: Request) {
               barcode: productInput.barcode,
               externalId: productInput.externalId,
               productRevision: productInput.revision,
+              runtimeIdentityMode: productInput.runtimeIdentityMode,
               productSnapshot: {
                 productId: productInput.id || undefined,
                 posKey: productInput.posKey,
@@ -549,6 +548,7 @@ export async function POST(request: Request) {
                 barcode: productInput.barcode,
                 externalId: productInput.externalId,
                 legacyKey: productInput.legacyKey,
+                runtimeIdentityMode: productInput.runtimeIdentityMode,
               },
               category: productInput.category,
               printCategory: productInput.printCategory,
@@ -599,6 +599,7 @@ export async function POST(request: Request) {
               barcode: productInput.barcode,
               externalId: productInput.externalId,
               productRevision: productInput.revision,
+              runtimeIdentityMode: productInput.runtimeIdentityMode,
               productSnapshot: {
                 productId: productInput.id || undefined,
                 posKey: productInput.posKey,
@@ -613,6 +614,7 @@ export async function POST(request: Request) {
                 barcode: productInput.barcode,
                 externalId: productInput.externalId,
                 legacyKey: productInput.legacyKey,
+                runtimeIdentityMode: productInput.runtimeIdentityMode,
               },
               category: productInput.category,
               printCategory: productInput.printCategory,
@@ -711,7 +713,7 @@ export async function POST(request: Request) {
         mutationId,
         productId: product?.id,
         posKey: identity.posKey,
-        catalogRevision: product?.catalogRevision,
+        catalogRevision,
         quantityToAdd,
         lineCount: updatedLineCount,
       },
