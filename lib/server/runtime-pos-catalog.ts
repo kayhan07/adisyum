@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { compileCanonicalPosCatalog, type CanonicalPosCatalog, type CatalogChannel } from '@/lib/canonical-pos-catalog';
 import { prisma } from '@/lib/db/prisma';
 import { resolvePosFacingProductDomainType } from '@/lib/product-domain';
+import { validateProductDomainGraph } from '@/lib/product-domain-graph';
 import { resolveProductIdentity } from '@/lib/product-identity';
 
 export const RUNTIME_POS_CATALOG_KEY = 'runtime:pos-catalog';
@@ -9,6 +10,18 @@ export const RUNTIME_POS_CATALOG_KEY = 'runtime:pos-catalog';
 export function readRuntimeCatalogChannel(value: string | null | undefined): CatalogChannel {
   if (value === 'qr' || value === 'kiosk' || value === 'delivery' || value === 'waiter_tablet' || value === 'mobile_pos') return value;
   return 'pos';
+}
+
+function resolveBranchCategoryVisibility(value: Prisma.JsonValue | undefined, branchId?: string) {
+  if (!branchId || !value || typeof value !== 'object' || Array.isArray(value)) return true;
+  const visibility = value as Record<string, unknown>;
+  const branchValue = visibility[branchId];
+  if (typeof branchValue === 'boolean') return branchValue;
+  if (branchValue && typeof branchValue === 'object' && !Array.isArray(branchValue)) {
+    const enabled = (branchValue as Record<string, unknown>).enabled;
+    if (typeof enabled === 'boolean') return enabled;
+  }
+  return true;
 }
 
 export async function compileTenantPosCatalog(tenantId: string, branchId?: string, channel: CatalogChannel = 'pos'): Promise<CanonicalPosCatalog> {
@@ -48,12 +61,16 @@ export async function compileTenantPosCatalog(tenantId: string, branchId?: strin
 
   const categoryIds = [...new Set(products.map((product) => product.categoryId).filter((id): id is string => Boolean(id)))];
   const categories = categoryIds.length > 0
-    ? await prisma.productCategory.findMany({ where: { tenantId, id: { in: categoryIds } }, select: { id: true, name: true } })
+    ? await prisma.productCategory.findMany({
+        where: { tenantId, id: { in: categoryIds }, active: true, deletedAt: null },
+        select: { id: true, name: true, allowedProductTypes: true, visibleInPos: true, visibleInInventory: true, visibleInProduction: true, branchVisibility: true },
+      })
     : [];
-  const categoryById = new Map(categories.map((category) => [category.id, category.name]));
+  const categoryById = new Map(categories.map((category) => [category.id, category]));
 
-  const items = products.map((product) => {
-    const category = categoryById.get(product.categoryId ?? '') ?? 'Mutfak';
+  const items = products.flatMap((product) => {
+    const categoryRow = categoryById.get(product.categoryId ?? '');
+    const category = categoryRow?.name ?? 'Mutfak';
     const identity = resolveProductIdentity({
       id: product.id,
       posKey: product.posKey,
@@ -71,6 +88,35 @@ export async function compileTenantPosCatalog(tenantId: string, branchId?: strin
       productType: product.productType,
       price: product.price.toString(),
     });
+    const graph = validateProductDomainGraph({
+      id: product.id,
+      name: product.name,
+      category,
+      categoryId: product.categoryId,
+      categoryAllowedProductTypes: categoryRow?.allowedProductTypes,
+      productType,
+      price: product.price.toString(),
+      posKey: identity.posKey,
+      lifecycleStatus: product.lifecycleStatus,
+      publishStatus: product.publishStatus,
+      active: true,
+      deletedAt: product.deletedAt,
+      branchId,
+      branchVisible: resolveBranchCategoryVisibility(categoryRow?.branchVisibility, branchId),
+    });
+    if (!graph.runtimeVisible) {
+      console.error('[runtime-pos-catalog] product rejected by domain graph', {
+        tenantId,
+        branchId,
+        productId: product.id,
+        posKey: identity.posKey,
+        name: product.name,
+        category,
+        productType,
+        issues: graph.issues,
+      });
+      return [];
+    }
     return {
       id: identity.posKey,
       productId: product.id,

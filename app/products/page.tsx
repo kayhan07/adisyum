@@ -25,6 +25,14 @@ import {
 } from '@/lib/sale-product-catalog';
 import { isSellableProductType, type SellableProductDomainType } from '@/lib/product-domain';
 import {
+  coerceCategoryForProductType,
+  getCategoryDomainDefinition,
+  getCategoryOptionsForProductType,
+  getDefaultCategoryForProductType,
+  validateProductDomainGraph,
+  type ExtendedProductDomainType,
+} from '@/lib/product-domain-graph';
+import {
   loadStoredRawIngredients,
   saveStoredRawIngredients,
 } from '@/lib/raw-ingredient-store';
@@ -94,7 +102,7 @@ import {
 import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
 
 const branchId = 'mrk';
-const DEFAULT_PRODUCT_CATEGORIES = ['Kahve', 'Soğuk İçecek', 'Alkol', 'Burger', 'Et', 'Balık', 'Tavuk', 'Tatlı', 'Salata', 'Diğer'] as const;
+const DEFAULT_PRODUCT_CATEGORIES = ['Satış Ürünleri', 'İçecekler', 'Combo', 'Hammaddeler', 'Yarı Mamüller', 'Modifier', 'Varyant', 'Kahve', 'Soğuk İçecek', 'Alkol', 'Burger', 'Et', 'Balık', 'Tavuk', 'Tatlı', 'Salata', 'Diğer'] as const;
 const RAW_STOCK_COUNT_STORAGE_KEY = 'adisyon-raw-stock-counts';
 
 type ProductWindow = 'raw' | 'sale' | 'quick' | 'bar' | 'recipe' | 'warehouse';
@@ -422,6 +430,15 @@ function inferCategory(productName: string) {
   if (lower.includes('salata')) return 'Salata';
   if (lower.includes('su') || lower.includes('meyve')) return 'Soğuk İçecek';
   return 'Diğer';
+}
+
+function productTypeForCreateItemType(itemType: CreateItemType): ExtendedProductDomainType {
+  if (itemType === 'raw') return 'stock_item';
+  if (itemType === 'semi') return 'semi_product';
+  if (itemType === 'combo') return 'combo_product';
+  if (itemType === 'modifier') return 'modifier';
+  if (itemType === 'variant') return 'variant';
+  return 'sale_product';
 }
 
 function inferDirectStockDefault(productName: string, category: string) {
@@ -1071,6 +1088,24 @@ export default function ProductsPage() {
   const deferredBarActionProductQuery = useDeferredValue(barActionProductQuery);
   const quickCreateEnabled = activeWindow === 'raw';
   const activeCreationOption = productCreationOptions.find((option) => option.id === newItemDraft.itemType) ?? productCreationOptions[1];
+  const activeDraftProductType = productTypeForCreateItemType(newItemDraft.itemType);
+  const activeDraftCategoryOptions = useMemo(
+    () => getCategoryOptionsForProductType(categories, activeDraftProductType),
+    [activeDraftProductType, categories],
+  );
+  const selectedDraftCategoryDefinition = useMemo(
+    () => getCategoryDomainDefinition(newItemDraft.category),
+    [newItemDraft.category],
+  );
+  const selectedDraftDomainValidation = useMemo(
+    () => validateProductDomainGraph({
+      name: newItemDraft.name || 'Taslak',
+      category: newItemDraft.category,
+      productType: activeDraftProductType,
+      price: newItemDraft.salePrice,
+    }),
+    [activeDraftProductType, newItemDraft.category, newItemDraft.name, newItemDraft.salePrice],
+  );
   const importWindow: 'raw' = 'raw';
   const deferredQuickCreateText = useDeferredValue(quickCreateEnabled ? bulkDrafts[importWindow] : '');
 
@@ -2221,7 +2256,16 @@ export default function ProductsPage() {
   }, [suggestedReturnQty, transferIsReturnToMain, transferIngredientId]);
 
   function updateNewItemDraft<K extends keyof NewItemDraft>(field: K, value: NewItemDraft[K]) {
-    setNewItemDraft((current) => ({ ...current, [field]: value }));
+    setNewItemDraft((current) => {
+      const next = { ...current, [field]: value };
+      const nextProductType = field === 'itemType'
+        ? productTypeForCreateItemType(value as CreateItemType)
+        : productTypeForCreateItemType(next.itemType);
+      if (field === 'itemType' || field === 'category') {
+        next.category = coerceCategoryForProductType(next.category, nextProductType, categories);
+      }
+      return next;
+    });
   }
 
   function openProductCreationStudio(type: CreateItemType) {
@@ -2234,7 +2278,12 @@ export default function ProductsPage() {
 
   function updateSelectedProduct(patch: Partial<SaleProductCard>) {
     if (!selectedProduct) return;
-    setSaleProducts((current) => current.map((product) => product.id === selectedProduct.id ? { ...product, ...patch } : product));
+    setSaleProducts((current) => current.map((product) => {
+      if (product.id !== selectedProduct.id) return product;
+      const next = { ...product, ...patch };
+      next.category = coerceCategoryForProductType(next.category, next.productType, categories);
+      return next;
+    }));
   }
 
   function refreshProductMappings() {
@@ -2728,6 +2777,14 @@ export default function ProductsPage() {
   function addCategory() {
     const trimmed = newCategoryName.trim();
     if (!trimmed) return;
+    const allowed = getCategoryDomainDefinition(trimmed).allowedProductTypes;
+    if (!allowed.includes(activeDraftProductType)) {
+      setSavedNotes((current) => [
+        `${trimmed} kategorisi ${activeDraftProductType} için uygun değil. Bu akış için ${getDefaultCategoryForProductType(activeDraftProductType)} kullanın.`,
+        ...current,
+      ]);
+      return;
+    }
     if (categories.some((category) => category.toLocaleLowerCase('tr') === trimmed.toLocaleLowerCase('tr'))) {
       setSavedNotes((current) => [`${trimmed} kategorisi zaten mevcut.`, ...current]);
       return;
@@ -2767,15 +2824,8 @@ export default function ProductsPage() {
   }
 
   function resetNewItemDraft(nextType: CreateItemType = 'sale') {
-    const defaultCategory = nextType === 'raw'
-      ? 'Hammadde / Stok'
-      : nextType === 'semi'
-        ? 'Yarı Mamül'
-        : nextType === 'modifier'
-          ? 'Modifier'
-          : nextType === 'variant'
-            ? 'Varyant'
-            : categories[0] ?? 'Diğer';
+    const nextProductType = productTypeForCreateItemType(nextType);
+    const defaultCategory = coerceCategoryForProductType(getDefaultCategoryForProductType(nextProductType), nextProductType, categories);
     setNewItemDraft({
       itemType: nextType,
       name: '',
@@ -3074,6 +3124,22 @@ export default function ProductsPage() {
 
   function saveNewItem() {
     if (!newItemDraft.name.trim()) return;
+    const draftProductType = productTypeForCreateItemType(newItemDraft.itemType);
+    const coercedCategory = coerceCategoryForProductType(newItemDraft.category, draftProductType, categories);
+    const validation = validateProductDomainGraph({
+      name: newItemDraft.name.trim(),
+      category: coercedCategory,
+      productType: draftProductType,
+      price: newItemDraft.salePrice,
+    });
+    if (!validation.ok) {
+      setSavedNotes((current) => [
+        `${newItemDraft.name.trim()} oluşturulmadı: ${validation.issues.map((issue) => issue.message).join(' ')}`,
+        ...current,
+      ]);
+      setNewItemDraft((current) => ({ ...current, category: coercedCategory }));
+      return;
+    }
 
     if (newItemDraft.itemType === 'raw' || newItemDraft.itemType === 'semi') {
       const rawId = `raw-${Date.now()}`;
@@ -3085,7 +3151,7 @@ export default function ProductsPage() {
         minimumQuantity: newItemDraft.minimumQuantity,
         currentQuantity: newItemDraft.currentQuantity,
         vatRate: newItemDraft.vatRate,
-        productType: newItemDraft.itemType === 'semi' ? 'semi_product' : 'stock_item',
+        productType: draftProductType === 'semi_product' ? 'semi_product' : 'stock_item',
       };
       setCreatedRawIngredients((current) => [createdRaw, ...current]);
       setNewRecipeIngredientId(rawId);
@@ -3117,13 +3183,13 @@ export default function ProductsPage() {
     const createdProduct: SaleProductCard = {
       id: nextId,
       name: newItemDraft.name.trim(),
-      category: newItemDraft.category,
-      productType: newItemDraft.itemType === 'combo' ? 'combo_product' : 'sale_product',
+      category: coercedCategory,
+      productType: draftProductType === 'combo_product' ? 'combo_product' : 'sale_product',
       salesUnit: newItemDraft.salesUnit,
       currentStock: '0',
       lastCountedAt: undefined,
-      stockProcurementType: isGlassUnit || inferDirectStockDefault(newItemDraft.name, newItemDraft.category) ? 'direct' : 'recipe',
-      barStockMode: isGlassUnit || inferBarBottleGlassDefault(newItemDraft.name, newItemDraft.category) ? 'bottle-glass' : 'none',
+      stockProcurementType: isGlassUnit || inferDirectStockDefault(newItemDraft.name, coercedCategory) ? 'direct' : 'recipe',
+      barStockMode: isGlassUnit || inferBarBottleGlassDefault(newItemDraft.name, coercedCategory) ? 'bottle-glass' : 'none',
       glassesPerBottle: '6',
       bottleVolumeCl: '70',
       portionVolumeCl: '5',
@@ -3155,6 +3221,7 @@ export default function ProductsPage() {
       source: 'created',
     };
     setSaleProducts((current) => [createdProduct, ...current]);
+    setCategories((current) => current.some((category) => category.toLocaleLowerCase('tr-TR') === coercedCategory.toLocaleLowerCase('tr-TR')) ? current : [...current, coercedCategory]);
     setSelectedProductId(nextId);
     setSavedNotes((current) => [`${createdProduct.name} satış ürünü oluşturuldu. Şimdi reçetesini ekleyebilirsin.`, ...current]);
     changeActiveWindow('sale');
@@ -3165,6 +3232,21 @@ export default function ProductsPage() {
   function saveQuickSaleItem() {
     const trimmedName = quickSaleDraft.name.trim();
     if (!trimmedName) return;
+    const quickCategory = coerceCategoryForProductType(quickSaleDraft.category, 'sale_product', categories);
+    const quickValidation = validateProductDomainGraph({
+      name: trimmedName,
+      category: quickCategory,
+      productType: 'sale_product',
+      price: quickSaleDraft.salePrice,
+    });
+    if (!quickValidation.ok) {
+      setSavedNotes((current) => [
+        `${trimmedName} eklenmedi: ${quickValidation.issues.map((issue) => issue.message).join(' ')}`,
+        ...current,
+      ]);
+      setQuickSaleDraft((current) => ({ ...current, category: quickCategory }));
+      return;
+    }
 
     const nameExists = saleProducts.some(
       (product) => product.name.trim().toLocaleLowerCase('tr-TR') === trimmedName.toLocaleLowerCase('tr-TR'),
@@ -3180,13 +3262,13 @@ export default function ProductsPage() {
     const createdProduct: SaleProductCard = {
       id: nextId,
       name: trimmedName,
-      category: quickSaleDraft.category,
+      category: quickCategory,
       productType: 'sale_product',
       salesUnit: quickSaleDraft.salesUnit,
       currentStock: '0',
       lastCountedAt: undefined,
-      stockProcurementType: isGlassUnit || inferDirectStockDefault(trimmedName, quickSaleDraft.category) ? 'direct' : 'recipe',
-      barStockMode: isGlassUnit || inferBarBottleGlassDefault(trimmedName, quickSaleDraft.category) ? 'bottle-glass' : 'none',
+      stockProcurementType: isGlassUnit || inferDirectStockDefault(trimmedName, quickCategory) ? 'direct' : 'recipe',
+      barStockMode: isGlassUnit || inferBarBottleGlassDefault(trimmedName, quickCategory) ? 'bottle-glass' : 'none',
       glassesPerBottle: '6',
       bottleVolumeCl: '70',
       portionVolumeCl: '5',
@@ -3221,10 +3303,10 @@ export default function ProductsPage() {
     setSaleProducts((current) => [createdProduct, ...current]);
     setSelectedProductId(nextId);
     setCategories((current) => {
-      if (current.some((category) => category.toLocaleLowerCase('tr-TR') === quickSaleDraft.category.toLocaleLowerCase('tr-TR'))) {
+      if (current.some((category) => category.toLocaleLowerCase('tr-TR') === quickCategory.toLocaleLowerCase('tr-TR'))) {
         return current;
       }
-      return [...current, quickSaleDraft.category];
+      return [...current, quickCategory];
     });
     setQuickSaleDraft((current) => ({ ...current, name: '', salePrice: '0' }));
     setSavedNotes((current) => [`${trimmedName} hızlı ekleme ile satış ürünlerine eklendi.`, ...current]);
@@ -3638,7 +3720,7 @@ export default function ProductsPage() {
           <ProductCardForm
             eyebrow="Product Creation Studio"
             title={`${activeCreationOption.title} oluştur`}
-            description={activeCreationOption.subtitle}
+            description={`${activeCreationOption.subtitle} Kategori: ${selectedDraftCategoryDefinition.name}; izinli tipler: ${selectedDraftCategoryDefinition.allowedProductTypes.join(', ')}${selectedDraftDomainValidation.ok ? '' : ' — bu seçim düzeltilmeli.'}`}
             onClose={() => setShowNewItemForm(false)}
             itemType={newItemDraft.itemType}
             onItemTypeChange={(value) => resetNewItemDraft(value)}
@@ -3647,7 +3729,7 @@ export default function ProductsPage() {
             onNameChange={(value) => updateNewItemDraft('name', value)}
             category={newItemDraft.category}
             onCategoryChange={(value) => updateNewItemDraft('category', value)}
-            categoryOptions={[...categories]}
+            categoryOptions={activeDraftCategoryOptions}
             saleUnit={newItemDraft.salesUnit}
             onSaleUnitChange={(value) => updateNewItemDraft('salesUnit', value)}
             salePrice={newItemDraft.salePrice}
@@ -3668,7 +3750,7 @@ export default function ProductsPage() {
             newCategoryName={newCategoryName}
             onNewCategoryNameChange={setNewCategoryName}
             categoryCount={categories.length}
-            onCreateCategory={newItemDraft.itemType === 'sale' || newItemDraft.itemType === 'combo' ? addCategory : undefined}
+            onCreateCategory={addCategory}
             submitLabel={`${activeCreationOption.title} oluştur`}
             onSubmit={saveNewItem}
           />

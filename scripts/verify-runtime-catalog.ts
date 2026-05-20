@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { createRequire } from 'node:module';
 import { compileTenantPosCatalog } from '../lib/server/runtime-pos-catalog';
 import { isSellableProductType } from '../lib/product-domain';
+import { validateProductDomainGraph } from '../lib/product-domain-graph';
 
 const require = createRequire(import.meta.url);
 const { loadEnvConfig } = require('@next/env') as typeof import('@next/env');
@@ -32,7 +33,7 @@ async function main() {
     const catalog = await compileTenantPosCatalog(tenant.tenantId, process.env.PRODUCT_VERIFY_BRANCH_ID, 'pos');
     const products = await prisma.product.findMany({
       where: { tenantId: tenant.tenantId, active: true, deletedAt: null },
-      select: { id: true, name: true, posKey: true, revision: true, productType: true, price: true, metadata: true },
+      select: { id: true, name: true, posKey: true, revision: true, productType: true, price: true, categoryId: true, active: true, deletedAt: true, archivedAt: true, lifecycleStatus: true, publishStatus: true, metadata: true },
       orderBy: [{ productType: 'asc' }, { name: 'asc' }],
       take: 10000,
     });
@@ -51,6 +52,40 @@ async function main() {
         || snapshot.posKey !== item.posKey;
     });
     const nonSellable = catalog.items.filter((item) => !isSellableProductType(item.productType));
+    const categoryIds = [...new Set(products.map((product) => product.categoryId).filter((id): id is string => Boolean(id)))];
+    const categories = categoryIds.length
+      ? await prisma.productCategory.findMany({ where: { tenantId: tenant.tenantId, id: { in: categoryIds } }, select: { id: true, name: true, allowedProductTypes: true } })
+      : [];
+    const categoryById = new Map(categories.map((category) => [category.id, category]));
+    const invalidDomainGraph = products.filter((product) => {
+      const category = categoryById.get(product.categoryId ?? '');
+      return !validateProductDomainGraph({
+        id: product.id,
+        name: product.name,
+        category: category?.name,
+        categoryAllowedProductTypes: category?.allowedProductTypes,
+        productType: product.productType,
+        price: product.price.toString(),
+        posKey: product.posKey,
+        lifecycleStatus: product.lifecycleStatus,
+        publishStatus: product.publishStatus,
+        active: product.active,
+        deletedAt: product.deletedAt,
+        archivedAt: product.archivedAt,
+      }).ok;
+    });
+    const invalidRuntimeSnapshots = catalog.items.filter((item) => !validateProductDomainGraph({
+      id: item.productSnapshot.productId,
+      name: item.productSnapshot.name,
+      category: item.productSnapshot.category,
+      productType: item.productSnapshot.productType,
+      price: item.productSnapshot.price,
+      posKey: item.posKey,
+      catalogRevision: item.catalogRevision,
+      productSnapshot: item.productSnapshot,
+      lifecycleStatus: item.productSnapshot.lifecycleStatus,
+      publishStatus: item.productSnapshot.publishStatus,
+    }, { requireRuntimeFields: true }).runtimeVisible);
 
     if (saleProducts.length === 0) errors.push(`${tenant.tenantId}: no active sale products found`);
     if (process.env.REQUIRE_COMBO_PRODUCTS === '1' && comboProducts.length === 0) errors.push(`${tenant.tenantId}: no active combo products found`);
@@ -58,6 +93,8 @@ async function main() {
     if (stockItemsInCatalog.length > 0) errors.push(`${tenant.tenantId}: inventory-only products leaked into POS catalog`);
     if (missingFields.length > 0) errors.push(`${tenant.tenantId}: ${missingFields.length} catalog items missing runtime contract fields`);
     if (nonSellable.length > 0) errors.push(`${tenant.tenantId}: ${nonSellable.length} non-sellable catalog items found`);
+    if (invalidDomainGraph.length > 0) errors.push(`${tenant.tenantId}: ${invalidDomainGraph.length} products violate category/productType governance`);
+    if (invalidRuntimeSnapshots.length > 0) errors.push(`${tenant.tenantId}: ${invalidRuntimeSnapshots.length} runtime snapshots are malformed`);
     assert.equal(catalog.items.every((item) => item.catalogRevision === catalog.catalogRevision), true);
 
     results.push({
@@ -70,6 +107,8 @@ async function main() {
       stockItemsExcluded: products.filter((product) => product.productType === 'stock_item' || product.productType === 'semi_product').length,
       invalidCatalogItems: catalog.observability.invalidItemCount,
       missingFields: missingFields.length,
+      invalidDomainGraph: invalidDomainGraph.length,
+      invalidRuntimeSnapshots: invalidRuntimeSnapshots.length,
     });
   }
 

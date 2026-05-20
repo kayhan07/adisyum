@@ -5,6 +5,7 @@ import { requireTenant, TenantAuthError, tenantAuthErrorResponse } from '@/lib/r
 import { publishTenantEvent } from '@/lib/realtime/tenant-events';
 import { recordOperationalEvent } from '@/lib/operations/live-ops';
 import { inferProductDomainType, isSellableProductType, resolvePosFacingProductDomainType } from '@/lib/product-domain';
+import { validateProductDomainGraph } from '@/lib/product-domain-graph';
 import { isUuidIdentity, resolveProductIdentity } from '@/lib/product-identity';
 import { isRuntimeVisibleProduct } from '@/lib/product-lifecycle-governance';
 import { compileTenantPosCatalog } from '@/lib/server/runtime-pos-catalog';
@@ -326,6 +327,7 @@ export async function POST(request: Request) {
       snapshotPosKey: productSnapshot?.posKey,
       snapshotRevision: productSnapshot?.revision,
       snapshotProductType: productSnapshot?.productType,
+      category: product?.category ?? productSnapshot?.category,
       productName,
       price,
       quantityToAdd,
@@ -447,6 +449,53 @@ export async function POST(request: Request) {
           legacyKey: identity.legacyKey,
           name: productName,
         },
+      });
+    }
+
+    const catalogGraph = validateProductDomainGraph({
+      id: catalogItem.productSnapshot.productId,
+      name: catalogItem.productSnapshot.name,
+      category: catalogItem.productSnapshot.category,
+      productType: catalogItem.productSnapshot.productType,
+      price: catalogItem.productSnapshot.price,
+      posKey: catalogItem.productSnapshot.posKey,
+      catalogRevision: catalogItem.catalogRevision,
+      productSnapshot,
+      lifecycleStatus: catalogItem.productSnapshot.lifecycleStatus,
+      publishStatus: catalogItem.productSnapshot.publishStatus,
+      branchId: tenant.branchId,
+    }, { requireRuntimeFields: true });
+    logTableOrderEvent('domain-graph-validated', {
+      traceId,
+      tenantId,
+      branchId: tenant.branchId,
+      tableId,
+      posKey: identity.posKey,
+      category: catalogGraph.category.name,
+      allowedProductTypes: catalogGraph.category.allowedProductTypes,
+      productType: catalogGraph.productType,
+      posVisible: catalogGraph.posVisible,
+      runtimeVisible: catalogGraph.runtimeVisible,
+      issues: catalogGraph.issues,
+    });
+    if (!catalogGraph.runtimeVisible) {
+      return runtimeInsertionErrorResponse({
+        status: 409,
+        reason: 'invalid_visibility',
+        traceId,
+        tenantId,
+        branchId: tenant.branchId,
+        tableId,
+        catalogRevision: clientCatalogRevision,
+        serverCatalogRevision: runtimeCatalog.catalogRevision,
+        product: {
+          productId: catalogItem.productSnapshot.productId,
+          posKey: catalogItem.productSnapshot.posKey,
+          name: catalogItem.productSnapshot.name,
+          category: catalogGraph.category.name,
+          productType: catalogGraph.productType,
+        },
+        details: { issues: catalogGraph.issues },
       });
     }
 
