@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "pos:debug-click-pipeline": "node scripts/pos-debug-click-pipeline.mjs",
+    "pos:trace-reconciliation": "node scripts/pos-trace-reconciliation.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

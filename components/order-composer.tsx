@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, ChevronUp, CreditCard, Minus, Plus, RotateCcw, Search, Send, Zap, X } from 'lucide-react';
 import {
@@ -48,7 +48,7 @@ import { getDefaultTableLayoutState, loadTableLayoutState, subscribeToTableLayou
 import { createAutoProductMapping, getProductMapping, upsertProductMapping, validateProductMapping } from '@/lib/pos-mapping-store';
 import { queueOfflinePaymentSnapshot, syncOfflineOrders } from '@/lib/offline-sync-store';
 import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
-import { refreshAuthoritativeOrdersByTable, replaceAuthoritativeOrdersByTable } from '@/lib/client/authoritative-table-orders';
+import { replaceAuthoritativeOrdersByTable } from '@/lib/client/authoritative-table-orders';
 import { fetchLocalAgentJson } from '@/lib/local-agent';
 import { printCustomerReceipt, printKitchenTicket, printBarTicket } from '@/lib/receipt-formatter';
 import { recordOrderForSmartStock } from '@/lib/smart-recipe-stock-engine';
@@ -93,6 +93,9 @@ type PosClickDebugSnapshot = {
 };
 type OrderLine = {
   id: string;
+  clientMutationId?: string;
+  orderRevision?: number;
+  updatedAtMs?: number;
   productId?: string;
   name: string;
   qty: number;
@@ -114,6 +117,7 @@ type OrderLine = {
   happyHourEligible?: boolean;
   productSnapshot?: Record<string, unknown>;
 };
+type OrderReconciliationSource = 'initial-hydration' | 'focus' | 'interval' | 'mutation-result';
 type TableStatus = 'available' | 'occupied' | 'reserved';
 type PosTable = {
   id: string;
@@ -157,6 +161,7 @@ const categories: Category[] = [
 const VAT_RATE = 0.1;
 const RECENT_ACCOUNT_KEY = 'adisyon-recent-charge-accounts';
 const EMPTY_ORDER_LINES: OrderLine[] = [];
+const ACTIVE_TABLE_EMPTY_PAYLOAD_GRACE_MS = 15_000;
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat('tr-TR', {
@@ -222,7 +227,9 @@ function isPosDiagnosticsEnabled() {
   return (
     process.env.NODE_ENV !== 'production'
     || process.env.NEXT_PUBLIC_POS_DIAGNOSTICS === '1'
+    || process.env.NEXT_PUBLIC_POS_RECONCILIATION_TRACE === '1'
     || window.localStorage.getItem('adisyon:pos-debug-click-pipeline') === '1'
+    || window.localStorage.getItem('adisyon:pos-trace-reconciliation') === '1'
   );
 }
 
@@ -260,6 +267,9 @@ function buildOptimisticOrderLine(input: {
 }) {
   return {
     id: `optimistic-${input.mutationId}`,
+    clientMutationId: input.mutationId,
+    orderRevision: Date.now(),
+    updatedAtMs: Date.now(),
     productId: input.product.productId ?? input.product.id,
     name: input.product.name,
     qty: input.quantity ?? 1,
@@ -281,6 +291,109 @@ function buildOptimisticOrderLine(input: {
     happyHourEligible: input.happyHourEligible ?? false,
     productSnapshot: input.product.productSnapshot,
   } satisfies OrderLine;
+}
+
+function lineRevision(line: OrderLine) {
+  return Math.max(Number(line.orderRevision ?? 0), Number(line.updatedAtMs ?? 0));
+}
+
+function orderRevision(lines: OrderLine[]) {
+  return lines.reduce((max, line) => Math.max(max, lineRevision(line)), 0);
+}
+
+function hasOptimisticLines(lines: OrderLine[]) {
+  return lines.some((line) => line.id.startsWith('optimistic-'));
+}
+
+function mergeOptimisticLines(localLines: OrderLine[], authoritativeLines: OrderLine[]) {
+  const authoritativeMutationIds = new Set(
+    authoritativeLines
+      .map((line) => line.clientMutationId)
+      .filter((value): value is string => Boolean(value)),
+  );
+  const authoritativeProductKeys = new Set(
+    authoritativeLines.map((line) => `${line.productId ?? ''}:${line.name}:${line.note}:${line.price}:${line.qty}`),
+  );
+  const survivingOptimisticLines = localLines.filter((line) => {
+    if (!line.id.startsWith('optimistic-')) return false;
+    if (line.clientMutationId && authoritativeMutationIds.has(line.clientMutationId)) return false;
+    const productKey = `${line.productId ?? ''}:${line.name}:${line.note}:${line.price}:${line.qty}`;
+    return !authoritativeProductKeys.has(productKey);
+  });
+
+  return [...authoritativeLines, ...survivingOptimisticLines];
+}
+
+function mergeAuthoritativeOrders(input: {
+  current: Record<string, OrderLine[]>;
+  incoming: Record<string, OrderLine[]>;
+  activeTableId?: string | null;
+  source: OrderReconciliationSource;
+  pendingMutation?: { tableId: string; at: number; source: string } | null;
+  now: number;
+}) {
+  const next: Record<string, OrderLine[]> = { ...input.current };
+  const tableIds = new Set([...Object.keys(input.current), ...Object.keys(input.incoming)]);
+  const decisions: Array<Record<string, unknown>> = [];
+
+  tableIds.forEach((tableId) => {
+    const localLines = input.current[tableId] ?? EMPTY_ORDER_LINES;
+    const incomingLines = input.incoming[tableId] ?? EMPTY_ORDER_LINES;
+    const localCount = localLines.length;
+    const incomingCount = incomingLines.length;
+    const localRevision = orderRevision(localLines);
+    const incomingRevision = orderRevision(incomingLines);
+    const active = tableId === input.activeTableId;
+    const pendingForTable = input.pendingMutation?.tableId === tableId && input.now - input.pendingMutation.at < ACTIVE_TABLE_EMPTY_PAYLOAD_GRACE_MS;
+    const localHasOptimistic = hasOptimisticLines(localLines);
+
+    if (incomingCount === 0 && localCount > 0 && (active || pendingForTable || localHasOptimistic)) {
+      next[tableId] = localLines;
+      decisions.push({
+        tableId,
+        action: 'preserve-local-nonempty',
+        source: input.source,
+        localCount,
+        incomingCount,
+        localRevision,
+        incomingRevision,
+        active,
+        pendingForTable,
+        localHasOptimistic,
+      });
+      return;
+    }
+
+    if (incomingCount > 0 && localHasOptimistic) {
+      next[tableId] = mergeOptimisticLines(localLines, incomingLines);
+      decisions.push({
+        tableId,
+        action: 'merge-authoritative-with-optimistic',
+        source: input.source,
+        localCount,
+        incomingCount,
+        mergedCount: next[tableId]?.length ?? 0,
+        localRevision,
+        incomingRevision,
+      });
+      return;
+    }
+
+    if (incomingCount > 0 || localCount === 0 || !active) {
+      next[tableId] = incomingLines;
+      decisions.push({
+        tableId,
+        action: 'accept-authoritative',
+        source: input.source,
+        localCount,
+        incomingCount,
+        localRevision,
+        incomingRevision,
+      });
+    }
+  });
+
+  return { orders: next, decisions };
 }
 
 async function readJsonResponse(response: Response) {
@@ -774,7 +887,6 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const [productCardComplimentary, setProductCardComplimentary] = useState(false);
   const [productCardComplimentaryReason, setProductCardComplimentaryReason] = useState('');
   const [productCardIsReturn, setProductCardIsReturn] = useState(false);
-  const [testPrintLoading, setTestPrintLoading] = useState(false);
   const [isOnline, setIsOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
 
   useEffect(() => {
@@ -1069,6 +1181,31 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   );
 
   const lines = currentTable ? ordersByTable[currentTable.id] ?? EMPTY_ORDER_LINES : EMPTY_ORDER_LINES;
+  const reconcileAuthoritativeOrders = useCallback((
+    current: Record<string, OrderLine[]>,
+    incoming: Record<string, OrderLine[]>,
+    source: OrderReconciliationSource,
+  ) => {
+    const activeTableId = currentTable?.id ?? selectedTableId;
+    const result = mergeAuthoritativeOrders({
+      current,
+      incoming,
+      activeTableId,
+      source,
+      pendingMutation: orderMutationGuardRef.current,
+      now: Date.now(),
+    });
+    const activeLines = activeTableId ? result.orders[activeTableId] ?? EMPTY_ORDER_LINES : EMPTY_ORDER_LINES;
+    logOrderFlow('order-reconciliation-reducer', {
+      source,
+      activeTableId: activeTableId || null,
+      activeLineCount: activeLines.length,
+      activeRevision: orderRevision(activeLines),
+      pendingMutation: orderMutationGuardRef.current,
+      decisions: result.decisions,
+    });
+    return result.orders;
+  }, [currentTable?.id, selectedTableId]);
   const splitSelectionLineKey = lines.map((line) => `${line.id}:${line.qty}`).join('|');
   const itemCount = useMemo(() => lines.reduce((sum, item) => sum + item.qty, 0), [lines]);
   const guestLabels = useMemo(
@@ -1291,17 +1428,16 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           tableCount: Object.keys(nextOrders).length,
           activeOrderTables: Object.entries(nextOrders).filter(([, value]) => value.length > 0).map(([tableId]) => tableId),
         });
-        setOrdersByTable(nextOrders);
+        setOrdersByTable((current) => reconcileAuthoritativeOrders(current, nextOrders, 'initial-hydration'));
         setOrdersHydrated(true);
       })
       .catch((error) => {
         logOrderFlow('authoritative-orders-hydration-failed', {
           message: error instanceof Error ? error.message : String(error),
         });
-        setOrdersByTable(initialOrders);
         setOrdersHydrated(true);
       });
-  }, [initialOrders, sourceProducts]);
+  }, [initialOrders, reconcileAuthoritativeOrders, sourceProducts]);
 
   useEffect(() => {
     if (!ordersHydrated) return;
@@ -1331,7 +1467,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         return;
       }
 
-      void refreshAuthoritativeOrdersByTable<OrderLine>()
+      void fetchAuthoritativeTableOrders()
         .then((serverOrders) => {
           if (cancelled) return;
           const nextOrders = normalizeStoredOrders(
@@ -1342,14 +1478,17 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
             sourceProducts,
           );
           const activeTableId = currentTable?.id ?? selectedTableId;
-          const nextLines = activeTableId ? nextOrders[activeTableId] ?? EMPTY_ORDER_LINES : EMPTY_ORDER_LINES;
-          setOrdersByTable((current) => (areOrderMapsEqual(current, nextOrders) ? current : nextOrders));
-          if (activeTableId) setTableLiveTotals({ [activeTableId]: getOrderGross(nextLines) });
+          setOrdersByTable((current) => {
+            const merged = reconcileAuthoritativeOrders(current, nextOrders, reason);
+            const nextLines = activeTableId ? merged[activeTableId] ?? EMPTY_ORDER_LINES : EMPTY_ORDER_LINES;
+            if (activeTableId) setTableLiveTotals({ [activeTableId]: getOrderGross(nextLines) });
+            return areOrderMapsEqual(current, merged) ? current : merged;
+          });
           logOrderFlow('authoritative-orders-reconciled', {
             reason,
             selectedTableId,
             activeOrderId: activeTableId || null,
-            activeLineCount: nextLines.length,
+            incomingActiveLineCount: activeTableId ? nextOrders[activeTableId]?.length ?? 0 : 0,
             tableCount: Object.keys(nextOrders).length,
           });
         })
@@ -1370,7 +1509,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       window.clearInterval(timer);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [currentTable?.id, initialOrders, ordersHydrated, selectedTableId, sourceProducts]);
+  }, [currentTable?.id, initialOrders, ordersHydrated, reconcileAuthoritativeOrders, selectedTableId, sourceProducts]);
 
   useEffect(() => {
     const sync = () => void syncOfflineOrders();
@@ -1846,18 +1985,22 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         },
         sourceProducts,
       );
-      const nextLines = nextOrders[tableId] ?? EMPTY_ORDER_LINES;
-      replaceAuthoritativeOrdersByTable(nextOrders);
-      setOrdersByTable(nextOrders);
-      setTableLiveTotals({ [tableId]: getOrderGross(nextLines) });
+      let committedLines: OrderLine[] = nextOrders[tableId] ?? EMPTY_ORDER_LINES;
+      setOrdersByTable((current) => {
+        const merged = reconcileAuthoritativeOrders(current, nextOrders, 'mutation-result');
+        committedLines = merged[tableId] ?? EMPTY_ORDER_LINES;
+        replaceAuthoritativeOrdersByTable(merged);
+        setTableLiveTotals({ [tableId]: getOrderGross(committedLines) });
+        return merged;
+      });
       logOrderFlow('add-product-db-mutation-complete', {
         source,
         tableId,
         mutationId: result.mutationId,
         productId: product.id,
         productName: product.name,
-        nextLineCount: nextLines.length,
-        total: getOrderGross(nextLines),
+        nextLineCount: committedLines.length,
+        total: getOrderGross(committedLines),
       });
       recordPosClickDebug('mutation committed', {
         source,
@@ -1869,12 +2012,12 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         catalogRevision: mutationProduct.catalogRevision,
         productSnapshotStatus: getProductSnapshotStatus(product),
         result: {
-          nextLineCount: nextLines.length,
-          total: getOrderGross(nextLines),
+          nextLineCount: committedLines.length,
+          total: getOrderGross(committedLines),
         },
       });
       setLastAddedId(product.id);
-      setLastMutatedLineId(nextLines[nextLines.length - 1]?.id ?? null);
+      setLastMutatedLineId(committedLines[committedLines.length - 1]?.id ?? null);
       setFeedbackMessage(`${product.name} adisyona eklendi`);
       setProductSearch('');
     } catch (error) {
@@ -2077,19 +2220,23 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         },
         sourceProducts,
       );
-      const nextLines = nextOrders[tableId] ?? EMPTY_ORDER_LINES;
-      replaceAuthoritativeOrdersByTable(nextOrders);
-      setOrdersByTable(nextOrders);
-      setTableLiveTotals({ [tableId]: getOrderGross(nextLines) });
-      const touchedLineId = nextLines[nextLines.length - 1]?.id ?? null;
+      let committedLines: OrderLine[] = nextOrders[tableId] ?? EMPTY_ORDER_LINES;
+      setOrdersByTable((current) => {
+        const merged = reconcileAuthoritativeOrders(current, nextOrders, 'mutation-result');
+        committedLines = merged[tableId] ?? EMPTY_ORDER_LINES;
+        replaceAuthoritativeOrdersByTable(merged);
+        setTableLiveTotals({ [tableId]: getOrderGross(committedLines) });
+        return merged;
+      });
+      const touchedLineId = committedLines[committedLines.length - 1]?.id ?? null;
       logOrderFlow('add-product-db-mutation-complete', {
         source: 'product-card',
         tableId,
         mutationId: result.mutationId,
         productId: productCardProduct.id,
         productName: productCardProduct.name,
-        nextLineCount: nextLines.length,
-        total: getOrderGross(nextLines),
+        nextLineCount: committedLines.length,
+        total: getOrderGross(committedLines),
       });
       recordPosClickDebug('mutation committed', {
         source: 'product-card',
@@ -2101,8 +2248,8 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         catalogRevision: mutationProduct.catalogRevision,
         productSnapshotStatus: getProductSnapshotStatus(productCardProduct),
         result: {
-          nextLineCount: nextLines.length,
-          total: getOrderGross(nextLines),
+          nextLineCount: committedLines.length,
+          total: getOrderGross(committedLines),
         },
       });
       setLastAddedId(productCardProduct.id);
@@ -2583,45 +2730,6 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         .map((result) => `${result.printerName}: ${result.qty} ürün yazdırıldı`)
         .join(' | '),
     );
-  };
-
-  const sendTestPrint = async () => {
-    if (!currentTable) return;
-
-    setTestPrintLoading(true);
-    try {
-      const runtimeCompanyState = loadCompanyState();
-      const runtimeIntegrationState = loadIntegrationState();
-      const runtimeTenantPrinters = resolveTenantPrinterSettings(runtimeIntegrationState);
-      if (!runtimeTenantPrinters.defaultPrinter) {
-        setFeedbackMessage('Test print için varsayılan yazıcı bulunamadı.');
-        return;
-      }
-
-      await printCustomerReceipt({
-        printerName: runtimeTenantPrinters.defaultPrinter,
-        settings: {
-          restaurantName: runtimeCompanyState.tradeName || 'Adisyum',
-          branchName: runtimeCompanyState.branchName || '',
-          logoUrl: runtimeCompanyState.logoUrl || '',
-          footerText: runtimeCompanyState.receiptFooter || 'Afiyet olsun',
-          paperWidth: '80mm',
-        },
-        order: {
-          table: extractTableNumber(currentTable.name),
-          items: [
-            { name: 'Deneme Ürün 1', qty: 1, price: 50 },
-            { name: 'Deneme Ürün 2', qty: 2, price: 30 },
-            { name: 'Deneme Ürün 3', qty: 1, price: 25 },
-          ],
-        },
-      });
-      setFeedbackMessage(`Test print gönderildi (${runtimeTenantPrinters.defaultPrinter})`);
-    } catch {
-      setFeedbackMessage('Test print gönderilemedi. Local agent erişilemedi.');
-    } finally {
-      setTestPrintLoading(false);
-    }
   };
 
   const sendCheckToTable = async () => {
@@ -4282,17 +4390,6 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
               <span className="inline-flex items-center justify-center gap-2">
                 <Send className="h-4.5 w-4.5" /> {unsentItemCount > 0 ? `Kaydet ve yazdır (${unsentItemCount})` : 'Kaydet ve yazdır'}
               </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                void sendTestPrint();
-              }}
-              disabled={testPrintLoading || !currentTable}
-              className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-[0.95rem] border border-slate-300 bg-white px-4 text-[14px] font-semibold text-slate-700 transition duration-150 hover:-translate-y-[1px] hover:bg-slate-50 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Send className="h-4.5 w-4.5" /> {testPrintLoading ? 'Test fiş gönderiliyor...' : 'Test Fiş Bas'}
             </button>
 
             <button

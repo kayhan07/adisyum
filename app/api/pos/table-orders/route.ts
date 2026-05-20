@@ -17,6 +17,9 @@ const VAT_RATE = 0.1;
 
 type OrderLinePayload = {
   id: string;
+  clientMutationId?: string;
+  orderRevision?: number;
+  updatedAtMs?: number;
   productId?: string;
   posKey?: string;
   catalogRevision?: string;
@@ -152,6 +155,9 @@ function itemToLine(item: {
   const metadata = normalizeMetadata(item.metadata);
   return {
     id: item.id,
+    clientMutationId: typeof metadata.mutationId === 'string' ? metadata.mutationId : undefined,
+    orderRevision: typeof metadata.updatedAtMs === 'number' ? metadata.updatedAtMs : undefined,
+    updatedAtMs: typeof metadata.updatedAtMs === 'number' ? metadata.updatedAtMs : undefined,
     productId: item.productId ?? (typeof metadata.productKey === 'string' ? metadata.productKey : undefined),
     posKey: typeof metadata.posKey === 'string'
       ? metadata.posKey
