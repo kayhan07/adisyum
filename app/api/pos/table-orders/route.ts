@@ -14,6 +14,14 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const VAT_RATE = 0.1;
+const ROUTE_BOOTED_AT = new Date().toISOString();
+
+console.info('[pos-table-orders] route initialized', {
+  timestamp: ROUTE_BOOTED_AT,
+  runtime,
+  dynamic,
+  handlers: ['GET', 'POST'],
+});
 
 type OrderLinePayload = {
   id: string;
