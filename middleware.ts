@@ -42,6 +42,10 @@ function isMutatingMethod(method: string) {
   return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method.toUpperCase());
 }
 
+function isTenantObservabilityIngestPath(pathname: string) {
+  return pathname === '/api/system-admin/observability/ingest';
+}
+
 function splitForwardedHeader(value: string | null) {
   return value
     ?.split(',')
@@ -189,6 +193,9 @@ export async function middleware(request: NextRequest) {
 
   const isSystemAdminPath = pathname.startsWith('/system-admin') || pathname.startsWith('/api/system-admin/');
   if (isSystemAdminPath && (!isSuperAdmin(session) || session.tenantId !== 'system')) {
+    if (isApiPath(pathname) && isTenantObservabilityIngestPath(pathname)) {
+      return withSecurityHeaders(NextResponse.next());
+    }
     if (isApiPath(pathname)) {
       console.warn('[middleware-auth] system-admin api forbidden', {
         timestamp: new Date().toISOString(),

@@ -504,6 +504,7 @@ clean_filesystem_runtime() {
   rm -rf .next apps/website/.next
   rm -rf .next/standalone apps/website/.next/standalone standalone .output out
   rm -rf node_modules apps/website/node_modules
+  rm -rf node_modules/.cache apps/website/node_modules/.cache
   rm -rf .turbo .cache .parcel-cache
   rm -f tsconfig.tsbuildinfo apps/website/tsconfig.tsbuildinfo
   rm -f ecosystem.config.js ecosystem.isolated.config.cjs apps/website/ecosystem.config.js
@@ -618,6 +619,7 @@ build_apps() {
   [[ -d ".next/static" ]] || fail "Root .next/static missing"
   [[ -d ".next/server/app/app" || -f ".next/server/app/app.html" || -f ".next/server/app/app/page.js" ]] || fail "Root /app build artifact missing"
   [[ -d ".next/server/app/system-admin" || -f ".next/server/app/system-admin.html" || -f ".next/server/app/system-admin/page.js" ]] || fail "Root /system-admin build artifact missing"
+  run_app npm run routes:audit
   log "Root BUILD_ID=$(cat .next/BUILD_ID)"
 
   run_app npm --prefix apps/website run build
@@ -896,6 +898,21 @@ wait_for_healthy_route() {
   fail "${url} expected healthy HTTP 2xx/3xx, got initial=${code:-none} final=${final_code:-none} final_url=${final_url:-unknown}"
 }
 
+wait_for_route_not_404() {
+  local method="$1"
+  local url="$2"
+  local code=""
+  for _ in $(seq 1 30); do
+    code="$(curl -ksS -X "${method}" -o /dev/null -w '%{http_code}' --max-time 8 "${url}" || true)"
+    if [[ -n "${code}" && "${code}" != "000" && "${code}" != "404" ]]; then
+      log "${method} ${url} HTTP ${code} (route registered)"
+      return 0
+    fi
+    sleep 2
+  done
+  fail "${method} ${url} expected registered route, got HTTP ${code:-none}"
+}
+
 validate_runtime_routes() {
   log "Validating local and public runtime routes"
   if ss -ltnp | grep -q ':3020'; then
@@ -907,10 +924,13 @@ validate_runtime_routes() {
   wait_for_healthy_route "http://127.0.0.1:${ROOT_PORT}/app"
   wait_for_healthy_route "http://127.0.0.1:${ROOT_PORT}/system-admin"
   wait_for_healthy_route "http://127.0.0.1:${WEBSITE_PORT}"
+  wait_for_route_not_404 "POST" "http://127.0.0.1:${ROOT_PORT}/api/pos/table-orders"
+  wait_for_route_not_404 "GET" "http://127.0.0.1:${ROOT_PORT}/api/runtime/pos-catalog"
 
   wait_for_healthy_route "https://${DOMAIN}"
   wait_for_healthy_route "https://${DOMAIN}/app"
   wait_for_healthy_route "https://${DOMAIN}/system-admin"
+  wait_for_route_not_404 "POST" "https://${DOMAIN}/api/pos/table-orders"
 }
 
 print_final_state() {
