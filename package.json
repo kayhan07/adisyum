@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "next dev",
+    "pos:debug-click-pipeline": "node scripts/pos-debug-click-pipeline.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

@@ -48,7 +48,7 @@ import { getDefaultTableLayoutState, loadTableLayoutState, subscribeToTableLayou
 import { createAutoProductMapping, getProductMapping, upsertProductMapping, validateProductMapping } from '@/lib/pos-mapping-store';
 import { queueOfflinePaymentSnapshot, syncOfflineOrders } from '@/lib/offline-sync-store';
 import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
-import { replaceAuthoritativeOrdersByTable } from '@/lib/client/authoritative-table-orders';
+import { refreshAuthoritativeOrdersByTable, replaceAuthoritativeOrdersByTable } from '@/lib/client/authoritative-table-orders';
 import { fetchLocalAgentJson } from '@/lib/local-agent';
 import { printCustomerReceipt, printKitchenTicket, printBarTicket } from '@/lib/receipt-formatter';
 import { recordOrderForSmartStock } from '@/lib/smart-recipe-stock-engine';
@@ -74,6 +74,22 @@ type ProductCard = {
   allowDiscount?: boolean;
   happyHourEligible?: boolean;
   productSnapshot?: Record<string, unknown>;
+};
+type PosClickDebugSnapshot = {
+  event: string;
+  at: string;
+  source: string;
+  tableId?: string | null;
+  selectedTableId?: string;
+  productId?: string;
+  productName?: string;
+  posKey?: string;
+  catalogRevision?: string;
+  productSnapshotStatus?: string;
+  mutationId?: string;
+  payload?: Record<string, unknown>;
+  result?: Record<string, unknown>;
+  reason?: string;
 };
 type OrderLine = {
   id: string;
@@ -201,9 +217,70 @@ function areOrderMapsEqual(first: Record<string, OrderLine[]>, second: Record<st
   });
 }
 
+function isPosDiagnosticsEnabled() {
+  if (typeof window === 'undefined') return process.env.NEXT_PUBLIC_POS_DIAGNOSTICS === '1';
+  return (
+    process.env.NODE_ENV !== 'production'
+    || process.env.NEXT_PUBLIC_POS_DIAGNOSTICS === '1'
+    || window.localStorage.getItem('adisyon:pos-debug-click-pipeline') === '1'
+  );
+}
+
 function logOrderFlow(event: string, payload: Record<string, unknown>) {
-  if (typeof window === 'undefined' || process.env.NEXT_PUBLIC_POS_DIAGNOSTICS !== '1') return;
+  if (!isPosDiagnosticsEnabled()) return;
   console.info(`[adisyon-flow] ${event}`, payload);
+}
+
+function getProductSnapshotStatus(product: ProductCard) {
+  const snapshot = product.productSnapshot;
+  if (!snapshot) return 'missing';
+  if (snapshot.posKey !== product.posKey) return 'posKey-mismatch';
+  if (!product.catalogRevision) return 'missing-catalogRevision';
+  if (!snapshot.revision) return 'missing-snapshotRevision';
+  return 'ready';
+}
+
+function buildOptimisticOrderLine(input: {
+  mutationId: string;
+  product: ProductCard;
+  price: number;
+  quantity?: number;
+  note?: string;
+  guestName?: string;
+  spicePreference?: OrderLine['spicePreference'];
+  cookingPreference?: OrderLine['cookingPreference'];
+  extrasNote?: string;
+  removalNote?: string;
+  complimentary?: boolean;
+  complimentaryReason?: string;
+  isReturn?: boolean;
+  allowDiscount?: boolean;
+  allowComplimentary?: boolean;
+  happyHourEligible?: boolean;
+}) {
+  return {
+    id: `optimistic-${input.mutationId}`,
+    productId: input.product.productId ?? input.product.id,
+    name: input.product.name,
+    qty: input.quantity ?? 1,
+    note: input.note ?? '',
+    price: input.complimentary ? 0 : input.isReturn ? -input.price : input.price,
+    category: input.product.category,
+    printCategory: input.product.printCategory ?? input.product.category,
+    sentQty: 0,
+    guestName: input.guestName ?? '',
+    spicePreference: input.spicePreference ?? 'standart',
+    cookingPreference: input.cookingPreference ?? 'standart',
+    extrasNote: input.extrasNote ?? '',
+    removalNote: input.removalNote ?? '',
+    complimentary: Boolean(input.complimentary),
+    complimentaryReason: input.complimentaryReason ?? '',
+    isReturn: Boolean(input.isReturn),
+    allowDiscount: input.allowDiscount ?? true,
+    allowComplimentary: input.allowComplimentary ?? true,
+    happyHourEligible: input.happyHourEligible ?? false,
+    productSnapshot: input.product.productSnapshot,
+  } satisfies OrderLine;
 }
 
 async function readJsonResponse(response: Response) {
@@ -653,6 +730,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const [lastMutatedLineId, setLastMutatedLineId] = useState<string | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState<string>('Hazır');
   const [posMappingWarning, setPosMappingWarning] = useState('');
+  const [posClickDebug, setPosClickDebug] = useState<PosClickDebugSnapshot | null>(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentExpanded, setPaymentExpanded] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
@@ -739,6 +817,11 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const lastPaymentGuardRef = useRef<{ tableId: string; total: number; at: number } | null>(null);
   const previousItemCountsRef = useRef<Record<string, number>>({});
   const orderMutationGuardRef = useRef<{ tableId: string; at: number; source: string } | null>(null);
+  const recordPosClickDebug = (event: string, snapshot: Omit<PosClickDebugSnapshot, 'event' | 'at'>) => {
+    const nextSnapshot = { event, at: new Date().toISOString(), ...snapshot };
+    setPosClickDebug(nextSnapshot);
+    logOrderFlow(event, nextSnapshot);
+  };
   const paymentRequestedSet = useMemo(() => new Set(paymentRequestedTables), [paymentRequestedTables]);
   const chargeAccounts = useMemo(
     () => [...erpAccounts, ...storedAccounts].filter((account) => account.type === 'customer' || account.type === 'partner'),
@@ -1187,6 +1270,16 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   useEffect(() => {
     void fetchAuthoritativeTableOrders()
       .then((serverOrders) => {
+        const recentMutation = orderMutationGuardRef.current;
+        if (recentMutation && Date.now() - recentMutation.at < 2500) {
+          logOrderFlow('authoritative-orders-hydration-deferred-for-mutation', {
+            tableId: recentMutation.tableId,
+            source: recentMutation.source,
+            ageMs: Date.now() - recentMutation.at,
+          });
+          setOrdersHydrated(true);
+          return;
+        }
         const nextOrders = normalizeStoredOrders(
           {
             ...initialOrders,
@@ -1221,6 +1314,63 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       tableCount: Object.keys(ordersByTable).length,
     });
   }, [currentTable?.id, ordersByTable, ordersHydrated, selectedTableId]);
+
+  useEffect(() => {
+    if (!ordersHydrated || typeof window === 'undefined') return;
+
+    let cancelled = false;
+    const reconcile = (reason: 'interval' | 'focus') => {
+      const recentMutation = orderMutationGuardRef.current;
+      if (recentMutation && Date.now() - recentMutation.at < 2500) {
+        logOrderFlow('authoritative-orders-reconcile-skipped-for-mutation', {
+          reason,
+          tableId: recentMutation.tableId,
+          source: recentMutation.source,
+          ageMs: Date.now() - recentMutation.at,
+        });
+        return;
+      }
+
+      void refreshAuthoritativeOrdersByTable<OrderLine>()
+        .then((serverOrders) => {
+          if (cancelled) return;
+          const nextOrders = normalizeStoredOrders(
+            {
+              ...initialOrders,
+              ...serverOrders,
+            },
+            sourceProducts,
+          );
+          const activeTableId = currentTable?.id ?? selectedTableId;
+          const nextLines = activeTableId ? nextOrders[activeTableId] ?? EMPTY_ORDER_LINES : EMPTY_ORDER_LINES;
+          setOrdersByTable((current) => (areOrderMapsEqual(current, nextOrders) ? current : nextOrders));
+          if (activeTableId) setTableLiveTotals({ [activeTableId]: getOrderGross(nextLines) });
+          logOrderFlow('authoritative-orders-reconciled', {
+            reason,
+            selectedTableId,
+            activeOrderId: activeTableId || null,
+            activeLineCount: nextLines.length,
+            tableCount: Object.keys(nextOrders).length,
+          });
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          logOrderFlow('authoritative-orders-reconcile-failed', {
+            reason,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        });
+    };
+
+    const timer = window.setInterval(() => reconcile('interval'), 3500);
+    const handleFocus = () => reconcile('focus');
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [currentTable?.id, initialOrders, ordersHydrated, selectedTableId, sourceProducts]);
 
   useEffect(() => {
     const sync = () => void syncOfflineOrders();
@@ -1533,25 +1683,51 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   };
 
   const addProductToOrder = async (product: ProductCard, source: 'product-grid' | 'search' = 'product-grid') => {
+    recordPosClickDebug('ProductCard clicked', {
+      source,
+      tableId: currentTable?.id ?? null,
+      productId: product.id,
+      productName: product.name,
+      posKey: product.posKey ?? product.id,
+      catalogRevision: product.catalogRevision,
+      productSnapshotStatus: getProductSnapshotStatus(product),
+      payload: {
+        runtimeIdentity: {
+          productId: product.productId,
+          posKey: product.posKey ?? product.id,
+          catalogRevision: product.catalogRevision,
+          snapshotPosKey: product.productSnapshot?.posKey,
+          snapshotRevision: product.productSnapshot?.revision,
+          productType: product.productType,
+        },
+      },
+    });
     if (!currentTable) {
-      logOrderFlow('add-product-blocked', {
+      recordPosClickDebug('add-product-blocked', {
         source,
         reason: 'missing-table',
         productId: product.id,
         productName: product.name,
+        posKey: product.posKey ?? product.id,
+        catalogRevision: product.catalogRevision,
+        productSnapshotStatus: getProductSnapshotStatus(product),
         selectedTableId,
       });
       setFeedbackMessage('Ürün eklemek için önce masa seçin');
       return;
     }
     if (!hasPermission('orders.create')) {
-      logOrderFlow('add-product-blocked', {
+      recordPosClickDebug('add-product-blocked', {
         source,
         reason: 'permission-denied',
         productId: product.id,
         productName: product.name,
+        posKey: product.posKey ?? product.id,
+        catalogRevision: product.catalogRevision,
+        productSnapshotStatus: getProductSnapshotStatus(product),
         tableId: currentTable.id,
       });
+      setFeedbackMessage('Bu kullanıcı ürün ekleme yetkisine sahip değil');
       return;
     }
     if (!isSellableProductType(product.productType)) {
@@ -1591,6 +1767,57 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     const mutationId = `${tableId}-${product.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     orderMutationGuardRef.current = { tableId, at: Date.now(), source };
     updatePaymentRequested(currentTable.id, false);
+    const mutationProduct = {
+      id: product.id,
+      productId: product.productId,
+      posKey: product.posKey ?? product.id,
+      catalogRevision: product.catalogRevision,
+      sku: product.sku,
+      barcode: product.barcode,
+      externalId: product.externalId,
+      legacyKey: product.legacyKey,
+      revision: product.revision,
+      productSnapshot: product.productSnapshot,
+      name: product.name,
+      productType: product.productType,
+      price: resolvedUnitPrice,
+      category: product.category,
+      printCategory: storedProduct?.category ?? product.printCategory ?? product.category,
+      allowDiscount: discountAllowed,
+      allowComplimentary: complimentaryAllowed,
+      happyHourEligible,
+    };
+    const optimisticLine = buildOptimisticOrderLine({
+      mutationId,
+      product: { ...product, printCategory: mutationProduct.printCategory },
+      price: resolvedUnitPrice,
+      allowDiscount: discountAllowed,
+      allowComplimentary: complimentaryAllowed,
+      happyHourEligible,
+    });
+    setOrdersByTable((current) => {
+      const nextLines = [...(current[tableId] ?? EMPTY_ORDER_LINES), optimisticLine];
+      return { ...current, [tableId]: nextLines };
+    });
+    setTableLiveTotals({ [tableId]: getOrderGross([...(ordersByTable[tableId] ?? EMPTY_ORDER_LINES), optimisticLine]) });
+    setLastAddedId(product.id);
+    setLastMutatedLineId(optimisticLine.id);
+    setFeedbackMessage(`${product.name} ekleniyor...`);
+    recordPosClickDebug('mutation dispatched', {
+      source,
+      tableId,
+      mutationId,
+      productId: product.id,
+      productName: product.name,
+      posKey: mutationProduct.posKey,
+      catalogRevision: mutationProduct.catalogRevision,
+      productSnapshotStatus: getProductSnapshotStatus(product),
+      payload: {
+        tableId,
+        mutationId,
+        product: mutationProduct,
+      },
+    });
 
     try {
       logOrderFlow('add-product-db-mutation-start', {
@@ -1609,26 +1836,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       const result = await addProductToAuthoritativeOrder({
         tableId,
         mutationId,
-        product: {
-          id: product.id,
-          productId: product.productId,
-          posKey: product.posKey ?? product.id,
-          catalogRevision: product.catalogRevision,
-          sku: product.sku,
-          barcode: product.barcode,
-          externalId: product.externalId,
-          legacyKey: product.legacyKey,
-          revision: product.revision,
-          productSnapshot: product.productSnapshot,
-          name: product.name,
-          productType: product.productType,
-          price: resolvedUnitPrice,
-          category: product.category,
-          printCategory: storedProduct?.category ?? product.printCategory ?? product.category,
-          allowDiscount: discountAllowed,
-          allowComplimentary: complimentaryAllowed,
-          happyHourEligible,
-        },
+        product: mutationProduct,
       });
 
       const nextOrders = normalizeStoredOrders(
@@ -1651,11 +1859,29 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         nextLineCount: nextLines.length,
         total: getOrderGross(nextLines),
       });
+      recordPosClickDebug('mutation committed', {
+        source,
+        tableId,
+        mutationId: result.mutationId,
+        productId: product.id,
+        productName: product.name,
+        posKey: mutationProduct.posKey,
+        catalogRevision: mutationProduct.catalogRevision,
+        productSnapshotStatus: getProductSnapshotStatus(product),
+        result: {
+          nextLineCount: nextLines.length,
+          total: getOrderGross(nextLines),
+        },
+      });
       setLastAddedId(product.id);
       setLastMutatedLineId(nextLines[nextLines.length - 1]?.id ?? null);
       setFeedbackMessage(`${product.name} adisyona eklendi`);
       setProductSearch('');
     } catch (error) {
+      setOrdersByTable((current) => {
+        const nextLines = (current[tableId] ?? EMPTY_ORDER_LINES).filter((line) => line.id !== optimisticLine.id);
+        return { ...current, [tableId]: nextLines };
+      });
       logOrderFlow('add-product-db-mutation-failed', {
         source,
         tableId,
@@ -1663,6 +1889,17 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         productId: product.id,
         productName: product.name,
         message: error instanceof Error ? error.message : String(error),
+      });
+      recordPosClickDebug('mutation failed', {
+        source,
+        tableId,
+        mutationId,
+        productId: product.id,
+        productName: product.name,
+        posKey: mutationProduct.posKey,
+        catalogRevision: mutationProduct.catalogRevision,
+        productSnapshotStatus: getProductSnapshotStatus(product),
+        reason: error instanceof Error ? error.message : String(error),
       });
       setFeedbackMessage('Ürün eklenemedi. Bağlantıyı kontrol edin.');
     }
@@ -1713,6 +1950,15 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
   const addProduct = async () => {
     if (!currentTable || !productCardProduct || !hasPermission('orders.create')) return;
+    recordPosClickDebug('ProductCard clicked', {
+      source: 'product-card',
+      tableId: currentTable.id,
+      productId: productCardProduct.id,
+      productName: productCardProduct.name,
+      posKey: productCardProduct.posKey ?? productCardProduct.id,
+      catalogRevision: productCardProduct.catalogRevision,
+      productSnapshotStatus: getProductSnapshotStatus(productCardProduct),
+    });
     if (!isSellableProductType(productCardProduct.productType)) {
       setFeedbackMessage(`${productCardProduct.name} stok kalemi; adisyona eklenemez`);
       return;
@@ -1735,6 +1981,73 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     const normalizedComplimentaryReason = effectiveComplimentary ? productCardComplimentaryReason.trim() : '';
     const tableId = currentTable.id;
     const mutationId = `${tableId}-${productCardProduct.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const mutationProduct = {
+      id: productCardProduct.id,
+      productId: productCardProduct.productId,
+      posKey: productCardProduct.posKey ?? productCardProduct.id,
+      catalogRevision: productCardProduct.catalogRevision,
+      sku: productCardProduct.sku,
+      barcode: productCardProduct.barcode,
+      externalId: productCardProduct.externalId,
+      legacyKey: productCardProduct.legacyKey,
+      revision: productCardProduct.revision,
+      productSnapshot: productCardProduct.productSnapshot,
+      name: productCardProduct.name,
+      productType: productCardProduct.productType,
+      price: resolvedUnitPrice,
+      category: productCardProduct.category,
+      printCategory: productCardStoredProduct?.category ?? productCardProduct.printCategory ?? productCardProduct.category,
+      quantity: qtyToAdd,
+      note: normalizedNote,
+      guestName: normalizedGuestName || undefined,
+      spicePreference: productCardSpicePreference,
+      cookingPreference: productCardCookingPreference,
+      extrasNote: normalizedExtrasNote || undefined,
+      removalNote: normalizedRemovalNote || undefined,
+      complimentary: effectiveComplimentary,
+      complimentaryReason: normalizedComplimentaryReason || undefined,
+      isReturn: productCardIsReturn,
+      allowDiscount: discountAllowed,
+      allowComplimentary: complimentaryAllowed,
+      happyHourEligible,
+    };
+    const optimisticLine = buildOptimisticOrderLine({
+      mutationId,
+      product: { ...productCardProduct, printCategory: mutationProduct.printCategory },
+      price: resolvedUnitPrice,
+      quantity: qtyToAdd,
+      note: normalizedNote,
+      guestName: normalizedGuestName,
+      spicePreference: productCardSpicePreference,
+      cookingPreference: productCardCookingPreference,
+      extrasNote: normalizedExtrasNote,
+      removalNote: normalizedRemovalNote,
+      complimentary: effectiveComplimentary,
+      complimentaryReason: normalizedComplimentaryReason,
+      isReturn: productCardIsReturn,
+      allowDiscount: discountAllowed,
+      allowComplimentary: complimentaryAllowed,
+      happyHourEligible,
+    });
+    setOrdersByTable((current) => {
+      const nextLines = [...(current[tableId] ?? EMPTY_ORDER_LINES), optimisticLine];
+      return { ...current, [tableId]: nextLines };
+    });
+    setTableLiveTotals({ [tableId]: getOrderGross([...(ordersByTable[tableId] ?? EMPTY_ORDER_LINES), optimisticLine]) });
+    setLastAddedId(productCardProduct.id);
+    setLastMutatedLineId(optimisticLine.id);
+    setFeedbackMessage(`${productCardProduct.name} ekleniyor...`);
+    recordPosClickDebug('mutation dispatched', {
+      source: 'product-card',
+      tableId,
+      mutationId,
+      productId: productCardProduct.id,
+      productName: productCardProduct.name,
+      posKey: mutationProduct.posKey,
+      catalogRevision: mutationProduct.catalogRevision,
+      productSnapshotStatus: getProductSnapshotStatus(productCardProduct),
+      payload: { tableId, mutationId, product: mutationProduct },
+    });
 
     try {
       logOrderFlow('add-product-db-mutation-start', {
@@ -1754,36 +2067,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       const result = await addProductToAuthoritativeOrder({
         tableId,
         mutationId,
-        product: {
-          id: productCardProduct.id,
-          productId: productCardProduct.productId,
-          posKey: productCardProduct.posKey ?? productCardProduct.id,
-          catalogRevision: productCardProduct.catalogRevision,
-          sku: productCardProduct.sku,
-          barcode: productCardProduct.barcode,
-          externalId: productCardProduct.externalId,
-          legacyKey: productCardProduct.legacyKey,
-          revision: productCardProduct.revision,
-          productSnapshot: productCardProduct.productSnapshot,
-          name: productCardProduct.name,
-          productType: productCardProduct.productType,
-          price: resolvedUnitPrice,
-          category: productCardProduct.category,
-          printCategory: productCardStoredProduct?.category ?? productCardProduct.printCategory ?? productCardProduct.category,
-          quantity: qtyToAdd,
-          note: normalizedNote,
-          guestName: normalizedGuestName || undefined,
-          spicePreference: productCardSpicePreference,
-          cookingPreference: productCardCookingPreference,
-          extrasNote: normalizedExtrasNote || undefined,
-          removalNote: normalizedRemovalNote || undefined,
-          complimentary: effectiveComplimentary,
-          complimentaryReason: normalizedComplimentaryReason || undefined,
-          isReturn: productCardIsReturn,
-          allowDiscount: discountAllowed,
-          allowComplimentary: complimentaryAllowed,
-          happyHourEligible,
-        },
+        product: mutationProduct,
       });
 
       const nextOrders = normalizeStoredOrders(
@@ -1807,12 +2091,30 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         nextLineCount: nextLines.length,
         total: getOrderGross(nextLines),
       });
+      recordPosClickDebug('mutation committed', {
+        source: 'product-card',
+        tableId,
+        mutationId: result.mutationId,
+        productId: productCardProduct.id,
+        productName: productCardProduct.name,
+        posKey: mutationProduct.posKey,
+        catalogRevision: mutationProduct.catalogRevision,
+        productSnapshotStatus: getProductSnapshotStatus(productCardProduct),
+        result: {
+          nextLineCount: nextLines.length,
+          total: getOrderGross(nextLines),
+        },
+      });
       setLastAddedId(productCardProduct.id);
       setLastMutatedLineId(touchedLineId);
       setFeedbackMessage(`${productCardProduct.name} adisyona eklendi`);
       setProductSearch('');
       closeProductCard();
     } catch (error) {
+      setOrdersByTable((current) => {
+        const nextLines = (current[tableId] ?? EMPTY_ORDER_LINES).filter((line) => line.id !== optimisticLine.id);
+        return { ...current, [tableId]: nextLines };
+      });
       logOrderFlow('add-product-db-mutation-failed', {
         source: 'product-card',
         tableId,
@@ -1820,6 +2122,17 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         productId: productCardProduct.id,
         productName: productCardProduct.name,
         message: error instanceof Error ? error.message : String(error),
+      });
+      recordPosClickDebug('mutation failed', {
+        source: 'product-card',
+        tableId,
+        mutationId,
+        productId: productCardProduct.id,
+        productName: productCardProduct.name,
+        posKey: mutationProduct.posKey,
+        catalogRevision: mutationProduct.catalogRevision,
+        productSnapshotStatus: getProductSnapshotStatus(productCardProduct),
+        reason: error instanceof Error ? error.message : String(error),
       });
       setFeedbackMessage('Ürün eklenemedi. Bağlantıyı kontrol edin.');
     }
@@ -3538,8 +3851,11 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
                     key={`search-${product.id}`}
                     type="button"
                     onClick={() => addProductToOrder(product, 'search')}
-                    disabled={!currentTable || !hasPermission('orders.create')}
-                    className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 last:border-b-0"
+                    aria-disabled={!currentTable || !hasPermission('orders.create')}
+                    data-pos-key={product.posKey ?? product.id}
+                    data-catalog-revision={product.catalogRevision ?? ''}
+                    data-snapshot-status={getProductSnapshotStatus(product)}
+                    className={`flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left transition hover:bg-slate-50 last:border-b-0 ${!currentTable || !hasPermission('orders.create') ? 'cursor-not-allowed opacity-60' : ''}`}
                   >
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-[#0F172A]">{product.name}</p>
@@ -3581,6 +3897,16 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
             {filteredProducts.map((product) => {
               const activeFlash = lastAddedId === product.id;
+              logOrderFlow('ProductCard rendered', {
+                source: 'product-grid',
+                productId: product.id,
+                productName: product.name,
+                posKey: product.posKey ?? product.id,
+                catalogRevision: product.catalogRevision,
+                productSnapshotStatus: getProductSnapshotStatus(product),
+                tableId: currentTable?.id ?? null,
+                canCreateOrder: Boolean(currentTable && hasPermission('orders.create')),
+              });
               return (
                 <button
                   key={product.id}
@@ -3592,8 +3918,11 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
                       addProductToOrder(product, 'product-grid');
                     }
                   }}
-                  disabled={!currentTable || !hasPermission('orders.create')}
-                  className={`${activeFlash ? 'border-[#60A5FA] bg-[#EFF6FF] shadow-[0_1px_2px_rgba(37,99,235,0.08),0_12px_22px_rgba(37,99,235,0.12)] pos-pop-in' : 'border-slate-200 bg-white hover:-translate-y-[1px] hover:border-slate-300 hover:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_12px_20px_rgba(15,23,42,0.08)] active:scale-[0.97]'} app-card app-card-interactive pos-product-tile flex min-h-[122px] flex-col justify-between rounded-[0.95rem] border p-3 text-left transition duration-150 disabled:cursor-not-allowed disabled:opacity-50`}
+                  aria-disabled={!currentTable || !hasPermission('orders.create')}
+                  data-pos-key={product.posKey ?? product.id}
+                  data-catalog-revision={product.catalogRevision ?? ''}
+                  data-snapshot-status={getProductSnapshotStatus(product)}
+                  className={`${activeFlash ? 'border-[#60A5FA] bg-[#EFF6FF] shadow-[0_1px_2px_rgba(37,99,235,0.08),0_12px_22px_rgba(37,99,235,0.12)] pos-pop-in' : 'border-slate-200 bg-white hover:-translate-y-[1px] hover:border-slate-300 hover:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_12px_20px_rgba(15,23,42,0.08)] active:scale-[0.97]'} app-card app-card-interactive pos-product-tile flex min-h-[122px] flex-col justify-between rounded-[0.95rem] border p-3 text-left transition duration-150 ${!currentTable || !hasPermission('orders.create') ? 'cursor-not-allowed opacity-60' : ''}`}
                   aria-label={`${product.name} ekle`}
                 >
                   <div className="space-y-1">
@@ -3996,6 +4325,24 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         <p>paymentOpen: {String(paymentOpen)}</p>
         <p>tableActionsOpen: {String(tableActionsOpen)}</p>
         <p>pendingMutation: {mutationGuard ? `${mutationGuard.source}:${Date.now() - mutationGuard.at}ms` : '-'}</p>
+        <p>catalogItems: {sourceProducts.length}</p>
+        <p>catalogRevision: {sourceProducts[0]?.catalogRevision ?? '-'}</p>
+        <p>runtimeReady: {String(sourceProducts.every((product) => product.posKey && product.catalogRevision && product.productSnapshot))}</p>
+        <p>lastClick: {posClickDebug ? `${posClickDebug.source}:${posClickDebug.event}` : '-'}</p>
+        {posClickDebug ? (
+          <pre className="mt-1 max-h-36 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-900/80 p-2 text-[10px] leading-snug">
+            {JSON.stringify({
+              posKey: posClickDebug.posKey,
+              revision: posClickDebug.payload?.product && typeof posClickDebug.payload.product === 'object' ? (posClickDebug.payload.product as Record<string, unknown>).revision : undefined,
+              catalogRevision: posClickDebug.catalogRevision,
+              productSnapshotStatus: posClickDebug.productSnapshotStatus,
+              mutationId: posClickDebug.mutationId,
+              reason: posClickDebug.reason,
+              payload: posClickDebug.payload,
+              result: posClickDebug.result,
+            }, null, 2)}
+          </pre>
+        ) : null}
       </div>
     ) : null}
     {productCardProduct ? (
