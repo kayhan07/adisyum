@@ -9,6 +9,7 @@ import {
   type ProductLifecycleAction,
 } from '@/lib/product-lifecycle-governance';
 import { publishTenantEvent } from '@/lib/realtime/tenant-events';
+import { invalidateRuntimePosCatalog } from '@/lib/server/runtime-pos-catalog';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -190,6 +191,7 @@ async function applyLifecycleAction(
     return updated;
   });
 
+  const invalidatedRuntimeCatalogs = await invalidateRuntimePosCatalog(tenant.tenantId, `product_lifecycle_${action}`, tenant.branchId ?? undefined);
   await publishTenantEvent(tenant.tenantId, 'products', {
     type: 'product.lifecycle.changed',
     productId: next.id,
@@ -199,6 +201,8 @@ async function applyLifecycleAction(
     publishStatus: next.publishStatus,
     revision: next.revision,
     catalogInvalidationRequired: true,
+    runtimeCacheCleared: true,
+    invalidatedRuntimeCatalogs,
   }).catch(() => undefined);
 
   return { ok: true as const, product: next, decision };

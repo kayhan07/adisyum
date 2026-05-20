@@ -73,6 +73,7 @@ type ProductCard = {
   allowComplimentary?: boolean;
   allowDiscount?: boolean;
   happyHourEligible?: boolean;
+  productSnapshot?: Record<string, unknown>;
 };
 type OrderLine = {
   id: string;
@@ -95,6 +96,7 @@ type OrderLine = {
   allowDiscount?: boolean;
   allowComplimentary?: boolean;
   happyHourEligible?: boolean;
+  productSnapshot?: Record<string, unknown>;
 };
 type TableStatus = 'available' | 'occupied' | 'reserved';
 type PosTable = {
@@ -258,6 +260,7 @@ async function addProductToAuthoritativeOrder(input: {
     allowDiscount?: boolean;
     allowComplimentary?: boolean;
     happyHourEligible?: boolean;
+    productSnapshot?: Record<string, unknown>;
   };
 }) {
   logOrderFlow('add-product-fetch-dispatch', {
@@ -267,6 +270,9 @@ async function addProductToAuthoritativeOrder(input: {
     posKey: input.product.posKey,
     catalogRevision: input.product.catalogRevision,
     legacyKey: input.product.legacyKey,
+    snapshotPosKey: input.product.productSnapshot?.posKey,
+    snapshotRevision: input.product.productSnapshot?.revision,
+    snapshotProductType: input.product.productSnapshot?.productType,
     productName: input.product.name,
     quantity: input.product.quantity ?? 1,
     price: input.product.price,
@@ -814,6 +820,50 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     }
     setStoredCatalogProducts(buildPosCatalogFromStored(storedSaleProducts, { eventMode: eventPricingEnabled }));
   }, [eventPricingEnabled, storedSaleProducts]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const params = new URLSearchParams({ channel: 'pos' });
+    if (activeBranchId) params.set('branchId', activeBranchId);
+
+    fetch(`/api/runtime/pos-catalog?${params.toString()}`, {
+      method: 'GET',
+      cache: 'no-store',
+      credentials: 'include',
+    })
+      .then((response) => readJsonResponse(response).then((payload) => ({ response, payload })))
+      .then(({ response, payload }) => {
+        if (cancelled) return;
+        const catalog = payload.catalog as { catalogRevision?: string; checksum?: string; items?: ProductCard[] } | undefined;
+        if (!response.ok || !catalog?.items?.length) {
+          logOrderFlow('runtime-catalog-hydration-skipped', {
+            status: response.status,
+            itemCount: catalog?.items?.length ?? 0,
+            error: payload.error,
+            message: payload.message,
+          });
+          return;
+        }
+        setStoredCatalogProducts(catalog.items);
+        logOrderFlow('runtime-catalog-hydrated', {
+          branchId: activeBranchId,
+          catalogRevision: catalog.catalogRevision,
+          checksum: catalog.checksum,
+          itemCount: catalog.items.length,
+        });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        logOrderFlow('runtime-catalog-hydration-failed', {
+          branchId: activeBranchId,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeBranchId, eventPricingEnabled]);
 
   useEffect(() => {
     setOrdersByTable((current) =>
@@ -1569,6 +1619,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           externalId: product.externalId,
           legacyKey: product.legacyKey,
           revision: product.revision,
+          productSnapshot: product.productSnapshot,
           name: product.name,
           productType: product.productType,
           price: resolvedUnitPrice,
@@ -1713,6 +1764,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           externalId: productCardProduct.externalId,
           legacyKey: productCardProduct.legacyKey,
           revision: productCardProduct.revision,
+          productSnapshot: productCardProduct.productSnapshot,
           name: productCardProduct.name,
           productType: productCardProduct.productType,
           price: resolvedUnitPrice,

@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { createRequire } from 'node:module';
 import { createPosKey, isLegacyRuntimeProductKey, resolveProductIdentity } from '../lib/product-identity.ts';
+import { resolvePosFacingProductDomainType } from '../lib/product-domain.ts';
 
 const require = createRequire(import.meta.url);
 const { loadEnvConfig } = require('@next/env') as typeof import('@next/env');
@@ -25,6 +26,8 @@ async function main() {
       externalId: true,
       legacyKey: true,
       revision: true,
+      productType: true,
+      price: true,
       metadata: true,
     },
     orderBy: [{ tenantId: 'asc' }, { name: 'asc' }],
@@ -39,6 +42,7 @@ async function main() {
     toPosKey: string;
     legacyKey?: string;
     revision: number;
+    productType: string;
   }> = [];
   const duplicateCandidates: Array<{ tenantId: string; productId: string; posKey: string; name: string }> = [];
 
@@ -64,8 +68,15 @@ async function main() {
 
     const nextLegacyKey = product.legacyKey ?? (isLegacyRuntimeProductKey(product.name) ? product.name : identity.legacyKey);
     const nextRevision = Math.max(1, product.revision ?? 1);
+    const nextProductType = resolvePosFacingProductDomainType({
+      id: product.id,
+      posKey: nextPosKey,
+      name: product.name,
+      productType: product.productType,
+      price: product.price.toString(),
+    });
 
-    if (product.posKey !== nextPosKey || product.legacyKey !== nextLegacyKey || product.revision !== nextRevision) {
+    if (product.posKey !== nextPosKey || product.legacyKey !== nextLegacyKey || product.revision !== nextRevision || product.productType !== nextProductType) {
       updates.push({
         id: product.id,
         tenantId: product.tenantId,
@@ -74,6 +85,7 @@ async function main() {
         toPosKey: nextPosKey,
         legacyKey: nextLegacyKey,
         revision: nextRevision,
+        productType: nextProductType,
       });
     }
   }
@@ -99,8 +111,17 @@ async function main() {
         posKey: update.toPosKey,
         legacyKey: update.legacyKey,
         revision: update.revision,
+        productType: update.productType,
         metadata: {
           ...metadata,
+          runtimeProductSnapshot: {
+            productId: update.id,
+            posKey: update.toPosKey,
+            name: update.name,
+            productType: update.productType,
+            revision: update.revision,
+            legacyKey: update.legacyKey,
+          },
           productIdentityMigration: {
             fromPosKey: update.fromPosKey,
             toPosKey: update.toPosKey,

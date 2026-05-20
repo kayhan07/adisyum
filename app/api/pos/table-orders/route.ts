@@ -7,6 +7,7 @@ import { recordOperationalEvent } from '@/lib/operations/live-ops';
 import { inferProductDomainType, isSellableProductType, resolvePosFacingProductDomainType } from '@/lib/product-domain';
 import { isUuidIdentity, resolveProductIdentity } from '@/lib/product-identity';
 import { isRuntimeVisibleProduct } from '@/lib/product-lifecycle-governance';
+import { compileTenantPosCatalog } from '@/lib/server/runtime-pos-catalog';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -58,6 +59,39 @@ function logTableOrderEvent(event: string, payload: Record<string, unknown>) {
     timestamp: new Date().toISOString(),
     ...payload,
   });
+}
+
+function runtimeInsertionErrorResponse(input: {
+  status: number;
+  reason: string;
+  traceId: string;
+  tenantId: string;
+  branchId?: string;
+  tableId?: string;
+  product?: Record<string, unknown> | null;
+  catalogRevision?: string;
+  serverCatalogRevision?: string;
+  details?: Record<string, unknown>;
+}) {
+  const payload = {
+    ok: false,
+    error: 'POS runtime insertion rejected.',
+    code: input.reason,
+    reason: input.reason,
+    traceId: input.traceId,
+    tenantId: input.tenantId,
+    branchId: input.branchId,
+    tableId: input.tableId,
+    catalogRevision: input.catalogRevision,
+    serverCatalogRevision: input.serverCatalogRevision,
+    productIdentity: input.product,
+    details: input.details,
+  };
+  console.error('[pos-table-orders] runtime insertion rejected', {
+    timestamp: new Date().toISOString(),
+    ...payload,
+  });
+  return NextResponse.json(payload, { status: input.status });
 }
 
 function mutationErrorResponse(error: unknown, traceId: string, tenantId: string, tableId?: string) {
@@ -262,7 +296,10 @@ export async function POST(request: Request) {
     traceId = mutationTraceId(body?.mutationId?.trim());
     tableId = body?.tableId?.trim() ?? '';
     const product = body?.product;
-    const productName = product?.name?.trim();
+    const productSnapshot = product?.productSnapshot && typeof product.productSnapshot === 'object'
+      ? product.productSnapshot
+      : null;
+    const productName = product?.name?.trim() || (typeof productSnapshot?.name === 'string' ? productSnapshot.name.trim() : '');
     const identity = resolveProductIdentity({
       id: product?.productId || product?.id,
       posKey: product?.posKey,
@@ -278,65 +315,230 @@ export async function POST(request: Request) {
     logTableOrderEvent('payload-received', {
       traceId,
       tenantId,
+      branchId: tenant.branchId,
       tableId,
       productId: product?.id,
       productUuid: product?.productId,
       posKey: identity.posKey,
+      requestedPosKey: product?.posKey,
       catalogRevision: product?.catalogRevision,
       legacyKey: identity.legacyKey,
+      snapshotPosKey: productSnapshot?.posKey,
+      snapshotRevision: productSnapshot?.revision,
+      snapshotProductType: productSnapshot?.productType,
       productName,
       price,
       quantityToAdd,
     });
 
-    if (!tableId || !productName || !Number.isFinite(price) || price < 0 || !Number.isFinite(quantityToAdd)) {
-      return NextResponse.json({
-        ok: false,
-        error: 'Invalid product mutation payload.',
+    if (!tableId || !product || !Number.isFinite(quantityToAdd)) {
+      return runtimeInsertionErrorResponse({
+        status: 400,
+        reason: 'malformed_order_item',
         traceId,
+        tenantId,
+        branchId: tenant.branchId,
         tableId,
-        productName,
-        price,
-        quantityToAdd,
-      }, { status: 400 });
+        catalogRevision: product?.catalogRevision,
+        product: {
+          productId: product?.productId || product?.id,
+          posKey: product?.posKey,
+          legacyKey: product?.legacyKey,
+          name: productName,
+        },
+        details: { productName, price, quantityToAdd },
+      });
     }
 
     const requestedProductType = inferProductDomainType({
-      name: productName,
+      name: productName || String(productSnapshot?.name ?? ''),
       category: product?.category,
       explicitType: product?.productType,
     });
     if (!isSellableProductType(requestedProductType)) {
-      return NextResponse.json({
-        ok: false,
-        error: 'Inventory-only stock items cannot be added to POS orders.',
-        code: 'inventory_item_not_sellable',
-        traceId,
-        tableId,
-        productName,
-        productType: requestedProductType,
-      }, { status: 400 });
-    }
-
-    const clientCatalogRevision = product?.catalogRevision?.trim();
-    const catalogRevision = clientCatalogRevision || `CAT-SERVER-REPAIRED-${identity.posKey}`;
-    const repairedRuntimeIdentity = !product?.posKey || !clientCatalogRevision;
-    if (repairedRuntimeIdentity) {
-      logTableOrderEvent('product-runtime-identity-repaired', {
+      return runtimeInsertionErrorResponse({
+        status: 400,
+        reason: requestedProductType === 'stock_item' ? 'stock_item_rejection' : 'invalid_productType',
         traceId,
         tenantId,
+        branchId: tenant.branchId,
         tableId,
-        productId: product?.id,
-        productName,
-        requestedPosKey: product?.posKey,
-        resolvedPosKey: identity.posKey,
-        requestedCatalogRevision: product?.catalogRevision,
-        catalogRevision,
-        reason: 'legacy_or_unversioned_pos_payload',
+        catalogRevision: product?.catalogRevision,
+        product: {
+          productId: product?.productId || product?.id,
+          posKey: identity.posKey,
+          legacyKey: identity.legacyKey,
+          name: productName,
+          productType: requestedProductType,
+        },
       });
     }
 
-    let dbProductId = product?.productId || (isUuid(product?.id) ? product?.id : undefined);
+    const clientCatalogRevision = product?.catalogRevision?.trim();
+    const runtimeCatalog = await compileTenantPosCatalog(tenantId, tenant.branchId ?? undefined, 'pos');
+    const catalogItem = runtimeCatalog.items.find((item) => item.posKey === identity.posKey);
+    logTableOrderEvent('runtime-catalog-resolved', {
+      traceId,
+      tenantId,
+      branchId: tenant.branchId,
+      tableId,
+      posKey: identity.posKey,
+      clientCatalogRevision,
+      serverCatalogRevision: runtimeCatalog.catalogRevision,
+      catalogItemCount: runtimeCatalog.itemCount,
+      catalogChecksum: runtimeCatalog.checksum,
+      cacheMiss: !catalogItem,
+      hasRuntimeSnapshot: Boolean(productSnapshot),
+    });
+
+    if (!product?.posKey) {
+      return runtimeInsertionErrorResponse({
+        status: 400,
+        reason: 'unknown_posKey',
+        traceId,
+        tenantId,
+        branchId: tenant.branchId,
+        tableId,
+        catalogRevision: clientCatalogRevision,
+        serverCatalogRevision: runtimeCatalog.catalogRevision,
+        product: {
+          productId: product?.productId || product?.id,
+          posKey: product?.posKey,
+          resolvedPosKey: identity.posKey,
+          legacyKey: identity.legacyKey,
+          name: productName,
+        },
+        details: { identityHealth: identity.identityHealth },
+      });
+    }
+
+    if (!productSnapshot) {
+      return runtimeInsertionErrorResponse({
+        status: 400,
+        reason: 'missing_runtime_snapshot',
+        traceId,
+        tenantId,
+        branchId: tenant.branchId,
+        tableId,
+        catalogRevision: clientCatalogRevision,
+        serverCatalogRevision: runtimeCatalog.catalogRevision,
+        product: {
+          productId: product?.productId || product?.id,
+          posKey: identity.posKey,
+          legacyKey: identity.legacyKey,
+          name: productName,
+        },
+      });
+    }
+
+    if (!catalogItem) {
+      return runtimeInsertionErrorResponse({
+        status: 404,
+        reason: 'runtime_catalog_cache_miss',
+        traceId,
+        tenantId,
+        branchId: tenant.branchId,
+        tableId,
+        catalogRevision: clientCatalogRevision,
+        serverCatalogRevision: runtimeCatalog.catalogRevision,
+        product: {
+          productId: product?.productId || product?.id,
+          posKey: identity.posKey,
+          legacyKey: identity.legacyKey,
+          name: productName,
+        },
+      });
+    }
+
+    if (clientCatalogRevision !== runtimeCatalog.catalogRevision || clientCatalogRevision !== catalogItem.catalogRevision) {
+      return runtimeInsertionErrorResponse({
+        status: 409,
+        reason: 'stale_revision',
+        traceId,
+        tenantId,
+        branchId: tenant.branchId,
+        tableId,
+        catalogRevision: clientCatalogRevision,
+        serverCatalogRevision: runtimeCatalog.catalogRevision,
+        product: {
+          productId: product?.productId || product?.id,
+          posKey: identity.posKey,
+          legacyKey: identity.legacyKey,
+          name: productName,
+        },
+        details: {
+          itemCatalogRevision: catalogItem.catalogRevision,
+          catalogChecksum: runtimeCatalog.checksum,
+        },
+      });
+    }
+
+    if (
+      productSnapshot.posKey !== catalogItem.productSnapshot.posKey
+      || Number(productSnapshot.revision) !== catalogItem.productSnapshot.revision
+      || productSnapshot.productType !== catalogItem.productSnapshot.productType
+    ) {
+      return runtimeInsertionErrorResponse({
+        status: 409,
+        reason: 'resolver_mismatch',
+        traceId,
+        tenantId,
+        branchId: tenant.branchId,
+        tableId,
+        catalogRevision: clientCatalogRevision,
+        serverCatalogRevision: runtimeCatalog.catalogRevision,
+        product: {
+          productId: product?.productId || product?.id,
+          posKey: identity.posKey,
+          legacyKey: identity.legacyKey,
+          name: productName,
+        },
+        details: {
+          clientSnapshot: productSnapshot,
+          serverSnapshot: catalogItem.productSnapshot,
+        },
+      });
+    }
+
+    if (!isSellableProductType(catalogItem.productSnapshot.productType)) {
+      return runtimeInsertionErrorResponse({
+        status: 400,
+        reason: catalogItem.productSnapshot.productType === 'stock_item' ? 'stock_item_rejection' : 'invalid_productType',
+        traceId,
+        tenantId,
+        branchId: tenant.branchId,
+        tableId,
+        catalogRevision: clientCatalogRevision,
+        serverCatalogRevision: runtimeCatalog.catalogRevision,
+        product: {
+          productId: catalogItem.productSnapshot.productId,
+          posKey: catalogItem.productSnapshot.posKey,
+          name: catalogItem.productSnapshot.name,
+          productType: catalogItem.productSnapshot.productType,
+        },
+      });
+    }
+
+    const catalogRevision = catalogItem.catalogRevision;
+    if (product.productId && catalogItem.productSnapshot.productId && product.productId !== catalogItem.productSnapshot.productId) {
+      return runtimeInsertionErrorResponse({
+        status: 409,
+        reason: 'UUID_mismatch',
+        traceId,
+        tenantId,
+        branchId: tenant.branchId,
+        tableId,
+        catalogRevision,
+        serverCatalogRevision: runtimeCatalog.catalogRevision,
+        product: {
+          productId: product.productId,
+          catalogProductId: catalogItem.productSnapshot.productId,
+          posKey: identity.posKey,
+          name: productName,
+        },
+      });
+    }
+    let dbProductId = product.productId || (isUuid(product.id) ? product.id : undefined) || catalogItem.productSnapshot.productId;
     const persistedProduct = await prisma.product.findFirst({
       where: dbProductId
         ? { tenantId, id: dbProductId }
@@ -370,19 +572,27 @@ export async function POST(request: Request) {
           })
         : null;
       if (persistedProduct && (!isRuntimeVisibleProduct(persistedProduct) || !isSellableProductType(persistedProductType))) {
-        return NextResponse.json({
-          ok: false,
-          error: 'This product is not published for POS runtime.',
-          code: 'product_not_runtime_visible',
+        return runtimeInsertionErrorResponse({
+          status: 400,
+          reason: 'missing_catalog_entry',
           traceId,
+          tenantId,
+          branchId: tenant.branchId,
           tableId,
-          productId: persistedProduct.id,
-          productName: persistedProduct.name,
-          productType: persistedProduct.productType,
-          lifecycleStatus: persistedProduct.lifecycleStatus,
-          publishStatus: persistedProduct.publishStatus,
-          resolvedProductType: persistedProductType,
-        }, { status: 400 });
+          catalogRevision,
+          serverCatalogRevision: runtimeCatalog.catalogRevision,
+          product: {
+            productId: persistedProduct.id,
+            posKey: identity.posKey,
+            name: persistedProduct.name,
+            productType: persistedProduct.productType,
+          },
+          details: {
+            lifecycleStatus: persistedProduct.lifecycleStatus,
+            publishStatus: persistedProduct.publishStatus,
+            resolvedProductType: persistedProductType,
+          },
+        });
       }
       if (clientCatalogRevision && Number.isFinite(Number(product?.revision)) && Number(product?.revision) !== persistedProduct.revision) {
         logTableOrderEvent('product-revision-mismatch', {
@@ -393,16 +603,22 @@ export async function POST(request: Request) {
           clientRevision: product?.revision,
           serverRevision: persistedProduct.revision,
         });
-        return NextResponse.json({
-          ok: false,
-          error: 'Product revision mismatch. Refresh POS catalog before inserting.',
-          code: 'product_revision_mismatch',
+        return runtimeInsertionErrorResponse({
+          status: 409,
+          reason: 'product_revision_mismatch',
           traceId,
+          tenantId,
+          branchId: tenant.branchId,
           tableId,
-          posKey: identity.posKey,
-          clientRevision: product?.revision,
-          serverRevision: persistedProduct.revision,
-        }, { status: 409 });
+          catalogRevision,
+          serverCatalogRevision: runtimeCatalog.catalogRevision,
+          product: {
+            productId: persistedProduct.id,
+            posKey: identity.posKey,
+            name: persistedProduct.name,
+          },
+          details: { clientRevision: product?.revision, serverRevision: persistedProduct.revision },
+        });
       }
     } else if (product?.id) {
       logTableOrderEvent('product-db-lookup-skipped', {
@@ -416,19 +632,19 @@ export async function POST(request: Request) {
 
     const productInput = {
       id: dbProductId,
-      posKey: identity.posKey,
+      posKey: catalogItem.productSnapshot.posKey,
       catalogRevision,
-      legacyKey: identity.legacyKey,
-      sku: identity.sku,
-      barcode: identity.barcode,
-      externalId: identity.externalId,
-      revision: persistedProduct?.revision ?? product?.revision ?? 1,
-      runtimeIdentityMode: repairedRuntimeIdentity ? 'server-repaired' : 'catalog',
-      productType: requestedProductType,
-      name: productName,
-      price,
-      category: product?.category ?? 'mutfak',
-      printCategory: product?.printCategory ?? product?.category ?? 'mutfak',
+      legacyKey: catalogItem.productSnapshot.legacyKey ?? identity.legacyKey,
+      sku: catalogItem.productSnapshot.sku ?? identity.sku,
+      barcode: catalogItem.productSnapshot.barcode ?? identity.barcode,
+      externalId: catalogItem.productSnapshot.externalId ?? identity.externalId,
+      revision: catalogItem.productSnapshot.revision,
+      runtimeIdentityMode: 'catalog',
+      productType: catalogItem.productSnapshot.productType,
+      name: catalogItem.productSnapshot.name,
+      price: catalogItem.productSnapshot.price,
+      category: catalogItem.productSnapshot.category,
+      printCategory: product?.printCategory ?? catalogItem.printCategory ?? catalogItem.productSnapshot.category,
       note: product?.note ?? '',
       guestName: product?.guestName ?? '',
       spicePreference: product?.spicePreference ?? 'standart',
