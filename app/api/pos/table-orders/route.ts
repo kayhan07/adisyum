@@ -53,6 +53,37 @@ type OrderLinePayload = {
   happyHourEligible?: boolean;
 };
 
+type ProductMutationPayload = {
+  id?: string;
+  productId?: string;
+  posKey?: string;
+  catalogRevision?: string;
+  sku?: string;
+  barcode?: string;
+  externalId?: string;
+  legacyKey?: string;
+  revision?: number;
+  name?: string;
+  productType?: string;
+  price?: number;
+  category?: string;
+  printCategory?: string;
+  quantity?: number;
+  note?: string;
+  guestName?: string;
+  spicePreference?: OrderLinePayload['spicePreference'];
+  cookingPreference?: OrderLinePayload['cookingPreference'];
+  extrasNote?: string;
+  removalNote?: string;
+  complimentary?: boolean;
+  complimentaryReason?: string;
+  isReturn?: boolean;
+  allowDiscount?: boolean;
+  allowComplimentary?: boolean;
+  happyHourEligible?: boolean;
+  productSnapshot?: Record<string, unknown>;
+};
+
 function tableOrderNo(tableId: string) {
   return `TABLE-${tableId}`;
 }
@@ -149,6 +180,121 @@ function compactJsonObject(input: Record<string, unknown>): Prisma.InputJsonObje
   return Object.fromEntries(
     Object.entries(input).filter(([, value]) => value !== undefined),
   ) as Prisma.InputJsonObject;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stringField(source: Record<string, unknown> | null | undefined, fields: string[]) {
+  if (!source) return undefined;
+  for (const field of fields) {
+    const value = source[field];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+  return undefined;
+}
+
+function numberField(source: Record<string, unknown> | null | undefined, fields: string[]) {
+  if (!source) return undefined;
+  for (const field of fields) {
+    const value = source[field];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return undefined;
+}
+
+function booleanField(source: Record<string, unknown> | null | undefined, fields: string[]) {
+  if (!source) return undefined;
+  for (const field of fields) {
+    const value = source[field];
+    if (typeof value === 'boolean') return value;
+  }
+  return undefined;
+}
+
+function extractProductItem(body: Record<string, unknown>) {
+  if (isRecord(body.product)) return body.product;
+  if (isRecord(body.item)) return body.item;
+  if (isRecord(body.orderItem)) return body.orderItem;
+  if (isRecord(body.line)) return body.line;
+  if (Array.isArray(body.items)) {
+    const firstItem = body.items.find(isRecord);
+    if (firstItem) return firstItem;
+  }
+  if (stringField(body, ['productId', 'id', 'posKey', 'name', 'title'])) return body;
+  return null;
+}
+
+function normalizeProductMutationPayload(item: Record<string, unknown> | null): ProductMutationPayload | null {
+  if (!item) return null;
+  const snapshot = isRecord(item.productSnapshot)
+    ? item.productSnapshot
+    : isRecord(item.snapshot)
+      ? item.snapshot
+      : null;
+  const quantity = numberField(item, ['quantity', 'qty', 'count']) ?? 1;
+  const total = numberField(item, ['total', 'lineTotal', 'line_total']);
+  const unitPrice = numberField(item, ['price', 'unitPrice', 'unit_price'])
+    ?? (total !== undefined && quantity > 0 ? total / quantity : undefined);
+  const productId = stringField(item, ['productId', 'product_id']) ?? stringField(snapshot, ['productId', 'id']);
+  const id = stringField(item, ['id']) ?? productId ?? stringField(snapshot, ['id', 'productId', 'posKey']);
+  const posKey = stringField(item, ['posKey', 'pos_key', 'productKey', 'product_key'])
+    ?? stringField(snapshot, ['posKey'])
+    ?? productId
+    ?? id;
+  const name = stringField(item, ['name', 'title', 'label']) ?? stringField(snapshot, ['name', 'title']);
+
+  return {
+    id,
+    productId,
+    posKey,
+    catalogRevision: stringField(item, ['catalogRevision', 'catalog_revision']) ?? stringField(snapshot, ['catalogRevision']),
+    sku: stringField(item, ['sku']) ?? stringField(snapshot, ['sku']),
+    barcode: stringField(item, ['barcode']) ?? stringField(snapshot, ['barcode']),
+    externalId: stringField(item, ['externalId', 'external_id']) ?? stringField(snapshot, ['externalId']),
+    legacyKey: stringField(item, ['legacyKey', 'legacy_key']) ?? stringField(snapshot, ['legacyKey']),
+    revision: numberField(item, ['revision', 'productRevision', 'product_revision']) ?? numberField(snapshot, ['revision']),
+    productSnapshot: snapshot ?? undefined,
+    name,
+    productType: stringField(item, ['productType', 'product_type', 'type']) ?? stringField(snapshot, ['productType']),
+    price: unitPrice,
+    category: stringField(item, ['category', 'categoryId', 'category_id']) ?? stringField(snapshot, ['category', 'categoryId']),
+    printCategory: stringField(item, ['printCategory', 'print_category']),
+    quantity,
+    note: stringField(item, ['note', 'notes']),
+    guestName: stringField(item, ['guestName', 'guest_name']),
+    spicePreference: stringField(item, ['spicePreference', 'spice_preference']) as OrderLinePayload['spicePreference'],
+    cookingPreference: stringField(item, ['cookingPreference', 'cooking_preference']) as OrderLinePayload['cookingPreference'],
+    extrasNote: stringField(item, ['extrasNote', 'extras_note']),
+    removalNote: stringField(item, ['removalNote', 'removal_note']),
+    complimentary: booleanField(item, ['complimentary']),
+    complimentaryReason: stringField(item, ['complimentaryReason', 'complimentary_reason']),
+    isReturn: booleanField(item, ['isReturn', 'is_return']),
+    allowDiscount: booleanField(item, ['allowDiscount', 'allow_discount']),
+    allowComplimentary: booleanField(item, ['allowComplimentary', 'allow_complimentary']),
+    happyHourEligible: booleanField(item, ['happyHourEligible', 'happy_hour_eligible']),
+  };
+}
+
+function normalizeTableOrderMutationBody(body: unknown) {
+  const record = isRecord(body) ? body : {};
+  const table = isRecord(record.table) ? record.table : null;
+  const receivedItem = extractProductItem(record);
+  const product = normalizeProductMutationPayload(receivedItem);
+  return {
+    mutationId: stringField(record, ['mutationId', 'mutation_id', 'clientMutationId']),
+    tableId: stringField(record, ['tableId', 'tableKey', 'tableNo', 'table_id', 'table_key', 'table_no'])
+      ?? stringField(table, ['id', 'key', 'no', 'tableId', 'tableKey', 'tableNo'])
+      ?? '',
+    product,
+    receivedItem,
+  };
 }
 
 function itemToLine(item: {
@@ -273,45 +419,13 @@ export async function POST(request: Request) {
       branchId: tenant.branchId,
       userId: tenant.userId,
     });
-    const body = (await request.json().catch(() => null)) as {
-      tableId?: string;
-      mutationId?: string;
-      product?: {
-        id?: string;
-        productId?: string;
-        posKey?: string;
-        catalogRevision?: string;
-        sku?: string;
-        barcode?: string;
-        externalId?: string;
-        legacyKey?: string;
-        revision?: number;
-        name?: string;
-        productType?: string;
-        price?: number;
-        category?: string;
-        printCategory?: string;
-        quantity?: number;
-        note?: string;
-        guestName?: string;
-        spicePreference?: OrderLinePayload['spicePreference'];
-        cookingPreference?: OrderLinePayload['cookingPreference'];
-        extrasNote?: string;
-        removalNote?: string;
-        complimentary?: boolean;
-        complimentaryReason?: string;
-        isReturn?: boolean;
-        allowDiscount?: boolean;
-        allowComplimentary?: boolean;
-        happyHourEligible?: boolean;
-        productSnapshot?: Record<string, unknown>;
-      };
-    } | null;
+    const body = await request.json().catch(() => null);
+    const normalizedBody = normalizeTableOrderMutationBody(body);
 
-    traceId = mutationTraceId(body?.mutationId?.trim());
-    tableId = body?.tableId?.trim() ?? '';
-    const product = body?.product;
-    const productSnapshot = product?.productSnapshot && typeof product.productSnapshot === 'object'
+    traceId = mutationTraceId(normalizedBody.mutationId);
+    tableId = normalizedBody.tableId;
+    const product = normalizedBody.product;
+    let productSnapshot = product?.productSnapshot && typeof product.productSnapshot === 'object'
       ? product.productSnapshot
       : null;
     const productName = product?.name?.trim() || (typeof productSnapshot?.name === 'string' ? productSnapshot.name.trim() : '');
@@ -347,7 +461,24 @@ export async function POST(request: Request) {
       quantityToAdd,
     });
 
-    if (!tableId || !product || !Number.isFinite(quantityToAdd)) {
+    if (!tableId || !product || !productName || !Number.isFinite(price) || !Number.isFinite(quantityToAdd)) {
+      const missingFields = [
+        tableId ? null : 'tableId',
+        product ? null : 'product',
+        productName ? null : 'product.name',
+        Number.isFinite(price) ? null : 'product.price',
+        Number.isFinite(quantityToAdd) ? null : 'product.quantity',
+      ].filter(Boolean);
+      console.error('[pos-table-orders] malformed_order_item', {
+        timestamp: new Date().toISOString(),
+        traceId,
+        tenantId,
+        branchId: tenant.branchId,
+        receivedBody: body,
+        receivedItem: normalizedBody.receivedItem,
+        missingFields,
+        normalizedItem: product,
+      });
       return runtimeInsertionErrorResponse({
         status: 400,
         reason: 'malformed_order_item',
@@ -393,6 +524,17 @@ export async function POST(request: Request) {
     const clientCatalogRevision = product?.catalogRevision?.trim();
     const runtimeCatalog = await compileTenantPosCatalog(tenantId, tenant.branchId ?? undefined, 'pos');
     const catalogItem = runtimeCatalog.items.find((item) => item.posKey === identity.posKey);
+    if (!productSnapshot && catalogItem) {
+      productSnapshot = catalogItem.productSnapshot as Record<string, unknown>;
+      logTableOrderEvent('runtime-snapshot-backfilled', {
+        traceId,
+        tenantId,
+        branchId: tenant.branchId,
+        tableId,
+        posKey: identity.posKey,
+        source: 'server-runtime-catalog',
+      });
+    }
     logTableOrderEvent('runtime-catalog-resolved', {
       traceId,
       tenantId,
@@ -721,7 +863,7 @@ export async function POST(request: Request) {
       allowComplimentary: product?.allowComplimentary ?? true,
       happyHourEligible: product?.happyHourEligible ?? false,
     };
-    const mutationId = body?.mutationId?.trim() || `${tableId}-${Date.now()}`;
+    const mutationId = normalizedBody.mutationId || `${tableId}-${Date.now()}`;
     const orderNo = tableOrderNo(tableId);
 
     logTableOrderEvent('transaction-start', {

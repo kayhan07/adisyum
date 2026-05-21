@@ -363,6 +363,7 @@ async function addProductToAuthoritativeOrder(input: {
     quantity: input.product.quantity ?? 1,
     price: input.product.price,
   });
+  console.log('[adisyon-flow] table-orders payload', input);
   const response = await fetch('/api/pos/table-orders', {
     method: 'POST',
     cache: 'no-store',
