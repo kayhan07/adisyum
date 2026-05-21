@@ -898,7 +898,29 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
-    location ~ ^/(api|adisyonsistemi|access|dashboard|pos|orders|products|warehouse|reports|finance|settings|branches|delivery|developer|bar-control|floor|integrations|kds|overview|qr|qr-menu|saas)(/|\$) {
+    location = /api {
+        proxy_pass http://127.0.0.1:${ROOT_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$connection_upgrade;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location ^~ /api/ {
+        proxy_pass http://127.0.0.1:${ROOT_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$connection_upgrade;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location ~ ^/(adisyonsistemi|access|dashboard|pos|orders|products|warehouse|reports|finance|settings|branches|delivery|developer|bar-control|floor|integrations|kds|overview|qr|qr-menu|saas)(/|\$) {
         proxy_pass http://127.0.0.1:${ROOT_PORT};
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
