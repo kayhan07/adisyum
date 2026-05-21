@@ -309,8 +309,11 @@ Owns:
 2. Validate browser POST shows `[adisyon-flow] table-orders payload`.
 3. If `malformed_order_item` persists, inspect server log `[pos-table-orders] malformed_order_item` for missing fields.
 4. Extract `addProductToAuthoritativeOrder` and optimistic line creation into `lib/pos-runtime/order-mutations.ts`.
-5. Extract UI reconciliation wrapper into `lib/runtime/table-state-engine.ts`.
-6. Make `runtime-state.ts` table-agnostic by moving table snapshot merge rules to the Table State Engine.
+5. Make `runtime-state.ts` table-agnostic by moving table snapshot merge rules to the Table State Engine.
+
+## Stabilization Change Log
+
+- 2026-05-21: Added `lib/runtime/table-state-engine.ts` as the first Table State Engine boundary. `components/order-composer.tsx` no longer calls the low-level reconciliation reducer directly; it delegates to `reconcileTableState`, which owns the active table reconciliation log shape and reducer invocation.
 
 ## Non-Goals
 

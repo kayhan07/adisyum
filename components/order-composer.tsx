@@ -49,7 +49,8 @@ import { createAutoProductMapping, getProductMapping, upsertProductMapping, vali
 import { queueOfflinePaymentSnapshot, syncOfflineOrders } from '@/lib/offline-sync-store';
 import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
 import { replaceAuthoritativeOrdersByTable } from '@/lib/client/authoritative-table-orders';
-import { mergeAuthoritativeOrders, orderRevision, type PosOrderReconciliationSource } from '@/lib/pos-order-reconciliation';
+import { type PosOrderReconciliationSource } from '@/lib/pos-order-reconciliation';
+import { reconcileTableState } from '@/lib/runtime/table-state-engine';
 import { fetchLocalAgentJson } from '@/lib/local-agent';
 import { printCustomerReceipt, printKitchenTicket, printBarTicket } from '@/lib/receipt-formatter';
 import { recordOrderForSmartStock } from '@/lib/smart-recipe-stock-engine';
@@ -1084,23 +1085,14 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     source: PosOrderReconciliationSource,
   ) => {
     const activeTableId = currentTable?.id ?? selectedTableId;
-    const result = mergeAuthoritativeOrders({
+    const result = reconcileTableState({
       current,
       incoming,
       activeTableId,
       source,
       pendingMutation: orderMutationGuardRef.current,
-      now: Date.now(),
     });
-    const activeLines = activeTableId ? result.orders[activeTableId] ?? EMPTY_ORDER_LINES : EMPTY_ORDER_LINES;
-    logOrderFlow('order-reconciliation-reducer', {
-      source,
-      activeTableId: activeTableId || null,
-      activeLineCount: activeLines.length,
-      activeRevision: orderRevision(activeLines),
-      pendingMutation: orderMutationGuardRef.current,
-      decisions: result.decisions,
-    });
+    logOrderFlow('order-reconciliation-reducer', result.log);
     return result.orders;
   }, [currentTable?.id, selectedTableId]);
   const splitSelectionLineKey = lines.map((line) => `${line.id}:${line.qty}`).join('|');
