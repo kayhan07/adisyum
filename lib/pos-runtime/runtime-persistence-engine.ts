@@ -2,6 +2,7 @@
 
 import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
 import {
+  getTableLiveTotals,
   setTableLiveTotals,
   setTablePaymentRequested,
 } from '@/lib/table-payment-state';
@@ -96,13 +97,27 @@ export function restoreRuntimeJson<T>(scope: 'tenant' | 'system-admin', key: str
 }
 
 export function persistRuntimeJson<T>(scope: 'tenant' | 'system-admin', key: string, value: T) {
+  const nextSerialized = JSON.stringify(value);
+  if (readRuntimeItem(scope, key) === nextSerialized) {
+    emitRuntimeEvent({
+      type: 'redundant persistence suppressed',
+      channel: 'persistence',
+      payload: { scope, key },
+    });
+    return {
+      scope,
+      key,
+      value,
+      version: nextVersion(),
+    } satisfies RuntimePersistenceSnapshot<T>;
+  }
   const snapshot = {
     scope,
     key,
     value,
     version: nextVersion(),
   } satisfies RuntimePersistenceSnapshot<T>;
-  writeRuntimeItem(scope, key, JSON.stringify(value));
+  writeRuntimeItem(scope, key, nextSerialized);
   emitRuntimeEvent({
     type: 'persistence snapshot written',
     channel: 'persistence',
@@ -121,7 +136,17 @@ export function persistRecentAccountIds(key: string, accountIds: string[]) {
 }
 
 export function persistTableLiveTotals(totals: Record<string, number>) {
+  const before = JSON.stringify(getTableLiveTotals());
   setTableLiveTotals(totals);
+  const after = JSON.stringify(getTableLiveTotals());
+  if (before === after) {
+    emitRuntimeEvent({
+      type: 'redundant persistence suppressed',
+      channel: 'persistence',
+      payload: { key: 'aurelia-table-live-totals', tableIds: Object.keys(totals) },
+    });
+    return;
+  }
   emitRuntimeEvent({
     type: 'persistence snapshot written',
     channel: 'persistence',

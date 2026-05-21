@@ -35,9 +35,20 @@ export type CrossTabSyncEvent = RuntimeEventEnvelope & {
 export type RuntimeEventListener = (event: RuntimeEventEnvelope) => void;
 
 const listeners = new Set<RuntimeEventListener>();
+let runtimeEventEmissionCount = 0;
+let lastEventFingerprint = '';
+let lastEventAtMs = 0;
 
 function createEventId() {
   return `runtime-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function safeEventPayloadFingerprint(payload: Record<string, unknown>) {
+  try {
+    return JSON.stringify(payload);
+  } catch {
+    return 'unserializable-payload';
+  }
 }
 
 export function subscribeRuntimeEvents(listener: RuntimeEventListener) {
@@ -50,12 +61,31 @@ export function emitRuntimeEvent(input: {
   channel?: RuntimeEventEnvelope['channel'];
   payload?: Record<string, unknown>;
 }) {
+  const channel = input.channel ?? 'pos-runtime';
+  const payload = input.payload ?? {};
+  const fingerprint = `${channel}:${input.type}:${safeEventPayloadFingerprint(payload)}`;
+  const now = Date.now();
+  if (fingerprint === lastEventFingerprint && now - lastEventAtMs < 25) {
+    return {
+      id: 'suppressed-duplicate-runtime-event',
+      type: 'duplicate event suppressed',
+      channel,
+      timestamp: new Date(now).toISOString(),
+      payload: { originalType: input.type },
+    } satisfies RuntimeEventEnvelope;
+  }
+  runtimeEventEmissionCount += 1;
+  lastEventFingerprint = fingerprint;
+  lastEventAtMs = now;
   const event: RuntimeEventEnvelope = {
     id: createEventId(),
     type: input.type,
-    channel: input.channel ?? 'pos-runtime',
+    channel,
     timestamp: new Date().toISOString(),
-    payload: input.payload ?? {},
+    payload: {
+      ...payload,
+      runtimeEventEmissionCount,
+    },
   };
   listeners.forEach((listener) => listener(event));
   return event;

@@ -48,15 +48,17 @@ function buildDefaultTables() {
   ];
 }
 
+const DEFAULT_TABLE_LAYOUT_STATE: TableLayoutState = {
+  tables: buildDefaultTables(),
+};
+
 function emitChange() {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent(EVENT_NAME));
 }
 
 export function getDefaultTableLayoutState(): TableLayoutState {
-  return {
-    tables: buildDefaultTables(),
-  };
+  return DEFAULT_TABLE_LAYOUT_STATE;
 }
 
 export function loadTableLayoutState() {

@@ -60,6 +60,9 @@ export type RuntimeReconciliationResult<TLine extends RuntimeOrderLine = Runtime
 };
 
 const DEFAULT_PENDING_PROTECTION_MS = 2500;
+let runtimeHydrationCount = 0;
+let runtimeSyncCycleCount = 0;
+let runtimeSubscriptionCount = 0;
 
 async function readJsonResponse(response: Response) {
   const text = await response.text();
@@ -120,7 +123,11 @@ export async function hydrateAuthoritativeRuntime<TLine extends RuntimeOrderLine
   getPendingMutation: () => PendingMutation | null;
   diagnostics?: RuntimeSyncDiagnostics;
 }) {
-  input.diagnostics?.('runtime hydration started', { source: 'initial-hydration' });
+  runtimeHydrationCount += 1;
+  input.diagnostics?.('runtime hydration started', {
+    source: 'initial-hydration',
+    hydrationCount: runtimeHydrationCount,
+  });
   const payload = await fetchAuthoritativeTablePayload<TLine>();
   input.diagnostics?.('authoritative payload received', {
     source: 'initial-hydration',
@@ -157,6 +164,7 @@ export async function hydrateAuthoritativeRuntime<TLine extends RuntimeOrderLine
     },
   } satisfies RuntimeSyncSnapshot<TLine>;
   input.diagnostics?.('runtime hydration completed', {
+    hydrationCount: runtimeHydrationCount,
     tableCount: Object.keys(ordersByTable).length,
     activeOrderTables: Object.entries(ordersByTable).filter(([, value]) => value.length > 0).map(([tableId]) => tableId),
   });
@@ -215,7 +223,17 @@ export function startAuthoritativeRuntimeSync<TLine extends RuntimeOrderLine>(in
   if (!input.enabled || typeof window === 'undefined') return () => undefined;
 
   let cancelled = false;
+  let reconcileInFlight = false;
   const reconcile = (source: 'interval' | 'focus') => {
+    runtimeSyncCycleCount += 1;
+    if (reconcileInFlight) {
+      input.diagnostics?.('sync conflict resolved', {
+        source,
+        syncCycleCount: runtimeSyncCycleCount,
+        reason: 'reconcile_in_flight',
+      });
+      return;
+    }
     const protection = protectPendingOptimisticMutation({
       source,
       pendingMutation: input.getPendingMutation(),
@@ -231,6 +249,7 @@ export function startAuthoritativeRuntimeSync<TLine extends RuntimeOrderLine>(in
       return;
     }
 
+    reconcileInFlight = true;
     void fetchAuthoritativeTablePayload<TLine>()
       .then((payload) => {
         if (cancelled) return;
@@ -255,15 +274,20 @@ export function startAuthoritativeRuntimeSync<TLine extends RuntimeOrderLine>(in
       .catch((error) => {
         if (cancelled) return;
         input.onError(source, error);
+      })
+      .finally(() => {
+        reconcileInFlight = false;
       });
   };
 
+  runtimeSubscriptionCount += 1;
   const timer = window.setInterval(() => reconcile('interval'), input.intervalMs ?? 3500);
   const handleFocus = () => reconcile('focus');
   window.addEventListener('focus', handleFocus);
 
   input.diagnostics?.('runtime sync subscription started', {
     intervalMs: input.intervalMs ?? 3500,
+    runtimeSubscriptionCount,
   });
 
   return () => {
