@@ -456,6 +456,7 @@ load_env() {
   export NODE_ENV=production
   export APP_ENV=production
   export GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || true)"
+  export DEPLOYED_AT="${TS}"
   export ADISYUM_ROOT_ASSET_PREFIX="${ROOT_ASSET_PREFIX}"
   export NEXT_PUBLIC_APP_URL="https://${DOMAIN}"
   export NEXTAUTH_URL="https://${DOMAIN}"
@@ -492,6 +493,7 @@ inspect_drift_before_cleanup() {
 stop_all_runtime() {
   log "Stopping all runtime services managed by PM2"
   pm2 delete all || true
+  pm2 flush || true
   pm2 kill || true
 }
 
@@ -646,6 +648,7 @@ build_apps() {
   run_app npm run runtime:audit-production
   run_app npm run env:audit-production
   log "Root BUILD_ID=$(cat .next/BUILD_ID)"
+  log "Root GIT_COMMIT=${GIT_COMMIT:-unknown} DEPLOYED_AT=${DEPLOYED_AT:-unknown}"
 
   run_app npm --prefix apps/website run build
   [[ -s "apps/website/.next/BUILD_ID" ]] || fail "Website .next/BUILD_ID missing"
@@ -731,6 +734,50 @@ validate_live_ports() {
   ss -ltnp | grep -E ":(${ROOT_PORT}|${WEBSITE_PORT})" || true
   ss -ltnp | grep -Eq "127\\.0\\.0\\.1:${ROOT_PORT}|\\[::1\\]:${ROOT_PORT}|0\\.0\\.0\\.0:${ROOT_PORT}|\\[::\\]:${ROOT_PORT}" || fail "adisyum-root-app is not listening on ${ROOT_PORT}"
   ss -ltnp | grep -Eq "127\\.0\\.0\\.1:${WEBSITE_PORT}|\\[::1\\]:${WEBSITE_PORT}|0\\.0\\.0\\.0:${WEBSITE_PORT}|\\[::\\]:${WEBSITE_PORT}" || fail "adisyum-website is not listening on ${WEBSITE_PORT}"
+}
+
+validate_runtime_build_identity() {
+  log "Validating runtime build identity against active source"
+  cd "${APP_DIR}"
+  local url="${1:-http://127.0.0.1:${ROOT_PORT}/api/runtime-build-id}"
+  local expected_build_id expected_commit
+  expected_build_id="$(cat .next/BUILD_ID)"
+  expected_commit="${GIT_COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || true)}"
+  node - "${expected_build_id}" "${expected_commit}" "${url}" <<'NODE'
+const [expectedBuildId, expectedCommit, url] = process.argv.slice(2);
+
+async function main() {
+  const response = await fetch(url, { cache: 'no-store' });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || !body?.ok) {
+    throw new Error(`${url} did not return runtime proof: HTTP ${response.status}`);
+  }
+  if (body.buildId !== expectedBuildId) {
+    throw new Error(`Runtime BUILD_ID mismatch: live=${body.buildId} expected=${expectedBuildId}`);
+  }
+  if (!String(body.gitCommit || '').startsWith(expectedCommit)) {
+    throw new Error(`Runtime git commit mismatch: live=${body.gitCommit} expected=${expectedCommit}`);
+  }
+  if (body.nodeEnv !== 'production') {
+    throw new Error(`Runtime NODE_ENV mismatch: ${body.nodeEnv}`);
+  }
+  if (body.port !== '3000') {
+    throw new Error(`Runtime PORT mismatch: ${body.port}`);
+  }
+  if (body.sessionCookieDomain !== '.adisyum.com') {
+    throw new Error(`Runtime SESSION_COOKIE_DOMAIN mismatch: ${body.sessionCookieDomain}`);
+  }
+  if (!body.deploymentTime) {
+    throw new Error('Runtime deploymentTime missing');
+  }
+  console.log(JSON.stringify({ ok: true, url, buildId: body.buildId, gitCommit: body.gitCommit, deploymentTime: body.deploymentTime }, null, 2));
+}
+
+main().catch((error) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});
+NODE
 }
 
 write_nginx() {
@@ -959,12 +1006,14 @@ validate_runtime_routes() {
   wait_for_route_not_404 "POST" "http://127.0.0.1:${ROOT_PORT}/api/pos/table-orders"
   wait_for_route_not_404 "GET" "http://127.0.0.1:${ROOT_PORT}/api/runtime/pos-catalog"
   wait_for_route_not_404 "GET" "http://127.0.0.1:${ROOT_PORT}/api/runtime-build-id"
+  validate_runtime_build_identity "http://127.0.0.1:${ROOT_PORT}/api/runtime-build-id"
 
   wait_for_healthy_route "https://${DOMAIN}"
   wait_for_healthy_route "https://${DOMAIN}/app"
   wait_for_healthy_route "https://${DOMAIN}/system-admin"
   wait_for_route_not_404 "POST" "https://${DOMAIN}/api/pos/table-orders"
   wait_for_route_not_404 "GET" "https://${DOMAIN}/api/runtime-build-id"
+  validate_runtime_build_identity "https://${DOMAIN}/api/runtime-build-id"
 }
 
 print_final_state() {

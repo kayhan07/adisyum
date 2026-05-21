@@ -1,8 +1,27 @@
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 
 const failures = [];
 const liveBaseUrl = process.env.DEPLOY_VERIFY_BASE_URL || process.env.PRODUCTION_BASE_URL || '';
 const verifyLive = process.env.DEPLOY_VERIFY_LIVE === '1' || liveBaseUrl.length > 0;
+const expectedCommit = process.env.DEPLOY_VERIFY_GIT_COMMIT || gitCommit();
+const expectedBuildId = process.env.DEPLOY_VERIFY_BUILD_ID || readBuildId();
+
+function gitCommit() {
+  const result = spawnSync('git', ['rev-parse', '--short', 'HEAD'], {
+    shell: process.platform === 'win32',
+    encoding: 'utf8',
+  });
+  return result.status === 0 ? result.stdout.trim() : '';
+}
+
+function readBuildId() {
+  try {
+    return fs.readFileSync('.next/BUILD_ID', 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
 
 function run(command, args) {
   const result = spawnSync(command, args, {
@@ -39,6 +58,24 @@ async function verifyLiveRoute() {
     const response = await fetch(buildUrl, { cache: 'no-store' });
     if (response.status === 404) failures.push(`${buildUrl} returned 404`);
     const body = await response.json().catch(() => null);
+    if (expectedBuildId && body?.buildId !== expectedBuildId) {
+      failures.push(`${buildUrl} BUILD_ID mismatch: live=${body?.buildId ?? 'missing'} expected=${expectedBuildId}`);
+    }
+    if (expectedCommit && !String(body?.gitCommit ?? '').startsWith(expectedCommit)) {
+      failures.push(`${buildUrl} gitCommit mismatch: live=${body?.gitCommit ?? 'missing'} expected=${expectedCommit}`);
+    }
+    if (body?.nodeEnv !== 'production') {
+      failures.push(`${buildUrl} NODE_ENV mismatch: live=${body?.nodeEnv ?? 'missing'} expected=production`);
+    }
+    if (body?.port !== '3000') {
+      failures.push(`${buildUrl} PORT mismatch: live=${body?.port ?? 'missing'} expected=3000`);
+    }
+    if (body?.sessionCookieDomain !== '.adisyum.com') {
+      failures.push(`${buildUrl} SESSION_COOKIE_DOMAIN mismatch: live=${body?.sessionCookieDomain ?? 'missing'} expected=.adisyum.com`);
+    }
+    if (!body?.deploymentTime) {
+      failures.push(`${buildUrl} deploymentTime missing`);
+    }
     checks.runtimeBuildId = { url: buildUrl, status: response.status, ok: response.status !== 404, body };
   } catch (error) {
     failures.push(`${buildUrl} request failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -71,6 +108,10 @@ const live = await verifyLiveRoute();
 const report = {
   ok: failures.length === 0,
   checkedAt: new Date().toISOString(),
+  expected: {
+    gitCommit: expectedCommit || null,
+    buildId: expectedBuildId || null,
+  },
   live,
   failures,
 };

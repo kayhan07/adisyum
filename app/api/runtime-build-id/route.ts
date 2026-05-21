@@ -27,7 +27,10 @@ export async function GET() {
     ok: true,
     buildId: readBuildId(),
     gitCommit: process.env.GIT_COMMIT ?? process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+    deploymentTime: process.env.DEPLOYED_AT ?? null,
     timestamp: new Date().toISOString(),
     nodeEnv: process.env.NODE_ENV ?? null,
+    port: process.env.PORT ?? null,
+    sessionCookieDomain: process.env.SESSION_COOKIE_DOMAIN ?? null,
   });
 }
