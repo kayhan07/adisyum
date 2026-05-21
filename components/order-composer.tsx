@@ -50,7 +50,6 @@ import { queueOfflinePaymentSnapshot, syncOfflineOrders } from '@/lib/offline-sy
 import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
 import { replaceAuthoritativeOrdersByTable } from '@/lib/client/authoritative-table-orders';
 import { type PosOrderReconciliationSource } from '@/lib/pos-order-reconciliation';
-import { reconcileTableState } from '@/lib/runtime/table-state-engine';
 import {
   appendOptimisticLine,
   commitOrderMutation,
@@ -61,6 +60,11 @@ import {
   rollbackOrderMutation,
   type PendingMutation,
 } from '@/lib/pos-runtime/order-mutations';
+import {
+  hydrateAuthoritativeRuntime,
+  reconcileRuntimeSyncSnapshot,
+  startAuthoritativeRuntimeSync,
+} from '@/lib/pos-runtime/runtime-sync-engine';
 import { fetchLocalAgentJson } from '@/lib/local-agent';
 import { printCustomerReceipt, printKitchenTicket, printBarTicket } from '@/lib/receipt-formatter';
 import { recordOrderForSmartStock } from '@/lib/smart-recipe-stock-engine';
@@ -172,6 +176,7 @@ const categories: Category[] = [
 const VAT_RATE = 0.1;
 const RECENT_ACCOUNT_KEY = 'adisyon-recent-charge-accounts';
 const EMPTY_ORDER_LINES: OrderLine[] = [];
+const EMPTY_ORDERS_BY_TABLE: Record<string, OrderLine[]> = {};
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat('tr-TR', {
@@ -265,19 +270,6 @@ async function readJsonResponse(response: Response) {
   } catch {
     return { raw: text };
   }
-}
-
-async function fetchAuthoritativeTableOrders() {
-  const response = await fetch('/api/pos/table-orders', {
-    method: 'GET',
-    cache: 'no-store',
-    credentials: 'include',
-  });
-  const payload = await readJsonResponse(response) as { ordersByTable?: Record<string, OrderLine[]>; message?: string; error?: string; traceId?: string };
-  if (!response.ok) {
-    throw new Error(`Authoritative order fetch failed with ${response.status}: ${payload.message ?? payload.error ?? 'unknown error'}${payload.traceId ? ` (${payload.traceId})` : ''}`);
-  }
-  return payload.ordersByTable ?? {};
 }
 
 function ensureOrderProductMapping(product: ProductCard) {
@@ -961,15 +953,16 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     source: PosOrderReconciliationSource,
   ) => {
     const activeTableId = currentTable?.id ?? selectedTableId;
-    const result = reconcileTableState({
+    const result = reconcileRuntimeSyncSnapshot({
       current,
       incoming,
       activeTableId,
       source,
       pendingMutation: orderMutationGuardRef.current,
+      diagnostics: logOrderFlow,
     });
     logOrderFlow('order-reconciliation-reducer', result.log);
-    return result.orders;
+    return result.ordersByTable;
   }, [currentTable?.id, selectedTableId]);
   const splitSelectionLineKey = lines.map((line) => `${line.id}:${line.qty}`).join('|');
   const itemCount = useMemo(() => lines.reduce((sum, item) => sum + item.qty, 0), [lines]);
@@ -1170,30 +1163,16 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   }, []);
 
   useEffect(() => {
-    void fetchAuthoritativeTableOrders()
-      .then((serverOrders) => {
-        const recentMutation = orderMutationGuardRef.current;
-        if (recentMutation && Date.now() - recentMutation.at < 2500) {
-          logOrderFlow('authoritative-orders-hydration-deferred-for-mutation', {
-            tableId: recentMutation.tableId,
-            source: recentMutation.source,
-            ageMs: Date.now() - recentMutation.at,
-          });
-          setOrdersHydrated(true);
-          return;
+    void hydrateAuthoritativeRuntime<OrderLine>({
+      initialOrders,
+      normalizeOrders: (orders) => normalizeStoredOrders(orders, sourceProducts),
+      getPendingMutation: () => orderMutationGuardRef.current,
+      diagnostics: logOrderFlow,
+    })
+      .then((result) => {
+        if (result.snapshot) {
+          setOrdersByTable((current) => reconcileAuthoritativeOrders(current, result.snapshot?.ordersByTable ?? EMPTY_ORDERS_BY_TABLE, 'initial-hydration'));
         }
-        const nextOrders = normalizeStoredOrders(
-          {
-            ...initialOrders,
-            ...serverOrders,
-          },
-          sourceProducts,
-        );
-        logOrderFlow('authoritative-orders-hydrated', {
-          tableCount: Object.keys(nextOrders).length,
-          activeOrderTables: Object.entries(nextOrders).filter(([, value]) => value.length > 0).map(([tableId]) => tableId),
-        });
-        setOrdersByTable((current) => reconcileAuthoritativeOrders(current, nextOrders, 'initial-hydration'));
         setOrdersHydrated(true);
       })
       .catch((error) => {
@@ -1219,61 +1198,36 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   useEffect(() => {
     if (!ordersHydrated || typeof window === 'undefined') return;
 
-    let cancelled = false;
-    const reconcile = (reason: 'interval' | 'focus') => {
-      const recentMutation = orderMutationGuardRef.current;
-      if (recentMutation && Date.now() - recentMutation.at < 2500) {
-        logOrderFlow('authoritative-orders-reconcile-skipped-for-mutation', {
+    return startAuthoritativeRuntimeSync<OrderLine>({
+      enabled: ordersHydrated,
+      initialOrders,
+      normalizeOrders: (orders) => normalizeStoredOrders(orders, sourceProducts),
+      getPendingMutation: () => orderMutationGuardRef.current,
+      getActiveTableId: () => currentTable?.id ?? selectedTableId ?? null,
+      onAuthoritativePayload: (payload, reason) => {
+        const activeTableId = currentTable?.id ?? selectedTableId;
+        setOrdersByTable((current) => {
+          const merged = reconcileAuthoritativeOrders(current, payload.ordersByTable, reason);
+          const nextLines = activeTableId ? merged[activeTableId] ?? EMPTY_ORDER_LINES : EMPTY_ORDER_LINES;
+          if (activeTableId) setTableLiveTotals({ [activeTableId]: getOrderGross(nextLines) });
+          return areOrderMapsEqual(current, merged) ? current : merged;
+        });
+        logOrderFlow('authoritative-orders-reconciled', {
           reason,
-          tableId: recentMutation.tableId,
-          source: recentMutation.source,
-          ageMs: Date.now() - recentMutation.at,
+          selectedTableId,
+          activeOrderId: activeTableId || null,
+          incomingActiveLineCount: activeTableId ? payload.ordersByTable[activeTableId]?.length ?? 0 : 0,
+          tableCount: Object.keys(payload.ordersByTable).length,
         });
-        return;
-      }
-
-      void fetchAuthoritativeTableOrders()
-        .then((serverOrders) => {
-          if (cancelled) return;
-          const nextOrders = normalizeStoredOrders(
-            {
-              ...initialOrders,
-              ...serverOrders,
-            },
-            sourceProducts,
-          );
-          const activeTableId = currentTable?.id ?? selectedTableId;
-          setOrdersByTable((current) => {
-            const merged = reconcileAuthoritativeOrders(current, nextOrders, reason);
-            const nextLines = activeTableId ? merged[activeTableId] ?? EMPTY_ORDER_LINES : EMPTY_ORDER_LINES;
-            if (activeTableId) setTableLiveTotals({ [activeTableId]: getOrderGross(nextLines) });
-            return areOrderMapsEqual(current, merged) ? current : merged;
-          });
-          logOrderFlow('authoritative-orders-reconciled', {
-            reason,
-            selectedTableId,
-            activeOrderId: activeTableId || null,
-            incomingActiveLineCount: activeTableId ? nextOrders[activeTableId]?.length ?? 0 : 0,
-            tableCount: Object.keys(nextOrders).length,
-          });
-        })
-        .catch((error) => {
-          if (cancelled) return;
-          logOrderFlow('authoritative-orders-reconcile-failed', {
-            reason,
-            message: error instanceof Error ? error.message : String(error),
-          });
+      },
+      onError: (reason, error) => {
+        logOrderFlow('authoritative-orders-reconcile-failed', {
+          reason,
+          message: error instanceof Error ? error.message : String(error),
         });
-    };
-
-    const timer = window.setInterval(() => reconcile('interval'), 3500);
-    const handleFocus = () => reconcile('focus');
-    window.addEventListener('focus', handleFocus);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-      window.removeEventListener('focus', handleFocus);
-    };
+      },
+      diagnostics: logOrderFlow,
+    });
   }, [currentTable?.id, initialOrders, ordersHydrated, reconcileAuthoritativeOrders, selectedTableId, sourceProducts]);
 
   useEffect(() => {
