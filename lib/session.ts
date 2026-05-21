@@ -36,22 +36,38 @@ export function clearSessionCookie(response: NextResponse) {
     ...getSessionCookieOptions(),
     maxAge: 0,
   });
+  response.cookies.set(SESSION_COOKIE_NAME, '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    path: '/',
+    maxAge: 0,
+  });
   return response;
 }
 
-export function getRawSessionTokenFromRequest(request: Request | NextRequest) {
+function getRawSessionTokensFromRequest(request: Request | NextRequest) {
   const cookieHeader = request.headers.get('cookie') ?? '';
-  const token = cookieHeader
+  return cookieHeader
     .split(';')
     .map((part) => part.trim())
-    .find((part) => part.startsWith(`${SESSION_COOKIE_NAME}=`))
-    ?.slice(SESSION_COOKIE_NAME.length + 1);
+    .filter((part) => part.startsWith(`${SESSION_COOKIE_NAME}=`))
+    .map((part) => part.slice(SESSION_COOKIE_NAME.length + 1))
+    .filter(Boolean)
+    .map((token) => decodeURIComponent(token));
+}
 
-  return token ? decodeURIComponent(token) : null;
+export function getRawSessionTokenFromRequest(request: Request | NextRequest) {
+  return getRawSessionTokensFromRequest(request).at(-1) ?? null;
 }
 
 export async function getSessionFromRequest(request: Request | NextRequest) {
-  return verifySessionToken(getRawSessionTokenFromRequest(request));
+  const tokens = getRawSessionTokensFromRequest(request);
+  for (const token of tokens.reverse()) {
+    const session = await verifySessionToken(token).catch(() => null);
+    if (session) return session;
+  }
+  return null;
 }
 
 export function unauthorizedResponse(message = 'Unauthorized') {
