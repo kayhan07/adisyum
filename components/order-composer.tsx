@@ -26,7 +26,6 @@ import { getDefaultAccessState, loadAccessState, subscribeToAccessChanges } from
 import {
   getDefaultIntegrationState,
   loadIntegrationState,
-  resolvePrinterNameForCategory,
   saveIntegrationState,
   subscribeToIntegrationChanges,
 } from '@/lib/integration-store';
@@ -69,7 +68,13 @@ import {
   persistTablePaymentRequested,
   restoreRecentAccountIds,
 } from '@/lib/pos-runtime/runtime-persistence-engine';
-import { fetchLocalAgentJson } from '@/lib/local-agent';
+import { hydrateRuntimeSessionContext } from '@/lib/runtime/runtime-session-engine';
+import {
+  isRuntimeBarCategory,
+  readBridgePrinterNames,
+  registerRuntimeDevices,
+  resolveRuntimePrinterRoute,
+} from '@/lib/device-runtime/device-session-registry';
 import { printCustomerReceipt, printKitchenTicket, printBarTicket } from '@/lib/receipt-formatter';
 import { recordOrderForSmartStock } from '@/lib/smart-recipe-stock-engine';
 import type { BranchId } from '@/lib/erp-engine';
@@ -381,51 +386,6 @@ function getOrderGross(lines: OrderLine[]) {
   return Number((subtotal * (1 + VAT_RATE)).toFixed(2));
 }
 
-type TenantPrinterSettings = {
-  defaultPrinter: string;
-  kitchenPrinter: string;
-  barPrinter: string;
-};
-
-function looksLikeBarCategory(value: unknown) {
-  const key = String(value ?? '').toLocaleLowerCase('tr-TR');
-  return key.includes('bar') || key.includes('içecek') || key.includes('icecek') || key.includes('kahve') || key.includes('alkol') || key.includes('su');
-}
-
-function resolveTenantPrinterSettings(integrationState: ReturnType<typeof getDefaultIntegrationState>): TenantPrinterSettings {
-  const activeDevices = integrationState.printerDevices.filter((device) => device.status !== 'Pasif' && device.deviceType !== 'fiscal_pos');
-  const sourceDevices = activeDevices.length > 0 ? activeDevices : integrationState.printerDevices;
-
-  const firstPrinter = sourceDevices[0]?.name ?? 'POS Yazıcısı';
-  const defaultPrinterByRole = sourceDevices.find((device) => {
-    const role = (device.role ?? '').toLocaleLowerCase('tr-TR');
-    return role.includes('kasa') || role.includes('pos');
-  })?.name;
-
-  const kitchenPrinterByRole = sourceDevices.find((device) => {
-    const role = (device.role ?? '').toLocaleLowerCase('tr-TR');
-    return role.includes('mutfak') || role.includes('kitchen');
-  })?.name;
-
-  const barPrinterByRole = sourceDevices.find((device) => {
-    const role = (device.role ?? '').toLocaleLowerCase('tr-TR');
-    return role.includes('bar');
-  })?.name;
-
-  const kitchenMapped = resolvePrinterNameForCategory('Yemek', integrationState.printerMappings, integrationState.printerDevices);
-  const barMapped = resolvePrinterNameForCategory('İçecek', integrationState.printerMappings, integrationState.printerDevices);
-
-  const defaultPrinter = integrationState.printerSettings.defaultPrinter || defaultPrinterByRole || firstPrinter;
-  const kitchenPrinter = integrationState.printerSettings.kitchenPrinter || (kitchenMapped === 'Mutfak yazıcısı' ? (kitchenPrinterByRole ?? defaultPrinter) : kitchenMapped);
-  const barPrinter = integrationState.printerSettings.barPrinter || (barMapped === 'Bar yazıcısı' ? (barPrinterByRole ?? defaultPrinter) : barMapped);
-
-  return {
-    defaultPrinter,
-    kitchenPrinter: kitchenPrinter || defaultPrinter,
-    barPrinter: barPrinter || defaultPrinter,
-  };
-}
-
 function formatReceiptDate(date: Date) {
   return date.toLocaleString('tr-TR', {
     year: 'numeric',
@@ -516,31 +476,6 @@ function extractTableNumber(tableName: string) {
   return match?.[1] ?? tableName;
 }
 
-async function sendLocalAgentPrint(printerName: string, text: string) {
-  const bytesBase64 = btoa(unescape(encodeURIComponent(text)));
-  await fetchLocalAgentJson('/print', {
-    method: 'POST',
-    body: { printerName, bytesBase64, source: 'order-composer:sendLocalAgentPrint' },
-  });
-}
-
-async function readLocalAgentPrinterNames() {
-  const { data } = await fetchLocalAgentJson<
-    Array<string | { Name?: string; name?: string }>
-    | { ok?: boolean; printers?: Array<string | { Name?: string; name?: string }>; error?: string }
-  >('/printers');
-
-  const rawPrinters = Array.isArray(data)
-    ? data
-    : Array.isArray(data.printers)
-      ? data.printers
-      : [];
-
-  return rawPrinters
-    .map((item) => (typeof item === 'string' ? item : (item.Name ?? item.name ?? '')))
-    .map((name) => name.trim())
-    .filter((name): name is string => Boolean(name));
-}
 
 export function OrderComposer({ initialTableId, autoOpenPayment = false }: OrderComposerProps) {
   const router = useRouter();
@@ -554,10 +489,16 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const [storedSaleProducts, setStoredSaleProducts] = useState<StoredSaleProduct[]>([]);
   const [eventPricingEnabled, setEventPricingEnabled] = useState(false);
   const sourceProducts = storedCatalogProducts;
-  const activeBranchId = sessionState.activeBranchId;
-  const currentUser = sessionState.currentUser;
-  const accessPermissions = accessState.currentPermissions;
-  const hasPermission = (key: string) => accessPermissions.includes(key);
+  const runtimeSession = useMemo(
+    () => hydrateRuntimeSessionContext({
+      session: sessionState,
+      permissions: accessState.currentPermissions,
+    }),
+    [accessState.currentPermissions, sessionState],
+  );
+  const activeBranchId = runtimeSession.context.branch.branchId;
+  const currentUser = runtimeSession.context.user;
+  const hasPermission = runtimeSession.context.permissions.can;
 
   const baseTables = useMemo(
     () =>
@@ -965,7 +906,14 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     [lines],
   );
   const unsentItemCount = useMemo(() => unsentLines.reduce((sum, item) => sum + item.unsentQty, 0), [unsentLines]);
-  const tenantPrinters = useMemo(() => resolveTenantPrinterSettings(integrationState), [integrationState]);
+  const tenantPrinters = useMemo(
+    () => registerRuntimeDevices({
+      integrationState,
+      tenant: runtimeSession.context.tenant,
+      branch: runtimeSession.context.branch,
+    }),
+    [integrationState, runtimeSession.context.branch, runtimeSession.context.tenant],
+  );
   const subtotal = useMemo(() => lines.reduce((sum, item) => sum + getOrderLineSubtotal(item), 0), [lines]);
   const vat = subtotal * VAT_RATE;
   
@@ -2118,7 +2066,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       if (hasActive) return latest;
 
       try {
-        const agentPrinters = await readLocalAgentPrinterNames();
+        const agentPrinters = await readBridgePrinterNames();
         if (agentPrinters.length === 0) return latest;
 
         const existingNames = new Set(latest.printerDevices.map((device) => device.name));
@@ -2164,7 +2112,11 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     };
 
     const runtimeIntegrationState = await ensureRuntimePrinters();
-    const runtimeTenantPrinters = resolveTenantPrinterSettings(runtimeIntegrationState);
+    const runtimeTenantPrinters = registerRuntimeDevices({
+      integrationState: runtimeIntegrationState,
+      tenant: runtimeSession.context.tenant,
+      branch: runtimeSession.context.branch,
+    });
     if (!runtimeTenantPrinters.defaultPrinter) {
       setFeedbackMessage('Yazıcı bulunamadı. Local Agent açıkken Entegrasyonlar > Sistem yazıcılarını tara yapın.');
       return;
@@ -2181,21 +2133,11 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       complimentaryReason?: string;
     }>>>((groups, line) => {
       const category = line.printCategory ?? line.category;
-      const mappedPrinter = resolvePrinterNameForCategory(
+      const printerName = resolveRuntimePrinterRoute({
         category,
-        runtimeIntegrationState.printerMappings,
-        runtimeIntegrationState.printerDevices,
-      );
-
-      const categoryDefault = looksLikeBarCategory(category) ? runtimeTenantPrinters.barPrinter : runtimeTenantPrinters.kitchenPrinter;
-      const resolvedName = (mappedPrinter === 'Mutfak yazıcısı' || mappedPrinter === 'Bar yazıcısı' || mappedPrinter === 'Tatlı yazıcısı')
-        ? (categoryDefault || runtimeTenantPrinters.defaultPrinter)
-        : (mappedPrinter || categoryDefault || runtimeTenantPrinters.defaultPrinter);
-
-      const resolvedDevice = runtimeIntegrationState.printerDevices.find((device) => device.name === resolvedName);
-      const printerName = resolvedDevice?.deviceType === 'fiscal_pos'
-        ? (categoryDefault || runtimeTenantPrinters.defaultPrinter)
-        : resolvedName;
+        integrationState: runtimeIntegrationState,
+        ownership: runtimeTenantPrinters,
+      });
 
       if (!groups[printerName]) {
         groups[printerName] = [];
@@ -2224,7 +2166,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     const printResults = await Promise.all(
       Object.entries(groupedByPrinter).map(async ([printerName, items]) => {
         // Determine if this is a kitchen or bar ticket
-        const isBar = items.some((item) => looksLikeBarCategory(item.printCategory));
+        const isBar = items.some((item) => isRuntimeBarCategory(item.printCategory));
 
         const totalQty = items.reduce((sum, item) => sum + item.qty, 0);
         const fallbackPrinter = runtimeTenantPrinters.defaultPrinter;
@@ -2408,7 +2350,11 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
     const runtimeCompanyState = loadCompanyState();
     const runtimeIntegrationState = loadIntegrationState();
-    const runtimeTenantPrinters = resolveTenantPrinterSettings(runtimeIntegrationState);
+    const runtimeTenantPrinters = registerRuntimeDevices({
+      integrationState: runtimeIntegrationState,
+      tenant: runtimeSession.context.tenant,
+      branch: runtimeSession.context.branch,
+    });
     if (!runtimeTenantPrinters.defaultPrinter) {
       setFeedbackMessage('Hesap adisyonu için varsayılan yazıcı bulunamadı.');
       return;

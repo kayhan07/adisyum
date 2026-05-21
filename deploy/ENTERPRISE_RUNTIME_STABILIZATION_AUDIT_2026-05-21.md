@@ -317,6 +317,7 @@ Owns:
 - 2026-05-21: Added `lib/pos-runtime/order-mutations.ts` as the first POS Runtime mutation boundary. Mutation id creation, pending mutation shape, optimistic line creation, payload dispatch, rollback filtering, and mutation result normalization moved out of `components/order-composer.tsx`.
 - 2026-05-21: Added `lib/pos-runtime/runtime-sync-engine.ts` as the first Runtime Synchronization boundary. Initial hydration, focus/interval authoritative refresh ownership, pending optimistic protection, authoritative payload fetch, and sync diagnostics moved out of `components/order-composer.tsx`.
 - 2026-05-21: Added `lib/pos-runtime/runtime-persistence-engine.ts` and `lib/pos-runtime/runtime-event-bus.ts`. POS UI no longer imports generic runtime-state directly for recent account persistence or POS diagnostics flags, and table live/payment persistence writes now go through the runtime persistence boundary.
+- 2026-05-21: Added `lib/runtime/runtime-session-engine.ts`, `lib/runtime/tenant-runtime-context.ts`, and `lib/device-runtime/device-session-registry.ts`. POS UI now consumes runtime session/tenant/device ownership contexts instead of owning branch scope, permission checks, printer ownership resolution, or local bridge printer discovery directly.
 
 ## Non-Goals
 
