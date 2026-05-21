@@ -454,6 +454,7 @@ load_env() {
 
   export NODE_ENV=production
   export APP_ENV=production
+  export GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || true)"
   export ADISYUM_ROOT_ASSET_PREFIX="${ROOT_ASSET_PREFIX}"
   export NEXT_PUBLIC_APP_URL="https://${DOMAIN}"
   export NEXTAUTH_URL="https://${DOMAIN}"
@@ -955,11 +956,13 @@ validate_runtime_routes() {
   wait_for_healthy_route "http://127.0.0.1:${WEBSITE_PORT}"
   wait_for_route_not_404 "POST" "http://127.0.0.1:${ROOT_PORT}/api/pos/table-orders"
   wait_for_route_not_404 "GET" "http://127.0.0.1:${ROOT_PORT}/api/runtime/pos-catalog"
+  wait_for_route_not_404 "GET" "http://127.0.0.1:${ROOT_PORT}/api/runtime-build-id"
 
   wait_for_healthy_route "https://${DOMAIN}"
   wait_for_healthy_route "https://${DOMAIN}/app"
   wait_for_healthy_route "https://${DOMAIN}/system-admin"
   wait_for_route_not_404 "POST" "https://${DOMAIN}/api/pos/table-orders"
+  wait_for_route_not_404 "GET" "https://${DOMAIN}/api/runtime-build-id"
 }
 
 print_final_state() {

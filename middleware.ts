@@ -7,6 +7,7 @@ const PUBLIC_PREFIXES = [
   '/site',
   '/api/auth',
   '/api/downloads',
+  '/api/runtime-build-id',
   '/_next',
   '/favicon.ico',
   '/downloads',

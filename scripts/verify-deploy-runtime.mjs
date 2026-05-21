@@ -18,6 +18,7 @@ async function verifyLiveRoute() {
   const base = (liveBaseUrl || 'https://adisyum.com').replace(/\/$/, '');
   const url = `${base}/api/pos/table-orders`;
   const appUrl = `${base}/app`;
+  const buildUrl = `${base}/api/runtime-build-id`;
   const checks = {};
   try {
     const response = await fetch(url, {
@@ -33,6 +34,15 @@ async function verifyLiveRoute() {
   } catch (error) {
     failures.push(`${url} request failed: ${error instanceof Error ? error.message : String(error)}`);
     checks.posTableOrders = { url, status: null, ok: false };
+  }
+  try {
+    const response = await fetch(buildUrl, { cache: 'no-store' });
+    if (response.status === 404) failures.push(`${buildUrl} returned 404`);
+    const body = await response.json().catch(() => null);
+    checks.runtimeBuildId = { url: buildUrl, status: response.status, ok: response.status !== 404, body };
+  } catch (error) {
+    failures.push(`${buildUrl} request failed: ${error instanceof Error ? error.message : String(error)}`);
+    checks.runtimeBuildId = { url: buildUrl, status: null, ok: false };
   }
   try {
     const response = await fetch(appUrl, { redirect: 'manual', cache: 'no-store' });
