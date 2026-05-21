@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -12,8 +12,6 @@ import { getDefaultCompanyState, loadCompanyState, subscribeToCompanyChanges } f
 import {
   getPaymentRequestedTableIds,
   getStoredTableMeta,
-  setTableLiveTotals,
-  setTablePaymentRequested,
   setStoredTableMeta,
   subscribeToPaymentRequestedChanges,
   type StoredTableMeta,
@@ -47,7 +45,6 @@ import { appendPaymentJournalEntries, buildPaymentJournalEntry } from '@/lib/pay
 import { getDefaultTableLayoutState, loadTableLayoutState, subscribeToTableLayoutChanges } from '@/lib/table-layout-store';
 import { createAutoProductMapping, getProductMapping, upsertProductMapping, validateProductMapping } from '@/lib/pos-mapping-store';
 import { queueOfflinePaymentSnapshot, syncOfflineOrders } from '@/lib/offline-sync-store';
-import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
 import { replaceAuthoritativeOrdersByTable } from '@/lib/client/authoritative-table-orders';
 import { type PosOrderReconciliationSource } from '@/lib/pos-order-reconciliation';
 import {
@@ -65,6 +62,13 @@ import {
   reconcileRuntimeSyncSnapshot,
   startAuthoritativeRuntimeSync,
 } from '@/lib/pos-runtime/runtime-sync-engine';
+import { createRuntimeDiagnostics } from '@/lib/pos-runtime/runtime-event-bus';
+import {
+  persistRecentAccountIds,
+  persistTableLiveTotals,
+  persistTablePaymentRequested,
+  restoreRecentAccountIds,
+} from '@/lib/pos-runtime/runtime-persistence-engine';
 import { fetchLocalAgentJson } from '@/lib/local-agent';
 import { printCustomerReceipt, printKitchenTicket, printBarTicket } from '@/lib/receipt-formatter';
 import { recordOrderForSmartStock } from '@/lib/smart-recipe-stock-engine';
@@ -237,21 +241,7 @@ function areOrderMapsEqual(first: Record<string, OrderLine[]>, second: Record<st
   });
 }
 
-function isPosDiagnosticsEnabled() {
-  if (typeof window === 'undefined') return process.env.NEXT_PUBLIC_POS_DIAGNOSTICS === '1';
-  return (
-    process.env.NODE_ENV !== 'production'
-    || process.env.NEXT_PUBLIC_POS_DIAGNOSTICS === '1'
-    || process.env.NEXT_PUBLIC_POS_RECONCILIATION_TRACE === '1'
-    || window.localStorage.getItem('adisyon:pos-debug-click-pipeline') === '1'
-    || window.localStorage.getItem('adisyon:pos-trace-reconciliation') === '1'
-  );
-}
-
-function logOrderFlow(event: string, payload: Record<string, unknown>) {
-  if (!isPosDiagnosticsEnabled()) return;
-  console.info(`[adisyon-flow] ${event}`, payload);
-}
+const logOrderFlow = createRuntimeDiagnostics('adisyon-flow');
 
 function getProductSnapshotStatus(product: ProductCard) {
   const snapshot = product.productSnapshot;
@@ -736,13 +726,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   }, [chargeAccounts, selectedAccountId]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const parsed = JSON.parse(readRuntimeItem('tenant', RECENT_ACCOUNT_KEY) ?? '[]') as string[];
-      setRecentAccountIds(Array.isArray(parsed) ? parsed : []);
-    } catch {
-      setRecentAccountIds([]);
-    }
+    setRecentAccountIds(restoreRecentAccountIds(RECENT_ACCOUNT_KEY));
   }, []);
 
   useEffect(() => {
@@ -1209,7 +1193,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         setOrdersByTable((current) => {
           const merged = reconcileAuthoritativeOrders(current, payload.ordersByTable, reason);
           const nextLines = activeTableId ? merged[activeTableId] ?? EMPTY_ORDER_LINES : EMPTY_ORDER_LINES;
-          if (activeTableId) setTableLiveTotals({ [activeTableId]: getOrderGross(nextLines) });
+          if (activeTableId) persistTableLiveTotals({ [activeTableId]: getOrderGross(nextLines) });
           return areOrderMapsEqual(current, merged) ? current : merged;
         });
         logOrderFlow('authoritative-orders-reconciled', {
@@ -1247,7 +1231,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       }),
     );
 
-    setTableLiveTotals(nextTotals);
+    persistTableLiveTotals(nextTotals);
   }, [baseTables, ordersByTable]);
 
   useEffect(() => {
@@ -1309,7 +1293,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   };
 
   const updatePaymentRequested = (tableId: string, requested: boolean) => {
-    setTablePaymentRequested(tableId, requested);
+    persistTablePaymentRequested(tableId, requested);
     setPaymentRequestedTables((current) => {
       const next = new Set(current);
       if (requested) {
@@ -1653,7 +1637,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       price: resolvedUnitPrice,
     }, logOrderFlow) satisfies OrderLine;
     setOrdersByTable((current) => appendOptimisticLine(current, mutation, optimisticLine));
-    setTableLiveTotals({ [tableId]: getOrderGross([...(ordersByTable[tableId] ?? EMPTY_ORDER_LINES), optimisticLine]) });
+    persistTableLiveTotals({ [tableId]: getOrderGross([...(ordersByTable[tableId] ?? EMPTY_ORDER_LINES), optimisticLine]) });
     setLastAddedId(product.id);
     setLastMutatedLineId(optimisticLine.id);
     setFeedbackMessage(`${product.name} ekleniyor...`);
@@ -1701,7 +1685,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         const merged = reconcileAuthoritativeOrders(current, nextOrders, 'mutation-result');
         committedLines = merged[tableId] ?? EMPTY_ORDER_LINES;
         replaceAuthoritativeOrdersByTable(merged);
-        setTableLiveTotals({ [tableId]: getOrderGross(committedLines) });
+        persistTableLiveTotals({ [tableId]: getOrderGross(committedLines) });
         return merged;
       });
       logOrderFlow('add-product-db-mutation-complete', {
@@ -1870,7 +1854,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       price: resolvedUnitPrice,
     }, logOrderFlow) satisfies OrderLine;
     setOrdersByTable((current) => appendOptimisticLine(current, mutation, optimisticLine));
-    setTableLiveTotals({ [tableId]: getOrderGross([...(ordersByTable[tableId] ?? EMPTY_ORDER_LINES), optimisticLine]) });
+    persistTableLiveTotals({ [tableId]: getOrderGross([...(ordersByTable[tableId] ?? EMPTY_ORDER_LINES), optimisticLine]) });
     setLastAddedId(productCardProduct.id);
     setLastMutatedLineId(optimisticLine.id);
     setFeedbackMessage(`${productCardProduct.name} ekleniyor...`);
@@ -1915,7 +1899,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         const merged = reconcileAuthoritativeOrders(current, nextOrders, 'mutation-result');
         committedLines = merged[tableId] ?? EMPTY_ORDER_LINES;
         replaceAuthoritativeOrdersByTable(merged);
-        setTableLiveTotals({ [tableId]: getOrderGross(committedLines) });
+        persistTableLiveTotals({ [tableId]: getOrderGross(committedLines) });
         return merged;
       });
       const touchedLineId = committedLines[committedLines.length - 1]?.id ?? null;
@@ -2581,7 +2565,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
     setRecentAccountIds((current) => {
       const next = [account.id, ...current.filter((id) => id !== account.id)].slice(0, 5);
-      writeRuntimeItem('tenant', RECENT_ACCOUNT_KEY, JSON.stringify(next));
+      persistRecentAccountIds(RECENT_ACCOUNT_KEY, next);
       return next;
     });
   };
@@ -3515,7 +3499,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
                     disabled={!canApplyDiscount}
                     className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none placeholder:text-slate-400 disabled:cursor-not-allowed disabled:bg-slate-100"
                   />
-                  <span className="text-sm font-semibold text-slate-500">₺</span>
+                  <span className="text-sm font-semibold text-slate-500">?</span>
                 </div>
               </div>
 
