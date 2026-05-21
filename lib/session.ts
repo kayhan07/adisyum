@@ -4,13 +4,21 @@ import { signSession, verifySessionToken, type SessionPayload } from '@/lib/auth
 export const SESSION_COOKIE_NAME = 'adisyum_session';
 const MAX_AGE_SECONDS = 60 * 60 * 12;
 
+function getSessionCookieDomain() {
+  const configuredDomain = process.env.SESSION_COOKIE_DOMAIN?.trim();
+  if (configuredDomain) return configuredDomain;
+  return undefined;
+}
+
 export function getSessionCookieOptions() {
+  const domain = getSessionCookieDomain();
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax' as const,
     path: '/',
     maxAge: MAX_AGE_SECONDS,
+    ...(domain ? { domain } : {}),
   };
 }
 

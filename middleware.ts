@@ -167,6 +167,13 @@ function logInvalidOrigin(request: NextRequest) {
   });
 }
 
+function requestCookieNames(request: NextRequest) {
+  return request.headers.get('cookie')
+    ?.split(';')
+    .map((part) => part.trim().split('=')[0])
+    .filter(Boolean) ?? [];
+}
+
 function withSecurityHeaders(response: NextResponse) {
   response.headers.set('x-content-type-options', 'nosniff');
   response.headers.set('x-frame-options', 'DENY');
@@ -211,6 +218,7 @@ export async function middleware(request: NextRequest) {
         path: pathname,
         method: request.method,
         cookiePresent: Boolean(request.headers.get('cookie')),
+        cookieNames: requestCookieNames(request),
         host: request.headers.get('host'),
         forwardedHost: request.headers.get('x-forwarded-host'),
       });
