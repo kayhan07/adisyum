@@ -89,6 +89,36 @@ function configuredPublicHosts() {
   return hosts;
 }
 
+function configuredPublicOrigin() {
+  const urls = [
+    process.env.NEXT_PUBLIC_APP_URL,
+    process.env.NEXTAUTH_URL,
+    process.env.APP_URL,
+    process.env.PUBLIC_APP_URL,
+  ];
+  for (const url of urls) {
+    if (!url) continue;
+    try {
+      const parsed = new URL(url);
+      if (!['localhost', '127.0.0.1'].includes(parsed.hostname)) {
+        return parsed.origin;
+      }
+    } catch {
+      // Ignore non-URL host values here; redirects require an absolute public origin.
+    }
+  }
+  if (process.env.NODE_ENV === 'production') return 'https://adisyum.com';
+  return null;
+}
+
+function publicRedirectUrl(request: NextRequest, pathname: string) {
+  const origin = configuredPublicOrigin();
+  const url = origin ? new URL(pathname, origin) : request.nextUrl.clone();
+  url.pathname = pathname;
+  url.search = '';
+  return url;
+}
+
 function allowedRequestHosts(request: NextRequest) {
   const hosts = configuredPublicHosts();
   addHostWithWwwPair(hosts, request.nextUrl.host);
@@ -185,8 +215,7 @@ export async function middleware(request: NextRequest) {
       });
       return withSecurityHeaders(NextResponse.json({ ok: false, error: 'Unauthorized', code: 'missing_session' }, { status: 401 }));
     }
-    const url = request.nextUrl.clone();
-    url.pathname = pathname.startsWith('/system-admin') ? '/system-admin' : '/adisyonsistemi';
+    const url = publicRedirectUrl(request, pathname.startsWith('/system-admin') ? '/system-admin' : '/adisyonsistemi');
     url.searchParams.set('next', pathname);
     return withSecurityHeaders(NextResponse.redirect(url));
   }
@@ -208,8 +237,7 @@ export async function middleware(request: NextRequest) {
       });
       return withSecurityHeaders(NextResponse.json({ ok: false, error: 'Forbidden', code: 'system_admin_forbidden' }, { status: 403 }));
     }
-    const url = request.nextUrl.clone();
-    url.pathname = '/app';
+    const url = publicRedirectUrl(request, '/app');
     return withSecurityHeaders(NextResponse.redirect(url));
   }
 

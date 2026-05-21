@@ -17,6 +17,8 @@ async function verifyLiveRoute() {
   if (!verifyLive) return null;
   const base = (liveBaseUrl || 'https://adisyum.com').replace(/\/$/, '');
   const url = `${base}/api/pos/table-orders`;
+  const appUrl = `${base}/app`;
+  const checks = {};
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -27,15 +29,33 @@ async function verifyLiveRoute() {
     if (response.status === 404) {
       failures.push(`${url} returned 404`);
     }
-    return { url, status: response.status, ok: response.status !== 404 };
+    checks.posTableOrders = { url, status: response.status, ok: response.status !== 404 };
   } catch (error) {
     failures.push(`${url} request failed: ${error instanceof Error ? error.message : String(error)}`);
-    return { url, status: null, ok: false };
+    checks.posTableOrders = { url, status: null, ok: false };
   }
+  try {
+    const response = await fetch(appUrl, { redirect: 'manual', cache: 'no-store' });
+    const location = response.headers.get('location') || '';
+    if (/\b(localhost|127\.0\.0\.1)\b/i.test(location)) {
+      failures.push(`${appUrl} redirects to loopback: ${location}`);
+    }
+    checks.appRedirect = {
+      url: appUrl,
+      status: response.status,
+      location,
+      ok: !/\b(localhost|127\.0\.0\.1)\b/i.test(location),
+    };
+  } catch (error) {
+    failures.push(`${appUrl} redirect check failed: ${error instanceof Error ? error.message : String(error)}`);
+    checks.appRedirect = { url: appUrl, status: null, location: null, ok: false };
+  }
+  return checks;
 }
 
 run('npm', ['run', 'routes:audit']);
 run('npm', ['run', 'runtime:audit-production']);
+run('npm', ['run', 'env:audit-production']);
 
 const live = await verifyLiveRoute();
 const report = {
