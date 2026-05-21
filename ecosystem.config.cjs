@@ -24,7 +24,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: '3000',
-        HOSTNAME: '127.0.0.1',
+        HOSTNAME: '0.0.0.0',
         GIT_COMMIT: process.env.GIT_COMMIT || '',
         DEPLOYED_AT: process.env.DEPLOYED_AT || '',
         NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL || 'https://adisyum.com',

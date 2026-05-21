@@ -599,8 +599,8 @@ if (!String(root?.script || '').endsWith('.next/standalone/server.js')) {
 if (String(root?.env?.PORT || '') !== '3000') {
   throw new Error('adisyum-root-app must bind PORT=3000');
 }
-if (String(root?.env?.HOSTNAME || '') !== '127.0.0.1') {
-  throw new Error('adisyum-root-app must bind HOSTNAME=127.0.0.1');
+if (String(root?.env?.HOSTNAME || '') !== '0.0.0.0') {
+  throw new Error('adisyum-root-app must bind HOSTNAME=0.0.0.0');
 }
 if (!String(website?.args || '').includes('-p 3010')) throw new Error('adisyum-website must start on port 3010');
 if (!String(worker?.args || '').includes('workers/orchestration-worker.ts')) throw new Error('adisyum-worker must start orchestration worker');
@@ -724,7 +724,7 @@ start_pm2_clean() {
 validate_pm2() {
   log "Validating PM2 exact app set and restart stability"
   local names
-  names="$(pm2 jlist | node -e "let s=''; process.stdin.on('data',d=>s+=d); process.stdin.on('end',()=>{const apps=JSON.parse(s||'[]'); const names=apps.map(a=>a.name).sort(); console.log(names.join(',')); if(apps.length!==3) process.exit(2); if(names.join(',')!=='adisyum-root-app,adisyum-website,adisyum-worker') process.exit(3); if(names.includes('adisyum-pos-app')||names.includes('adisyum-system-admin')) process.exit(4); if(apps.some(a=>a.pm2_env.status!=='online')) process.exit(5); if(apps.some(a=>Number(a.pm2_env.restart_time||0)>2||Number(a.pm2_env.unstable_restarts||0)>0)) process.exit(6); const root=apps.find(a=>a.name==='adisyum-root-app'); if(!root || !String(root.pm2_env.pm_exec_path||'').endsWith('.next/standalone/server.js')) process.exit(7); if(String(root.pm2_env.PORT||'')!=='3000') process.exit(8); if(String(root.pm2_env.HOSTNAME||'')!=='127.0.0.1') process.exit(9);})")"
+  names="$(pm2 jlist | node -e "let s=''; process.stdin.on('data',d=>s+=d); process.stdin.on('end',()=>{const apps=JSON.parse(s||'[]'); const names=apps.map(a=>a.name).sort(); console.log(names.join(',')); if(apps.length!==3) process.exit(2); if(names.join(',')!=='adisyum-root-app,adisyum-website,adisyum-worker') process.exit(3); if(names.includes('adisyum-pos-app')||names.includes('adisyum-system-admin')) process.exit(4); if(apps.some(a=>a.pm2_env.status!=='online')) process.exit(5); if(apps.some(a=>Number(a.pm2_env.restart_time||0)>2||Number(a.pm2_env.unstable_restarts||0)>0)) process.exit(6); const root=apps.find(a=>a.name==='adisyum-root-app'); if(!root || !String(root.pm2_env.pm_exec_path||'').endsWith('.next/standalone/server.js')) process.exit(7); if(String(root.pm2_env.PORT||'')!=='3000') process.exit(8); if(String(root.pm2_env.HOSTNAME||'')!=='0.0.0.0') process.exit(9);})")"
   [[ "${names}" == "adisyum-root-app,adisyum-website,adisyum-worker" ]] || fail "Unexpected PM2 state: ${names}"
   pm2 list
 }
@@ -1046,7 +1046,7 @@ Canonical filesystem layout:
 - ${APP_DIR}/ecosystem.config.cjs canonical two-app PM2 config
 
 Final PM2 apps:
-- adisyum-root-app   -> 127.0.0.1:${ROOT_PORT}
+- adisyum-root-app   -> 0.0.0.0:${ROOT_PORT}
 - adisyum-website    -> 127.0.0.1:${WEBSITE_PORT}
 - adisyum-worker     -> BullMQ orchestration worker
 

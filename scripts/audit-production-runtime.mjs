@@ -61,8 +61,8 @@ if (!/script:\s*['"]\.next\/standalone\/server\.js['"]/.test(ecosystemConfig)) {
 if (!/PORT:\s*['"]3000['"]/.test(ecosystemConfig)) {
   failures.push('PM2 root app does not set PORT=3000 for standalone runtime');
 }
-if (!/HOSTNAME:\s*['"]127\.0\.0\.1['"]/.test(ecosystemConfig)) {
-  failures.push('PM2 root app does not set HOSTNAME=127.0.0.1 for standalone runtime');
+if (!/HOSTNAME:\s*['"]0\.0\.0\.0['"]/.test(ecosystemConfig)) {
+  failures.push('PM2 root app does not set HOSTNAME=0.0.0.0 for standalone runtime');
 }
 if (/adisyum-root-app must start on port 3000/.test(reconstructScript) || /root\?\.args[\s\S]*-p 3000/.test(reconstructScript)) {
   failures.push('Deploy script still contains stale next-start args validation for adisyum-root-app');
@@ -126,7 +126,7 @@ const report = {
     rootScript: '.next/standalone/server.js',
     configured: /script:\s*['"]\.next\/standalone\/server\.js['"]/.test(ecosystemConfig),
     port: /PORT:\s*['"]3000['"]/.test(ecosystemConfig) ? 3000 : null,
-    hostname: /HOSTNAME:\s*['"]127\.0\.0\.1['"]/.test(ecosystemConfig) ? '127.0.0.1' : null,
+    hostname: /HOSTNAME:\s*['"]0\.0\.0\.0['"]/.test(ecosystemConfig) ? '0.0.0.0' : null,
   },
   envFiles,
   csp: {
