@@ -43,6 +43,8 @@ run('npm', ['run', 'routes:audit']);
 const nextConfig = read('next.config.mjs') || read('next.config.js');
 const ecosystemConfig = read('ecosystem.config.cjs') || read('ecosystem.config.js');
 const middleware = read('middleware.ts');
+const reconstructScript = read('deploy/scripts/reconstruct-vps-runtime.sh');
+const envFiles = ['.env', '.env.production'].filter(exists);
 
 if (!/output\s*:\s*['"]standalone['"]/.test(nextConfig)) {
   failures.push('next.config does not enable output: standalone');
@@ -58,6 +60,25 @@ if (!/script:\s*['"]\.next\/standalone\/server\.js['"]/.test(ecosystemConfig)) {
 }
 if (!/PORT:\s*['"]3000['"]/.test(ecosystemConfig)) {
   failures.push('PM2 root app does not set PORT=3000 for standalone runtime');
+}
+if (!/HOSTNAME:\s*['"]127\.0\.0\.1['"]/.test(ecosystemConfig)) {
+  failures.push('PM2 root app does not set HOSTNAME=127.0.0.1 for standalone runtime');
+}
+if (/adisyum-root-app must start on port 3000/.test(reconstructScript) || /root\?\.args[\s\S]*-p 3000/.test(reconstructScript)) {
+  failures.push('Deploy script still contains stale next-start args validation for adisyum-root-app');
+}
+if (!/adisyum-root-app must bind PORT=3000/.test(reconstructScript)) {
+  failures.push('Deploy script does not validate standalone PORT=3000 governance');
+}
+if (!/validate_live_ports/.test(reconstructScript)) {
+  failures.push('Deploy script does not validate live listener ports');
+}
+for (const envFile of envFiles) {
+  const env = read(envFile);
+  const portLines = env.split(/\r?\n/).filter((line) => /^PORT\s*=/.test(line.trim()));
+  if (portLines.some((line) => !/^PORT\s*=\s*3000\s*$/.test(line.trim()))) {
+    warnings.push(`${envFile} contains a PORT assignment that differs from 3000`);
+  }
 }
 if (!/connect-src 'self' https: ws: wss:/.test(middleware)) {
   failures.push('CSP connect-src governance changed unexpectedly');
@@ -104,7 +125,10 @@ const report = {
   pm2: {
     rootScript: '.next/standalone/server.js',
     configured: /script:\s*['"]\.next\/standalone\/server\.js['"]/.test(ecosystemConfig),
+    port: /PORT:\s*['"]3000['"]/.test(ecosystemConfig) ? 3000 : null,
+    hostname: /HOSTNAME:\s*['"]127\.0\.0\.1['"]/.test(ecosystemConfig) ? '127.0.0.1' : null,
   },
+  envFiles,
   csp: {
     localhostAllowed: /connect-src[^"]*(127\.0\.0\.1|localhost)/.test(middleware),
   },
