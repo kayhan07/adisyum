@@ -63,12 +63,19 @@ export function emitRuntimeEvent(input: {
 
 export function isRuntimeDiagnosticsEnabled() {
   if (typeof window === 'undefined') return process.env.NEXT_PUBLIC_POS_DIAGNOSTICS === '1';
+  const hasLocalFlag = (key: string) => {
+    try {
+      return window.localStorage.getItem(key) === '1';
+    } catch {
+      return false;
+    }
+  };
   return (
     process.env.NODE_ENV !== 'production'
     || process.env.NEXT_PUBLIC_POS_DIAGNOSTICS === '1'
     || process.env.NEXT_PUBLIC_POS_RECONCILIATION_TRACE === '1'
-    || window.localStorage.getItem('adisyon:pos-debug-click-pipeline') === '1'
-    || window.localStorage.getItem('adisyon:pos-trace-reconciliation') === '1'
+    || hasLocalFlag('adisyon:pos-debug-click-pipeline')
+    || hasLocalFlag('adisyon:pos-trace-reconciliation')
   );
 }
 

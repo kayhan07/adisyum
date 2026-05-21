@@ -68,12 +68,13 @@ import {
   persistTablePaymentRequested,
   restoreRecentAccountIds,
 } from '@/lib/pos-runtime/runtime-persistence-engine';
-import { hydrateRuntimeSessionContext } from '@/lib/runtime/runtime-session-engine';
+import { hydrateRuntimeSessionContext, traceRuntimeSessionHydrated } from '@/lib/runtime/runtime-session-engine';
 import {
   isRuntimeBarCategory,
   readBridgePrinterNames,
   registerRuntimeDevices,
   resolveRuntimePrinterRoute,
+  traceDeviceOwnershipRestored,
 } from '@/lib/device-runtime/device-session-registry';
 import { printCustomerReceipt, printKitchenTicket, printBarTicket } from '@/lib/receipt-formatter';
 import { recordOrderForSmartStock } from '@/lib/smart-recipe-stock-engine';
@@ -914,6 +915,18 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     }),
     [integrationState, runtimeSession.context.branch, runtimeSession.context.tenant],
   );
+  useEffect(() => {
+    traceRuntimeSessionHydrated(runtimeSession);
+    traceDeviceOwnershipRestored(tenantPrinters);
+    logOrderFlow('runtime-render-contract-initialized', {
+      tenantId: runtimeSession.context.tenant.tenantId,
+      branchId: runtimeSession.context.branch.branchId,
+      isAuthenticated: runtimeSession.context.tenant.isAuthenticated,
+      permissionCount: runtimeSession.context.permissions.permissions.length,
+      deviceCount: tenantPrinters.activeDevices.length,
+      defaultPrinter: tenantPrinters.defaultPrinter,
+    });
+  }, [runtimeSession, tenantPrinters]);
   const subtotal = useMemo(() => lines.reduce((sum, item) => sum + getOrderLineSubtotal(item), 0), [lines]);
   const vat = subtotal * VAT_RATE;
   
@@ -946,6 +959,17 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     return Math.max(currentTable.reservationDeposit, 0);
   }, [currentTable?.reservationDate, currentTable?.reservationDeposit]);
   const discountedSettlementTotal = roundCurrency(Math.max(roundedSettlementTotal - activeReservationDeposit, 0));
+
+  useEffect(() => {
+    logOrderFlow('ProductCard rendered', {
+      source: 'product-grid',
+      productCount: filteredProducts.length,
+      tableId: currentTable?.id ?? null,
+      canCreateOrder: Boolean(currentTable && hasPermission('orders.create')),
+      catalogRevisions: Array.from(new Set(filteredProducts.map((product) => product.catalogRevision ?? 'missing'))).slice(0, 8),
+      missingSnapshotCount: filteredProducts.filter((product) => getProductSnapshotStatus(product) !== 'ready').length,
+    });
+  }, [currentTable?.id, filteredProducts, hasPermission]);
   const totalDiscountAmount = roundCurrency(percentageDiscountAmount + fixedDiscountAmount + roundingDiscountAmount);
   const discountReasonRequired = totalDiscountAmount > 0;
   const splitSelectedSubtotal = useMemo(
@@ -3622,16 +3646,6 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
             {filteredProducts.map((product) => {
               const activeFlash = lastAddedId === product.id;
-              logOrderFlow('ProductCard rendered', {
-                source: 'product-grid',
-                productId: product.id,
-                productName: product.name,
-                posKey: product.posKey ?? product.id,
-                catalogRevision: product.catalogRevision,
-                productSnapshotStatus: getProductSnapshotStatus(product),
-                tableId: currentTable?.id ?? null,
-                canCreateOrder: Boolean(currentTable && hasPermission('orders.create')),
-              });
               return (
                 <button
                   key={product.id}

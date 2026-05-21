@@ -84,6 +84,10 @@ export function registerRuntimeDevices(input: {
     })),
   } satisfies DeviceOwnershipState;
 
+  return ownership;
+}
+
+export function traceDeviceOwnershipRestored(ownership: DeviceOwnershipState) {
   emitRuntimeEvent({
     type: 'device ownership restored',
     channel: 'pos-runtime',
@@ -96,8 +100,6 @@ export function registerRuntimeDevices(input: {
       barPrinter: ownership.barPrinter,
     },
   });
-
-  return ownership;
 }
 
 export function resolveRuntimePrinterForCategory(input: {

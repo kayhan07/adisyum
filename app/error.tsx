@@ -13,6 +13,13 @@ export default function GlobalRouteError({ error, reset }: GlobalRouteErrorProps
       message: error.message,
       digest: error.digest,
       stack: error.stack,
+      boundaryName: 'GlobalRouteError',
+      componentName: 'app/error.tsx',
+      runtimePath: typeof window === 'undefined' ? 'server' : window.location.pathname,
+      runtimePayload: {
+        search: typeof window === 'undefined' ? '' : window.location.search,
+        userAgent: typeof navigator === 'undefined' ? '' : navigator.userAgent,
+      },
     });
   }, [error]);
 

@@ -56,23 +56,27 @@ export function hydrateRuntimeSessionContext(input: {
     hydratedAt: new Date().toISOString(),
   } satisfies RuntimeSessionContext;
 
-  emitRuntimeEvent({
-    type: 'runtime session hydrated',
-    channel: 'pos-runtime',
-    payload: {
-      tenantId: context.tenant.tenantId,
-      branchId: context.branch.branchId,
-      role: context.user.role,
-      isAuthenticated: context.tenant.isAuthenticated,
-      permissionCount: context.permissions.permissions.length,
-    },
-  });
-
   return {
     ok: context.tenant.isAuthenticated,
     context,
     reason: context.tenant.isAuthenticated ? undefined : 'unauthenticated_runtime_session',
   } satisfies RuntimeSessionHydrationResult;
+}
+
+export function traceRuntimeSessionHydrated(result: RuntimeSessionHydrationResult) {
+  emitRuntimeEvent({
+    type: 'runtime session hydrated',
+    channel: 'pos-runtime',
+    payload: {
+      tenantId: result.context.tenant.tenantId,
+      branchId: result.context.branch.branchId,
+      role: result.context.user.role,
+      isAuthenticated: result.context.tenant.isAuthenticated,
+      permissionCount: result.context.permissions.permissions.length,
+      ok: result.ok,
+      reason: result.reason,
+    },
+  });
 }
 
 export function authorizeBridgeRuntimeSession(input: {
