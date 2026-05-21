@@ -314,6 +314,7 @@ Owns:
 ## Stabilization Change Log
 
 - 2026-05-21: Added `lib/runtime/table-state-engine.ts` as the first Table State Engine boundary. `components/order-composer.tsx` no longer calls the low-level reconciliation reducer directly; it delegates to `reconcileTableState`, which owns the active table reconciliation log shape and reducer invocation.
+- 2026-05-21: Added `lib/pos-runtime/order-mutations.ts` as the first POS Runtime mutation boundary. Mutation id creation, pending mutation shape, optimistic line creation, payload dispatch, rollback filtering, and mutation result normalization moved out of `components/order-composer.tsx`.
 
 ## Non-Goals
 
