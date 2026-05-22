@@ -1,5 +1,7 @@
 'use client';
 
+import { runtimeFetch } from '@/lib/runtime/runtime-api';
+
 export type RuntimeScope = 'tenant' | 'system-admin';
 
 type RuntimeSnapshot = Record<string, string>;
@@ -129,10 +131,9 @@ function broadcast(scope: RuntimeScope) {
 }
 
 async function requestSnapshot(scope: RuntimeScope, method: 'GET' | 'POST' | 'DELETE', state?: RuntimeSnapshot) {
-	const response = await fetch(`/api/runtime/state/${scope}`, {
+	const response = await runtimeFetch(`/api/runtime/state/${scope}` as `/api/${string}`, {
 		method,
 		cache: 'no-store',
-		credentials: 'include',
 		headers: method === 'POST' ? { 'content-type': 'application/json' } : undefined,
 		body: method === 'POST' ? JSON.stringify({ state }) : undefined,
 	});

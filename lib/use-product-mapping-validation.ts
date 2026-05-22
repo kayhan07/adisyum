@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useProductMappingStore } from './pos-mapping-store';
+import { runtimeFetch } from '@/lib/runtime/runtime-api';
 
 interface ProductMappingValidation {
   is_mapped: boolean;
@@ -19,7 +20,7 @@ export function useProductMappingValidation() {
   const validateProduct = useCallback(
     async (productId: string, productName: string): Promise<boolean> => {
       try {
-        const response = await fetch(`/api/v1/products/${productId}/mapping`);
+        const response = await runtimeFetch(`/api/v1/products/${productId}/mapping` as `/api/${string}`);
 
         if (!response.ok) {
           addError({
@@ -100,7 +101,7 @@ export function useProductMappingValidation() {
    */
   const getCoverageStatus = useCallback(async () => {
     try {
-      const response = await fetch('/api/v1/product-mappings/coverage');
+      const response = await runtimeFetch('/api/v1/product-mappings/coverage');
       if (response.ok) {
         return await response.json();
       }

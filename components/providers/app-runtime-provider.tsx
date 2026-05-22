@@ -6,7 +6,6 @@ import { authSessionQueryOptions } from '@/lib/query/auth';
 import { bootstrapRuntimeScope } from '@/lib/client/runtime-state';
 import { connectTenantRealtime, reconnectTenantRealtime } from '@/lib/client/realtime-client';
 import { authQueryKeys } from '@/lib/query/keys';
-import { hydrateSessionStateFromAuth } from '@/lib/session-store';
 import { setAuthSnapshotFromSession } from '@/lib/saas-store';
 import { syncOfflineOrders } from '@/lib/offline-sync-store';
 import { processPrintQueue, runPrinterHeartbeat, type PrintResilienceSummary } from '@/lib/print-resilience-store';
@@ -14,25 +13,16 @@ import { subscribeKdsConnectionState } from '@/lib/realtime/kds-echo';
 import { resetSystemAdminIsolation, resetTenantIsolation } from '@/lib/client/isolation';
 import { isLogoutInProgress, secureLogout, subscribeSecureLogoutSync } from '@/lib/client/secure-logout';
 import { getLocalBridgeHealthUrl } from '@/lib/local-agent';
+import { runtimeFetch } from '@/lib/runtime/runtime-api';
+import { propagateRuntimeSessionAuth } from '@/lib/runtime/runtime-session-engine';
+import { resolveRuntimeDeviceId } from '@/lib/device-runtime/device-session-registry';
 
 function ingestObservability(tenantId: string, payload: Record<string, unknown>) {
-  void fetch('/api/system-admin/observability/ingest', {
+  void runtimeFetch('/api/system-admin/observability/ingest', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tenantId, ...payload }),
   }).catch(() => undefined);
-}
-
-function getRuntimeDeviceId() {
-  if (typeof window === 'undefined') return null;
-  const key = 'adisyum-runtime-device-id';
-  const existing = window.localStorage.getItem(key);
-  if (existing) return existing;
-  const next = typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `device-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  window.localStorage.setItem(key, next);
-  return next;
 }
 
 export function AppRuntimeProvider({ children }: { children: ReactNode }) {
@@ -101,7 +91,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
         await Promise.allSettled([resetTenantIsolation(), resetSystemAdminIsolation()]);
       }
 
-      hydrateSessionStateFromAuth(data?.ok ? data.session : null);
+      propagateRuntimeSessionAuth(data?.ok ? data.session : null);
       setAuthSnapshotFromSession(data?.ok ? data.session : null);
 
       if (data?.ok) {
@@ -251,13 +241,12 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isFetched || !data?.ok) return;
     let cancelled = false;
-    const deviceId = getRuntimeDeviceId();
+    const deviceId = resolveRuntimeDeviceId();
 
     const sendHeartbeat = async () => {
       if (cancelled || isLogoutInProgress()) return;
-      await fetch('/api/runtime/heartbeat', {
+      await runtimeFetch('/api/runtime/heartbeat', {
         method: 'POST',
-        credentials: 'include',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           currentRoute: typeof window !== 'undefined' ? window.location.pathname : undefined,
@@ -289,7 +278,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
 
     const interval = window.setInterval(async () => {
       if (isLogoutInProgress()) return;
-      const response = await fetch('/api/auth/me', { cache: 'no-store', credentials: 'include' }).catch(() => null);
+      const response = await runtimeFetch('/api/auth/me', { cache: 'no-store' }).catch(() => null);
       if (!response || response.status !== 401) return;
       await secureLogout({ reason: 'token_revoked', scope: 'current', skipServer: true, redirect: true });
     }, 90000);

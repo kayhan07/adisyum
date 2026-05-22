@@ -1,6 +1,7 @@
 'use client';
 
 import { loadSessionState } from '@/lib/session-store';
+import { runtimeFetch } from '@/lib/runtime/runtime-api';
 
 export type OfflineOperationType = 'order.snapshot' | 'payment.snapshot' | 'table.snapshot' | 'printer.job';
 export type OfflineOperationStatus = 'pending' | 'syncing' | 'failed' | 'synced';
@@ -545,7 +546,7 @@ export async function syncOfflineOrders(options: { tenantId?: string | null; for
     await Promise.all(syncingQueue.map((item) => writeQueueItem(item)));
 
     try {
-      const response = await fetch('/api/offline-sync', {
+      const response = await runtimeFetch('/api/offline-sync', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',

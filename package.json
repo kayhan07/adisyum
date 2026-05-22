@@ -13,6 +13,7 @@
     "deploy:verify-runtime": "node scripts/verify-deploy-runtime.mjs",
     "recomposition:phase1-validate": "node scripts/verify-enterprise-recomposition-phase1.mjs",
     "recomposition:phase2-validate": "node scripts/verify-enterprise-recomposition-phase2.mjs",
+    "recomposition:phase3-validate": "node scripts/verify-enterprise-recomposition-phase3.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

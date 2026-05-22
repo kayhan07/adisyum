@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query';
 import { authQueryKeys } from '@/lib/query/keys';
+import { runtimeFetch } from '@/lib/runtime/runtime-api';
 
 export type AuthMePayload = {
   ok: true;
@@ -20,7 +21,7 @@ export type AuthMePayload = {
 };
 
 export async function fetchAuthSession(): Promise<AuthMePayload> {
-  const response = await fetch('/api/auth/me', { cache: 'no-store', credentials: 'include' });
+  const response = await runtimeFetch('/api/auth/me', { cache: 'no-store' });
   if (response.status === 401) return { ok: false };
   if (!response.ok) throw new Error('Oturum bilgisi alınamadı.');
   return response.json() as Promise<AuthMePayload>;

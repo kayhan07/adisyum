@@ -69,6 +69,8 @@ import {
   restoreRecentAccountIds,
 } from '@/lib/pos-runtime/runtime-persistence-engine';
 import { hydrateRuntimeSessionContext, traceRuntimeSessionHydrated } from '@/lib/runtime/runtime-session-engine';
+import { runtimeFetch } from '@/lib/runtime/runtime-api';
+import { resolveStockRuntimeBranchId } from '@/lib/runtime/tenant-runtime-context';
 import {
   isRuntimeBarCategory,
   readBridgePrinterNames,
@@ -713,10 +715,9 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     const params = new URLSearchParams({ channel: 'pos' });
     if (activeBranchId) params.set('branchId', activeBranchId);
 
-    fetch(`/api/runtime/pos-catalog?${params.toString()}`, {
+    runtimeFetch(`/api/runtime/pos-catalog?${params.toString()}` as `/api/${string}`, {
       method: 'GET',
       cache: 'no-store',
-      credentials: 'include',
     })
       .then((response) => readJsonResponse(response).then((payload) => ({ response, payload })))
       .then(({ response, payload }) => {
@@ -2339,7 +2340,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
     setPaymentOpen(false);
 
-    const branchIdForStock: BranchId = activeBranchId === 'kdy' || activeBranchId === 'izm' ? activeBranchId : 'mrk';
+    const branchIdForStock = resolveStockRuntimeBranchId(activeBranchId) as BranchId;
     try {
       recordOrderForSmartStock(
         branchIdForStock,

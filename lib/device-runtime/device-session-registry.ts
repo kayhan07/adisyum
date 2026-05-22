@@ -31,6 +31,34 @@ export type BridgeRuntimeHandshake = {
   requestedAt: string;
 };
 
+declare global {
+  interface Window {
+    __adisyumRuntimeDeviceId?: string;
+  }
+}
+
+export function resolveRuntimeDeviceId() {
+  if (typeof window === 'undefined') return null;
+  if (window.__adisyumRuntimeDeviceId) return window.__adisyumRuntimeDeviceId;
+  const key = 'adisyum-runtime-device-id';
+  const existing = window.localStorage.getItem(key);
+  if (existing) {
+    window.__adisyumRuntimeDeviceId = existing;
+    return existing;
+  }
+  const next = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `device-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  window.localStorage.setItem(key, next);
+  window.__adisyumRuntimeDeviceId = next;
+  emitRuntimeEvent({
+    type: 'device ownership restored',
+    channel: 'pos-runtime',
+    payload: { event: 'runtime-device-id-resolved', deviceId: next },
+  });
+  return next;
+}
+
 function looksLikeBarCategory(value: unknown) {
   const key = String(value ?? '').toLocaleLowerCase('tr-TR');
   return key.includes('bar') || key.includes('içecek') || key.includes('icecek') || key.includes('kahve') || key.includes('alkol') || key.includes('su');

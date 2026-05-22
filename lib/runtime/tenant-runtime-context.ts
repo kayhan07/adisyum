@@ -52,3 +52,7 @@ export function createRuntimePermissionEnvelope(input: {
     can: (permission: string) => input.permissions.includes(permission),
   } satisfies RuntimePermissionEnvelope;
 }
+
+export function resolveStockRuntimeBranchId(branchId: string | null | undefined) {
+  return branchId === 'kdy' || branchId === 'izm' ? branchId : 'mrk';
+}

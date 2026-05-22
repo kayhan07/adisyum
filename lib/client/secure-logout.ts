@@ -2,6 +2,7 @@
 
 import { resetSystemAdminIsolation, resetTenantIsolation } from '@/lib/client/isolation';
 import { clearRuntimeScope } from '@/lib/client/runtime-state';
+import { runtimeFetch } from '@/lib/runtime/runtime-api';
 import { loadSessionState } from '@/lib/session-store';
 
 export type LogoutReason = 'manual' | 'idle' | 'shift_end' | 'forced' | 'token_revoked';
@@ -73,9 +74,8 @@ export async function secureLogout(options: {
 
   try {
     if (!options.skipServer) {
-      await fetch('/api/auth/session', {
+      await runtimeFetch('/api/auth/session', {
         method: 'DELETE',
-        credentials: 'include',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ reason, scope }),
       }).catch(() => undefined);

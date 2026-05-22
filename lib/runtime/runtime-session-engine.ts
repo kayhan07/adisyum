@@ -2,6 +2,7 @@
 
 import { emitRuntimeEvent } from '@/lib/pos-runtime/runtime-event-bus';
 import type { SessionState } from '@/lib/session-store';
+import { hydrateSessionStateFromAuth } from '@/lib/session-store';
 import {
   createRuntimePermissionEnvelope,
   resolveBranchRuntimeScope,
@@ -61,6 +62,20 @@ export function hydrateRuntimeSessionContext(input: {
     context,
     reason: context.tenant.isAuthenticated ? undefined : 'unauthenticated_runtime_session',
   } satisfies RuntimeSessionHydrationResult;
+}
+
+export function propagateRuntimeSessionAuth(session: Parameters<typeof hydrateSessionStateFromAuth>[0]) {
+  hydrateSessionStateFromAuth(session);
+  emitRuntimeEvent({
+    type: 'runtime session propagated',
+    channel: 'pos-runtime',
+    payload: {
+      authenticated: Boolean(session),
+      tenantId: session?.tenantId ?? null,
+      branchId: session?.branchId ?? null,
+      role: session?.role ?? null,
+    },
+  });
 }
 
 export function traceRuntimeSessionHydrated(result: RuntimeSessionHydrationResult) {

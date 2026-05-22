@@ -1,5 +1,7 @@
 'use client';
 
+import { runtimeFetch } from '@/lib/runtime/runtime-api';
+
 const HTTP_BASES = ['http://127.0.0.1:4891', 'http://localhost:4891'];
 const HTTPS_BASES = ['https://127.0.0.1:3443', 'https://localhost:3443'];
 
@@ -51,7 +53,7 @@ export async function fetchFromLocalAgent(path: string, options: LocalAgentReque
     return { ...body, source: 'proxy:local-agent-client' };
   })();
 
-  const response = await fetch(proxyRoute, {
+  const response = await runtimeFetch(proxyRoute as `/api/${string}`, {
     method: options.method ?? 'GET',
     cache: 'no-store',
     headers: {
