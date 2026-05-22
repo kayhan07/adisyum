@@ -858,6 +858,14 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
+    location = /adisyonsistemi {
+        return 308 /app;
+    }
+
+    location ^~ /adisyonsistemi/ {
+        return 308 /app;
+    }
+
     location = /app {
         proxy_pass http://127.0.0.1:${ROOT_PORT};
         proxy_http_version 1.1;
@@ -920,7 +928,7 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
-    location ~ ^/(adisyonsistemi|access|dashboard|pos|orders|products|warehouse|reports|finance|settings|branches|delivery|developer|bar-control|floor|integrations|kds|overview|qr|qr-menu|saas)(/|\$) {
+    location ~ ^/(access|dashboard|pos|orders|products|warehouse|reports|finance|settings|branches|delivery|developer|bar-control|floor|integrations|kds|overview|qr|qr-menu|saas)(/|\$) {
         proxy_pass http://127.0.0.1:${ROOT_PORT};
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
@@ -965,6 +973,8 @@ validate_nginx() {
   grep -Eq "location[[:space:]]+\\^~[[:space:]]+/system-admin/" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing location ^~ /system-admin/"
   grep -Eq "location[[:space:]]+=[[:space:]]+/api" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing location = /api"
   grep -Eq "location[[:space:]]+\\^~[[:space:]]+/api/" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing location ^~ /api/"
+  grep -Eq "location[[:space:]]+=[[:space:]]+/adisyonsistemi" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing legacy redirect location = /adisyonsistemi"
+  grep -Eq "location[[:space:]]+\\^~[[:space:]]+/adisyonsistemi/" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing legacy redirect location ^~ /adisyonsistemi/"
   awk '
     /location[[:space:]]+=[[:space:]]+\/api[[:space:]]*\{/ { in_api=1; exact=1; next }
     /location[[:space:]]+\^~[[:space:]]+\/api\// { in_api=1; prefix=1; next }
@@ -973,6 +983,14 @@ validate_nginx() {
     in_api && /^\s*\}/ { in_api=0 }
     END { if (!exact || !prefix || !root_api || website_api) exit 1 }
   ' "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "NGINX /api namespace must proxy only to root app port ${ROOT_PORT}, never website port ${WEBSITE_PORT}"
+  awk '
+    /location[[:space:]]+=[[:space:]]+\/adisyonsistemi[[:space:]]*\{/ { in_legacy=1; exact=1; next }
+    /location[[:space:]]+\^~[[:space:]]+\/adisyonsistemi\// { in_legacy=1; prefix=1; next }
+    in_legacy && /return[[:space:]]+308[[:space:]]+\/app;/ { redirect=1 }
+    in_legacy && /proxy_pass[[:space:]]+http:\/\/127\.0\.0\.1:/ { proxy=1 }
+    in_legacy && /^\s*\}/ { in_legacy=0 }
+    END { if (!exact || !prefix || !redirect || proxy) exit 1 }
+  ' "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Legacy /adisyonsistemi must redirect to /app and must not proxy to any runtime"
 
   systemctl reload nginx
 }
@@ -1062,6 +1080,7 @@ validate_runtime_routes() {
   wait_for_healthy_route "https://${DOMAIN}"
   wait_for_healthy_route "https://${DOMAIN}/app"
   wait_for_healthy_route "https://${DOMAIN}/system-admin"
+  wait_for_healthy_route "https://${DOMAIN}/adisyonsistemi"
   wait_for_route_status "POST" "https://${DOMAIN}/api/pos/table-orders" "401"
   wait_for_route_not_404 "GET" "https://${DOMAIN}/api/runtime-build-id"
   validate_runtime_build_identity "https://${DOMAIN}/api/runtime-build-id"

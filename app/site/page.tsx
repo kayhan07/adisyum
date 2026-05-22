@@ -12,7 +12,7 @@ export default function MarketingSitePage() {
       <header className="border-b border-slate-200 bg-white/90 px-6 py-4 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between">
           <Link href="/site" className="text-lg font-semibold">Adisyon</Link>
-          <Link href="/adisyonsistemi" className="rounded-2xl bg-[#2563EB] px-4 py-2 text-sm font-semibold text-white">Giriş</Link>
+          <Link href="/app" className="rounded-2xl bg-[#2563EB] px-4 py-2 text-sm font-semibold text-white">Giriş</Link>
         </div>
       </header>
       <section className="mx-auto grid max-w-6xl items-center gap-10 px-6 py-20 lg:grid-cols-2">
@@ -21,7 +21,7 @@ export default function MarketingSitePage() {
           <h1 className="mt-5 text-5xl font-semibold tracking-tight md:text-6xl">Sipariş, kurye ve kasa tek ekranda</h1>
           <p className="mt-6 text-lg leading-8 text-slate-600">Yoğun saatte sipariş karışmasın, paket servis kaybolmasın, kasa farkı sürpriz olmasın. Restoran operasyonunu tek panelden yönetin.</p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/adisyonsistemi" className="rounded-2xl bg-gradient-to-r from-[#2563EB] to-[#7C3AED] px-5 py-3 text-sm font-semibold text-white">Hemen Başla</Link>
+            <Link href="/app" className="rounded-2xl bg-gradient-to-r from-[#2563EB] to-[#7C3AED] px-5 py-3 text-sm font-semibold text-white">Hemen Başla</Link>
             <Link href="/demo" className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold">Demo Talep Et</Link>
           </div>
         </div>

@@ -113,9 +113,15 @@ const reconstructScript = readText('deploy/scripts/reconstruct-vps-runtime.sh');
 const standaloneExpected = /output\s*:\s*['"]standalone['"]/.test(nextConfig);
 const nginxExactApiBlock = nginxLocationBlock(nginxConfig, /location\s+=\s+\/api\s*\{/);
 const nginxPrefixApiBlock = nginxLocationBlock(nginxConfig, /location\s+\^~\s+\/api\/\s*\{/);
+const nginxLegacyAdisyonExactBlock = nginxLocationBlock(nginxConfig, /location\s+=\s+\/adisyonsistemi\s*\{/);
+const nginxLegacyAdisyonPrefixBlock = nginxLocationBlock(nginxConfig, /location\s+\^~\s+\/adisyonsistemi\/\s*\{/);
 const nginxExactApiToRoot = /proxy_pass\s+http:\/\/127\.0\.0\.1:3000;/.test(nginxExactApiBlock);
 const nginxPrefixApiToRoot = /proxy_pass\s+http:\/\/127\.0\.0\.1:3000;/.test(nginxPrefixApiBlock);
 const nginxApiToWebsite = /proxy_pass\s+http:\/\/127\.0\.0\.1:3010;/.test(`${nginxExactApiBlock}\n${nginxPrefixApiBlock}`);
+const nginxLegacyAdisyonRedirectsToApp = /return\s+308\s+\/app;/.test(nginxLegacyAdisyonExactBlock)
+  && /return\s+308\s+\/app;/.test(nginxLegacyAdisyonPrefixBlock);
+const nginxLegacyAdisyonProxiesToRoot = /proxy_pass\s+http:\/\/127\.0\.0\.1:3000;/.test(`${nginxLegacyAdisyonExactBlock}\n${nginxLegacyAdisyonPrefixBlock}`)
+  || /location\s+~[^{]*adisyonsistemi[^{]*\{[\s\S]*?proxy_pass\s+http:\/\/127\.0\.0\.1:3000;[\s\S]*?\}/.test(nginxConfig);
 const pm2UsesStandalone = /\.next\/standalone|standalone\/server\.js|server\.js/.test(ecosystemConfig);
 const standaloneExists = fs.existsSync(path.join(root, '.next/standalone'));
 const duplicateTableOrderRoutes = walkFiles('.', (file) => (
@@ -162,6 +168,14 @@ if (!nginxPrefixApiToRoot) {
 
 if (nginxApiToWebsite) {
   failures.push('deploy/nginx/adisyum.conf routes /api to website port 3010');
+}
+
+if (!nginxLegacyAdisyonRedirectsToApp) {
+  failures.push('deploy/nginx/adisyum.conf must permanently redirect /adisyonsistemi to /app');
+}
+
+if (nginxLegacyAdisyonProxiesToRoot) {
+  failures.push('deploy/nginx/adisyum.conf must not proxy legacy /adisyonsistemi to the root runtime');
 }
 
 if (!/Missing location = \/api/.test(reconstructScript) || !/Missing location \^~ \/api\//.test(reconstructScript)) {
@@ -230,6 +244,10 @@ console.log(JSON.stringify({
       exactApiToRoot: nginxExactApiToRoot,
       prefixApiToRoot: nginxPrefixApiToRoot,
       apiToWebsite: nginxApiToWebsite,
+    },
+    legacyAdisyonRoute: {
+      redirectsToApp: nginxLegacyAdisyonRedirectsToApp,
+      proxiesToRoot: nginxLegacyAdisyonProxiesToRoot,
     },
   },
   results,

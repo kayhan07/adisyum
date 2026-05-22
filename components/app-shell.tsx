@@ -65,13 +65,13 @@ export function AppShell({ title, subtitle, actions, children, immersiveMode = f
         setDaysLeft(null);
       }
 
-      if (!token && pathname !== '/adisyonsistemi' && pathname !== '/site' && !pathname.startsWith('/system-admin')) {
-        router.replace('/adisyonsistemi');
+      if (!token && pathname !== '/app' && pathname !== '/site' && !pathname.startsWith('/system-admin')) {
+        router.replace('/app');
         return;
       }
 
       const moduleId = pathname.split('/').filter(Boolean)[0];
-      if (token && moduleId && !['app', 'site', 'adisyonsistemi', 'system-admin', 'api'].includes(moduleId)) {
+      if (token && moduleId && !['app', 'site', 'system-admin', 'api'].includes(moduleId)) {
         setBlockedByPackage(!canPackageAccessModule(token.package_type, moduleId, token.package_id));
       } else {
         setBlockedByPackage(false);
