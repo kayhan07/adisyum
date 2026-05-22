@@ -64,6 +64,8 @@ const DEFAULT_PENDING_PROTECTION_MS = 2500;
 let runtimeHydrationCount = 0;
 let runtimeSyncCycleCount = 0;
 let runtimeSubscriptionCount = 0;
+let activeRuntimeSubscriptionCount = 0;
+let runtimeSyncInFlightSuppressionCount = 0;
 
 async function readJsonResponse(response: Response) {
   const text = await response.text();
@@ -227,9 +229,11 @@ export function startAuthoritativeRuntimeSync<TLine extends RuntimeOrderLine>(in
   const reconcile = (source: 'interval' | 'focus') => {
     runtimeSyncCycleCount += 1;
     if (reconcileInFlight) {
+      runtimeSyncInFlightSuppressionCount += 1;
       input.diagnostics?.('sync conflict resolved', {
         source,
         syncCycleCount: runtimeSyncCycleCount,
+        runtimeSyncInFlightSuppressionCount,
         reason: 'reconcile_in_flight',
       });
       return;
@@ -281,6 +285,7 @@ export function startAuthoritativeRuntimeSync<TLine extends RuntimeOrderLine>(in
   };
 
   runtimeSubscriptionCount += 1;
+  activeRuntimeSubscriptionCount += 1;
   const timer = window.setInterval(() => reconcile('interval'), input.intervalMs ?? 3500);
   const handleFocus = () => reconcile('focus');
   window.addEventListener('focus', handleFocus);
@@ -288,12 +293,28 @@ export function startAuthoritativeRuntimeSync<TLine extends RuntimeOrderLine>(in
   input.diagnostics?.('runtime sync subscription started', {
     intervalMs: input.intervalMs ?? 3500,
     runtimeSubscriptionCount,
+    activeRuntimeSubscriptionCount,
   });
 
   return () => {
     cancelled = true;
     window.clearInterval(timer);
     window.removeEventListener('focus', handleFocus);
-    input.diagnostics?.('runtime sync subscription stopped', {});
+    activeRuntimeSubscriptionCount = Math.max(0, activeRuntimeSubscriptionCount - 1);
+    input.diagnostics?.('runtime sync subscription stopped', {
+      runtimeSubscriptionCount,
+      activeRuntimeSubscriptionCount,
+    });
+  };
+}
+
+export function getRuntimeSyncDiagnostics() {
+  return {
+    runtimeHydrationCount,
+    runtimeSyncCycleCount,
+    runtimeSubscriptionCount,
+    activeRuntimeSubscriptionCount,
+    runtimeSyncInFlightSuppressionCount,
+    defaultPendingProtectionMs: DEFAULT_PENDING_PROTECTION_MS,
   };
 }

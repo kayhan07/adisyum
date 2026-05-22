@@ -42,6 +42,10 @@ export type RuntimeReplayResult = {
 };
 
 const runtimePersistenceClientId = `persistence-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+const MAX_RUNTIME_SNAPSHOT_BYTES = 256_000;
+let runtimePersistenceWriteCount = 0;
+let runtimePersistenceSuppressedWriteCount = 0;
+let runtimePersistenceRestoreCount = 0;
 
 function nextVersion(): PersistenceVersion {
   const now = Date.now();
@@ -54,11 +58,12 @@ function nextVersion(): PersistenceVersion {
 
 export function restoreRuntimeJson<T>(scope: 'tenant' | 'system-admin', key: string, fallback: T) {
   const raw = readRuntimeItem(scope, key);
+  runtimePersistenceRestoreCount += 1;
   if (!raw) {
     emitRuntimeEvent({
       type: 'persistence snapshot restored',
       channel: 'persistence',
-      payload: { scope, key, restored: false, reason: 'missing_snapshot' },
+      payload: { scope, key, restored: false, reason: 'missing_snapshot', runtimePersistenceRestoreCount },
     });
     return { restored: false, reason: 'missing_snapshot' } satisfies PersistenceHydrationResult<T>;
   }
@@ -74,14 +79,14 @@ export function restoreRuntimeJson<T>(scope: 'tenant' | 'system-admin', key: str
     emitRuntimeEvent({
       type: 'persistence snapshot restored',
       channel: 'persistence',
-      payload: { scope, key, restored: true, version: snapshot.version },
+      payload: { scope, key, restored: true, version: snapshot.version, snapshotBytes: raw.length, runtimePersistenceRestoreCount },
     });
     return { restored: true, snapshot } satisfies PersistenceHydrationResult<T>;
   } catch {
     emitRuntimeEvent({
       type: 'stale snapshot rejected',
       channel: 'persistence',
-      payload: { scope, key, reason: 'invalid_json' },
+      payload: { scope, key, reason: 'invalid_json', snapshotBytes: raw.length, runtimePersistenceRestoreCount },
     });
     return {
       restored: false,
@@ -99,10 +104,11 @@ export function restoreRuntimeJson<T>(scope: 'tenant' | 'system-admin', key: str
 export function persistRuntimeJson<T>(scope: 'tenant' | 'system-admin', key: string, value: T) {
   const nextSerialized = JSON.stringify(value);
   if (readRuntimeItem(scope, key) === nextSerialized) {
+    runtimePersistenceSuppressedWriteCount += 1;
     emitRuntimeEvent({
       type: 'redundant persistence suppressed',
       channel: 'persistence',
-      payload: { scope, key },
+      payload: { scope, key, runtimePersistenceSuppressedWriteCount },
     });
     return {
       scope,
@@ -118,10 +124,19 @@ export function persistRuntimeJson<T>(scope: 'tenant' | 'system-admin', key: str
     version: nextVersion(),
   } satisfies RuntimePersistenceSnapshot<T>;
   writeRuntimeItem(scope, key, nextSerialized);
+  runtimePersistenceWriteCount += 1;
+  if (nextSerialized.length > MAX_RUNTIME_SNAPSHOT_BYTES) {
+    console.warn('[pos-runtime:persistence] large runtime snapshot', {
+      scope,
+      key,
+      snapshotBytes: nextSerialized.length,
+      maxRuntimeSnapshotBytes: MAX_RUNTIME_SNAPSHOT_BYTES,
+    });
+  }
   emitRuntimeEvent({
     type: 'persistence snapshot written',
     channel: 'persistence',
-    payload: { scope, key, version: snapshot.version },
+    payload: { scope, key, version: snapshot.version, snapshotBytes: nextSerialized.length, runtimePersistenceWriteCount },
   });
   return snapshot;
 }
@@ -140,17 +155,18 @@ export function persistTableLiveTotals(totals: Record<string, number>) {
   setTableLiveTotals(totals);
   const after = JSON.stringify(getTableLiveTotals());
   if (before === after) {
+    runtimePersistenceSuppressedWriteCount += 1;
     emitRuntimeEvent({
       type: 'redundant persistence suppressed',
       channel: 'persistence',
-      payload: { key: 'aurelia-table-live-totals', tableIds: Object.keys(totals) },
+      payload: { key: 'aurelia-table-live-totals', tableIds: Object.keys(totals), runtimePersistenceSuppressedWriteCount },
     });
     return;
   }
   emitRuntimeEvent({
     type: 'persistence snapshot written',
     channel: 'persistence',
-    payload: { key: 'aurelia-table-live-totals', tableIds: Object.keys(totals) },
+    payload: { key: 'aurelia-table-live-totals', tableIds: Object.keys(totals), runtimePersistenceWriteCount: ++runtimePersistenceWriteCount },
   });
 }
 
@@ -159,7 +175,7 @@ export function persistTablePaymentRequested(tableId: string, requested: boolean
   emitRuntimeEvent({
     type: 'persistence snapshot written',
     channel: 'persistence',
-    payload: { key: 'aurelia-table-payment-requested', tableId, requested },
+    payload: { key: 'aurelia-table-payment-requested', tableId, requested, runtimePersistenceWriteCount: ++runtimePersistenceWriteCount },
   });
 }
 
@@ -175,4 +191,14 @@ export function queueRuntimeReplay(event: Omit<RuntimeReplayEvent, 'id' | 'queue
     payload: replayEvent,
   });
   return { queued: true, event: replayEvent } satisfies RuntimeReplayResult;
+}
+
+export function getRuntimePersistenceDiagnostics() {
+  return {
+    runtimePersistenceClientId,
+    runtimePersistenceWriteCount,
+    runtimePersistenceSuppressedWriteCount,
+    runtimePersistenceRestoreCount,
+    maxRuntimeSnapshotBytes: MAX_RUNTIME_SNAPSHOT_BYTES,
+  };
 }

@@ -95,6 +95,12 @@ export type MutationReconciliationResult<TLine extends RuntimeOrderLine = Runtim
 
 export type OrderMutationDiagnostics = (event: string, payload: Record<string, unknown>) => void;
 
+let runtimeMutationCreatedCount = 0;
+let runtimeMutationDispatchedCount = 0;
+let runtimeMutationCommittedCount = 0;
+let runtimeMutationRolledBackCount = 0;
+const MAX_PENDING_MUTATION_AGE_MS = 10_000;
+
 function readJsonResponse(response: Response) {
   return response.text().then((text) => {
     if (!text) return {};
@@ -130,6 +136,7 @@ export function createOrderMutation(input: {
   isReturn?: boolean;
 }, diagnostics?: OrderMutationDiagnostics) {
   const mutationId = createMutationId(input.tableId, input.product.id);
+  runtimeMutationCreatedCount += 1;
   const mutation = {
     tableId: input.tableId,
     mutationId,
@@ -151,6 +158,7 @@ export function createOrderMutation(input: {
   diagnostics?.('mutation created', {
     tableId: mutation.tableId,
     mutationId: mutation.mutationId,
+    runtimeMutationCreatedCount,
     source: mutation.source,
     productId: mutation.product.id,
     productName: mutation.product.name,
@@ -238,9 +246,11 @@ export async function dispatchOrderMutation<TLine extends RuntimeOrderLine>(
   diagnostics?: OrderMutationDiagnostics,
 ) {
   const requestUrl = buildApiUrl(POS_TABLE_ORDERS_API);
+  runtimeMutationDispatchedCount += 1;
   diagnostics?.('mutation queued', {
     tableId: mutation.tableId,
     mutationId: mutation.mutationId,
+    runtimeMutationDispatchedCount,
     source: mutation.source,
     productId: mutation.product.id,
     posKey: mutation.product.posKey,
@@ -305,9 +315,11 @@ export async function dispatchOrderMutation<TLine extends RuntimeOrderLine>(
   });
 
   if (!response.ok) {
+    runtimeMutationRolledBackCount += 1;
     diagnostics?.('mutation rolled back', {
       tableId: mutation.tableId,
       mutationId: mutation.mutationId,
+      runtimeMutationRolledBackCount,
       status: response.status,
       code: payload.code,
       traceId: payload.traceId,
@@ -315,9 +327,11 @@ export async function dispatchOrderMutation<TLine extends RuntimeOrderLine>(
     throw new Error(`Authoritative product mutation failed with ${response.status}: ${payload.message ?? payload.error ?? payload.code ?? 'unknown error'}${payload.traceId ? ` (${payload.traceId})` : ''}`);
   }
 
+  runtimeMutationCommittedCount += 1;
   diagnostics?.('mutation committed', {
     tableId: mutation.tableId,
     mutationId: payload.mutationId ?? mutation.mutationId,
+    runtimeMutationCommittedCount,
     tableCount: payload.ordersByTable ? Object.keys(payload.ordersByTable).length : 0,
     activeLineCount: payload.ordersByTable?.[mutation.tableId]?.length ?? 0,
   });
@@ -326,4 +340,23 @@ export async function dispatchOrderMutation<TLine extends RuntimeOrderLine>(
     ordersByTable: payload.ordersByTable ?? {},
     mutationId: payload.mutationId ?? mutation.mutationId,
   } satisfies MutationResult<TLine>;
+}
+
+export function getOrderMutationRuntimeDiagnostics(pendingMutation?: PendingMutation | null) {
+  const pendingAgeMs = pendingMutation ? Date.now() - pendingMutation.at : 0;
+  return {
+    runtimeMutationCreatedCount,
+    runtimeMutationDispatchedCount,
+    runtimeMutationCommittedCount,
+    runtimeMutationRolledBackCount,
+    pendingMutation: pendingMutation
+      ? {
+          tableId: pendingMutation.tableId,
+          source: pendingMutation.source,
+          ageMs: pendingAgeMs,
+          stale: pendingAgeMs > MAX_PENDING_MUTATION_AGE_MS,
+        }
+      : null,
+    maxPendingMutationAgeMs: MAX_PENDING_MUTATION_AGE_MS,
+  };
 }

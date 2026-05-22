@@ -36,8 +36,11 @@ export type RuntimeEventListener = (event: RuntimeEventEnvelope) => void;
 
 const listeners = new Set<RuntimeEventListener>();
 let runtimeEventEmissionCount = 0;
+let runtimeEventSuppressionCount = 0;
 let lastEventFingerprint = '';
 let lastEventAtMs = 0;
+const MAX_RUNTIME_LISTENERS = 50;
+const MAX_RUNTIME_EVENT_PAYLOAD_BYTES = 32_000;
 
 function createEventId() {
   return `runtime-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -53,6 +56,12 @@ function safeEventPayloadFingerprint(payload: Record<string, unknown>) {
 
 export function subscribeRuntimeEvents(listener: RuntimeEventListener) {
   listeners.add(listener);
+  if (listeners.size > MAX_RUNTIME_LISTENERS) {
+    console.warn('[pos-runtime:event-bus] runtime listener count exceeded soft limit', {
+      listenerCount: listeners.size,
+      maxRuntimeListeners: MAX_RUNTIME_LISTENERS,
+    });
+  }
   return () => listeners.delete(listener);
 }
 
@@ -66,12 +75,13 @@ export function emitRuntimeEvent(input: {
   const fingerprint = `${channel}:${input.type}:${safeEventPayloadFingerprint(payload)}`;
   const now = Date.now();
   if (fingerprint === lastEventFingerprint && now - lastEventAtMs < 25) {
+    runtimeEventSuppressionCount += 1;
     return {
       id: 'suppressed-duplicate-runtime-event',
       type: 'duplicate event suppressed',
       channel,
       timestamp: new Date(now).toISOString(),
-      payload: { originalType: input.type },
+      payload: { originalType: input.type, runtimeEventSuppressionCount },
     } satisfies RuntimeEventEnvelope;
   }
   runtimeEventEmissionCount += 1;
@@ -85,10 +95,31 @@ export function emitRuntimeEvent(input: {
     payload: {
       ...payload,
       runtimeEventEmissionCount,
+      runtimeEventSuppressionCount,
+      runtimeEventListenerCount: listeners.size,
     },
   };
+  const payloadBytes = safeEventPayloadFingerprint(event.payload).length;
+  if (payloadBytes > MAX_RUNTIME_EVENT_PAYLOAD_BYTES) {
+    console.warn('[pos-runtime:event-bus] large runtime event payload', {
+      type: event.type,
+      channel: event.channel,
+      payloadBytes,
+      maxRuntimeEventPayloadBytes: MAX_RUNTIME_EVENT_PAYLOAD_BYTES,
+    });
+  }
   listeners.forEach((listener) => listener(event));
   return event;
+}
+
+export function getRuntimeEventBusDiagnostics() {
+  return {
+    runtimeEventEmissionCount,
+    runtimeEventSuppressionCount,
+    runtimeEventListenerCount: listeners.size,
+    maxRuntimeListeners: MAX_RUNTIME_LISTENERS,
+    maxRuntimeEventPayloadBytes: MAX_RUNTIME_EVENT_PAYLOAD_BYTES,
+  };
 }
 
 export function isRuntimeDiagnosticsEnabled() {
