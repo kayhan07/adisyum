@@ -43,6 +43,10 @@ import { getPlaybookRuns } from '@/lib/incidents/dr-playbooks';
 import { getPilotOperationsDashboard } from '@/lib/pilot-field/field-validation';
 import { getCommercialOperationsDashboard } from '@/lib/commercial-ops/platform';
 import { buildAllTenantOperationalHealth } from '@/lib/operational-intelligence/engine';
+import {
+  bootstrapEnterpriseTelemetry,
+  buildEnterpriseTelemetrySnapshot,
+} from '@/lib/observability/enterprise-telemetry';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -167,6 +171,7 @@ export async function GET(request: Request) {
 
   // Bootstrap backup scheduler (idempotent)
   try { bootstrapAutoBackupEngine(); } catch { /* */ }
+  try { bootstrapEnterpriseTelemetry(); } catch { /* */ }
 
   const [postgres, redis] = await Promise.all([getPostgresMetrics(), getRedisMetrics()]);
   const server = buildServerMetricSnapshot({ postgres, redis });
@@ -207,6 +212,7 @@ export async function GET(request: Request) {
   let pilotField: ReturnType<typeof getPilotOperationsDashboard> | null = null;
   let commercialOps: ReturnType<typeof getCommercialOperationsDashboard> | null = null;
   let operationalIntelligence: Awaited<ReturnType<typeof buildAllTenantOperationalHealth>> = [];
+  let enterpriseTelemetry: ReturnType<typeof buildEnterpriseTelemetrySnapshot> | null = null;
 
   try { incidents = getOpenIncidents(); } catch { /* */ }
   try { incidentStats = getIncidentStats(); } catch { /* */ }
@@ -239,6 +245,7 @@ export async function GET(request: Request) {
   try { pilotField = getPilotOperationsDashboard(); } catch { /* */ }
   try { commercialOps = getCommercialOperationsDashboard({ pilotField, healthScores }); } catch { /* */ }
   try { operationalIntelligence = await buildAllTenantOperationalHealth(); } catch { /* */ }
+  try { enterpriseTelemetry = buildEnterpriseTelemetrySnapshot(); } catch { /* */ }
 
   // Fire backup failure alert if needed (non-blocking)
   void fireBackupFailureAlertIfNeeded().catch(() => undefined);
@@ -289,6 +296,7 @@ export async function GET(request: Request) {
     pilotField,
     commercialOps,
     operationalIntelligence,
+    enterpriseTelemetry,
     releases,
     releaseSummary,
     generatedAt: new Date().toISOString(),

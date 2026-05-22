@@ -32,5 +32,16 @@ export async function GET() {
     nodeEnv: process.env.NODE_ENV ?? null,
     port: process.env.PORT ?? null,
     sessionCookieDomain: process.env.SESSION_COOKIE_DOMAIN ?? null,
+    pm2ProcessId: process.env.pm_id ?? null,
+    pm2InstanceId: process.env.NODE_APP_INSTANCE ?? null,
+    pm2RestartCount: process.env.PM2_RESTART_COUNT ?? null,
+    hostname: process.env.HOSTNAME ?? null,
+    runtimeAuthority: {
+      canonicalApp: 'adisyum-root-app',
+      canonicalAppPort: '3000',
+      canonicalWebsite: 'adisyum-website',
+      canonicalWebsitePort: '3010',
+      apiNamespaceOwner: 'adisyum-root-app',
+    },
   });
 }
