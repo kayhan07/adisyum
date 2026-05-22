@@ -69,6 +69,21 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+function nginxLocationBlock(config, pattern) {
+  const match = pattern.exec(config);
+  if (!match) return '';
+  const start = match.index;
+  let depth = 0;
+  for (let index = start; index < config.length; index += 1) {
+    if (config[index] === '{') depth += 1;
+    if (config[index] === '}') {
+      depth -= 1;
+      if (depth === 0) return config.slice(start, index + 1);
+    }
+  }
+  return config.slice(start);
+}
+
 function walkFiles(dir, matcher, matches = []) {
   const absolute = path.join(root, dir);
   if (!fs.existsSync(absolute)) return matches;
@@ -93,7 +108,14 @@ const results = [];
 const warnings = [];
 const nextConfig = readText('next.config.mjs') || readText('next.config.js');
 const ecosystemConfig = readText('ecosystem.config.cjs') || readText('ecosystem.config.js');
+const nginxConfig = readText('deploy/nginx/adisyum.conf');
+const reconstructScript = readText('deploy/scripts/reconstruct-vps-runtime.sh');
 const standaloneExpected = /output\s*:\s*['"]standalone['"]/.test(nextConfig);
+const nginxExactApiBlock = nginxLocationBlock(nginxConfig, /location\s+=\s+\/api\s*\{/);
+const nginxPrefixApiBlock = nginxLocationBlock(nginxConfig, /location\s+\^~\s+\/api\/\s*\{/);
+const nginxExactApiToRoot = /proxy_pass\s+http:\/\/127\.0\.0\.1:3000;/.test(nginxExactApiBlock);
+const nginxPrefixApiToRoot = /proxy_pass\s+http:\/\/127\.0\.0\.1:3000;/.test(nginxPrefixApiBlock);
+const nginxApiToWebsite = /proxy_pass\s+http:\/\/127\.0\.0\.1:3010;/.test(`${nginxExactApiBlock}\n${nginxPrefixApiBlock}`);
 const pm2UsesStandalone = /\.next\/standalone|standalone\/server\.js|server\.js/.test(ecosystemConfig);
 const standaloneExists = fs.existsSync(path.join(root, '.next/standalone'));
 const duplicateTableOrderRoutes = walkFiles('.', (file) => (
@@ -128,6 +150,26 @@ if (pm2UsesStandalone && !standaloneExists) {
 
 if (!middlewareManifest) {
   failures.push('Missing .next/server/middleware-manifest.json. Middleware build output is not auditable.');
+}
+
+if (!nginxExactApiToRoot) {
+  failures.push('deploy/nginx/adisyum.conf must route exact /api to root app port 3000');
+}
+
+if (!nginxPrefixApiToRoot) {
+  failures.push('deploy/nginx/adisyum.conf must route /api/* to root app port 3000');
+}
+
+if (nginxApiToWebsite) {
+  failures.push('deploy/nginx/adisyum.conf routes /api to website port 3010');
+}
+
+if (!/Missing location = \/api/.test(reconstructScript) || !/Missing location \^~ \/api\//.test(reconstructScript)) {
+  failures.push('reconstruct-vps-runtime.sh must validate active NGINX /api locations');
+}
+
+if (!/expected HTTP \$\{expected\}/.test(reconstructScript) || !/api\/pos\/table-orders\"\s+\"401\"/.test(reconstructScript)) {
+  failures.push('reconstruct-vps-runtime.sh must require POST /api/pos/table-orders to return 401 missing-session route proof, not merely non-404');
 }
 
 if (!standaloneExpected && !pm2UsesStandalone) {
@@ -184,6 +226,11 @@ console.log(JSON.stringify({
     pm2UsesStandalone,
     pm2Runtime: pm2UsesStandalone ? 'standalone' : 'next-start',
     duplicateTableOrderRoutes,
+    nginxApiNamespace: {
+      exactApiToRoot: nginxExactApiToRoot,
+      prefixApiToRoot: nginxPrefixApiToRoot,
+      apiToWebsite: nginxApiToWebsite,
+    },
   },
   results,
   warnings,

@@ -46,10 +46,16 @@ async function verifyLiveRoute() {
       body: '{}',
       cache: 'no-store',
     });
-    if (response.status === 404) {
-      failures.push(`${url} returned 404`);
+    const body = await response.json().catch(() => null);
+    if (response.status !== 401 || body?.code !== 'missing_session') {
+      failures.push(`${url} expected 401 missing_session from root app, got HTTP ${response.status} ${JSON.stringify(body)}`);
     }
-    checks.posTableOrders = { url, status: response.status, ok: response.status !== 404 };
+    checks.posTableOrders = {
+      url,
+      status: response.status,
+      ok: response.status === 401 && body?.code === 'missing_session',
+      body,
+    };
   } catch (error) {
     failures.push(`${url} request failed: ${error instanceof Error ? error.message : String(error)}`);
     checks.posTableOrders = { url, status: null, ok: false };

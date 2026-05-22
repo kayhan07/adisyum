@@ -963,6 +963,16 @@ validate_nginx() {
   grep -Eq "location[[:space:]]+\\^~[[:space:]]+/app/" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing location ^~ /app/"
   grep -Eq "location[[:space:]]+=[[:space:]]+/system-admin" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing location = /system-admin"
   grep -Eq "location[[:space:]]+\\^~[[:space:]]+/system-admin/" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing location ^~ /system-admin/"
+  grep -Eq "location[[:space:]]+=[[:space:]]+/api" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing location = /api"
+  grep -Eq "location[[:space:]]+\\^~[[:space:]]+/api/" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing location ^~ /api/"
+  awk '
+    /location[[:space:]]+=[[:space:]]+\/api[[:space:]]*\{/ { in_api=1; exact=1; next }
+    /location[[:space:]]+\^~[[:space:]]+\/api\// { in_api=1; prefix=1; next }
+    in_api && /proxy_pass[[:space:]]+http:\/\/127\.0\.0\.1:'"${ROOT_PORT}"';/ { root_api=1 }
+    in_api && /proxy_pass[[:space:]]+http:\/\/127\.0\.0\.1:'"${WEBSITE_PORT}"';/ { website_api=1 }
+    in_api && /^\s*\}/ { in_api=0 }
+    END { if (!exact || !prefix || !root_api || website_api) exit 1 }
+  ' "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "NGINX /api namespace must proxy only to root app port ${ROOT_PORT}, never website port ${WEBSITE_PORT}"
 
   systemctl reload nginx
 }
@@ -1014,6 +1024,25 @@ wait_for_route_not_404() {
   fail "${method} ${url} expected registered route, got HTTP ${code:-none}"
 }
 
+wait_for_route_status() {
+  local method="$1"
+  local url="$2"
+  local expected="$3"
+  local code=""
+  for _ in $(seq 1 30); do
+    code="$(curl -ksS -X "${method}" -o /dev/null -w '%{http_code}' --max-time 8 "${url}" || true)"
+    if [[ "${code}" == "${expected}" ]]; then
+      log "${method} ${url} HTTP ${code} (expected)"
+      return 0
+    fi
+    if [[ "${code}" == "404" ]]; then
+      log "${method} ${url} HTTP 404; API namespace is not routed to the root runtime yet"
+    fi
+    sleep 2
+  done
+  fail "${method} ${url} expected HTTP ${expected}, got HTTP ${code:-none}"
+}
+
 validate_runtime_routes() {
   log "Validating local and public runtime routes"
   if ss -ltnp | grep -q ':3020'; then
@@ -1025,7 +1054,7 @@ validate_runtime_routes() {
   wait_for_healthy_route "http://127.0.0.1:${ROOT_PORT}/app"
   wait_for_healthy_route "http://127.0.0.1:${ROOT_PORT}/system-admin"
   wait_for_healthy_route "http://127.0.0.1:${WEBSITE_PORT}"
-  wait_for_route_not_404 "POST" "http://127.0.0.1:${ROOT_PORT}/api/pos/table-orders"
+  wait_for_route_status "POST" "http://127.0.0.1:${ROOT_PORT}/api/pos/table-orders" "401"
   wait_for_route_not_404 "GET" "http://127.0.0.1:${ROOT_PORT}/api/runtime/pos-catalog"
   wait_for_route_not_404 "GET" "http://127.0.0.1:${ROOT_PORT}/api/runtime-build-id"
   validate_runtime_build_identity "http://127.0.0.1:${ROOT_PORT}/api/runtime-build-id"
@@ -1033,7 +1062,7 @@ validate_runtime_routes() {
   wait_for_healthy_route "https://${DOMAIN}"
   wait_for_healthy_route "https://${DOMAIN}/app"
   wait_for_healthy_route "https://${DOMAIN}/system-admin"
-  wait_for_route_not_404 "POST" "https://${DOMAIN}/api/pos/table-orders"
+  wait_for_route_status "POST" "https://${DOMAIN}/api/pos/table-orders" "401"
   wait_for_route_not_404 "GET" "https://${DOMAIN}/api/runtime-build-id"
   validate_runtime_build_identity "https://${DOMAIN}/api/runtime-build-id"
 }
