@@ -3,6 +3,7 @@
 import type { PendingMutation, RuntimeOrderLine } from '@/lib/pos-runtime/order-mutations';
 import type { PosOrderReconciliationSource } from '@/lib/pos-order-reconciliation';
 import { reconcileTableState, type TableStateReconciliationLog } from '@/lib/runtime/table-state-engine';
+import { POS_TABLE_ORDERS_API, runtimeFetch } from '@/lib/runtime/runtime-api';
 
 export type RuntimeSyncMeta = {
   source: PosOrderReconciliationSource | 'persistence' | 'websocket';
@@ -75,10 +76,9 @@ async function readJsonResponse(response: Response) {
 }
 
 export async function fetchAuthoritativeTablePayload<TLine extends RuntimeOrderLine>() {
-  const response = await fetch('/api/pos/table-orders', {
+  const response = await runtimeFetch(POS_TABLE_ORDERS_API, {
     method: 'GET',
     cache: 'no-store',
-    credentials: 'include',
   });
   const payload = await readJsonResponse(response) as {
     ordersByTable?: Record<string, TLine[]>;

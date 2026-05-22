@@ -1,6 +1,7 @@
 'use client';
 
 import type { ProductDomainType } from '@/lib/product-domain';
+import { buildApiUrl, POS_TABLE_ORDERS_API, runtimeFetch } from '@/lib/runtime/runtime-api';
 
 export type RuntimeOrderLine = {
   id: string;
@@ -236,6 +237,7 @@ export async function dispatchOrderMutation<TLine extends RuntimeOrderLine>(
   mutation: OrderMutation,
   diagnostics?: OrderMutationDiagnostics,
 ) {
+  const requestUrl = buildApiUrl(POS_TABLE_ORDERS_API);
   diagnostics?.('mutation queued', {
     tableId: mutation.tableId,
     mutationId: mutation.mutationId,
@@ -245,6 +247,7 @@ export async function dispatchOrderMutation<TLine extends RuntimeOrderLine>(
     catalogRevision: mutation.product.catalogRevision,
   });
   diagnostics?.('add-product-fetch-dispatch', {
+    requestUrl,
     mutationId: mutation.mutationId,
     tableId: mutation.tableId,
     productId: mutation.product.id,
@@ -259,15 +262,15 @@ export async function dispatchOrderMutation<TLine extends RuntimeOrderLine>(
     price: mutation.product.price,
   });
   console.log('[adisyon-flow] table-orders payload', {
+    url: requestUrl,
     tableId: mutation.tableId,
     mutationId: mutation.mutationId,
     product: mutation.product,
   });
 
-  const response = await fetch('/api/pos/table-orders', {
+  const response = await runtimeFetch(POS_TABLE_ORDERS_API, {
     method: 'POST',
     cache: 'no-store',
-    credentials: 'include',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       tableId: mutation.tableId,
@@ -286,6 +289,7 @@ export async function dispatchOrderMutation<TLine extends RuntimeOrderLine>(
   };
 
   diagnostics?.('add-product-fetch-response', {
+    requestUrl,
     mutationId: mutation.mutationId,
     tableId: mutation.tableId,
     status: response.status,
