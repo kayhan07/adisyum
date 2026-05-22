@@ -49,6 +49,7 @@ import {
 } from '@/lib/observability/enterprise-telemetry';
 import { buildScaleReadinessSnapshot } from '@/lib/operations/scale-readiness';
 import { buildAiOperationsSnapshot } from '@/lib/ai-operations/governance';
+import { buildMonetizationGovernanceSnapshot } from '@/lib/monetization/governance';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -217,6 +218,7 @@ export async function GET(request: Request) {
   let enterpriseTelemetry: ReturnType<typeof buildEnterpriseTelemetrySnapshot> | null = null;
   let scaleReadiness: ReturnType<typeof buildScaleReadinessSnapshot> | null = null;
   let aiOperations: ReturnType<typeof buildAiOperationsSnapshot> | null = null;
+  let monetizationGovernance: ReturnType<typeof buildMonetizationGovernanceSnapshot> | null = null;
 
   try { incidents = getOpenIncidents(); } catch { /* */ }
   try { incidentStats = getIncidentStats(); } catch { /* */ }
@@ -252,6 +254,7 @@ export async function GET(request: Request) {
   try { enterpriseTelemetry = buildEnterpriseTelemetrySnapshot(); } catch { /* */ }
   try { scaleReadiness = buildScaleReadinessSnapshot(); } catch { /* */ }
   try { aiOperations = buildAiOperationsSnapshot(); } catch { /* */ }
+  try { monetizationGovernance = buildMonetizationGovernanceSnapshot(); } catch { /* */ }
 
   // Fire backup failure alert if needed (non-blocking)
   void fireBackupFailureAlertIfNeeded().catch(() => undefined);
@@ -305,6 +308,7 @@ export async function GET(request: Request) {
     enterpriseTelemetry,
     scaleReadiness,
     aiOperations,
+    monetizationGovernance,
     releases,
     releaseSummary,
     generatedAt: new Date().toISOString(),
