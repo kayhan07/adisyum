@@ -3,7 +3,6 @@ import { getSessionFromRequest } from '@/lib/session';
 import { isSuperAdmin } from '@/lib/tenant';
 
 const PUBLIC_PREFIXES = [
-  '/adisyonsistemi',
   '/site',
   '/api/auth',
   '/api/downloads',
@@ -45,6 +44,10 @@ function isMutatingMethod(method: string) {
 
 function isTenantObservabilityIngestPath(pathname: string) {
   return pathname === '/api/system-admin/observability/ingest';
+}
+
+function isLegacyAdisyonPath(pathname: string) {
+  return pathname === '/adisyonsistemi' || pathname.startsWith('/adisyonsistemi/');
 }
 
 function splitForwardedHeader(value: string | null) {
@@ -189,6 +192,18 @@ function withSecurityHeaders(response: NextResponse) {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  if (isLegacyAdisyonPath(pathname)) {
+    const url = publicRedirectUrl(request, '/app');
+    return withSecurityHeaders(NextResponse.redirect(url, 308));
+  }
+
+  if (pathname === '/app' && request.nextUrl.searchParams.has('next')) {
+    const url = publicRedirectUrl(request, '/app');
+    return withSecurityHeaders(NextResponse.redirect(url, 308));
+  }
+
+  if (pathname === '/app') return withSecurityHeaders(NextResponse.next());
+
   if (isPublicPath(pathname) || !isProtectedPath(pathname)) return withSecurityHeaders(NextResponse.next());
 
   if (isApiPath(pathname) && isMutatingMethod(request.method) && !hasValidOrigin(request)) {
@@ -224,8 +239,7 @@ export async function middleware(request: NextRequest) {
       });
       return withSecurityHeaders(NextResponse.json({ ok: false, error: 'Unauthorized', code: 'missing_session' }, { status: 401 }));
     }
-    const url = publicRedirectUrl(request, pathname.startsWith('/system-admin') ? '/system-admin' : '/adisyonsistemi');
-    url.searchParams.set('next', pathname);
+    const url = publicRedirectUrl(request, pathname.startsWith('/system-admin') ? '/system-admin' : '/app');
     return withSecurityHeaders(NextResponse.redirect(url));
   }
 
@@ -259,7 +273,10 @@ export const config = {
   matcher: [
     '/',
     '/site/:path*',
+    '/app',
     '/app/:path*',
+    '/adisyonsistemi',
+    '/adisyonsistemi/:path*',
     '/dashboard/:path*',
     '/api/:path*',
     '/pos/:path*',

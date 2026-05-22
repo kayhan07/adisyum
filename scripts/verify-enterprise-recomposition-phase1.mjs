@@ -105,11 +105,17 @@ assert(/proxy_pass\s+http:\/\/127\.0\.0\.1:3010;/.test(rootLocation), 'Nginx roo
 const rootPage = read('app/page.tsx');
 const legacyPage = read('app/adisyonsistemi/page.tsx');
 assert(/redirect\(['"]\/app['"]\)/.test(rootPage), 'Root page must redirect to /app');
-assert(/redirect\(['"]\/app['"]\)/.test(legacyPage), 'Legacy /adisyonsistemi page must redirect to /app');
+assert(/permanentRedirect\(['"]\/app['"]\)/.test(legacyPage), 'Legacy /adisyonsistemi page must permanently redirect to /app');
 
 const runtimeApi = read('lib/runtime/runtime-api.ts');
 assert(/POS_TABLE_ORDERS_API\s*=\s*['"]\/api\/pos\/table-orders['"]/.test(runtimeApi), 'runtime-api must own POS_TABLE_ORDERS_API');
 assert(/adisyonsistemi\/api/.test(runtimeApi) && /\/app\/api/.test(runtimeApi), 'runtime-api must reject legacy-prefixed API paths');
+
+const middleware = read('middleware.ts');
+assert(/isLegacyAdisyonPath/.test(middleware), 'Middleware must explicitly canonicalize legacy /adisyonsistemi paths');
+assert(/NextResponse\.redirect\(url,\s*308\)/.test(middleware), 'Middleware legacy canonicalization must use 308 redirects');
+assert(!/url\.searchParams\.set\(['"]next['"]/.test(middleware), 'Middleware must not append next query chaining to auth redirects');
+assert(/pathname === ['"]\/app['"][\s\S]*NextResponse\.next\(\)/.test(middleware), 'Canonical /app must render without self-redirect auth loops');
 
 const sourceFiles = walk('app')
   .concat(walk('components'))

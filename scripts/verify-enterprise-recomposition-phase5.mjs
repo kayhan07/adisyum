@@ -75,7 +75,7 @@ assert(Boolean(packageJson.scripts?.['recomposition:phase5-validate']), 'Missing
 
 assert(!exists('app/orders/demo/page.tsx'), 'Demo-era route app/orders/demo must stay removed');
 assert(exists('app/adisyonsistemi/page.tsx'), 'Legacy /adisyonsistemi compatibility redirect must remain until external traffic drains');
-assert(/redirect\(['"]\/app['"]\)/.test(read('app/adisyonsistemi/page.tsx')), '/adisyonsistemi must redirect to /app, not own runtime');
+assert(/permanentRedirect\(['"]\/app['"]\)/.test(read('app/adisyonsistemi/page.tsx')), '/adisyonsistemi must permanently redirect to /app, not own runtime');
 
 const appFiles = walk('app').filter((file) => /\.(ts|tsx|js|jsx|mjs)$/.test(file));
 const componentFiles = walk('components').filter((file) => /\.(ts|tsx|js|jsx|mjs)$/.test(file));
