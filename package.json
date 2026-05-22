@@ -15,6 +15,7 @@
     "recomposition:phase2-validate": "node scripts/verify-enterprise-recomposition-phase2.mjs",
     "recomposition:phase3-validate": "node scripts/verify-enterprise-recomposition-phase3.mjs",
     "recomposition:phase4-validate": "node scripts/verify-enterprise-recomposition-phase4.mjs",
+    "recomposition:phase5-validate": "node scripts/verify-enterprise-recomposition-phase5.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

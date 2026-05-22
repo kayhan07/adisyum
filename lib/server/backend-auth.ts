@@ -1,7 +1,3 @@
-const DEFAULT_API_URL = 'http://127.0.0.1:8000';
-const DEFAULT_TENANT_KEY = 'demo-bistro';
-const DEFAULT_EMAIL = 'admin@aurelia.local';
-const DEFAULT_PASSWORD = 'password';
 const TOKEN_TTL_MS = 1000 * 60 * 6;
 
 type BackendSession = {
@@ -12,11 +8,21 @@ type BackendSession = {
 let sessionCache: BackendSession | null = null;
 
 export function getBackendBaseUrl(): string {
-  return (process.env.AURELIA_API_URL ?? DEFAULT_API_URL).replace(/\/$/, '');
+  const configuredUrl = process.env.AURELIA_API_URL?.trim();
+  if (!configuredUrl) {
+    throw new Error('AURELIA_API_URL is required for backend proxy integration.');
+  }
+
+  return configuredUrl.replace(/\/$/, '');
 }
 
 export function getTenantKey(): string {
-  return process.env.AURELIA_TENANT_KEY ?? DEFAULT_TENANT_KEY;
+  const configuredTenantKey = process.env.AURELIA_TENANT_KEY?.trim();
+  if (!configuredTenantKey) {
+    throw new Error('AURELIA_TENANT_KEY is required for backend proxy integration.');
+  }
+
+  return configuredTenantKey;
 }
 
 export async function getBackendAccessToken(): Promise<string> {
@@ -31,8 +37,8 @@ export async function getBackendAccessToken(): Promise<string> {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      email: process.env.AURELIA_BACKEND_EMAIL ?? DEFAULT_EMAIL,
-      password: process.env.AURELIA_BACKEND_PASSWORD ?? DEFAULT_PASSWORD,
+      email: requiredBackendCredential('AURELIA_BACKEND_EMAIL'),
+      password: requiredBackendCredential('AURELIA_BACKEND_PASSWORD'),
     }),
     cache: 'no-store',
   });
@@ -53,4 +59,13 @@ export async function getBackendAccessToken(): Promise<string> {
 
 export function clearBackendAccessToken(): void {
   sessionCache = null;
+}
+
+function requiredBackendCredential(key: 'AURELIA_BACKEND_EMAIL' | 'AURELIA_BACKEND_PASSWORD'): string {
+  const value = process.env[key]?.trim();
+  if (!value) {
+    throw new Error(`${key} is required for backend proxy integration.`);
+  }
+
+  return value;
 }
