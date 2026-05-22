@@ -1,6 +1,7 @@
 'use client';
 
-import { POS_TABLE_ORDERS_API, runtimeFetch } from '@/lib/runtime/runtime-api';
+import { fetchAuthoritativeTablePayload } from '@/lib/pos-runtime/runtime-sync-engine';
+import type { RuntimeOrderLine } from '@/lib/pos-runtime/order-mutations';
 
 export type AuthoritativeOrdersByTable<T = unknown> = Record<string, T[]>;
 type OrdersListener = () => void;
@@ -37,17 +38,8 @@ export function subscribeToAuthoritativeOrders(callback: OrdersListener) {
 export async function refreshAuthoritativeOrdersByTable<T>() {
   if (inflight) return inflight as Promise<AuthoritativeOrdersByTable<T>>;
 
-  inflight = runtimeFetch(POS_TABLE_ORDERS_API, {
-    method: 'GET',
-    cache: 'no-store',
-  })
-    .then(async (response) => {
-      const payload = await response.json().catch(() => null) as { ordersByTable?: AuthoritativeOrdersByTable<T>; message?: string; error?: string } | null;
-      if (!response.ok) {
-        throw new Error(`Authoritative order fetch failed with ${response.status}: ${payload?.message ?? payload?.error ?? 'unknown error'}`);
-      }
-      return replaceAuthoritativeOrdersByTable(payload?.ordersByTable ?? {});
-    })
+  inflight = fetchAuthoritativeTablePayload<RuntimeOrderLine>()
+    .then((payload) => replaceAuthoritativeOrdersByTable(payload.ordersByTable as AuthoritativeOrdersByTable<T>))
     .finally(() => {
       inflight = null;
     });
