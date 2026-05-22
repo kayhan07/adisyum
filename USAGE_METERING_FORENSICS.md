@@ -4,7 +4,7 @@ No rewrite is introduced in Phase 10.
 
 ## Metrics
 
-Canonical usage metrics include POS operations, realtime sync, websocket activity, AI operations, voice/PBX usage, API usage, worker jobs, telemetry volume, storage usage, and printing operations.
+Canonical usage metrics include POS operations, realtime sync, websocket activity, AI operations, API usage, worker jobs, telemetry volume, storage usage, and printing operations.
 
 ## Metric contract
 

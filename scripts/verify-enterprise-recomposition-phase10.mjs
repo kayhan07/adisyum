@@ -65,7 +65,6 @@ const usageMetrics = [
   'realtime_sync',
   'websocket_activity',
   'ai_operations',
-  'voice_pbx',
   'api_usage',
   'worker_jobs',
   'telemetry_volume',

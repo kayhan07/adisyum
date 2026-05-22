@@ -16,7 +16,6 @@ export type UsageMetricKey =
   | 'realtime_sync'
   | 'websocket_activity'
   | 'ai_operations'
-  | 'voice_pbx'
   | 'api_usage'
   | 'worker_jobs'
   | 'telemetry_volume'
@@ -131,7 +130,6 @@ export function getUsageMeteringRules(): UsageMeteringRule[] {
     { metric: 'realtime_sync', owner: 'usage-metering', billingStrategy: 'cost_observability', aggregationStrategy: 'tenant_branch_hourly', retentionStrategy: '180_days', observabilityStrategy: 'sync events, stale rejection, reconnect count' },
     { metric: 'websocket_activity', owner: 'observability', billingStrategy: 'cost_observability', aggregationStrategy: 'tenant_daily', retentionStrategy: '180_days', observabilityStrategy: 'channel count, reconnect count, event fanout' },
     { metric: 'ai_operations', owner: 'ai-operations', billingStrategy: 'overage', aggregationStrategy: 'tenant_daily', retentionStrategy: '365_days', observabilityStrategy: 'operation count, cost class, recommendation count' },
-    { metric: 'voice_pbx', owner: 'usage-metering', billingStrategy: 'overage', aggregationStrategy: 'tenant_daily', retentionStrategy: '365_days', observabilityStrategy: 'minutes, call count, provider status' },
     { metric: 'api_usage', owner: 'observability', billingStrategy: 'included_quota', aggregationStrategy: 'tenant_daily', retentionStrategy: '180_days', observabilityStrategy: 'request count, status class, latency' },
     { metric: 'worker_jobs', owner: 'usage-metering', billingStrategy: 'cost_observability', aggregationStrategy: 'tenant_daily', retentionStrategy: '180_days', observabilityStrategy: 'queue, job type, attempts, duration' },
     { metric: 'telemetry_volume', owner: 'observability', billingStrategy: 'cost_observability', aggregationStrategy: 'tenant_daily', retentionStrategy: '90_days', observabilityStrategy: 'event count and payload pressure' },
