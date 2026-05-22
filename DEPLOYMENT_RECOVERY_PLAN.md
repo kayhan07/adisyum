@@ -10,6 +10,8 @@ Deployment telemetry is exposed through `/api/runtime-build-id` and summarized b
 
 Every deploy must become verifiable.
 
+Every deploy must support rollback safety.
+
 A deploy is invalid unless:
 
 - `/api/runtime-build-id` responds from production.
@@ -34,6 +36,8 @@ A deploy is invalid unless:
 ## Drift response
 
 Runtime-build-id mismatch means production is not running the intended artifact. Do not continue POS or frontend debugging until deployment authority is restored.
+
+Rollback is required when the live runtime cannot prove the intended commit, PM2 ownership, nginx ownership, and POS API route ownership after a deployment attempt.
 
 Every runtime failure must become observable.
 

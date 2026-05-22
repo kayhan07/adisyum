@@ -47,6 +47,7 @@ import {
   bootstrapEnterpriseTelemetry,
   buildEnterpriseTelemetrySnapshot,
 } from '@/lib/observability/enterprise-telemetry';
+import { buildScaleReadinessSnapshot } from '@/lib/operations/scale-readiness';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -213,6 +214,7 @@ export async function GET(request: Request) {
   let commercialOps: ReturnType<typeof getCommercialOperationsDashboard> | null = null;
   let operationalIntelligence: Awaited<ReturnType<typeof buildAllTenantOperationalHealth>> = [];
   let enterpriseTelemetry: ReturnType<typeof buildEnterpriseTelemetrySnapshot> | null = null;
+  let scaleReadiness: ReturnType<typeof buildScaleReadinessSnapshot> | null = null;
 
   try { incidents = getOpenIncidents(); } catch { /* */ }
   try { incidentStats = getIncidentStats(); } catch { /* */ }
@@ -246,6 +248,7 @@ export async function GET(request: Request) {
   try { commercialOps = getCommercialOperationsDashboard({ pilotField, healthScores }); } catch { /* */ }
   try { operationalIntelligence = await buildAllTenantOperationalHealth(); } catch { /* */ }
   try { enterpriseTelemetry = buildEnterpriseTelemetrySnapshot(); } catch { /* */ }
+  try { scaleReadiness = buildScaleReadinessSnapshot(); } catch { /* */ }
 
   // Fire backup failure alert if needed (non-blocking)
   void fireBackupFailureAlertIfNeeded().catch(() => undefined);
@@ -297,6 +300,7 @@ export async function GET(request: Request) {
     commercialOps,
     operationalIntelligence,
     enterpriseTelemetry,
+    scaleReadiness,
     releases,
     releaseSummary,
     generatedAt: new Date().toISOString(),
