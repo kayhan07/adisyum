@@ -50,6 +50,7 @@ import {
 import { buildScaleReadinessSnapshot } from '@/lib/operations/scale-readiness';
 import { buildAiOperationsSnapshot } from '@/lib/ai-operations/governance';
 import { buildMonetizationGovernanceSnapshot } from '@/lib/monetization/governance';
+import { buildVoiceGovernanceSnapshot } from '@/lib/communication/voice-governance';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -219,6 +220,7 @@ export async function GET(request: Request) {
   let scaleReadiness: ReturnType<typeof buildScaleReadinessSnapshot> | null = null;
   let aiOperations: ReturnType<typeof buildAiOperationsSnapshot> | null = null;
   let monetizationGovernance: ReturnType<typeof buildMonetizationGovernanceSnapshot> | null = null;
+  let voiceGovernance: ReturnType<typeof buildVoiceGovernanceSnapshot> | null = null;
 
   try { incidents = getOpenIncidents(); } catch { /* */ }
   try { incidentStats = getIncidentStats(); } catch { /* */ }
@@ -255,6 +257,7 @@ export async function GET(request: Request) {
   try { scaleReadiness = buildScaleReadinessSnapshot(); } catch { /* */ }
   try { aiOperations = buildAiOperationsSnapshot(); } catch { /* */ }
   try { monetizationGovernance = buildMonetizationGovernanceSnapshot(); } catch { /* */ }
+  try { voiceGovernance = buildVoiceGovernanceSnapshot(); } catch { /* */ }
 
   // Fire backup failure alert if needed (non-blocking)
   void fireBackupFailureAlertIfNeeded().catch(() => undefined);
@@ -309,6 +312,7 @@ export async function GET(request: Request) {
     scaleReadiness,
     aiOperations,
     monetizationGovernance,
+    voiceGovernance,
     releases,
     releaseSummary,
     generatedAt: new Date().toISOString(),
