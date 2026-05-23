@@ -14,7 +14,9 @@ const EVENT_NAME = 'aurelia-table-payment-requested:changed';
 let serverBootstrapCompleted = false;
 let tableStateWriteCounter = 0;
 let tableStateSyncCounter = 0;
+let tableRuntimeServerPersistWarned = false;
 const runtimeClientId = `pos-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+const PRODUCT_RECOVERY_DISABLE_TABLE_RUNTIME_SERVER_PERSIST = true;
 
 type TableStateSyncMeta = {
   version: number;
@@ -105,7 +107,7 @@ function writeTableStateSyncMeta(source: string, ordersByTable: Record<string, u
       .filter(([, lines]) => Array.isArray(lines) && lines.length > 0)
       .map(([id]) => id),
   };
-  writeRuntimeJsonIfChanged(STATE_META_STORAGE_KEY, next);
+  writeRuntimeJsonIfChanged(STATE_META_STORAGE_KEY, next, { persist: false });
   return next;
 }
 
@@ -161,6 +163,16 @@ export async function syncTableStateFromServer() {
 
 export function publishTableState() {
   if (!canUseStorage()) return;
+  if (PRODUCT_RECOVERY_DISABLE_TABLE_RUNTIME_SERVER_PERSIST) {
+    if (!tableRuntimeServerPersistWarned) {
+      tableRuntimeServerPersistWarned = true;
+      console.warn('[adisyon-flow] table runtime server persistence disabled in product recovery mode', {
+        blockedEndpoint: '/api/runtime/state/tenant',
+        activeMutationEndpoint: '/api/pos/table-orders',
+      });
+    }
+    return;
+  }
   void persistRuntimeScope('tenant');
 }
 
@@ -195,7 +207,7 @@ export function setTablePaymentRequested(tableId: string, requested: boolean) {
     current.delete(tableId);
   }
 
-  if (!writeRuntimeJsonIfChanged(STORAGE_KEY, [...current])) return;
+  if (!writeRuntimeJsonIfChanged(STORAGE_KEY, [...current], { persist: false })) return;
   writeTableStateSyncMeta('payment-requested', getStoredOrdersByTable(), tableId);
   emitChange();
   publishTableState();
@@ -244,7 +256,7 @@ export function setTableLiveTotals(totals: Record<string, number>) {
     return;
   }
 
-  if (!writeRuntimeJsonIfChanged(TOTALS_STORAGE_KEY, { ...getTableLiveTotals(), ...totals })) return;
+  if (!writeRuntimeJsonIfChanged(TOTALS_STORAGE_KEY, { ...getTableLiveTotals(), ...totals }, { persist: false })) return;
   writeTableStateSyncMeta('totals', getStoredOrdersByTable(), Object.keys(totals)[0]);
   emitChange();
   publishTableState();
@@ -309,7 +321,7 @@ export function setStoredTableMeta(meta: Record<string, StoredTableMeta>) {
     return;
   }
 
-  writeRuntimeItem('tenant', META_STORAGE_KEY, JSON.stringify({ ...getStoredTableMeta(), ...meta }));
+  writeRuntimeItem('tenant', META_STORAGE_KEY, JSON.stringify({ ...getStoredTableMeta(), ...meta }), { persist: false });
   emitChange();
   publishTableState();
 }

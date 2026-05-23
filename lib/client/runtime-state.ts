@@ -41,6 +41,10 @@ const persistInFlight: Record<RuntimeScope, boolean> = {
 	'system-admin': false,
 };
 
+function isRuntimeStateAuthFailure(error: unknown) {
+	return error instanceof Error && /sync unauthorized with (401|403)/.test(error.message);
+}
+
 function areSnapshotsEqual(first: RuntimeSnapshot, second: RuntimeSnapshot) {
 	const firstKeys = Object.keys(first);
 	const secondKeys = Object.keys(second);
@@ -296,8 +300,12 @@ export async function persistRuntimeScope(scope: RuntimeScope) {
 		}
 		return snapshots[scope];
 	} catch (error) {
-		dirtyScopes[scope] = true;
-		console.warn('[runtime-state] persist failed; keeping local snapshot', { scope, error });
+		dirtyScopes[scope] = !isRuntimeStateAuthFailure(error);
+		console.warn('[runtime-state] persist failed; keeping local snapshot', {
+			scope,
+			retrySuppressed: isRuntimeStateAuthFailure(error),
+			error,
+		});
 		return snapshots[scope];
 	} finally {
 		persistInFlight[scope] = false;
