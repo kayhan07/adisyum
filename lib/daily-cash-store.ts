@@ -40,15 +40,21 @@ export function loadDailyCashMovements() {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as StoredDailyCashMovement[];
     return Array.isArray(parsed) ? uniqueById(parsed) : [];
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] daily cash movements load failed', error);
     return [];
   }
 }
 
 export function saveDailyCashMovements(movements: StoredDailyCashMovement[]) {
   if (typeof window === 'undefined') return;
-  writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(uniqueById(movements)));
-  emitChange();
+  try {
+    writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(uniqueById(movements)));
+    console.log('[business-flow] daily cash movements saved', { movementCount: movements.length });
+    emitChange();
+  } catch (error) {
+    console.error('[business-flow] daily cash movements save failed', error);
+  }
 }
 
 export function appendDailyCashMovement(movement: StoredDailyCashMovement) {

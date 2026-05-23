@@ -47,7 +47,8 @@ export function loadStoredAccounts() {
     }
 
     return normalizeStoredAccounts(JSON.parse(raw));
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] accounts load failed', error);
     return [];
   }
 }
@@ -70,9 +71,10 @@ export function saveStoredAccounts(accounts: Account[]) {
     });
 
     writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(merged));
+    console.log('[business-flow] accounts saved', { accountCount: accounts.length, mergedCount: merged.length });
     emitChange();
-  } catch {
-    // ignore storage errors in demo env
+  } catch (error) {
+    console.error('[business-flow] accounts save failed', error);
   }
 }
 

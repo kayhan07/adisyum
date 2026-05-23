@@ -42,15 +42,21 @@ export function loadPaymentJournal() {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as PaymentJournalEntry[];
     return Array.isArray(parsed) ? uniqueById(parsed) : [];
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] payment journal load failed', error);
     return [];
   }
 }
 
 export function savePaymentJournal(entries: PaymentJournalEntry[]) {
   if (typeof window === 'undefined') return;
-  writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(uniqueById(entries)));
-  emitChange();
+  try {
+    writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(uniqueById(entries)));
+    console.log('[business-flow] payment journal saved', { entryCount: entries.length });
+    emitChange();
+  } catch (error) {
+    console.error('[business-flow] payment journal save failed', error);
+  }
 }
 
 export function appendPaymentJournalEntries(entries: PaymentJournalEntry[]) {

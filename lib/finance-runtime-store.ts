@@ -54,7 +54,8 @@ export function loadStoredFinanceInvoices() {
 
     const parsed = JSON.parse(raw) as StoredFinanceInvoice[];
     return Array.isArray(parsed) ? parsed : [];
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] finance invoices load failed', error);
     return [];
   }
 }
@@ -64,12 +65,17 @@ export function saveStoredFinanceInvoices(invoices: StoredFinanceInvoice[]) {
     return;
   }
 
-  writeRuntimeItem(
-    'tenant',
-    FINANCE_INVOICES_KEY,
-    JSON.stringify(uniqueById([...invoices, ...loadStoredFinanceInvoices()])),
-  );
-  emitChange();
+  try {
+    writeRuntimeItem(
+      'tenant',
+      FINANCE_INVOICES_KEY,
+      JSON.stringify(uniqueById([...invoices, ...loadStoredFinanceInvoices()])),
+    );
+    console.log('[business-flow] finance invoices saved', { invoiceCount: invoices.length });
+    emitChange();
+  } catch (error) {
+    console.error('[business-flow] finance invoices save failed', error);
+  }
 }
 
 export function appendStoredFinanceInvoice(invoice: StoredFinanceInvoice) {
@@ -90,7 +96,8 @@ export function loadStoredFinanceAccountTransactions() {
 
     const parsed = JSON.parse(raw) as StoredFinanceAccountTransaction[];
     return Array.isArray(parsed) ? parsed : [];
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] finance account transactions load failed', error);
     return [];
   }
 }
@@ -100,12 +107,17 @@ export function saveStoredFinanceAccountTransactions(transactions: StoredFinance
     return;
   }
 
-  writeRuntimeItem(
-    'tenant',
-    FINANCE_ACCOUNT_TX_KEY,
-    JSON.stringify(uniqueById([...transactions, ...loadStoredFinanceAccountTransactions()])),
-  );
-  emitChange();
+  try {
+    writeRuntimeItem(
+      'tenant',
+      FINANCE_ACCOUNT_TX_KEY,
+      JSON.stringify(uniqueById([...transactions, ...loadStoredFinanceAccountTransactions()])),
+    );
+    console.log('[business-flow] finance account transactions saved', { transactionCount: transactions.length });
+    emitChange();
+  } catch (error) {
+    console.error('[business-flow] finance account transactions save failed', error);
+  }
 }
 
 export function appendStoredFinanceAccountTransaction(transaction: StoredFinanceAccountTransaction) {

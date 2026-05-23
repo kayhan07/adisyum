@@ -294,7 +294,8 @@ export function loadStoredSaleProducts() {
           }),
         }))
       : null;
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] sale products load failed', error);
     return null;
   }
 }
@@ -326,8 +327,8 @@ export function saveStoredSaleProducts(products: StoredSaleProduct[]) {
     );
     writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify([...incoming, ...preserved]));
     emitSaleProductsChange();
-  } catch {
-    // ignore storage errors in demo env
+  } catch (error) {
+    console.error('[business-flow] sale products save failed', error);
   }
 }
 

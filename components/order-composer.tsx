@@ -1358,9 +1358,17 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   };
 
   const mergeCurrentTable = () => {
-    if (!currentTable || !mergeTargetId) return;
+    if (!currentTable || !mergeTargetId) {
+      console.error('[business-flow] table merge blocked', { currentTableId: currentTable?.id, mergeTargetId });
+      setFeedbackMessage('Birlestirme icin kaynak ve hedef masa secin.');
+      return;
+    }
     const targetTable = allTables.find((table) => table.id === mergeTargetId);
-    if (!targetTable) return;
+    if (!targetTable) {
+      console.error('[business-flow] table merge target missing', { mergeTargetId });
+      setFeedbackMessage('Hedef masa bulunamadi.');
+      return;
+    }
 
     const sourceOrders = ordersByTable[currentTable.id] ?? [];
     const selectedOrders = sourceOrders.filter((line) => mergeSelection[line.id] ?? true);
@@ -1415,6 +1423,12 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     };
 
     rememberUndo(ordersByTable, 'Masa birleştirildi');
+    console.log('[business-flow] table merge commit', {
+      sourceTableId: currentTable.id,
+      targetTableId: mergeTargetId,
+      movedLineCount: selectedOrders.length,
+      remainingLineCount: remainingOrders.length,
+    });
     setOrdersByTable(nextOrders);
     saveTableMeta(nextMeta);
     updatePaymentRequested(currentTable.id, false);
@@ -1425,9 +1439,17 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   };
 
   const moveCurrentTable = () => {
-    if (!currentTable || !moveTargetId) return;
+    if (!currentTable || !moveTargetId) {
+      console.error('[business-flow] table move blocked', { currentTableId: currentTable?.id, moveTargetId });
+      setFeedbackMessage('Tasima icin kaynak ve hedef masa secin.');
+      return;
+    }
     const targetTable = allTables.find((table) => table.id === moveTargetId);
-    if (!targetTable) return;
+    if (!targetTable) {
+      console.error('[business-flow] table move target missing', { moveTargetId });
+      setFeedbackMessage('Hedef masa bulunamadi.');
+      return;
+    }
 
     const sourceOrders = ordersByTable[currentTable.id] ?? [];
     const nextOrders = {
@@ -1455,6 +1477,11 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     };
 
     rememberUndo(ordersByTable, 'Masa taşındı');
+    console.log('[business-flow] table move commit', {
+      sourceTableId: currentTable.id,
+      targetTableId: moveTargetId,
+      movedLineCount: sourceOrders.length,
+    });
     setOrdersByTable(nextOrders);
     saveTableMeta(nextMeta);
     updatePaymentRequested(currentTable.id, false);
@@ -2152,14 +2179,30 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   };
 
   const startPayment = () => {
-    if (!currentTable || lines.length === 0 || !hasPermission('payments.take')) return;
+    if (!currentTable || lines.length === 0 || !hasPermission('payments.take')) {
+      console.error('[business-flow] payment open blocked', {
+        currentTableId: currentTable?.id,
+        lineCount: lines.length,
+        hasPaymentPermission: hasPermission('payments.take'),
+      });
+      setFeedbackMessage(!currentTable ? 'Once masa secin.' : lines.length === 0 ? 'Odeme icin adisyon bos.' : 'Odeme yetkiniz yok.');
+      return;
+    }
     setPaymentOpen((current) => !current);
     if (!paymentOpen) setPaymentExpanded(true);
     setFeedbackMessage(paymentOpen ? 'Haz\u0131r' : 'Tahsilat tutar\u0131n\u0131 girin');
   };
 
   const sendOrder = async () => {
-    if (!currentTable || lines.length === 0 || !hasPermission('orders.edit')) return;
+    if (!currentTable || lines.length === 0 || !hasPermission('orders.edit')) {
+      console.error('[business-flow] send order blocked', {
+        currentTableId: currentTable?.id,
+        lineCount: lines.length,
+        hasEditPermission: hasPermission('orders.edit'),
+      });
+      setFeedbackMessage(!currentTable ? 'Once masa secin.' : lines.length === 0 ? 'Gonderilecek urun yok.' : 'Siparis gonderme yetkiniz yok.');
+      return;
+    }
     if (unsentLines.length === 0) {
       setFeedbackMessage('Kaydedilecek yeni ürün yok');
       return;
@@ -2213,7 +2256,8 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         const refreshed = loadIntegrationState();
         setIntegrationState(refreshed);
         return refreshed;
-      } catch {
+      } catch (printerDiscoveryError) {
+        console.error('[business-flow] printer discovery failed', printerDiscoveryError);
         return latest;
       }
     };
@@ -2394,8 +2438,12 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
                 qty: totalQty,
                 ok: true as const,
               };
-            } catch {
-              // keep original error context below
+            } catch (fallbackPrintError) {
+              console.error('[business-flow] fallback kitchen/bar print failed', {
+                printerName,
+                fallbackPrinter,
+                error: fallbackPrintError,
+              });
             }
           }
 
@@ -2433,7 +2481,8 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           note: [line.note, line.extrasNote, line.removalNote].filter(Boolean).join(' '),
         })),
       );
-    } catch {
+    } catch (stockRuntimeError) {
+      console.error('[business-flow] smart stock record failed', stockRuntimeError);
     }
 
     const successfulPrints = printResults.filter((result) => result.ok);
@@ -2743,7 +2792,15 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   };
 
   const completePayment = () => {
-    if (!currentTable || lines.length === 0 || !hasPermission('payments.take')) return;
+    if (!currentTable || lines.length === 0 || !hasPermission('payments.take')) {
+      console.error('[business-flow] payment complete blocked', {
+        currentTableId: currentTable?.id,
+        lineCount: lines.length,
+        hasPaymentPermission: hasPermission('payments.take'),
+      });
+      setFeedbackMessage(!currentTable ? 'Once masa secin.' : lines.length === 0 ? 'Adisyon bos.' : 'Odeme yetkiniz yok.');
+      return;
+    }
     const duplicateGuard = lastPaymentGuardRef.current;
     if (
       duplicateGuard &&
@@ -2790,6 +2847,14 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     const currentTableId = currentTable.id;
     const isPartialPayment = paymentScope === 'split' && paymentTargetTotal < discountedSettlementTotal;
     lastPaymentGuardRef.current = { tableId: currentTableId, total: paymentTargetTotal, at: Date.now() };
+    console.log('[business-flow] payment commit started', {
+      tableId: currentTableId,
+      lineCount: lines.length,
+      paymentScope,
+      paymentMethod,
+      paymentTargetTotal,
+      discountedSettlementTotal,
+    });
 
     if (paymentScope === 'split' && splitMode === 'person') {
       const paidItems = lines.filter((line) => (splitSelection[line.id] ?? 0) > 0);
@@ -2847,6 +2912,11 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       setCashReceived('');
       setCardAmount('');
       updatePaymentRequested(currentTableId, false);
+      console.log('[business-flow] payment split commit completed', {
+        tableId: currentTableId,
+        paidItemCount: paidItems.length,
+        amount: paymentTargetTotal,
+      });
       setDiscountRateInput('0');
       setRoundingDiscountEnabled(false);
       setDiscountReason('');
@@ -2873,6 +2943,11 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       setRoundingDiscountEnabled(false);
       setDiscountReason('');
       updatePaymentRequested(currentTableId, false);
+      console.log('[business-flow] payment partial commit completed', {
+        tableId: currentTableId,
+        amount: paymentTargetTotal,
+        remaining: discountedSettlementTotal - paymentTargetTotal,
+      });
       setFeedbackMessage(`${formatMoney(paymentTargetTotal)} tahsil edildi, kalan ${formatMoney(discountedSettlementTotal - paymentTargetTotal)}`);
       return;
     }
@@ -2907,6 +2982,11 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     setCardAmount('');
     setMixedAccountEnabled(false);
     updatePaymentRequested(currentTableId, false);
+    console.log('[business-flow] payment full commit completed', {
+      tableId: currentTableId,
+      amount: paymentTargetTotal,
+      paymentMethod,
+    });
     setDiscountRateInput('0');
     setRoundingDiscountEnabled(false);
     setDiscountReason('');
