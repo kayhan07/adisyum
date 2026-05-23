@@ -32,5 +32,6 @@ Adisyum product recovery mode focuses on working restaurant operations before an
 - Background authoritative table sync is disabled in the POS screen.
 - Offline auto-sync on POS mount is disabled.
 - App runtime telemetry, heartbeat, printer heartbeat, bridge release polling, and session polling are disabled as render blockers.
+- Client-side module redirects based only on localStorage token are disabled; server/session auth owns access.
 - Initial table hydration and explicit product mutation remain active.
 - Manual/user-triggered product insertion remains authoritative through `/api/pos/table-orders`.

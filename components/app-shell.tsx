@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 import { ArrowLeft, UserCircle2 } from 'lucide-react';
 import { getDefaultSessionState, loadSessionState, subscribeToSessionChanges } from '@/lib/session-store';
@@ -41,9 +41,7 @@ function BackButton({ href, label }: BackButtonProps) {
 
 export function AppShell({ title, subtitle, actions, children, immersiveMode = false, backHref, backLabel }: AppShellProps) {
   const pathname = usePathname();
-  const router = useRouter();
   const [session, setSession] = useState(() => getDefaultSessionState());
-  const [authReady, setAuthReady] = useState(false);
   const [blockedByPackage, setBlockedByPackage] = useState(false);
   const [daysLeft, setDaysLeft] = useState<number | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -57,17 +55,11 @@ export function AppShell({ title, subtitle, actions, children, immersiveMode = f
       const nextSession = loadSessionState();
       const token = loadAuthToken();
       setSession(nextSession);
-      setAuthReady(true);
       if (nextSession.subscriptionEndDate) {
         const remaining = Math.ceil((new Date(nextSession.subscriptionEndDate).getTime() - Date.now()) / 86400000);
         setDaysLeft(remaining);
       } else {
         setDaysLeft(null);
-      }
-
-      if (!token && pathname !== '/app' && pathname !== '/site' && !pathname.startsWith('/system-admin')) {
-        router.replace('/app');
-        return;
       }
 
       const moduleId = pathname.split('/').filter(Boolean)[0];
@@ -84,13 +76,11 @@ export function AppShell({ title, subtitle, actions, children, immersiveMode = f
       unsubscribe();
       unsubscribeTenant();
     };
-  }, [pathname, router]);
+  }, [pathname]);
 
   const activeBranch = session.branches.find((branch) => branch.id === session.activeBranchId) ?? session.branches[0];
   const currentUser = session.currentUser;
   const showExpiryNotice = typeof daysLeft === 'number' && daysLeft >= 0 && daysLeft <= 5;
-
-  if (!authReady) return null;
 
   if (blockedByPackage) {
     return (
