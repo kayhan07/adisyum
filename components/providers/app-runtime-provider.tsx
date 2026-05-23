@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { usePathname } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { authSessionQueryOptions } from '@/lib/query/auth';
 import { bootstrapRuntimeScope } from '@/lib/client/runtime-state';
@@ -30,7 +31,12 @@ function ingestObservability(tenantId: string, payload: Record<string, unknown>)
 }
 
 export function AppRuntimeProvider({ children }: { children: ReactNode }) {
-  const { data, isFetched } = useQuery(authSessionQueryOptions());
+  const pathname = usePathname();
+  const isAuthEntryRoute = pathname === '/app/login' || pathname === '/system-admin/login';
+  const { data, isFetched } = useQuery({
+    ...authSessionQueryOptions(),
+    enabled: !isAuthEntryRoute,
+  });
   const [ready, setReady] = useState(false);
   const [idleWarningOpen, setIdleWarningOpen] = useState(false);
   const [idleCountdownSec, setIdleCountdownSec] = useState(60);

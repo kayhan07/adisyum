@@ -59,8 +59,13 @@ assert(exists('PRODUCT_RUNTIME_QA.md'), 'PRODUCT_RUNTIME_QA.md must exist');
 assert(exists('FRONTEND_RUNTIME_FORENSICS.md'), 'FRONTEND_RUNTIME_FORENSICS.md must exist');
 assert(exists('MODULE_RECOVERY_MATRIX.md'), 'MODULE_RECOVERY_MATRIX.md must exist');
 assert(exists('AUTH_BOUNDARY_FORENSICS.md'), 'AUTH_BOUNDARY_FORENSICS.md must exist');
+assert(exists('ROOT_RUNTIME_RECOVERY.md'), 'ROOT_RUNTIME_RECOVERY.md must exist');
+assert(exists('ACCESS_RECOVERY_CHECKLIST.md'), 'ACCESS_RECOVERY_CHECKLIST.md must exist');
 
 assert(/const PRODUCT_RECOVERY_MINIMAL_RUNTIME = true;/.test(provider), 'AppRuntimeProvider must keep product recovery minimal runtime enabled');
+assert(/usePathname/.test(provider), 'AppRuntimeProvider must know the current route for auth entry bypass');
+assert(/isAuthEntryRoute = pathname === '\/app\/login' \|\| pathname === '\/system-admin\/login'/.test(provider), 'AppRuntimeProvider must identify auth entry routes');
+assert(/enabled: !isAuthEntryRoute/.test(provider), 'Auth entry routes must not run the global auth session query');
 assert(/if \(!isFetched \|\| !ready\) return <>\{children\}<\/>;/.test(provider), 'AppRuntimeProvider must render children immediately instead of blanking the UI');
 assert(!/if \(!isFetched \|\| !ready\) return null;/.test(provider), 'AppRuntimeProvider must not return null during bootstrap');
 assert((provider.match(/if \(PRODUCT_RECOVERY_MINIMAL_RUNTIME\) return;/g) ?? []).length >= 4, 'AppRuntimeProvider must disable non-essential runtime loops in product recovery mode');
