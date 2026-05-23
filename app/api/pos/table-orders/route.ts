@@ -4,11 +4,12 @@ import { prisma } from '@/lib/db/prisma';
 import { requireTenant, TenantAuthError, tenantAuthErrorResponse } from '@/lib/requireTenant';
 import { publishTenantEvent } from '@/lib/realtime/tenant-events';
 import { recordOperationalEvent } from '@/lib/operations/live-ops';
-import { inferProductDomainType, isSellableProductType, resolvePosFacingProductDomainType } from '@/lib/product-domain';
+import { inferProductDomainType, isSellableProductType, resolvePosFacingProductDomainType, type ProductDomainType } from '@/lib/product-domain';
 import { validateProductDomainGraph } from '@/lib/product-domain-graph';
 import { isUuidIdentity, resolveProductIdentity } from '@/lib/product-identity';
 import { isRuntimeVisibleProduct } from '@/lib/product-lifecycle-governance';
 import { compileTenantPosCatalog } from '@/lib/server/runtime-pos-catalog';
+import type { CanonicalPosCatalogItem } from '@/lib/canonical-pos-catalog';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -297,6 +298,69 @@ function normalizeTableOrderMutationBody(body: unknown) {
   };
 }
 
+function buildRecoveryCatalogItem(input: {
+  product: ProductMutationPayload;
+  productSnapshot: Record<string, unknown>;
+  posKey: string;
+  catalogRevision: string;
+  productName: string;
+  productType: ProductDomainType;
+  price: number;
+}): CanonicalPosCatalogItem {
+  const revision = Number(input.productSnapshot.revision ?? input.product.revision ?? 1);
+  const category = input.product.category
+    ?? (typeof input.productSnapshot.category === 'string' ? input.productSnapshot.category : undefined)
+    ?? 'Mutfak';
+  const productId = input.product.productId
+    ?? (typeof input.productSnapshot.productId === 'string' ? input.productSnapshot.productId : undefined)
+    ?? (isUuid(input.product.id) ? input.product.id : undefined);
+
+  return {
+    id: input.posKey,
+    productId,
+    posKey: input.posKey,
+    sku: input.product.sku,
+    barcode: input.product.barcode,
+    externalId: input.product.externalId,
+    legacyKey: input.product.legacyKey ?? input.productName,
+    revision: Number.isFinite(revision) && revision > 0 ? revision : 1,
+    lifecycleStatus: 'published',
+    publishStatus: 'published',
+    deletedAt: null,
+    name: input.productName,
+    category,
+    productType: input.productType,
+    printCategory: input.product.printCategory ?? category,
+    salesUnit: 'portion',
+    price: input.price,
+    vatRate: VAT_RATE,
+    allowComplimentary: input.product.allowComplimentary ?? true,
+    allowDiscount: input.product.allowDiscount ?? true,
+    happyHourEligible: input.product.happyHourEligible ?? false,
+    catalogRevision: input.catalogRevision,
+    productSnapshot: {
+      productId,
+      posKey: input.posKey,
+      name: input.productName,
+      category,
+      productType: input.productType,
+      price: input.price,
+      vatRate: VAT_RATE,
+      revision: Number.isFinite(revision) && revision > 0 ? revision : 1,
+      sku: input.product.sku,
+      barcode: input.product.barcode,
+      externalId: input.product.externalId,
+      legacyKey: input.product.legacyKey ?? input.productName,
+      lifecycleStatus: 'published',
+      publishStatus: 'published',
+    },
+    branchOverlay: {
+      visible: true,
+      available: true,
+    },
+  };
+}
+
 function itemToLine(item: {
   id: string;
   productId: string | null;
@@ -523,7 +587,8 @@ export async function POST(request: Request) {
 
     const clientCatalogRevision = product?.catalogRevision?.trim();
     const runtimeCatalog = await compileTenantPosCatalog(tenantId, tenant.branchId ?? undefined, 'pos');
-    const catalogItem = runtimeCatalog.items.find((item) => item.posKey === identity.posKey);
+    let catalogItem = runtimeCatalog.items.find((item) => item.posKey === identity.posKey);
+    let catalogItemRecoveredFromPayload = false;
     if (!productSnapshot && catalogItem) {
       productSnapshot = catalogItem.productSnapshot as Record<string, unknown>;
       logTableOrderEvent('runtime-snapshot-backfilled', {
@@ -533,6 +598,29 @@ export async function POST(request: Request) {
         tableId,
         posKey: identity.posKey,
         source: 'server-runtime-catalog',
+      });
+    }
+    if (!catalogItem && productSnapshot) {
+      catalogItemRecoveredFromPayload = true;
+      catalogItem = buildRecoveryCatalogItem({
+        product,
+        productSnapshot,
+        posKey: identity.posKey,
+        catalogRevision: runtimeCatalog.catalogRevision,
+        productName,
+        productType: requestedProductType,
+        price,
+      });
+      console.warn('[pos-table-orders] runtime catalog cache miss recovered from product snapshot', {
+        timestamp: new Date().toISOString(),
+        traceId,
+        tenantId,
+        branchId: tenant.branchId,
+        tableId,
+        posKey: identity.posKey,
+        productName,
+        clientCatalogRevision,
+        serverCatalogRevision: runtimeCatalog.catalogRevision,
       });
     }
     logTableOrderEvent('runtime-catalog-resolved', {
@@ -591,7 +679,7 @@ export async function POST(request: Request) {
 
     if (!catalogItem) {
       return runtimeInsertionErrorResponse({
-        status: 404,
+        status: 409,
         reason: 'runtime_catalog_cache_miss',
         traceId,
         tenantId,
@@ -655,7 +743,7 @@ export async function POST(request: Request) {
       });
     }
 
-    if (clientCatalogRevision !== runtimeCatalog.catalogRevision || clientCatalogRevision !== catalogItem.catalogRevision) {
+    if (!catalogItemRecoveredFromPayload && (clientCatalogRevision !== runtimeCatalog.catalogRevision || clientCatalogRevision !== catalogItem.catalogRevision)) {
       return runtimeInsertionErrorResponse({
         status: 409,
         reason: 'stale_revision',
@@ -678,11 +766,11 @@ export async function POST(request: Request) {
       });
     }
 
-    if (
+    if (!catalogItemRecoveredFromPayload && (
       productSnapshot.posKey !== catalogItem.productSnapshot.posKey
       || Number(productSnapshot.revision) !== catalogItem.productSnapshot.revision
       || productSnapshot.productType !== catalogItem.productSnapshot.productType
-    ) {
+    )) {
       return runtimeInsertionErrorResponse({
         status: 409,
         reason: 'resolver_mismatch',
