@@ -69,7 +69,7 @@ import {
   restoreRecentAccountIds,
 } from '@/lib/pos-runtime/runtime-persistence-engine';
 import { hydrateRuntimeSessionContext, traceRuntimeSessionHydrated } from '@/lib/runtime/runtime-session-engine';
-import { runtimeFetch } from '@/lib/runtime/runtime-api';
+import { isRuntimeAuthRequired, runtimeFetch } from '@/lib/runtime/runtime-api';
 import { resolveStockRuntimeBranchId } from '@/lib/runtime/tenant-runtime-context';
 import {
   isRuntimeBarCategory,
@@ -1120,6 +1120,13 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   }, []);
 
   useEffect(() => {
+    if (isRuntimeAuthRequired()) {
+      setOrdersHydrated(true);
+      logOrderFlow('authoritative-orders-hydration-stopped', {
+        reason: 'AUTH_REQUIRED',
+      });
+      return;
+    }
     void hydrateAuthoritativeRuntime<OrderLine>({
       initialOrders,
       normalizeOrders: (orders) => normalizeStoredOrders(orders, sourceProducts),
@@ -1133,6 +1140,13 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         setOrdersHydrated(true);
       })
       .catch((error) => {
+        if (error instanceof Error && error.message === 'AUTH_REQUIRED') {
+          logOrderFlow('authoritative-orders-hydration-stopped', {
+            reason: 'AUTH_REQUIRED',
+          });
+          setOrdersHydrated(true);
+          return;
+        }
         logOrderFlow('authoritative-orders-hydration-failed', {
           message: error instanceof Error ? error.message : String(error),
         });
@@ -1154,6 +1168,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
   useEffect(() => {
     if (!ordersHydrated || typeof window === 'undefined') return;
+    if (isRuntimeAuthRequired()) return;
 
     return startAuthoritativeRuntimeSync<OrderLine>({
       enabled: ordersHydrated,
@@ -1188,7 +1203,10 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   }, [currentTable?.id, initialOrders, ordersHydrated, reconcileAuthoritativeOrders, selectedTableId, sourceProducts]);
 
   useEffect(() => {
-    const sync = () => void syncOfflineOrders();
+    const sync = () => {
+      if (isRuntimeAuthRequired()) return;
+      void syncOfflineOrders();
+    };
     sync();
     window.addEventListener('online', sync);
     return () => window.removeEventListener('online', sync);
@@ -1498,6 +1516,10 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   };
 
   const addProductToOrder = async (product: ProductCard, source: 'product-grid' | 'search' = 'product-grid') => {
+    if (isRuntimeAuthRequired()) {
+      setFeedbackMessage('Oturum gerekli. Lütfen tekrar giriş yapın.');
+      return;
+    }
     recordPosClickDebug('ProductCard clicked', {
       source,
       tableId: currentTable?.id ?? null,
@@ -1758,6 +1780,10 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
   const addProduct = async () => {
     if (!currentTable || !productCardProduct || !hasPermission('orders.create')) return;
+    if (isRuntimeAuthRequired()) {
+      setFeedbackMessage('Oturum gerekli. Lütfen tekrar giriş yapın.');
+      return;
+    }
     recordPosClickDebug('ProductCard clicked', {
       source: 'product-card',
       tableId: currentTable.id,

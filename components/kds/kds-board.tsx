@@ -4,6 +4,7 @@ import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState
 import { BellRing, ChefHat, Clock3, CupSoda, Dessert, RadioTower, RefreshCcw, Volume2, VolumeX } from 'lucide-react';
 import type { KdsRealtimePayload, KdsStation, KdsStatus, KdsTicket, KdsTicketsResponse } from '@/lib/kds-types';
 import { getKdsEcho, kdsChannelName } from '@/lib/realtime/kds-echo';
+import { isRuntimeAuthRequired, runtimeFetch } from '@/lib/runtime/runtime-api';
 
 const stations = [
   { id: 'kitchen', label: 'Mutfak', icon: ChefHat },
@@ -102,6 +103,11 @@ export function KdsBoard({ branchId }: KdsBoardProps) {
   const firstLoadDone = useRef(false);
 
   async function refreshTickets(silent = false) {
+    if (isRuntimeAuthRequired()) {
+      if (!silent) setLoading(false);
+      setError('Oturum gerekli.');
+      return;
+    }
     if (!silent) setLoading(true);
 
     try {
@@ -109,8 +115,13 @@ export function KdsBoard({ branchId }: KdsBoardProps) {
       const query = new URLSearchParams({ channel: station });
       if (branchId) query.set('branchId', branchId);
 
-      const response = await fetch(`/api/kds/tickets?${query.toString()}`, { cache: 'no-store' });
+      const response = await runtimeFetch(`/api/kds/tickets?${query.toString()}` as `/api/${string}`, { cache: 'no-store' });
       const payload = (await response.json().catch(() => null)) as KdsTicketsResponse | { message?: string } | null;
+
+      if (response.status === 401) {
+        setError('Oturum gerekli.');
+        return;
+      }
 
       if (!response.ok || !payload || !('tickets' in payload)) {
         throw new Error(payload && 'message' in payload ? payload.message : 'KDS verisi alınamadı.');
@@ -129,6 +140,10 @@ export function KdsBoard({ branchId }: KdsBoardProps) {
   }
 
   async function updateStatus(ticketId: string, status: KdsStatus) {
+    if (isRuntimeAuthRequired()) {
+      setError('Oturum gerekli.');
+      return;
+    }
     const currentTicket = tickets.find((ticket) => ticket.id === ticketId);
     if (!currentTicket) return;
 
@@ -139,12 +154,20 @@ export function KdsBoard({ branchId }: KdsBoardProps) {
     });
 
     try {
-      const response = await fetch(`/api/kds/tickets/${ticketId}/status`, {
+      const response = await runtimeFetch(`/api/kds/tickets/${ticketId}/status` as `/api/${string}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status, branchId }),
       });
       const payload = (await response.json().catch(() => null)) as KdsTicket | { message?: string } | null;
+
+      if (response.status === 401) {
+        setError('Oturum gerekli.');
+        startTransition(() => {
+          setTickets((current) => upsertTicket(current, currentTicket));
+        });
+        return;
+      }
 
       if (!response.ok || !payload || !('id' in payload)) {
         throw new Error(payload && 'message' in payload ? payload.message : 'KDS durumu güncellenemedi.');
@@ -166,6 +189,7 @@ export function KdsBoard({ branchId }: KdsBoardProps) {
   }
 
   useEffect(() => {
+    if (isRuntimeAuthRequired()) return;
     void refreshTickets();
   }, [station, branchId]);
 
@@ -176,6 +200,7 @@ export function KdsBoard({ branchId }: KdsBoardProps) {
 
   useEffect(() => {
     const reconciliationTimer = window.setInterval(() => {
+      if (isRuntimeAuthRequired()) return;
       void refreshTickets(true);
     }, 8000);
 
@@ -184,6 +209,7 @@ export function KdsBoard({ branchId }: KdsBoardProps) {
 
   useEffect(() => {
     if (!tenantId) return;
+    if (isRuntimeAuthRequired()) return;
 
     const echo = getKdsEcho();
     if (!echo) {

@@ -1,7 +1,7 @@
 'use client';
 
 import { loadSessionState } from '@/lib/session-store';
-import { runtimeFetch } from '@/lib/runtime/runtime-api';
+import { isRuntimeAuthRequired, runtimeFetch } from '@/lib/runtime/runtime-api';
 
 export type OfflineOperationType = 'order.snapshot' | 'payment.snapshot' | 'table.snapshot' | 'printer.job';
 export type OfflineOperationStatus = 'pending' | 'syncing' | 'failed' | 'synced';
@@ -488,6 +488,7 @@ export function queueOfflinePrinterJob(input: {
 export async function syncOfflineOrders(options: { tenantId?: string | null; force?: boolean } = {}) {
   const resolvedTenantId = resolveTenantId(options.tenantId);
   if (!resolvedTenantId) return loadOfflineSyncSummary();
+  if (isRuntimeAuthRequired()) return loadSummary(resolvedTenantId);
 
   const existingSync = activeSyncs.get(resolvedTenantId);
   if (existingSync) return existingSync;

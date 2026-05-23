@@ -3,7 +3,7 @@
 import type { PendingMutation, RuntimeOrderLine } from '@/lib/pos-runtime/order-mutations';
 import type { PosOrderReconciliationSource } from '@/lib/pos-order-reconciliation';
 import { reconcileTableState, type TableStateReconciliationLog } from '@/lib/runtime/table-state-engine';
-import { POS_TABLE_ORDERS_API, runtimeFetch } from '@/lib/runtime/runtime-api';
+import { isRuntimeAuthRequired, POS_TABLE_ORDERS_API, runtimeFetch } from '@/lib/runtime/runtime-api';
 
 export type RuntimeSyncMeta = {
   source: PosOrderReconciliationSource | 'persistence' | 'websocket';
@@ -78,6 +78,9 @@ async function readJsonResponse(response: Response) {
 }
 
 export async function fetchAuthoritativeTablePayload<TLine extends RuntimeOrderLine>() {
+  if (isRuntimeAuthRequired()) {
+    throw new Error('AUTH_REQUIRED');
+  }
   const response = await runtimeFetch(POS_TABLE_ORDERS_API, {
     method: 'GET',
     cache: 'no-store',
@@ -89,6 +92,9 @@ export async function fetchAuthoritativeTablePayload<TLine extends RuntimeOrderL
     traceId?: string;
   };
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('AUTH_REQUIRED');
+    }
     throw new Error(`Authoritative order fetch failed with ${response.status}: ${payload.message ?? payload.error ?? 'unknown error'}${payload.traceId ? ` (${payload.traceId})` : ''}`);
   }
   return {
@@ -125,6 +131,17 @@ export async function hydrateAuthoritativeRuntime<TLine extends RuntimeOrderLine
   getPendingMutation: () => PendingMutation | null;
   diagnostics?: RuntimeSyncDiagnostics;
 }) {
+  if (isRuntimeAuthRequired()) {
+    input.diagnostics?.('runtime hydration stopped', {
+      source: 'initial-hydration',
+      reason: 'AUTH_REQUIRED',
+    });
+    return {
+      applied: false,
+      deferred: true,
+      reason: 'AUTH_REQUIRED',
+    } satisfies RuntimeHydrationResult<TLine>;
+  }
   runtimeHydrationCount += 1;
   input.diagnostics?.('runtime hydration started', {
     source: 'initial-hydration',
@@ -223,10 +240,24 @@ export function startAuthoritativeRuntimeSync<TLine extends RuntimeOrderLine>(in
   diagnostics?: RuntimeSyncDiagnostics;
 }) {
   if (!input.enabled || typeof window === 'undefined') return () => undefined;
+  if (isRuntimeAuthRequired()) {
+    input.diagnostics?.('runtime sync subscription stopped', {
+      reason: 'AUTH_REQUIRED',
+      activeRuntimeSubscriptionCount,
+    });
+    return () => undefined;
+  }
 
   let cancelled = false;
   let reconcileInFlight = false;
   const reconcile = (source: 'interval' | 'focus') => {
+    if (cancelled || isRuntimeAuthRequired()) {
+      input.diagnostics?.('authoritative sync stopped', {
+        source,
+        reason: 'AUTH_REQUIRED',
+      });
+      return;
+    }
     runtimeSyncCycleCount += 1;
     if (reconcileInFlight) {
       runtimeSyncInFlightSuppressionCount += 1;
@@ -277,6 +308,13 @@ export function startAuthoritativeRuntimeSync<TLine extends RuntimeOrderLine>(in
       })
       .catch((error) => {
         if (cancelled) return;
+        if (error instanceof Error && error.message === 'AUTH_REQUIRED') {
+          input.diagnostics?.('authoritative sync stopped', {
+            source,
+            reason: 'AUTH_REQUIRED',
+          });
+          return;
+        }
         input.onError(source, error);
       })
       .finally(() => {

@@ -1,7 +1,7 @@
 'use client';
 
 import type { ProductDomainType } from '@/lib/product-domain';
-import { buildApiUrl, POS_TABLE_ORDERS_API, runtimeFetch } from '@/lib/runtime/runtime-api';
+import { buildApiUrl, isRuntimeAuthRequired, POS_TABLE_ORDERS_API, runtimeFetch } from '@/lib/runtime/runtime-api';
 
 export type RuntimeOrderLine = {
   id: string;
@@ -246,6 +246,18 @@ export async function dispatchOrderMutation<TLine extends RuntimeOrderLine>(
   diagnostics?: OrderMutationDiagnostics,
 ) {
   const requestUrl = buildApiUrl(POS_TABLE_ORDERS_API);
+  if (isRuntimeAuthRequired()) {
+    runtimeMutationRolledBackCount += 1;
+    diagnostics?.('mutation rolled back', {
+      tableId: mutation.tableId,
+      mutationId: mutation.mutationId,
+      runtimeMutationRolledBackCount,
+      status: 401,
+      code: 'AUTH_REQUIRED',
+      reason: 'auth_failure_runtime_lock',
+    });
+    throw new Error('AUTH_REQUIRED');
+  }
   runtimeMutationDispatchedCount += 1;
   diagnostics?.('mutation queued', {
     tableId: mutation.tableId,
@@ -324,6 +336,9 @@ export async function dispatchOrderMutation<TLine extends RuntimeOrderLine>(
       code: payload.code,
       traceId: payload.traceId,
     });
+    if (response.status === 401) {
+      throw new Error('AUTH_REQUIRED');
+    }
     throw new Error(`Authoritative product mutation failed with ${response.status}: ${payload.message ?? payload.error ?? payload.code ?? 'unknown error'}${payload.traceId ? ` (${payload.traceId})` : ''}`);
   }
 

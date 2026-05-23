@@ -1,6 +1,6 @@
 'use client';
 
-import { runtimeFetch } from '@/lib/runtime/runtime-api';
+import { isRuntimeAuthRequired, runtimeFetch } from '@/lib/runtime/runtime-api';
 
 export type RuntimeScope = 'tenant' | 'system-admin';
 
@@ -131,6 +131,9 @@ function broadcast(scope: RuntimeScope) {
 }
 
 async function requestSnapshot(scope: RuntimeScope, method: 'GET' | 'POST' | 'DELETE', state?: RuntimeSnapshot) {
+	if (isRuntimeAuthRequired()) {
+		throw new Error(`Runtime ${scope} sync stopped: AUTH_REQUIRED.`);
+	}
 	const response = await runtimeFetch(`/api/runtime/state/${scope}` as `/api/${string}`, {
 		method,
 		cache: 'no-store',
@@ -156,6 +159,7 @@ async function requestSnapshot(scope: RuntimeScope, method: 'GET' | 'POST' | 'DE
 
 function schedulePersist(scope: RuntimeScope) {
 	if (typeof window === 'undefined') return;
+	if (isRuntimeAuthRequired()) return;
 	const existing = pendingFlushes.get(scope);
 	if (existing) globalThis.clearTimeout(existing);
 	pendingFlushes.set(
@@ -215,6 +219,7 @@ export function subscribeRuntimeScope(scope: RuntimeScope, callback: RuntimeList
 
 export async function bootstrapRuntimeScope(scope: RuntimeScope) {
 	if (typeof window === 'undefined') return {};
+	if (isRuntimeAuthRequired()) return snapshots[scope];
 	const existing = bootstrapPromises.get(scope);
 	if (existing) return existing;
 
@@ -250,6 +255,7 @@ export async function bootstrapRuntimeScope(scope: RuntimeScope) {
 
 export async function refreshRuntimeScope(scope: RuntimeScope) {
 	if (typeof window === 'undefined') return snapshots[scope];
+	if (isRuntimeAuthRequired()) return snapshots[scope];
 	if (dirtyScopes[scope] || persistInFlight[scope] || pendingFlushes.has(scope) || Date.now() - lastLocalWriteAt[scope] < LOCAL_WRITE_REFRESH_GRACE_MS) {
 		console.info('[runtime-state] refresh skipped during local mutation', {
 			scope,
@@ -277,6 +283,7 @@ export async function refreshRuntimeScope(scope: RuntimeScope) {
 
 export async function persistRuntimeScope(scope: RuntimeScope) {
 	if (typeof window === 'undefined') return snapshots[scope];
+	if (isRuntimeAuthRequired()) return snapshots[scope];
 	persistInFlight[scope] = true;
 	try {
 		const next = await requestSnapshot(scope, 'POST', snapshots[scope]);

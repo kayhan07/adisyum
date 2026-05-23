@@ -13,11 +13,12 @@ import { subscribeKdsConnectionState } from '@/lib/realtime/kds-echo';
 import { resetSystemAdminIsolation, resetTenantIsolation } from '@/lib/client/isolation';
 import { isLogoutInProgress, secureLogout, subscribeSecureLogoutSync } from '@/lib/client/secure-logout';
 import { getLocalBridgeHealthUrl } from '@/lib/local-agent';
-import { runtimeFetch } from '@/lib/runtime/runtime-api';
+import { isRuntimeAuthRequired, resetRuntimeAuthFailureLock, runtimeFetch } from '@/lib/runtime/runtime-api';
 import { propagateRuntimeSessionAuth } from '@/lib/runtime/runtime-session-engine';
 import { resolveRuntimeDeviceId } from '@/lib/device-runtime/device-session-registry';
 
 function ingestObservability(tenantId: string, payload: Record<string, unknown>) {
+  if (isRuntimeAuthRequired()) return;
   void runtimeFetch('/api/system-admin/observability/ingest', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -93,6 +94,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
 
       propagateRuntimeSessionAuth(data?.ok ? data.session : null);
       setAuthSnapshotFromSession(data?.ok ? data.session : null);
+      if (data?.ok) resetRuntimeAuthFailureLock();
 
       if (data?.ok) {
         if (data.session.role === 'super_admin') {
@@ -127,13 +129,13 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     const tenantId = data.session.tenantId;
 
     const syncNow = () => {
-      if (cancelled || isLogoutInProgress()) return;
+      if (cancelled || isLogoutInProgress() || isRuntimeAuthRequired()) return;
       void syncOfflineOrders({ tenantId });
       void processPrintQueue({ tenantId, reason: 'runtime.sync' });
     };
 
     const handleOnline = () => {
-      if (cancelled || isLogoutInProgress()) return;
+      if (cancelled || isLogoutInProgress() || isRuntimeAuthRequired()) return;
       reconnectTenantRealtime(tenantId);
       syncNow();
       void runPrinterHeartbeat({ tenantId });
@@ -145,13 +147,13 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     };
 
     const handleFocus = () => {
-      if (cancelled || typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (cancelled || isRuntimeAuthRequired() || typeof navigator !== 'undefined' && !navigator.onLine) return;
       syncNow();
       void runPrinterHeartbeat({ tenantId });
     };
 
     const handleVisibility = () => {
-      if (cancelled || document.visibilityState !== 'visible') return;
+      if (cancelled || isRuntimeAuthRequired() || document.visibilityState !== 'visible') return;
       if (typeof navigator !== 'undefined' && navigator.onLine) {
         syncNow();
         void runPrinterHeartbeat({ tenantId });
@@ -164,10 +166,12 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     document.addEventListener('visibilitychange', handleVisibility);
 
     const unsubscribeWs = subscribeKdsConnectionState((state) => {
+      if (isRuntimeAuthRequired()) return;
       ingestObservability(tenantId, { websocket: { connected: state.connected, state: state.state } });
     });
 
     const ingestBridgeRelease = async () => {
+      if (isRuntimeAuthRequired()) return;
       const bridgeHealthUrl = getLocalBridgeHealthUrl();
       if (!bridgeHealthUrl) return;
       try {
@@ -203,16 +207,18 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     };
 
     if (typeof navigator !== 'undefined' && navigator.onLine) {
-      reconnectTenantRealtime(tenantId);
-      syncNow();
-      void runPrinterHeartbeat({ tenantId });
-      void ingestBridgeRelease();
+      if (!isRuntimeAuthRequired()) {
+        reconnectTenantRealtime(tenantId);
+        syncNow();
+        void runPrinterHeartbeat({ tenantId });
+        void ingestBridgeRelease();
+      }
     } else {
       connectTenantRealtime(null);
     }
 
     const heartbeat = window.setInterval(async () => {
-      if (cancelled || typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (cancelled || isRuntimeAuthRequired() || typeof navigator !== 'undefined' && !navigator.onLine) return;
       syncNow();
       const hbResult = await runPrinterHeartbeat({ tenantId }).catch(() => null) as PrintResilienceSummary | null;
       if (hbResult) {
@@ -222,7 +228,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     }, 30000);
 
     const releaseHeartbeat = window.setInterval(() => {
-      if (cancelled || typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (cancelled || isRuntimeAuthRequired() || typeof navigator !== 'undefined' && !navigator.onLine) return;
       void ingestBridgeRelease();
     }, 300000);
 
@@ -244,7 +250,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     const deviceId = resolveRuntimeDeviceId();
 
     const sendHeartbeat = async () => {
-      if (cancelled || isLogoutInProgress()) return;
+      if (cancelled || isLogoutInProgress() || isRuntimeAuthRequired()) return;
       await runtimeFetch('/api/runtime/heartbeat', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -277,7 +283,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     if (!isFetched || !data?.ok) return;
 
     const interval = window.setInterval(async () => {
-      if (isLogoutInProgress()) return;
+      if (isLogoutInProgress() || isRuntimeAuthRequired()) return;
       const response = await runtimeFetch('/api/auth/me', { cache: 'no-store' }).catch(() => null);
       if (!response || response.status !== 401) return;
       await secureLogout({ reason: 'token_revoked', scope: 'current', skipServer: true, redirect: true });

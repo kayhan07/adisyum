@@ -1,5 +1,12 @@
 'use client';
 
+import {
+  AUTH_FAILURE_RUNTIME_LOCK,
+  createAuthRequiredLockedResponse,
+  isAuthFailureResponse,
+  lockRuntimeForAuthFailure,
+} from '@/lib/runtime/auth-failure-runtime-lock';
+
 export type RuntimeApiPath = '/api' | `/api/${string}`;
 
 export const POS_TABLE_ORDERS_API = '/api/pos/table-orders' as const;
@@ -24,9 +31,39 @@ export function buildApiUrl(path: RuntimeApiPath) {
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
+export function isRuntimeAuthRequired() {
+  return AUTH_FAILURE_RUNTIME_LOCK.shouldStopRuntimeWork();
+}
+
+export function resetRuntimeAuthFailureLock() {
+  AUTH_FAILURE_RUNTIME_LOCK.reset();
+}
+
+export function getRuntimeAuthFailureSnapshot() {
+  return AUTH_FAILURE_RUNTIME_LOCK.snapshot();
+}
+
 export function runtimeFetch(path: RuntimeApiPath, init: RequestInit = {}) {
-  return fetch(buildApiUrl(path), {
+  const requestUrl = buildApiUrl(path);
+  const isAuthRecoveryRequest = requestUrl === '/api/auth/me' || requestUrl.startsWith('/api/auth/');
+  if (AUTH_FAILURE_RUNTIME_LOCK.shouldStopRuntimeWork() && !isAuthRecoveryRequest) {
+    return Promise.resolve(createAuthRequiredLockedResponse());
+  }
+
+  return fetch(requestUrl, {
     ...init,
     credentials: init.credentials ?? 'include',
+  }).then((response) => {
+    if (isAuthFailureResponse(response)) {
+      lockRuntimeForAuthFailure({
+        endpoint: requestUrl,
+        status: response.status,
+        reason: 'runtime_api_unauthorized',
+      });
+    } else if (response.ok && isAuthRecoveryRequest) {
+      AUTH_FAILURE_RUNTIME_LOCK.reset();
+    }
+
+    return response;
   });
 }
