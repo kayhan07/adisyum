@@ -68,7 +68,7 @@ import {
   restoreRecentAccountIds,
 } from '@/lib/pos-runtime/runtime-persistence-engine';
 import { hydrateRuntimeSessionContext, traceRuntimeSessionHydrated } from '@/lib/runtime/runtime-session-engine';
-import { isRuntimeAuthRequired, runtimeFetch } from '@/lib/runtime/runtime-api';
+import { getRuntimeAuthFailureSnapshot, isRuntimeAuthRequired, resetRuntimeAuthFailureLock, runtimeFetch } from '@/lib/runtime/runtime-api';
 import { resolveStockRuntimeBranchId } from '@/lib/runtime/tenant-runtime-context';
 import {
   isRuntimeBarCategory,
@@ -501,6 +501,32 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const activeBranchId = runtimeSession.context.branch.branchId;
   const currentUser = runtimeSession.context.user;
   const hasPermission = runtimeSession.context.permissions.can;
+
+  const ensureProductMutationCanStart = useCallback((input: {
+    source: 'product-grid' | 'search' | 'product-card';
+    tableId?: string | null;
+    productId?: string;
+    productName?: string;
+  }) => {
+    if (isRuntimeAuthRequired()) {
+      const authLock = getRuntimeAuthFailureSnapshot();
+      if (sessionState.isAuthenticated) {
+        console.warn('[adisyon-flow] stale auth runtime lock cleared before product mutation', {
+          ...input,
+          authLock,
+        });
+        resetRuntimeAuthFailureLock();
+        return true;
+      }
+      console.error('[adisyon-flow] product mutation blocked by auth runtime lock', {
+        ...input,
+        authLock,
+      });
+      setFeedbackMessage('Oturum gerekli. Lutfen tekrar giris yapin.');
+      return false;
+    }
+    return true;
+  }, [sessionState.isAuthenticated]);
 
   const baseTables = useMemo(
     () =>
@@ -1483,7 +1509,22 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   };
 
   const addProductToOrder = async (product: ProductCard, source: 'product-grid' | 'search' = 'product-grid') => {
-    if (isRuntimeAuthRequired()) {
+    console.log('[adisyon-flow] product click received', {
+      source,
+      tableId: currentTable?.id ?? null,
+      selectedTableId,
+      productId: product.id,
+      productName: product.name,
+      canCreateOrder: Boolean(currentTable && hasPermission('orders.create')),
+      isAuthenticated: sessionState.isAuthenticated,
+      authLock: getRuntimeAuthFailureSnapshot(),
+    });
+    if (!ensureProductMutationCanStart({
+      source,
+      tableId: currentTable?.id ?? selectedTableId,
+      productId: product.id,
+      productName: product.name,
+    })) {
       setFeedbackMessage('Oturum gerekli. Lütfen tekrar giriş yapın.');
       return;
     }
@@ -1507,6 +1548,12 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       },
     });
     if (!currentTable) {
+      console.error('[adisyon-flow] product mutation blocked: missing table', {
+        source,
+        selectedTableId,
+        productId: product.id,
+        productName: product.name,
+      });
       recordPosClickDebug('add-product-blocked', {
         source,
         reason: 'missing-table',
@@ -1521,6 +1568,14 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       return;
     }
     if (!hasPermission('orders.create')) {
+      console.error('[adisyon-flow] product mutation blocked: permission denied', {
+        source,
+        tableId: currentTable.id,
+        productId: product.id,
+        productName: product.name,
+        permissions: runtimeSession.context.permissions.permissions,
+        role: runtimeSession.context.permissions.role,
+      });
       recordPosClickDebug('add-product-blocked', {
         source,
         reason: 'permission-denied',
@@ -1746,8 +1801,42 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   };
 
   const addProduct = async () => {
-    if (!currentTable || !productCardProduct || !hasPermission('orders.create')) return;
-    if (isRuntimeAuthRequired()) {
+    console.log('[adisyon-flow] product-card submit received', {
+      tableId: currentTable?.id ?? null,
+      selectedTableId,
+      productId: productCardProduct?.id,
+      productName: productCardProduct?.name,
+      canCreateOrder: Boolean(currentTable && productCardProduct && hasPermission('orders.create')),
+      isAuthenticated: sessionState.isAuthenticated,
+      authLock: getRuntimeAuthFailureSnapshot(),
+    });
+    if (!currentTable || !productCardProduct) {
+      console.error('[adisyon-flow] product-card mutation blocked: missing table or product', {
+        tableId: currentTable?.id ?? null,
+        selectedTableId,
+        productId: productCardProduct?.id,
+        productName: productCardProduct?.name,
+      });
+      setFeedbackMessage(!currentTable ? 'Urun eklemek icin once masa secin' : 'Urun secimi bulunamadi');
+      return;
+    }
+    if (!hasPermission('orders.create')) {
+      console.error('[adisyon-flow] product-card mutation blocked: permission denied', {
+        tableId: currentTable.id,
+        productId: productCardProduct.id,
+        productName: productCardProduct.name,
+        permissions: runtimeSession.context.permissions.permissions,
+        role: runtimeSession.context.permissions.role,
+      });
+      setFeedbackMessage('Bu kullanici urun ekleme yetkisine sahip degil');
+      return;
+    }
+    if (!ensureProductMutationCanStart({
+      source: 'product-card',
+      tableId: currentTable.id,
+      productId: productCardProduct.id,
+      productName: productCardProduct.name,
+    })) {
       setFeedbackMessage('Oturum gerekli. Lütfen tekrar giriş yapın.');
       return;
     }
