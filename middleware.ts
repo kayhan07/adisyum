@@ -6,6 +6,7 @@ const PUBLIC_PREFIXES = [
   '/site',
   '/api/auth',
   '/app/login',
+  '/system-admin/login',
   '/api/downloads',
   '/api/runtime-build-id',
   '/_next',
@@ -212,6 +213,15 @@ export async function middleware(request: NextRequest) {
     return withSecurityHeaders(NextResponse.next());
   }
 
+  if (pathname === '/system-admin/login') {
+    const session = await getSessionFromRequest(request);
+    if (session && isSuperAdmin(session) && session.tenantId === 'system') {
+      const url = publicRedirectUrl(request, '/system-admin');
+      return withSecurityHeaders(NextResponse.redirect(url, 308));
+    }
+    return withSecurityHeaders(NextResponse.next());
+  }
+
   if (isPublicPath(pathname) || !isProtectedPath(pathname)) return withSecurityHeaders(NextResponse.next());
 
   if (isApiPath(pathname) && isMutatingMethod(request.method) && !hasValidOrigin(request)) {
@@ -230,10 +240,6 @@ export async function middleware(request: NextRequest) {
 
   const session = await getSessionFromRequest(request);
 
-  if (pathname === '/system-admin') {
-    return withSecurityHeaders(NextResponse.next());
-  }
-
   if (!session) {
     if (isApiPath(pathname)) {
       console.warn('[middleware-auth] api session missing', {
@@ -247,7 +253,7 @@ export async function middleware(request: NextRequest) {
       });
       return withSecurityHeaders(NextResponse.json({ ok: false, error: 'Unauthorized', code: 'missing_session' }, { status: 401 }));
     }
-    const url = publicRedirectUrl(request, pathname.startsWith('/system-admin') ? '/system-admin' : '/app/login');
+    const url = publicRedirectUrl(request, pathname.startsWith('/system-admin') ? '/system-admin/login' : '/app/login');
     return withSecurityHeaders(NextResponse.redirect(url));
   }
 
@@ -268,7 +274,7 @@ export async function middleware(request: NextRequest) {
       });
       return withSecurityHeaders(NextResponse.json({ ok: false, error: 'Forbidden', code: 'system_admin_forbidden' }, { status: 403 }));
     }
-    const url = publicRedirectUrl(request, '/app');
+    const url = publicRedirectUrl(request, '/system-admin/login');
     return withSecurityHeaders(NextResponse.redirect(url));
   }
 

@@ -52,11 +52,13 @@ const kdsBoard = read('components/kds/kds-board.tsx');
 const productPage = read('app/products/page.tsx');
 const secureLogout = read('lib/client/secure-logout.ts');
 const appLogin = read('app/app/login/page.tsx');
+const systemAdminLogin = read('app/system-admin/login/page.tsx');
 
 assert(exists('PRODUCT_RECOVERY_CHECKLIST.md'), 'PRODUCT_RECOVERY_CHECKLIST.md must exist');
 assert(exists('PRODUCT_RUNTIME_QA.md'), 'PRODUCT_RUNTIME_QA.md must exist');
 assert(exists('FRONTEND_RUNTIME_FORENSICS.md'), 'FRONTEND_RUNTIME_FORENSICS.md must exist');
 assert(exists('MODULE_RECOVERY_MATRIX.md'), 'MODULE_RECOVERY_MATRIX.md must exist');
+assert(exists('AUTH_BOUNDARY_FORENSICS.md'), 'AUTH_BOUNDARY_FORENSICS.md must exist');
 
 assert(/const PRODUCT_RECOVERY_MINIMAL_RUNTIME = true;/.test(provider), 'AppRuntimeProvider must keep product recovery minimal runtime enabled');
 assert(/if \(!isFetched \|\| !ready\) return <>\{children\}<\/>;/.test(provider), 'AppRuntimeProvider must render children immediately instead of blanking the UI');
@@ -82,14 +84,22 @@ assert(!/authReady/.test(appShell), 'AppShell must not block module rendering on
 assert(/isLegacyAdisyonPath/.test(middleware), 'Middleware must explicitly canonicalize legacy /adisyonsistemi paths');
 assert(!/searchParams\.set\(['"]next['"]/.test(middleware), 'Middleware must not create next query redirect chains');
 assert(/'\/app\/login'/.test(middleware), 'Middleware must expose /app/login as the unauthenticated app entry');
+assert(/'\/system-admin\/login'/.test(middleware), 'Middleware must expose /system-admin/login as the unauthenticated system-admin entry');
 assert(/pathname === '\/app\/login'/.test(middleware), 'Middleware must explicitly handle /app/login');
-assert(/publicRedirectUrl\(request, pathname\.startsWith\('\/system-admin'\) \? '\/system-admin' : '\/app\/login'\)/.test(middleware), 'Invalid app sessions must redirect once to /app/login');
+assert(/pathname === '\/system-admin\/login'/.test(middleware), 'Middleware must explicitly handle /system-admin/login');
+assert(/publicRedirectUrl\(request, pathname\.startsWith\('\/system-admin'\) \? '\/system-admin\/login' : '\/app\/login'\)/.test(middleware), 'Invalid sessions must stay inside their auth domain');
+assert(!/pathname\.startsWith\('\/system-admin'\) \? '\/system-admin' : '\/app\/login'/.test(middleware), 'System-admin must not bounce unauthenticated users to /system-admin without login ownership');
+assert(!/publicRedirectUrl\(request, '\/app'\)[\s\S]{0,120}system-admin_forbidden/.test(middleware), 'Invalid system-admin browser sessions must not redirect into /app');
 assert(exists('app/adisyonsistemi/page.tsx'), 'Legacy /adisyonsistemi page must exist only as a redirect shell');
 assert(/permanentRedirect\(['"]\/app['"]\)/.test(read('app/adisyonsistemi/page.tsx')), '/adisyonsistemi must permanently redirect to /app');
 assert(/window\.location\.replace\(target\)/.test(secureLogout) && /'\/app\/login'/.test(secureLogout), 'Logout must return app users to /app/login');
+assert(/'\/system-admin\/login'/.test(secureLogout), 'Logout must return system-admin users to /system-admin/login');
 assert(/runtimeFetch\('\/api\/auth\/login'/.test(appLogin), '/app/login must perform manual login via /api/auth/login');
 assert(/router\.replace\('\/app'\)/.test(appLogin), '/app/login must navigate once to /app after successful manual login');
 assert(!/localStorage|sessionStorage/.test(appLogin), '/app/login must not restore auth from browser storage');
+assert(/runtimeFetch\('\/api\/auth\/system-admin'/.test(systemAdminLogin), '/system-admin/login must perform manual login via /api/auth/system-admin');
+assert(/router\.replace\('\/system-admin'\)/.test(systemAdminLogin), '/system-admin/login must navigate once to /system-admin after successful manual login');
+assert(!/localStorage|sessionStorage/.test(systemAdminLogin), '/system-admin/login must not restore auth from browser storage');
 
 assert(/<Suspense fallback=\{null\}>/.test(productPage), 'Products page must wrap useSearchParams content in Suspense');
 assert(/const reconciliationTimer = window\.setInterval/.test(kdsBoard), 'KDS must keep one bounded fallback polling timer');
