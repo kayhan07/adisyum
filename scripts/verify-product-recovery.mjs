@@ -61,6 +61,7 @@ assert(exists('MODULE_RECOVERY_MATRIX.md'), 'MODULE_RECOVERY_MATRIX.md must exis
 assert(exists('AUTH_BOUNDARY_FORENSICS.md'), 'AUTH_BOUNDARY_FORENSICS.md must exist');
 assert(exists('ROOT_RUNTIME_RECOVERY.md'), 'ROOT_RUNTIME_RECOVERY.md must exist');
 assert(exists('ACCESS_RECOVERY_CHECKLIST.md'), 'ACCESS_RECOVERY_CHECKLIST.md must exist');
+assert(exists('API_DRIFT_FORENSICS.md'), 'API_DRIFT_FORENSICS.md must exist');
 
 assert(/const PRODUCT_RECOVERY_MINIMAL_RUNTIME = true;/.test(provider), 'AppRuntimeProvider must keep product recovery minimal runtime enabled');
 assert(/usePathname/.test(provider), 'AppRuntimeProvider must know the current route for auth entry bypass');
@@ -77,8 +78,15 @@ assert(/offline-auto-sync-disabled/.test(orderComposer), 'OrderComposer must exp
 assert(/hydrateAuthoritativeRuntime/.test(orderComposer), 'OrderComposer must retain one bounded initial table hydration');
 
 assert(/POS_TABLE_ORDERS_API = '\/api\/pos\/table-orders'/.test(runtimeApi), 'POS table order mutations must use the root /api/pos/table-orders endpoint');
+assert(/RUNTIME_POS_CATALOG_API = '\/api\/runtime\/pos-catalog'/.test(runtimeApi), 'Runtime API must explicitly allow /api/runtime/pos-catalog');
 assert(/credentials: init\.credentials \?\? 'include'/.test(runtimeApi), 'Runtime API calls must include credentials by default');
 assert(/adisyonsistemi\/api/.test(runtimeApi) && /\/app\/api/.test(runtimeApi), 'Runtime API must reject legacy-prefixed API namespaces');
+assert(runtimeApi.includes('normalized.split(/[?#]/, 1)'), 'Runtime API drift detection must compare pathname without query/hash');
+assert(!/url\.pathname !== normalized\)/.test(runtimeApi), 'Runtime API must not compare pathname to a query-bearing normalized URL');
+assert(/invalid_runtime_api_path/.test(runtimeApi), 'Runtime API invalid path handling must fail request safely instead of crashing render');
+assert(/console\.warn\('\[runtime-api\] API path drift detected'/.test(runtimeApi), 'Runtime API drift detection must warn instead of throwing through render');
+assert(!/throw new Error\(`\[runtime-api\]/.test(runtimeApi), 'Runtime API guard must not throw runtime-api errors through the POS render tree');
+assert(/runtimeFetch\(`\/api\/runtime\/pos-catalog/.test(orderComposer), 'POS catalog hydration must continue using /api/runtime/pos-catalog');
 assert(/lockRuntimeForAuthFailure/.test(runtimeApi), 'Runtime API must lock runtime work after 401 responses');
 assert(/AUTH_REQUIRED/.test(authLock) && /redirectIssued/.test(authLock), 'Auth failure runtime lock must expose AUTH_REQUIRED state and one-shot redirect state');
 
