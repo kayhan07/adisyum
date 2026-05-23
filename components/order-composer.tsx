@@ -43,7 +43,7 @@ import { erpAccounts, type Account } from '@/lib/erp-engine';
 import { appendPaymentJournalEntries, buildPaymentJournalEntry } from '@/lib/payment-journal-store';
 import { getDefaultTableLayoutState, loadTableLayoutState, subscribeToTableLayoutChanges } from '@/lib/table-layout-store';
 import { createAutoProductMapping, getProductMapping, upsertProductMapping, validateProductMapping } from '@/lib/pos-mapping-store';
-import { queueOfflinePaymentSnapshot, syncOfflineOrders } from '@/lib/offline-sync-store';
+import { queueOfflinePaymentSnapshot } from '@/lib/offline-sync-store';
 import { replaceAuthoritativeOrdersByTable } from '@/lib/client/authoritative-table-orders';
 import { type PosOrderReconciliationSource } from '@/lib/pos-order-reconciliation';
 import {
@@ -59,7 +59,6 @@ import {
 import {
   hydrateAuthoritativeRuntime,
   reconcileRuntimeSyncSnapshot,
-  startAuthoritativeRuntimeSync,
 } from '@/lib/pos-runtime/runtime-sync-engine';
 import { createRuntimeDiagnostics } from '@/lib/pos-runtime/runtime-event-bus';
 import {
@@ -1169,47 +1168,15 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   useEffect(() => {
     if (!ordersHydrated || typeof window === 'undefined') return;
     if (isRuntimeAuthRequired()) return;
-
-    return startAuthoritativeRuntimeSync<OrderLine>({
-      enabled: ordersHydrated,
-      initialOrders,
-      normalizeOrders: (orders) => normalizeStoredOrders(orders, sourceProducts),
-      getPendingMutation: () => orderMutationGuardRef.current,
-      getActiveTableId: () => currentTable?.id ?? selectedTableId ?? null,
-      onAuthoritativePayload: (payload, reason) => {
-        const activeTableId = currentTable?.id ?? selectedTableId;
-        setOrdersByTable((current) => {
-          const merged = reconcileAuthoritativeOrders(current, payload.ordersByTable, reason);
-          const nextLines = activeTableId ? merged[activeTableId] ?? EMPTY_ORDER_LINES : EMPTY_ORDER_LINES;
-          if (activeTableId) persistTableLiveTotals({ [activeTableId]: getOrderGross(nextLines) });
-          return areOrderMapsEqual(current, merged) ? current : merged;
-        });
-        logOrderFlow('authoritative-orders-reconciled', {
-          reason,
-          selectedTableId,
-          activeOrderId: activeTableId || null,
-          incomingActiveLineCount: activeTableId ? payload.ordersByTable[activeTableId]?.length ?? 0 : 0,
-          tableCount: Object.keys(payload.ordersByTable).length,
-        });
-      },
-      onError: (reason, error) => {
-        logOrderFlow('authoritative-orders-reconcile-failed', {
-          reason,
-          message: error instanceof Error ? error.message : String(error),
-        });
-      },
-      diagnostics: logOrderFlow,
+    logOrderFlow('authoritative-orders-background-sync-disabled', {
+      reason: 'product-recovery-minimal-runtime',
     });
-  }, [currentTable?.id, initialOrders, ordersHydrated, reconcileAuthoritativeOrders, selectedTableId, sourceProducts]);
+  }, [ordersHydrated]);
 
   useEffect(() => {
-    const sync = () => {
-      if (isRuntimeAuthRequired()) return;
-      void syncOfflineOrders();
-    };
-    sync();
-    window.addEventListener('online', sync);
-    return () => window.removeEventListener('online', sync);
+    logOrderFlow('offline-auto-sync-disabled', {
+      reason: 'product-recovery-minimal-runtime',
+    });
   }, []);
 
   useEffect(() => {

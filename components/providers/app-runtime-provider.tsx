@@ -17,7 +17,10 @@ import { isRuntimeAuthRequired, resetRuntimeAuthFailureLock, runtimeFetch } from
 import { propagateRuntimeSessionAuth } from '@/lib/runtime/runtime-session-engine';
 import { resolveRuntimeDeviceId } from '@/lib/device-runtime/device-session-registry';
 
+const PRODUCT_RECOVERY_MINIMAL_RUNTIME = true;
+
 function ingestObservability(tenantId: string, payload: Record<string, unknown>) {
+  if (PRODUCT_RECOVERY_MINIMAL_RUNTIME) return;
   if (isRuntimeAuthRequired()) return;
   void runtimeFetch('/api/system-admin/observability/ingest', {
     method: 'POST',
@@ -39,6 +42,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   const authFingerprint = useMemo(() => `${tenantId ?? 'anonymous'}:${role ?? 'none'}`, [role, tenantId]);
 
   useEffect(() => {
+    if (PRODUCT_RECOVERY_MINIMAL_RUNTIME) return;
     if (!tenantId) return;
 
     let runtimeErrorCount = 0;
@@ -97,12 +101,14 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
       if (data?.ok) resetRuntimeAuthFailureLock();
 
       if (data?.ok) {
-        if (data.session.role === 'super_admin') {
-          await bootstrapRuntimeScope('system-admin');
-          connectTenantRealtime(null);
-        } else {
-          await bootstrapRuntimeScope('tenant');
-          reconnectTenantRealtime(data.session.tenantId);
+        if (!PRODUCT_RECOVERY_MINIMAL_RUNTIME) {
+          if (data.session.role === 'super_admin') {
+            await bootstrapRuntimeScope('system-admin');
+            connectTenantRealtime(null);
+          } else {
+            await bootstrapRuntimeScope('tenant');
+            reconnectTenantRealtime(data.session.tenantId);
+          }
         }
       }
 
@@ -123,6 +129,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   }, [authFingerprint, data, isFetched]);
 
   useEffect(() => {
+    if (PRODUCT_RECOVERY_MINIMAL_RUNTIME) return;
     if (!isFetched || !data?.ok || data.session.role === 'super_admin') return;
 
     let cancelled = false;
@@ -245,6 +252,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   }, [data, isFetched]);
 
   useEffect(() => {
+    if (PRODUCT_RECOVERY_MINIMAL_RUNTIME) return;
     if (!isFetched || !data?.ok) return;
     let cancelled = false;
     const deviceId = resolveRuntimeDeviceId();
@@ -280,6 +288,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   }, [data, isFetched]);
 
   useEffect(() => {
+    if (PRODUCT_RECOVERY_MINIMAL_RUNTIME) return;
     if (!isFetched || !data?.ok) return;
 
     const interval = window.setInterval(async () => {
@@ -373,7 +382,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     };
   }, [data, isFetched]);
 
-  if (!isFetched || !ready) return null;
+  if (!isFetched || !ready) return <>{children}</>;
   return (
     <>
       {children}

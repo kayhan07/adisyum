@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useDeferredValue, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { Suspense, useDeferredValue, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AlertTriangle, ArrowRightLeft, Boxes, Building2, CheckSquare, Copy, Download, Layers3, Package, PackageCheck, Plus, Printer, Save, Search, Sparkles, Trash2, Upload, Warehouse } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
@@ -993,7 +993,7 @@ function findExactPrinterMapping(category: string, mappings: PrinterMappingRecor
   return mappings.find((mapping) => normalizePrinterCategoryKey(mapping.category) === key) ?? null;
 }
 
-export default function ProductsPage() {
+function ProductsPageContent() {
   const searchParams = useSearchParams();
   const quickCreateFileInputRef = useRef<HTMLInputElement | null>(null);
   const [hydrated, setHydrated] = useState(false);
@@ -5592,6 +5592,14 @@ export default function ProductsPage() {
         {savedNotes.length > 0 ? <section className="space-y-3">{savedNotes.map((note, index) => <p key={`${note}-${index}`} className="rounded-2xl bg-emerald-500/12 px-4 py-3 text-sm font-semibold text-emerald-200">{note}</p>)}</section> : null}
       </div>
     </AppShell>
+  );
+}
+
+export default function ProductsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ProductsPageContent />
+    </Suspense>
   );
 }
 
