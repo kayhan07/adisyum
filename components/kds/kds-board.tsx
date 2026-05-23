@@ -202,7 +202,7 @@ export function KdsBoard({ branchId }: KdsBoardProps) {
     const reconciliationTimer = window.setInterval(() => {
       if (isRuntimeAuthRequired()) return;
       void refreshTickets(true);
-    }, 8000);
+    }, 15000);
 
     return () => window.clearInterval(reconciliationTimer);
   }, [station, branchId]);
