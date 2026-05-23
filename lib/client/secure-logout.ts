@@ -55,7 +55,7 @@ function redirectToLogin() {
   if (typeof window === 'undefined') return;
 
   const pathname = window.location.pathname;
-  const target = pathname.startsWith('/system-admin') ? '/system-admin' : '/app';
+  const target = pathname.startsWith('/system-admin') ? '/system-admin' : '/app/login';
   window.history.replaceState(null, '', target);
   window.location.replace(target);
 }

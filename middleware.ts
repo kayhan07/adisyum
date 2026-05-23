@@ -5,6 +5,7 @@ import { isSuperAdmin } from '@/lib/tenant';
 const PUBLIC_PREFIXES = [
   '/site',
   '/api/auth',
+  '/app/login',
   '/api/downloads',
   '/api/runtime-build-id',
   '/_next',
@@ -202,7 +203,14 @@ export async function middleware(request: NextRequest) {
     return withSecurityHeaders(NextResponse.redirect(url, 308));
   }
 
-  if (pathname === '/app') return withSecurityHeaders(NextResponse.next());
+  if (pathname === '/app/login') {
+    const session = await getSessionFromRequest(request);
+    if (session) {
+      const url = publicRedirectUrl(request, '/app');
+      return withSecurityHeaders(NextResponse.redirect(url, 308));
+    }
+    return withSecurityHeaders(NextResponse.next());
+  }
 
   if (isPublicPath(pathname) || !isProtectedPath(pathname)) return withSecurityHeaders(NextResponse.next());
 
@@ -239,7 +247,7 @@ export async function middleware(request: NextRequest) {
       });
       return withSecurityHeaders(NextResponse.json({ ok: false, error: 'Unauthorized', code: 'missing_session' }, { status: 401 }));
     }
-    const url = publicRedirectUrl(request, pathname.startsWith('/system-admin') ? '/system-admin' : '/app');
+    const url = publicRedirectUrl(request, pathname.startsWith('/system-admin') ? '/system-admin' : '/app/login');
     return withSecurityHeaders(NextResponse.redirect(url));
   }
 
