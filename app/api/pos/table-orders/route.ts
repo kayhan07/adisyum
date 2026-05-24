@@ -177,9 +177,27 @@ function normalizeMetadata(input: Prisma.JsonValue | null | undefined) {
     : {};
 }
 
+function compactJsonValue(value: unknown): Prisma.InputJsonValue | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return undefined;
+  if (typeof value === 'string' || typeof value === 'boolean') return value;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => compactJsonValue(item))
+      .filter((item): item is Prisma.InputJsonValue => item !== undefined);
+  }
+  if (typeof value === 'object') {
+    return compactJsonObject(value as Record<string, unknown>);
+  }
+  return undefined;
+}
+
 function compactJsonObject(input: Record<string, unknown>): Prisma.InputJsonObject {
   return Object.fromEntries(
-    Object.entries(input).filter(([, value]) => value !== undefined),
+    Object.entries(input)
+      .map(([key, value]) => [key, compactJsonValue(value)] as const)
+      .filter(([, value]) => value !== undefined),
   ) as Prisma.InputJsonObject;
 }
 
