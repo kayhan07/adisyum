@@ -849,11 +849,17 @@ export async function POST(request: Request) {
         },
       });
     }
-    let dbProductId = product.productId || (isUuid(product.id) ? product.id : undefined) || catalogItem.productSnapshot.productId;
+    const clientProductId = isUuid(product.productId) ? product.productId : undefined;
+    const clientRuntimeProductKey = !clientProductId && product.productId ? product.productId : undefined;
+    const catalogProductId = isUuid(catalogItem.productSnapshot.productId)
+      ? catalogItem.productSnapshot.productId
+      : undefined;
+    let dbProductId = clientProductId || (isUuid(product.id) ? product.id : undefined) || catalogProductId;
+    const dbLookupPosKey = identity.posKey || clientRuntimeProductKey || catalogItem.productSnapshot.posKey;
     const persistedProduct = await prisma.product.findFirst({
       where: dbProductId
         ? { tenantId, id: dbProductId }
-        : { tenantId, posKey: identity.posKey },
+        : { tenantId, posKey: dbLookupPosKey },
       select: {
         id: true,
         posKey: true,
@@ -931,12 +937,13 @@ export async function POST(request: Request) {
           details: { clientRevision: product?.revision, serverRevision: persistedProduct.revision },
         });
       }
-    } else if (product?.id) {
+    } else if (product?.id || clientRuntimeProductKey) {
       logTableOrderEvent('product-db-lookup-skipped', {
         traceId,
         tenantId,
         tableId,
         productId: product.id,
+        runtimeProductKey: clientRuntimeProductKey,
         reason: 'runtime-pos-key-or-legacy-key',
       });
     }
