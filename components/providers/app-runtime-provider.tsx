@@ -84,6 +84,12 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   const authFingerprint = useMemo(() => `${tenantId ?? 'anonymous'}:${role ?? 'none'}`, [role, tenantId]);
 
   useEffect(() => {
+    if (isAuthEntryRoute || data?.ok) {
+      loginRedirectRef.current = false;
+    }
+  }, [data, isAuthEntryRoute, pathname]);
+
+  useEffect(() => {
     if (isAuthEntryRoute || !isFetched || data?.ok || !isProtectedRoute || loginRedirectRef.current) return;
     loginRedirectRef.current = true;
     propagateRuntimeSessionAuth(null);

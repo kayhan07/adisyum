@@ -180,6 +180,7 @@ export function runtimeFetch(path: RuntimeApiPath, init: RequestInit = {}) {
         endpoint: requestUrl,
         status: response.status,
         reason: 'runtime_api_unauthorized',
+        redirect: !isAuthRecoveryRequest,
       });
     } else if (response.ok && isAuthRecoveryRequest) {
       AUTH_FAILURE_RUNTIME_LOCK.reset();
