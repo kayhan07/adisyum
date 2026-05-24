@@ -191,6 +191,14 @@ function withSecurityHeaders(response: NextResponse) {
   return response;
 }
 
+function withAuthEntryHeaders(response: NextResponse) {
+  response.headers.set('cache-control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  response.headers.set('pragma', 'no-cache');
+  response.headers.set('expires', '0');
+  response.headers.set('clear-site-data', '"cache"');
+  return response;
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -205,11 +213,11 @@ export async function middleware(request: NextRequest) {
   }
 
   if (pathname === '/app/login') {
-    return withSecurityHeaders(NextResponse.next());
+    return withAuthEntryHeaders(withSecurityHeaders(NextResponse.next()));
   }
 
   if (pathname === '/system-admin/login') {
-    return withSecurityHeaders(NextResponse.next());
+    return withAuthEntryHeaders(withSecurityHeaders(NextResponse.next()));
   }
 
   if (isPublicPath(pathname) || !isProtectedPath(pathname)) return withSecurityHeaders(NextResponse.next());
