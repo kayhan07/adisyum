@@ -21,7 +21,7 @@ import {
   subscribeToStoredTableReservations,
 } from '@/lib/table-reservation-store';
 
-import { getDefaultSessionState, loadSessionState, subscribeToSessionChanges } from '@/lib/session-store';
+import { getDefaultSessionState, hydrateSessionStateFromAuth, loadSessionState, subscribeToSessionChanges } from '@/lib/session-store';
 import { getDefaultAccessState, loadAccessState, subscribeToAccessChanges } from '@/lib/access-store';
 import {
   getDefaultIntegrationState,
@@ -502,7 +502,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const currentUser = runtimeSession.context.user;
   const hasPermission = runtimeSession.context.permissions.can;
 
-  const ensureProductMutationCanStart = useCallback((input: {
+  const ensureProductMutationCanStart = useCallback(async (input: {
     source: 'product-grid' | 'search' | 'product-card';
     tableId?: string | null;
     productId?: string;
@@ -518,6 +518,32 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         resetRuntimeAuthFailureLock();
         return true;
       }
+
+      const sessionResponse = await runtimeFetch('/api/auth/me', { cache: 'no-store' }).catch((error) => {
+        console.error('[adisyon-flow] auth recovery check failed before product mutation', {
+          ...input,
+          authLock,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+      });
+      if (sessionResponse?.ok) {
+        const payload = await sessionResponse.json().catch(() => null) as {
+          ok?: boolean;
+          session?: Parameters<typeof hydrateSessionStateFromAuth>[0];
+        } | null;
+        if (payload?.ok && payload.session) {
+          const hydrated = hydrateSessionStateFromAuth(payload.session);
+          setSessionState(hydrated);
+          resetRuntimeAuthFailureLock();
+          console.warn('[adisyon-flow] stale auth runtime lock recovered before product mutation', {
+            ...input,
+            authLock,
+          });
+          return true;
+        }
+      }
+
       console.error('[adisyon-flow] product mutation blocked by auth runtime lock', {
         ...input,
         authLock,
@@ -1546,7 +1572,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       isAuthenticated: sessionState.isAuthenticated,
       authLock: getRuntimeAuthFailureSnapshot(),
     });
-    if (!ensureProductMutationCanStart({
+    if (!await ensureProductMutationCanStart({
       source,
       tableId: currentTable?.id ?? selectedTableId,
       productId: product.id,
@@ -1858,7 +1884,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       setFeedbackMessage('Bu kullanici urun ekleme yetkisine sahip degil');
       return;
     }
-    if (!ensureProductMutationCanStart({
+    if (!await ensureProductMutationCanStart({
       source: 'product-card',
       tableId: currentTable.id,
       productId: productCardProduct.id,

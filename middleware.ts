@@ -205,20 +205,10 @@ export async function middleware(request: NextRequest) {
   }
 
   if (pathname === '/app/login') {
-    const session = await getSessionFromRequest(request);
-    if (session) {
-      const url = publicRedirectUrl(request, '/app');
-      return withSecurityHeaders(NextResponse.redirect(url, 308));
-    }
     return withSecurityHeaders(NextResponse.next());
   }
 
   if (pathname === '/system-admin/login') {
-    const session = await getSessionFromRequest(request);
-    if (session && isSuperAdmin(session) && session.tenantId === 'system') {
-      const url = publicRedirectUrl(request, '/system-admin');
-      return withSecurityHeaders(NextResponse.redirect(url, 308));
-    }
     return withSecurityHeaders(NextResponse.next());
   }
 
