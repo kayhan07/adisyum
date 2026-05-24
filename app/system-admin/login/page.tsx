@@ -41,6 +41,7 @@ export default function SystemAdminLoginPage() {
 
       resetRuntimeAuthFailureLock();
       router.replace('/system-admin');
+      window.location.assign('/system-admin');
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'System-admin girisi sirasinda hata olustu.');
     } finally {

@@ -442,15 +442,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     };
   }, [data, isFetched]);
 
-  if (!isAuthEntryRoute && isFetched && !data?.ok && isProtectedRoute) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-white">
-        <div className="rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-sm font-semibold">
-          Oturum dogrulaniyor...
-        </div>
-      </main>
-    );
-  }
+  if (!isAuthEntryRoute && isFetched && !data?.ok && isProtectedRoute) return null;
 
   if (!isFetched || !ready) return <>{children}</>;
   return (

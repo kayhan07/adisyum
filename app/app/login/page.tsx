@@ -74,7 +74,9 @@ export default function AppLoginPage() {
       hydrateSessionStateFromAuth(sessionPayload.session);
       setAuthSnapshotFromSession(sessionPayload.session);
       queryClient.setQueryData(authQueryKeys.session(), sessionPayload);
+      await queryClient.invalidateQueries({ queryKey: authQueryKeys.session() });
       router.replace('/app');
+      window.location.assign('/app');
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Giris sirasinda hata olustu.');
     } finally {
