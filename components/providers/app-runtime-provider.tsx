@@ -19,6 +19,40 @@ import { propagateRuntimeSessionAuth } from '@/lib/runtime/runtime-session-engin
 import { resolveRuntimeDeviceId } from '@/lib/device-runtime/device-session-registry';
 
 const PRODUCT_RECOVERY_MINIMAL_RUNTIME = true;
+const APP_LOGIN_PATH = '/app/login';
+const SYSTEM_ADMIN_LOGIN_PATH = '/system-admin/login';
+const PROTECTED_CLIENT_PREFIXES = [
+  '/app',
+  '/dashboard',
+  '/pos',
+  '/orders',
+  '/products',
+  '/warehouse',
+  '/reports',
+  '/finance',
+  '/settings',
+  '/system-admin',
+  '/floor',
+  '/kds',
+  '/bar-control',
+  '/branches',
+  '/delivery',
+  '/integrations',
+  '/operations',
+  '/overview',
+  '/qr',
+  '/saas',
+];
+
+function isProtectedClientRoute(pathname: string | null) {
+  if (!pathname) return false;
+  if (pathname === APP_LOGIN_PATH || pathname === SYSTEM_ADMIN_LOGIN_PATH) return false;
+  return PROTECTED_CLIENT_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+function loginPathForRoute(pathname: string | null) {
+  return pathname?.startsWith('/system-admin') ? SYSTEM_ADMIN_LOGIN_PATH : APP_LOGIN_PATH;
+}
 
 function ingestObservability(tenantId: string, payload: Record<string, unknown>) {
   if (PRODUCT_RECOVERY_MINIMAL_RUNTIME) return;
@@ -33,6 +67,8 @@ function ingestObservability(tenantId: string, payload: Record<string, unknown>)
 export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const isAuthEntryRoute = pathname === '/app/login' || pathname === '/system-admin/login';
+  const isProtectedRoute = isProtectedClientRoute(pathname);
+  const loginRedirectRef = useRef(false);
   const { data, isFetched } = useQuery({
     ...authSessionQueryOptions(),
     enabled: !isAuthEntryRoute,
@@ -46,6 +82,18 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   const idleResetRef = useRef<() => void>(() => undefined);
 
   const authFingerprint = useMemo(() => `${tenantId ?? 'anonymous'}:${role ?? 'none'}`, [role, tenantId]);
+
+  useEffect(() => {
+    if (isAuthEntryRoute || !isFetched || data?.ok || !isProtectedRoute || loginRedirectRef.current) return;
+    loginRedirectRef.current = true;
+    propagateRuntimeSessionAuth(null);
+    setAuthSnapshotFromSession(null);
+    console.warn('[runtime-provider] unauthenticated protected route blocked', {
+      pathname,
+      redirectTo: loginPathForRoute(pathname),
+    });
+    window.location.replace(loginPathForRoute(pathname));
+  }, [data, isAuthEntryRoute, isFetched, isProtectedRoute, pathname]);
 
   useEffect(() => {
     if (PRODUCT_RECOVERY_MINIMAL_RUNTIME) return;
@@ -387,6 +435,16 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [data, isFetched]);
+
+  if (!isAuthEntryRoute && isFetched && !data?.ok && isProtectedRoute) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-white">
+        <div className="rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-sm font-semibold">
+          Oturum dogrulaniyor...
+        </div>
+      </main>
+    );
+  }
 
   if (!isFetched || !ready) return <>{children}</>;
   return (
