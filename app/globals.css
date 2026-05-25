@@ -364,6 +364,8 @@ html[data-theme='light'] .module-card .module-card-badge {
 
 .app-shell-root {
   min-height: 100vh;
+  width: 100%;
+  min-width: 100vw;
   background: #0b1220;
   color: #e5eefb;
 }

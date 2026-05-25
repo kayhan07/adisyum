@@ -111,7 +111,7 @@ export function AppShell({ title, subtitle, actions, children, immersiveMode = f
 
   return (
     <div className="app-shell-root">
-      <main className="min-w-0">
+      <main className="min-w-0 w-full">
         <div className="flex min-h-screen flex-col">
           {immersiveMode ? (
             <>
@@ -161,7 +161,7 @@ export function AppShell({ title, subtitle, actions, children, immersiveMode = f
                   ) : null}
                 </div>
               ) : null}
-              <div className="flex-1 overflow-auto p-4 lg:p-5">{children}</div>
+              <div className="flex-1 w-full overflow-auto p-4 lg:p-5">{children}</div>
             </>
           ) : (
             <>
@@ -215,7 +215,7 @@ export function AppShell({ title, subtitle, actions, children, immersiveMode = f
                   </div>
                 ) : null}
               </header>
-              <div className="flex-1 overflow-auto p-5 lg:p-7">{children}</div>
+              <div className="flex-1 w-full overflow-auto p-5 lg:p-7">{children}</div>
             </>
           )}
         </div>

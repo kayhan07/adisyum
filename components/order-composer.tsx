@@ -3751,7 +3751,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
   return (
     <>
-    <div className="dark-pos grid min-h-0 gap-4 xl:grid-cols-[minmax(0,1fr)_420px] xl:h-[calc(100vh-2rem)] xl:min-h-[720px]">
+    <div className="dark-pos grid min-h-0 w-full gap-4 xl:grid-cols-[minmax(0,1fr)_420px] xl:h-[calc(100vh-2rem)] xl:min-h-[720px]">
       <section className="app-panel pos-products-panel flex min-h-0 flex-col overflow-hidden rounded-[1.4rem]">
         {paymentOpen ? paymentPanel : (
         <>
