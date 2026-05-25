@@ -593,6 +593,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const [lastAddedId, setLastAddedId] = useState<string | null>(null);
   const [lastMutatedLineId, setLastMutatedLineId] = useState<string | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState<string>('Hazır');
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
   const [posMappingWarning, setPosMappingWarning] = useState('');
   const [posClickDebug, setPosClickDebug] = useState<PosClickDebugSnapshot | null>(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
@@ -678,6 +679,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const holdIntervalRef = useRef<number | null>(null);
   const productSearchRef = useRef<HTMLInputElement | null>(null);
   const lastPaymentGuardRef = useRef<{ tableId: string; total: number; at: number } | null>(null);
+  const paymentInFlightRef = useRef(false);
   const lineMutationInFlightRef = useRef<Set<string>>(new Set());
   const previousItemCountsRef = useRef<Record<string, number>>({});
   const orderMutationGuardRef = useRef<PendingMutation | null>(null);
@@ -2936,6 +2938,11 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     }
   };
 
+  const releasePaymentSubmission = () => {
+    paymentInFlightRef.current = false;
+    setPaymentSubmitting(false);
+  };
+
   const completePayment = async () => {
     if (!currentTable || lines.length === 0 || !hasPermission('payments.take')) {
       console.error('[business-flow] payment complete blocked', {
@@ -2988,9 +2995,20 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       setFeedbackMessage('Kalan tutarı cariye atmak için cari hesap seçin');
       return;
     }
+    if (paymentInFlightRef.current) {
+      console.warn('[business-flow] duplicate payment submit blocked', {
+        tableId: currentTable.id,
+        paymentTargetTotal,
+        paymentScope,
+      });
+      setFeedbackMessage('Tahsilat isleniyor. Lutfen sonucu bekleyin.');
+      return;
+    }
 
     const currentTableId = currentTable.id;
     const isPartialPayment = paymentScope === 'split' && paymentTargetTotal < discountedSettlementTotal;
+    paymentInFlightRef.current = true;
+    setPaymentSubmitting(true);
     lastPaymentGuardRef.current = { tableId: currentTableId, total: paymentTargetTotal, at: Date.now() };
     console.log('[business-flow] payment commit started', {
       tableId: currentTableId,
@@ -3066,6 +3084,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       setRoundingDiscountEnabled(false);
       setDiscountReason('');
       setFeedbackMessage(`${paidItems.length} kalem icin ${formatMoney(paymentTargetTotal)} tahsil edildi`);
+      releasePaymentSubmission();
       return;
     }
 
@@ -3094,6 +3113,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         remaining: discountedSettlementTotal - paymentTargetTotal,
       });
       setFeedbackMessage(`${formatMoney(paymentTargetTotal)} tahsil edildi, kalan ${formatMoney(discountedSettlementTotal - paymentTargetTotal)}`);
+      releasePaymentSubmission();
       return;
     }
 
@@ -3134,14 +3154,18 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       amount: paymentTargetTotal,
       paymentMethod,
     });
-    void closePaidTableOrder(currentTableId, paymentTargetTotal).catch((error) => {
+    try {
+      await closePaidTableOrder(currentTableId, paymentTargetTotal);
+    } catch (error) {
       console.error('[business-flow] payment table close failed', {
         tableId: currentTableId,
         amount: paymentTargetTotal,
         error,
       });
       setFeedbackMessage('Tahsilat kaydedildi ancak masa kapatma sunucuya yazilamadi. Masalar ekranini yenileyip kontrol edin.');
-    });
+    } finally {
+      releasePaymentSubmission();
+    }
     setDiscountRateInput('0');
     setRoundingDiscountEnabled(false);
     setDiscountReason('');
@@ -3848,10 +3872,10 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
             <button
               type="button"
               onClick={completePayment}
-              disabled={!canCompleteSplit || !canCompleteAccount || paidAmount < paymentTargetTotal || paymentTargetTotal <= 0}
+              disabled={paymentSubmitting || !canCompleteSplit || !canCompleteAccount || paidAmount < paymentTargetTotal || paymentTargetTotal <= 0}
               className="inline-flex h-15 w-full items-center justify-center rounded-[1rem] bg-emerald-600 px-4 text-[17px] font-bold text-white shadow-[0_16px_30px_rgba(5,150,105,0.28)] transition duration-150 hover:-translate-y-[1px] hover:bg-emerald-700 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Tahsilati tamamla
+              {paymentSubmitting ? 'Tahsilat isleniyor...' : 'Tahsilati tamamla'}
             </button>
             <button
               type="button"
@@ -3867,10 +3891,10 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
             <button
               type="button"
               onClick={completePayment}
-              disabled={!canCompleteSplit || !canCompleteAccount || paidAmount < paymentTargetTotal || paymentTargetTotal <= 0}
+              disabled={paymentSubmitting || !canCompleteSplit || !canCompleteAccount || paidAmount < paymentTargetTotal || paymentTargetTotal <= 0}
               className="inline-flex h-15 w-full items-center justify-center rounded-[1rem] bg-emerald-600 px-4 text-[17px] font-bold text-white shadow-[0_16px_30px_rgba(5,150,105,0.28)] transition duration-150 hover:-translate-y-[1px] hover:bg-emerald-700 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Tahsilati tamamla
+              {paymentSubmitting ? 'Tahsilat isleniyor...' : 'Tahsilati tamamla'}
             </button>
           </div>
         )}
