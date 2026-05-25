@@ -1458,6 +1458,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       movedLineCount: selectedOrders.length,
       remainingLineCount: remainingOrders.length,
     });
+    replaceAuthoritativeOrdersByTable(nextOrders);
     setOrdersByTable(nextOrders);
     saveTableMeta(nextMeta);
     updatePaymentRequested(currentTable.id, false);
@@ -1511,6 +1512,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       targetTableId: moveTargetId,
       movedLineCount: sourceOrders.length,
     });
+    replaceAuthoritativeOrdersByTable(nextOrders);
     setOrdersByTable(nextOrders);
     saveTableMeta(nextMeta);
     updatePaymentRequested(currentTable.id, false);
@@ -1521,7 +1523,15 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   };
 
   const splitMergedTable = () => {
-    if (!currentTable?.mergedFromIds?.length || !currentTable.mergedSnapshot) return;
+    if (!currentTable?.mergedFromIds?.length || !currentTable.mergedSnapshot) {
+      console.error('[business-flow] split merged table blocked', {
+        currentTableId: currentTable?.id,
+        mergedFromIds: currentTable?.mergedFromIds,
+        hasMergedSnapshot: Boolean(currentTable?.mergedSnapshot),
+      });
+      setFeedbackMessage('Ayrilacak masa birlesimi bulunamadi.');
+      return;
+    }
 
     const sourceIds = currentTable.mergedFromIds;
     const nextOrders = { ...ordersByTable, [currentTable.id]: [] };
@@ -1542,13 +1552,23 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     };
 
     rememberUndo(ordersByTable, 'Masa birleşimi ayrıldı');
+    replaceAuthoritativeOrdersByTable(nextOrders);
     setOrdersByTable(nextOrders);
     saveTableMeta(nextMeta);
     setFeedbackMessage('Birleşim geri alındı');
   };
 
   const openProductCard = (product: ProductCard) => {
-    if (!currentTable || !hasPermission('orders.create')) return;
+    if (!currentTable || !hasPermission('orders.create')) {
+      console.error('[business-flow] product card open blocked', {
+        tableId: currentTable?.id,
+        productId: product.id,
+        productName: product.name,
+        hasCreatePermission: hasPermission('orders.create'),
+      });
+      setFeedbackMessage(!currentTable ? 'Urun detayini acmak icin once masa secin.' : 'Bu kullanici urun ekleme yetkisine sahip degil.');
+      return;
+    }
     const mappingResult = ensureOrderProductMapping(product);
     setPosMappingWarning(mappingResult.autoCreated ? `${product.name} için otomatik POS PLU eşleştirmesi oluşturuldu.` : '');
     setProductCardProduct(product);
@@ -2623,7 +2643,15 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   };
 
   const sendCheckToTable = async () => {
-    if (!currentTable || lines.length === 0 || !hasPermission('orders.edit')) return;
+    if (!currentTable || lines.length === 0 || !hasPermission('orders.edit')) {
+      console.error('[business-flow] check print blocked', {
+        currentTableId: currentTable?.id,
+        lineCount: lines.length,
+        hasEditPermission: hasPermission('orders.edit'),
+      });
+      setFeedbackMessage(!currentTable ? 'Once masa secin.' : lines.length === 0 ? 'Yazdirilacak adisyon yok.' : 'Adisyon yazdirma yetkiniz yok.');
+      return;
+    }
 
     const runtimeCompanyState = loadCompanyState();
     const runtimeIntegrationState = loadIntegrationState();
@@ -4368,7 +4396,15 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
             <button
               type="button"
               onClick={() => {
-                if (!canSendCheck) return;
+                if (!canSendCheck) {
+                  console.error('[business-flow] check print click blocked', {
+                    currentTableId: currentTable?.id,
+                    lineCount: lines.length,
+                    hasEditPermission: hasPermission('orders.edit'),
+                  });
+                  setFeedbackMessage(!currentTable ? 'Once masa secin.' : lines.length === 0 ? 'Yazdirilacak adisyon yok.' : 'Adisyon yazdirma yetkiniz yok.');
+                  return;
+                }
                 void sendCheckToTable();
               }}
               aria-disabled={!canSendCheck}
