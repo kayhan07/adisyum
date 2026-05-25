@@ -104,12 +104,48 @@ import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
 const branchId = 'mrk';
 const DEFAULT_PRODUCT_CATEGORIES = ['Satış Ürünleri', 'İçecekler', 'Combo', 'Hammaddeler', 'Yarı Mamüller', 'Modifier', 'Varyant', 'Kahve', 'Soğuk İçecek', 'Alkol', 'Burger', 'Et', 'Balık', 'Tavuk', 'Tatlı', 'Salata', 'Diğer'] as const;
 const RAW_STOCK_COUNT_STORAGE_KEY = 'adisyon-raw-stock-counts';
+const PRODUCT_CATEGORY_STORAGE_KEY = 'adisyon-product-categories';
 
 type ProductWindow = 'raw' | 'sale' | 'quick' | 'bar' | 'recipe' | 'warehouse';
 type CreateItemType = 'sale' | 'raw' | 'semi' | 'combo' | 'modifier' | 'variant';
 type RawUnit = 'kg' | 'lt' | 'adet';
 type SaleStockProcurementType = 'recipe' | 'direct';
 type BarStockMode = 'none' | 'bottle-glass';
+
+function mergeProductCategories(...categoryLists: Array<readonly string[]>) {
+  const categories = new Map<string, string>();
+
+  categoryLists.flat().forEach((category) => {
+    const trimmed = category.trim();
+    if (!trimmed) return;
+    const key = trimmed.toLocaleLowerCase('tr-TR');
+    if (!categories.has(key)) categories.set(key, trimmed);
+  });
+
+  return Array.from(categories.values());
+}
+
+function loadStoredProductCategories() {
+  try {
+    const raw = readRuntimeItem('tenant', PRODUCT_CATEGORY_STORAGE_KEY);
+    if (!raw) return [] as string[];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? mergeProductCategories(parsed.filter((category): category is string => typeof category === 'string'))
+      : [];
+  } catch (error) {
+    console.error('[business-flow] product categories load failed', error);
+    return [] as string[];
+  }
+}
+
+function saveStoredProductCategories(categories: string[]) {
+  try {
+    writeRuntimeItem('tenant', PRODUCT_CATEGORY_STORAGE_KEY, JSON.stringify(mergeProductCategories(categories)));
+  } catch (error) {
+    console.error('[business-flow] product categories save failed', error);
+  }
+}
 
 type SaleProductRecipeLine = {
   ingredientId: string;
@@ -1926,6 +1962,11 @@ function ProductsPageContent() {
   }, [hydrated, saleProducts]);
 
   useEffect(() => {
+    if (!hydrated) return;
+    saveStoredProductCategories(categories);
+  }, [categories, hydrated]);
+
+  useEffect(() => {
     const storedProducts = loadStoredSaleProducts();
     const hydratedProducts = buildInitialSaleProducts(storedProducts).map((product, index) => ({
       ...product,
@@ -1937,8 +1978,15 @@ function ProductsPageContent() {
       ...ingredient,
       vatRate: ingredient.vatRate ?? 20,
     }));
+    const hydratedCategories = mergeProductCategories(
+      DEFAULT_PRODUCT_CATEGORIES,
+      loadStoredProductCategories(),
+      hydratedProducts.map((product) => product.category),
+      hydratedRecipePool.recipes.map((recipe) => recipe.category || inferCategory(recipe.name)),
+    );
 
     setSaleProducts(hydratedProducts);
+    setCategories(hydratedCategories);
     setRecipePool(hydratedRecipePool.recipes);
     setRecipeVersions(hydratedRecipePool.versions);
     setCreatedRawIngredients(hydratedRawIngredients);
