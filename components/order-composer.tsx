@@ -2133,16 +2133,18 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     if (!currentTable) return;
     updatePaymentRequested(currentTable.id, false);
     const tableId = currentTable.id;
+    const target = lines.find((line) => line.id === lineId);
+    if (!target) {
+      console.error('[business-flow] line quantity change failed', { tableId, lineId, delta, reason: 'line-not-found' });
+      setFeedbackMessage('Adisyon satiri bulunamadi.');
+      return;
+    }
+    const nextQuantity = Math.max(target.qty + delta, 0);
+    const action = nextQuantity > 0 ? 'update_line_quantity' : 'remove_line';
 
     setOrdersByTable((current) => {
       rememberUndo(current, 'Adisyon g\u00fcncellendi');
       const currentLines = current[tableId] ?? [];
-      const target = currentLines.find((line) => line.id === lineId);
-      if (!target) {
-        console.error('[business-flow] line quantity change failed', { tableId, lineId, delta, reason: 'line-not-found' });
-        setFeedbackMessage('Adisyon satiri bulunamadi.');
-        return current;
-      }
       const nextLines = currentLines
         .map((line) => {
           if (line.id !== lineId) {
@@ -2159,15 +2161,9 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         .filter((line) => line.qty > 0);
 
       setFeedbackMessage(delta > 0 ? `${target?.name ?? '\u00dcr\u00fcn'} art\u0131r\u0131ld\u0131` : `${target?.name ?? '\u00dcr\u00fcn'} azalt\u0131ld\u0131`);
-      const nextTarget = nextLines.find((line) => line.id === lineId);
-      void persistLineMutation({
-        action: nextTarget ? 'update_line_quantity' : 'remove_line',
-        tableId,
-        lineId,
-        quantity: nextTarget?.qty ?? 0,
-      });
       return { ...current, [tableId]: nextLines };
     });
+    void persistLineMutation({ action, tableId, lineId, quantity: nextQuantity });
 
     setLastMutatedLineId(lineId);
   };
@@ -2176,16 +2172,18 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     if (!currentTable) return;
     updatePaymentRequested(currentTable.id, false);
     const tableId = currentTable.id;
+    const target = lines.find((line) => line.id === lineId);
+    if (!target) {
+      console.error('[business-flow] line return failed', { tableId, lineId, reason: 'line-not-found' });
+      setFeedbackMessage('Iade alinacak satir bulunamadi.');
+      return;
+    }
+    const nextQuantity = Math.max(target.qty - 1, 0);
+    const action = nextQuantity > 0 ? 'update_line_quantity' : 'remove_line';
 
     setOrdersByTable((current) => {
       rememberUndo(current, 'Ürün iade alındı');
       const currentLines = current[tableId] ?? [];
-      const target = currentLines.find((line) => line.id === lineId);
-      if (!target) {
-        console.error('[business-flow] line return failed', { tableId, lineId, reason: 'line-not-found' });
-        setFeedbackMessage('Iade alinacak satir bulunamadi.');
-        return current;
-      }
       const nextLines = currentLines
         .map((line) => {
           if (line.id !== lineId) {
@@ -2202,15 +2200,9 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         .filter((line) => line.qty > 0);
 
       setFeedbackMessage(`${target?.name ?? 'Ürün'} iade alindi`);
-      const nextTarget = nextLines.find((line) => line.id === lineId);
-      void persistLineMutation({
-        action: nextTarget ? 'update_line_quantity' : 'remove_line',
-        tableId,
-        lineId,
-        quantity: nextTarget?.qty ?? 0,
-      });
       return { ...current, [tableId]: nextLines };
     });
+    void persistLineMutation({ action, tableId, lineId, quantity: nextQuantity });
 
     setLastMutatedLineId(lineId);
   };
@@ -2219,22 +2211,22 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     if (!currentTable) return;
     updatePaymentRequested(currentTable.id, false);
     const tableId = currentTable.id;
+    const target = lines.find((line) => line.id === lineId);
+    if (!target) {
+      console.error('[business-flow] line remove failed', { tableId, lineId, reason: 'line-not-found' });
+      setFeedbackMessage('Silinecek satir bulunamadi.');
+      return;
+    }
 
     setOrdersByTable((current) => {
       rememberUndo(current, 'Ürün silindi');
       const currentLines = current[tableId] ?? [];
-      const target = currentLines.find((line) => line.id === lineId);
-      if (!target) {
-        console.error('[business-flow] line remove failed', { tableId, lineId, reason: 'line-not-found' });
-        setFeedbackMessage('Silinecek satir bulunamadi.');
-        return current;
-      }
       const nextLines = currentLines.filter((line) => line.id !== lineId);
 
       setFeedbackMessage(`${target?.name ?? 'Ürün'} silindi`);
-      void persistLineMutation({ action: 'remove_line', tableId, lineId, quantity: 0 });
       return { ...current, [tableId]: nextLines };
     });
+    void persistLineMutation({ action: 'remove_line', tableId, lineId, quantity: 0 });
 
     setLastMutatedLineId(lineId);
   };

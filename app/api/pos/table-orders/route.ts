@@ -544,6 +544,23 @@ export async function POST(request: Request) {
         });
       }
 
+      const existingLine = await prisma.orderItem.findFirst({
+        where: { tenantId, orderId: order.id, id: lineId },
+        select: { id: true },
+      });
+
+      if (!existingLine) {
+        return runtimeInsertionErrorResponse({
+          status: 404,
+          reason: 'order_line_not_found',
+          traceId,
+          tenantId,
+          branchId: tenant.branchId,
+          tableId,
+          details: { lineId },
+        });
+      }
+
       await prisma.$transaction(async (tx) => {
         const existingItem = await tx.orderItem.findFirst({
           where: { tenantId, orderId: order.id, id: lineId },
