@@ -1216,7 +1216,11 @@ export function FloorWorkspace() {
 
   function openQuickNote(tableId: string) {
     const table = displayTableRows.find((item) => item.id === tableId);
-    if (!table) return;
+    if (!table) {
+      console.error('[business-flow] quick note open failed', { tableId, reason: 'table-not-found' });
+      setActionMessage('Masa notu acilamadi: masa bulunamadi');
+      return;
+    }
     setNoteTableId(tableId);
     setNoteDraft({
       guests: String(table.guests ?? 0),
@@ -1229,7 +1233,11 @@ export function FloorWorkspace() {
   }
 
   function saveQuickNote() {
-    if (!noteTable) return;
+    if (!noteTable) {
+      console.error('[business-flow] quick note save failed', { noteTableId, reason: 'table-not-found' });
+      setActionMessage('Masa notu kaydedilemedi: masa bulunamadi');
+      return;
+    }
     const now = new Date().toISOString();
     const nextRows = tableRows.map((table) =>
       table.id === noteTable.id
@@ -1329,7 +1337,11 @@ export function FloorWorkspace() {
     }
 
     const target = displayTableRows.find((table) => table.id === tableId);
-    if (!target) return;
+    if (!target) {
+      console.error('[business-flow] reservation save failed', { tableId, guestName, reason: 'table-not-found' });
+      setActionMessage('Rezervasyon kaydedilemedi: masa bulunamadi');
+      return;
+    }
     const depositAmount = Math.max(Number(reservationDraft.deposit.replace(',', '.')) || 0, 0);
     if (depositAmount > 0 && reservationDraft.depositMethod === 'account' && !reservationDraft.depositAccountId) {
       setActionMessage('Cari kapora için hesap seçin');
@@ -1436,7 +1448,11 @@ export function FloorWorkspace() {
 
   function quickClearTable(tableId: string) {
     const target = displayTableRows.find((table) => table.id === tableId);
-    if (!target) return;
+    if (!target) {
+      console.error('[business-flow] quick clear table failed', { tableId, reason: 'table-not-found' });
+      setActionMessage('Masa temizlenemedi: masa bulunamadi');
+      return;
+    }
 
     const nextOrders = { ...ordersByTable, [tableId]: [] };
     persistOrders(nextOrders);
@@ -1679,7 +1695,17 @@ export function FloorWorkspace() {
 
   function handleSelectTable(tableId: string) {
     if (actionMode) {
-      if (!isTargetCandidate(tableId)) return;
+      if (!isTargetCandidate(tableId)) {
+        console.error('[business-flow] table action target rejected', {
+          actionType: actionMode.type,
+          sourceId: actionMode.sourceId,
+          targetId: tableId,
+        });
+        setActionMessage(actionMode.type === 'move'
+          ? 'Tasima icin bos ve uygun hedef masa secin'
+          : 'Birlestirme icin uygun hedef masa secin');
+        return;
+      }
       if (actionMode.type === 'move') {
         performMove(actionMode.sourceId, tableId);
         return;
@@ -1700,7 +1726,11 @@ export function FloorWorkspace() {
   }
 
   function handleDragMove(sourceId: string, targetId: string) {
-    if (sourceId === targetId) return;
+    if (sourceId === targetId) {
+      console.error('[business-flow] table drag move rejected', { sourceId, targetId, reason: 'same-table' });
+      setActionMessage('Masa kendi uzerine tasinamaz');
+      return;
+    }
     const sourceTable = displayTableRows.find((table) => table.id === sourceId);
     const targetTable = displayTableRows.find((table) => table.id === targetId);
     if (!sourceTable || !targetTable) {
