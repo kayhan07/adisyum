@@ -568,7 +568,7 @@ export async function POST(request: Request) {
         });
 
         if (!existingItem) {
-          throw new Error(`order_line_not_found:${lineId}`);
+          return;
         }
 
         if (nextQuantity <= 0) {

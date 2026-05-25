@@ -678,6 +678,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const holdIntervalRef = useRef<number | null>(null);
   const productSearchRef = useRef<HTMLInputElement | null>(null);
   const lastPaymentGuardRef = useRef<{ tableId: string; total: number; at: number } | null>(null);
+  const lineMutationInFlightRef = useRef<Set<string>>(new Set());
   const previousItemCountsRef = useRef<Record<string, number>>({});
   const orderMutationGuardRef = useRef<PendingMutation | null>(null);
   const recordPosClickDebug = (event: string, snapshot: Omit<PosClickDebugSnapshot, 'event' | 'at'>) => {
@@ -2078,6 +2079,18 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
   const persistLineMutation = async (input: { action: 'update_line_quantity' | 'remove_line'; lineId: string; quantity?: number; tableId: string }) => {
     const mutationId = `${input.tableId}-${input.lineId}-${input.action}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const inFlightKey = `${input.tableId}:${input.lineId}`;
+    if (lineMutationInFlightRef.current.has(inFlightKey)) {
+      console.warn('[business-flow] line mutation skipped while in flight', {
+        tableId: input.tableId,
+        lineId: input.lineId,
+        action: input.action,
+        quantity: input.quantity,
+      });
+      setFeedbackMessage('Bu satir guncelleniyor. Bir saniye sonra tekrar deneyin.');
+      return;
+    }
+    lineMutationInFlightRef.current.add(inFlightKey);
     try {
       logOrderFlow('line-mutation-start', {
         tableId: input.tableId,
@@ -2126,6 +2139,8 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         error,
       });
       setFeedbackMessage('Adisyon degisikligi kaydedilemedi. Sayfayi yenileyip tekrar deneyin.');
+    } finally {
+      lineMutationInFlightRef.current.delete(inFlightKey);
     }
   };
 
