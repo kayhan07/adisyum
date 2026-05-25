@@ -569,7 +569,10 @@ export default function SystemAdminPage() {
 
   async function saveTenant() {
     const pkg = selectedPackage(tenantDraft.package_id);
-    if (!tenantDraft.company_name.trim() || !tenantDraft.admin_username.trim() || !tenantDraft.admin_password.trim()) return;
+    if (!tenantDraft.company_name.trim() || !tenantDraft.admin_username.trim() || !tenantDraft.admin_password.trim()) {
+      setProvisioningMessage('Tenant olusturmak icin firma adi, admin kullanici adi ve sifre zorunlu.');
+      return;
+    }
     setProvisioningLoading(true);
     setProvisioningMessage('');
     const response = await fetch('/api/system-admin/tenants', {

@@ -2825,7 +2825,10 @@ function ProductsPageContent() {
 
   function addCategory() {
     const trimmed = newCategoryName.trim();
-    if (!trimmed) return;
+    if (!trimmed) {
+      setSavedNotes((current) => ['Kategori adi girin.', ...current]);
+      return;
+    }
     const allowed = getCategoryDomainDefinition(trimmed).allowedProductTypes;
     if (!allowed.includes(activeDraftProductType)) {
       setSavedNotes((current) => [
@@ -3172,7 +3175,10 @@ function ProductsPageContent() {
   }
 
   function saveNewItem() {
-    if (!newItemDraft.name.trim()) return;
+    if (!newItemDraft.name.trim()) {
+      setSavedNotes((current) => ['Urun veya hammadde adi girin.', ...current]);
+      return;
+    }
     const draftProductType = productTypeForCreateItemType(newItemDraft.itemType);
     const coercedCategory = coerceCategoryForProductType(newItemDraft.category, draftProductType, categories);
     const validation = validateProductDomainGraph({
@@ -3280,7 +3286,10 @@ function ProductsPageContent() {
 
   function saveQuickSaleItem() {
     const trimmedName = quickSaleDraft.name.trim();
-    if (!trimmedName) return;
+    if (!trimmedName) {
+      setSavedNotes((current) => ['Hizli satis urunu adi girin.', ...current]);
+      return;
+    }
     const quickCategory = coerceCategoryForProductType(quickSaleDraft.category, 'sale_product', categories);
     const quickValidation = validateProductDomainGraph({
       name: trimmedName,
@@ -3573,9 +3582,15 @@ function ProductsPageContent() {
   }
 
   function addPoolDraftLine() {
-    if (!newRecipeIngredientId) return;
+    if (!newRecipeIngredientId) {
+      setSavedNotes((current) => ['Recete havuzu icin hammadde secin.', ...current]);
+      return;
+    }
     const quantity = newRecipeQuantity.trim();
-    if (!quantity) return;
+    if (!quantity) {
+      setSavedNotes((current) => ['Recete havuzu icin miktar girin.', ...current]);
+      return;
+    }
 
     setPoolDraftLines((current) => [
       ...current,
@@ -3591,7 +3606,10 @@ function ProductsPageContent() {
   }
 
   function publishPoolDraftVersion() {
-    if (!selectedPoolRecipe || poolDraftLines.length === 0) return;
+    if (!selectedPoolRecipe || poolDraftLines.length === 0) {
+      setSavedNotes((current) => ['Yayinlanacak recete ve en az bir hammadde satiri gerekli.', ...current]);
+      return;
+    }
 
     const latestVersionNo =
       recipeVersions
@@ -3616,9 +3634,15 @@ function ProductsPageContent() {
   }
 
   function addRecipeLine() {
-    if (!selectedProduct || !newRecipeIngredientId) return;
+    if (!selectedProduct || !newRecipeIngredientId) {
+      setSavedNotes((current) => ['Recete eklemek icin satis urunu ve hammadde secin.', ...current]);
+      return;
+    }
     const quantity = newRecipeQuantity.trim();
-    if (!quantity) return;
+    if (!quantity) {
+      setSavedNotes((current) => ['Recete satiri icin miktar girin.', ...current]);
+      return;
+    }
 
     writeProductRecipeLines([
       ...selectedProductRecipeLines,

@@ -1505,7 +1505,11 @@ export function FloorWorkspace() {
   function performMerge(sourceId: string, targetId: string, selectedLineIds?: string[]) {
     const sourceTable = displayTableRows.find((table) => table.id === sourceId);
     const targetTable = displayTableRows.find((table) => table.id === targetId);
-    if (!sourceTable || !targetTable) return;
+    if (!sourceTable || !targetTable) {
+      console.error('[business-flow] table merge failed', { sourceId, targetId, reason: 'missing-table' });
+      setActionMessage('Masa birlestirme basarisiz: kaynak veya hedef masa bulunamadi');
+      return;
+    }
 
     const sourceOrders = ordersByTable[sourceId] ?? [];
     const selectedSet = selectedLineIds ? new Set(selectedLineIds) : null;
@@ -1603,7 +1607,11 @@ export function FloorWorkspace() {
   function performMove(sourceId: string, targetId: string) {
     const sourceTable = displayTableRows.find((table) => table.id === sourceId);
     const targetTable = displayTableRows.find((table) => table.id === targetId);
-    if (!sourceTable || !targetTable) return;
+    if (!sourceTable || !targetTable) {
+      console.error('[business-flow] table move failed', { sourceId, targetId, reason: 'missing-table' });
+      setActionMessage('Masa tasima basarisiz: kaynak veya hedef masa bulunamadi');
+      return;
+    }
 
     const sourceOrders = ordersByTable[sourceId] ?? [];
     persistOrders({
@@ -1695,7 +1703,11 @@ export function FloorWorkspace() {
     if (sourceId === targetId) return;
     const sourceTable = displayTableRows.find((table) => table.id === sourceId);
     const targetTable = displayTableRows.find((table) => table.id === targetId);
-    if (!sourceTable || !targetTable) return;
+    if (!sourceTable || !targetTable) {
+      console.error('[business-flow] table drag move failed', { sourceId, targetId, reason: 'missing-table' });
+      setActionMessage('Surukle birak tasima basarisiz: masa bulunamadi');
+      return;
+    }
 
     const sourceOrders = ordersByTable[sourceId] ?? [];
     if (sourceOrders.length === 0) {
@@ -1721,7 +1733,11 @@ export function FloorWorkspace() {
   }
 
   function confirmSelectedMerge() {
-    if (!mergeSelectionPanel) return;
+    if (!mergeSelectionPanel) {
+      console.error('[business-flow] selected table transfer failed', { reason: 'missing-selection-panel' });
+      setActionMessage('Secili urun aktarimi basarisiz: aktarim paneli bulunamadi');
+      return;
+    }
     const selectedIds = Object.entries(mergeSelectionPanel.selected)
       .filter(([, selected]) => selected)
       .map(([lineId]) => lineId);

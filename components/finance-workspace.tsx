@@ -554,6 +554,7 @@ function InvoiceWindow() {
   function saveNewStockCard() {
     const trimmedName = newStockName.trim();
     if (!trimmedName) {
+      setSavedInvoices((current) => ['Stok/urun karti icin ad girin.', ...current]);
       return;
     }
 
@@ -1100,7 +1101,10 @@ function StockProductsWindow() {
 
   function saveStockCard() {
     const trimmedName = stockCardName.trim();
-    if (!trimmedName) return;
+    if (!trimmedName) {
+      setStockCardSavedMessage('Kart adi girin.');
+      return;
+    }
 
     if (stockCardItemType === 'raw' && activeRawIngredientId) {
       const originalIngredientName = getIngredient(activeRawIngredientId)?.name ?? activeRawIngredientId;
@@ -1363,7 +1367,13 @@ function CollectionWindow() {
 
   function saveTransaction() {
     const numericAmount = Number(amount.replace(',', '.')) || 0;
-    if (numericAmount <= 0 || !currentAccount) return;
+    if (numericAmount <= 0 || !currentAccount) {
+      setSaved((current) => [{
+        text: !currentAccount ? 'Cari hesap secin.' : 'Gecerli tutar girin.',
+        direction: mode === 'collection' ? 'in' : 'out',
+      }, ...current]);
+      return;
+    }
     const transactionType = mode === 'collection'
       ? currentAccount.type === 'partner'
         ? 'customer_payment'
