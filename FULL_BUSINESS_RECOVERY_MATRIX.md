@@ -8,47 +8,48 @@ Scope: Adisyum POS/ERP business recovery only. No architecture expansion, no new
 
 | Flow | Code status | Risk class | Notes |
 | --- | --- | --- | --- |
-| Masa -> adisyon -> urun ekleme | Pass, live QA required | API/DB | Click, payload, optimistic UI and `/api/pos/table-orders` flow is active. Production must confirm 200 with authenticated session. |
+| Masa -> adisyon -> urun ekleme | WORKING, live QA required | API/DB | Click, payload, optimistic UI and `/api/pos/table-orders` flow is active. Production must confirm 200 with authenticated session. |
+| Urun silme / adet degisimi | WORKING, live QA required | DB persistence | Increment, decrement, return and delete now persist through `/api/pos/table-orders` using existing order item rows, then reconcile authoritative table state. |
 | Hesap alma / masa kapatma | Pass, live QA required | Ledger/table cleanup | Full payment closes local table state and calls `close_table_payment`. |
-| Masa tasima | Pass, guarded | State cleanup | Missing source/target table now surfaces `[business-flow]` error and UI message. |
-| Masa birlestirme | Pass, guarded | Merge integrity | Missing source/target table now surfaces `[business-flow]` error and UI message. |
-| Secili urun aktarimi | Pass, guarded | Partial transfer | Missing selection panel now surfaces `[business-flow]` error and UI message. |
-| KDS sync | Pending live QA | Sync visibility | Product insertion must be verified against KDS screen after backend 200. |
+| Masa tasima | WORKING, guarded | State cleanup | Missing source/target table now surfaces `[business-flow]` error and UI message. |
+| Masa birlestirme | WORKING, guarded | Merge integrity | Missing source/target table now surfaces `[business-flow]` error and UI message. |
+| Secili urun aktarimi | WORKING, guarded | Partial transfer | Missing selection panel now surfaces `[business-flow]` error and UI message. |
+| KDS sync | PARTIAL, live QA required | Sync visibility | Product insertion must be verified against KDS screen after backend 200. |
 
 ## Gunluk Rapor / Kasa
 
 | Flow | Code status | Risk class | Notes |
 | --- | --- | --- | --- |
-| Gun sonu snapshot | Pending live QA | Report duplication | Existing guard blocks open tables before end-of-day. Manual duplicate report test required. |
-| Ana kasa aktarimi | Pending live QA | Ledger consistency | Cash/account movement helpers are still existing owners. |
-| Devir bakiyesi | Pending live QA | Balance correctness | Requires live tenant data verification. |
+| Gun sonu snapshot | PARTIAL, live QA required | Report duplication | Existing guard blocks open tables before end-of-day. Manual duplicate report test required. |
+| Ana kasa aktarimi | PARTIAL, live QA required | Ledger consistency | Cash/account movement helpers are still existing owners. |
+| Devir bakiyesi | PARTIAL, live QA required | Balance correctness | Requires live tenant data verification. |
 
 ## Urunler
 
 | Flow | Code status | Risk class | Notes |
 | --- | --- | --- | --- |
-| Kategori ekleme | Pass | Persistence/cache | Custom categories persist after refresh; empty category is no longer silent. |
-| Hammadde ekleme | Pass, guarded | Product domain | Empty name is no longer silent. POS catalog exclusion remains intentional. |
-| Satis urunu ekleme | Pass, guarded | Catalog visibility | Empty name is no longer silent; catalog refresh must be live verified. |
-| Hizli satis urunu | Pass, guarded | Catalog visibility | Empty quick product name is no longer silent. |
-| Recete satiri | Pass, guarded | Stock deduction | Missing product/ingredient/quantity now shows feedback. |
-| Recete havuzu yayinlama | Pass, guarded | Versioning | Empty recipe publish is no longer silent. |
+| Kategori ekleme | WORKING | Persistence/cache | Custom categories persist after refresh; empty category is no longer silent. |
+| Hammadde ekleme | WORKING, guarded | Product domain | Empty name is no longer silent. POS catalog exclusion remains intentional. |
+| Satis urunu ekleme | WORKING, guarded | Catalog visibility | Empty name is no longer silent; catalog refresh must be live verified. |
+| Hizli satis urunu | WORKING, guarded | Catalog visibility | Empty quick product name is no longer silent. |
+| Recete satiri | WORKING, guarded | Stock deduction | Missing product/ingredient/quantity now shows feedback. |
+| Recete havuzu yayinlama | WORKING, guarded | Versioning | Empty recipe publish is no longer silent. |
 
 ## Cari / Kasa
 
 | Flow | Code status | Risk class | Notes |
 | --- | --- | --- | --- |
-| Tahsilat | Pass, guarded | Ledger | Missing account or invalid amount now shows feedback. |
-| Odeme | Pass, guarded | Ledger | Missing account or invalid amount now shows feedback. |
-| Stok/urun karti | Pass, guarded | Product/stock | Empty stock card names are no longer silent. |
+| Tahsilat | WORKING, guarded | Ledger | Missing account or invalid amount now shows feedback. |
+| Odeme | WORKING, guarded | Ledger | Missing account or invalid amount now shows feedback. |
+| Stok/urun karti | WORKING, guarded | Product/stock | Empty stock card names are no longer silent. |
 
 ## System Admin
 
 | Flow | Code status | Risk class | Notes |
 | --- | --- | --- | --- |
-| Yeni tenant olusturma | Pass, guarded | Tenant lifecycle | Missing company/admin/password now shows provisioning feedback. |
-| Temiz tenant baslangici | Pending live QA | Tenant isolation | Must verify new tenant has no demo/cross-tenant product, stock, cari or kasa data. |
-| Sifre degistirme / sure uzatma | Pending live QA | Subscription ownership | Existing screens/routes require manual validation. |
+| Yeni tenant olusturma | WORKING, guarded | Tenant lifecycle | Missing company/admin/password now shows provisioning feedback. |
+| Temiz tenant baslangici | PARTIAL, live QA required | Tenant isolation | Must verify new tenant has no demo/cross-tenant product, stock, cari or kasa data. |
+| Sifre degistirme / sure uzatma | PARTIAL, live QA required | Subscription ownership | Existing screens/routes require manual validation. |
 
 ## Silent Failure Cleanup
 

@@ -312,6 +312,8 @@ function normalizeTableOrderMutationBody(body: unknown) {
     tableId: stringField(record, ['tableId', 'tableKey', 'tableNo', 'table_id', 'table_key', 'table_no'])
       ?? stringField(table, ['id', 'key', 'no', 'tableId', 'tableKey', 'tableNo'])
       ?? '',
+    lineId: stringField(record, ['lineId', 'orderItemId', 'line_id', 'order_item_id']),
+    quantity: numberField(record, ['quantity', 'qty']),
     product,
     receivedItem,
   };
@@ -507,6 +509,119 @@ export async function POST(request: Request) {
 
     traceId = mutationTraceId(normalizedBody.mutationId);
     tableId = normalizedBody.tableId;
+    if (normalizedBody.action === 'update_line_quantity' || normalizedBody.action === 'remove_line') {
+      const lineId = normalizedBody.lineId;
+      const nextQuantity = normalizedBody.action === 'remove_line'
+        ? 0
+        : Math.max(0, Number(normalizedBody.quantity ?? 0) || 0);
+
+      if (!tableId || !lineId) {
+        return runtimeInsertionErrorResponse({
+          status: 400,
+          reason: !tableId ? 'missing_tableId' : 'missing_lineId',
+          traceId,
+          tenantId,
+          branchId: tenant.branchId,
+          tableId,
+        });
+      }
+
+      const orderNo = tableOrderNo(tableId);
+      const order = await prisma.order.findUnique({
+        where: { tenantId_orderNo: { tenantId, orderNo } },
+        select: { id: true, metadata: true },
+      });
+
+      if (!order) {
+        return runtimeInsertionErrorResponse({
+          status: 404,
+          reason: 'order_not_found',
+          traceId,
+          tenantId,
+          branchId: tenant.branchId,
+          tableId,
+          details: { lineId },
+        });
+      }
+
+      await prisma.$transaction(async (tx) => {
+        const existingItem = await tx.orderItem.findFirst({
+          where: { tenantId, orderId: order.id, id: lineId },
+          select: { id: true, unitPrice: true, metadata: true },
+        });
+
+        if (!existingItem) {
+          throw new Error(`order_line_not_found:${lineId}`);
+        }
+
+        if (nextQuantity <= 0) {
+          await tx.orderItem.delete({ where: { id: lineId, tenantId } });
+        } else {
+          const metadata = normalizeMetadata(existingItem.metadata);
+          await tx.orderItem.update({
+            where: { id: lineId, tenantId },
+            data: {
+              quantity: nextQuantity,
+              total: getLineSubtotal({
+                qty: nextQuantity,
+                price: decimalToNumber(existingItem.unitPrice),
+                complimentary: Boolean(metadata.complimentary),
+                isReturn: Boolean(metadata.isReturn),
+              }),
+              metadata: compactJsonObject({
+                ...metadata,
+                qty: nextQuantity,
+                sentQty: Math.min(typeof metadata.sentQty === 'number' ? metadata.sentQty : 0, nextQuantity),
+                mutationId: normalizedBody.mutationId,
+                updatedAtMs: Date.now(),
+              }),
+            },
+          });
+        }
+
+        const nextItems = await tx.orderItem.findMany({
+          where: { tenantId, orderId: order.id },
+          select: { quantity: true, unitPrice: true, metadata: true },
+        });
+        const subtotal = nextItems.reduce((sum, item) => {
+          const metadata = normalizeMetadata(item.metadata);
+          return sum + getLineSubtotal({
+            qty: decimalToNumber(item.quantity),
+            price: decimalToNumber(item.unitPrice),
+            complimentary: Boolean(metadata.complimentary),
+            isReturn: Boolean(metadata.isReturn),
+          });
+        }, 0);
+        const taxTotal = Number((subtotal * VAT_RATE).toFixed(2));
+        await tx.order.update({
+          where: { id: order.id, tenantId },
+          data: {
+            status: nextItems.length > 0 ? 'open' : 'paid',
+            subtotal,
+            taxTotal,
+            total: Number((subtotal + taxTotal).toFixed(2)),
+            metadata: {
+              ...normalizeMetadata(order.metadata),
+              tableKey: tableId,
+              lastMutationId: normalizedBody.mutationId,
+              updatedAtMs: Date.now(),
+            },
+          },
+        });
+      });
+
+      await publishTenantEvent(tenantId, 'orders', {
+        type: normalizedBody.action === 'remove_line' ? 'order.item.removed' : 'order.item.quantity_updated',
+        tableId,
+        lineId,
+        quantity: nextQuantity,
+        mutationId: normalizedBody.mutationId,
+      }).catch(() => undefined);
+
+      const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId);
+      return NextResponse.json({ ok: true, source: 'db', mutationId: normalizedBody.mutationId, ordersByTable });
+    }
+
     if (normalizedBody.action === 'close_table_payment' || normalizedBody.action === 'payment_completed') {
       if (!tableId) {
         return runtimeInsertionErrorResponse({

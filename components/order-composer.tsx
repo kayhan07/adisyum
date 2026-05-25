@@ -2076,14 +2076,73 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     setSplitSelection(Object.fromEntries(lines.map((line) => [line.id, 0])) as Record<string, number>);
   };
 
+  const persistLineMutation = async (input: { action: 'update_line_quantity' | 'remove_line'; lineId: string; quantity?: number; tableId: string }) => {
+    const mutationId = `${input.tableId}-${input.lineId}-${input.action}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    try {
+      logOrderFlow('line-mutation-start', {
+        tableId: input.tableId,
+        lineId: input.lineId,
+        action: input.action,
+        quantity: input.quantity,
+        mutationId,
+      });
+      const response = await runtimeFetch('/api/pos/table-orders', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: input.action,
+          tableId: input.tableId,
+          lineId: input.lineId,
+          quantity: input.quantity,
+          mutationId,
+        }),
+      });
+      const payload = await response.json().catch(() => null) as { ok?: boolean; ordersByTable?: Record<string, OrderLine[]>; error?: string; reason?: string } | null;
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.reason ?? payload?.error ?? `line mutation failed (${response.status})`);
+      }
+      if (payload.ordersByTable) {
+        const nextOrders = normalizeStoredOrders(payload.ordersByTable, sourceProducts);
+        setOrdersByTable((current) => {
+          const merged = reconcileAuthoritativeOrders(current, nextOrders, 'mutation-result');
+          replaceAuthoritativeOrdersByTable(merged);
+          persistTableLiveTotals({ [input.tableId]: getOrderGross(merged[input.tableId] ?? EMPTY_ORDER_LINES) });
+          return merged;
+        });
+      }
+      logOrderFlow('line-mutation-complete', {
+        tableId: input.tableId,
+        lineId: input.lineId,
+        action: input.action,
+        quantity: input.quantity,
+        mutationId,
+      });
+    } catch (error) {
+      console.error('[business-flow] line mutation failed', {
+        tableId: input.tableId,
+        lineId: input.lineId,
+        action: input.action,
+        quantity: input.quantity,
+        error,
+      });
+      setFeedbackMessage('Adisyon degisikligi kaydedilemedi. Sayfayi yenileyip tekrar deneyin.');
+    }
+  };
+
   const changeLineQuantity = (lineId: string, delta: number) => {
     if (!currentTable) return;
     updatePaymentRequested(currentTable.id, false);
+    const tableId = currentTable.id;
 
     setOrdersByTable((current) => {
       rememberUndo(current, 'Adisyon g\u00fcncellendi');
-      const currentLines = current[currentTable.id] ?? [];
+      const currentLines = current[tableId] ?? [];
       const target = currentLines.find((line) => line.id === lineId);
+      if (!target) {
+        console.error('[business-flow] line quantity change failed', { tableId, lineId, delta, reason: 'line-not-found' });
+        setFeedbackMessage('Adisyon satiri bulunamadi.');
+        return current;
+      }
       const nextLines = currentLines
         .map((line) => {
           if (line.id !== lineId) {
@@ -2100,7 +2159,14 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         .filter((line) => line.qty > 0);
 
       setFeedbackMessage(delta > 0 ? `${target?.name ?? '\u00dcr\u00fcn'} art\u0131r\u0131ld\u0131` : `${target?.name ?? '\u00dcr\u00fcn'} azalt\u0131ld\u0131`);
-      return { ...current, [currentTable.id]: nextLines };
+      const nextTarget = nextLines.find((line) => line.id === lineId);
+      void persistLineMutation({
+        action: nextTarget ? 'update_line_quantity' : 'remove_line',
+        tableId,
+        lineId,
+        quantity: nextTarget?.qty ?? 0,
+      });
+      return { ...current, [tableId]: nextLines };
     });
 
     setLastMutatedLineId(lineId);
@@ -2109,11 +2175,17 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const returnLine = (lineId: string) => {
     if (!currentTable) return;
     updatePaymentRequested(currentTable.id, false);
+    const tableId = currentTable.id;
 
     setOrdersByTable((current) => {
       rememberUndo(current, 'Ürün iade alındı');
-      const currentLines = current[currentTable.id] ?? [];
+      const currentLines = current[tableId] ?? [];
       const target = currentLines.find((line) => line.id === lineId);
+      if (!target) {
+        console.error('[business-flow] line return failed', { tableId, lineId, reason: 'line-not-found' });
+        setFeedbackMessage('Iade alinacak satir bulunamadi.');
+        return current;
+      }
       const nextLines = currentLines
         .map((line) => {
           if (line.id !== lineId) {
@@ -2130,7 +2202,14 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         .filter((line) => line.qty > 0);
 
       setFeedbackMessage(`${target?.name ?? 'Ürün'} iade alindi`);
-      return { ...current, [currentTable.id]: nextLines };
+      const nextTarget = nextLines.find((line) => line.id === lineId);
+      void persistLineMutation({
+        action: nextTarget ? 'update_line_quantity' : 'remove_line',
+        tableId,
+        lineId,
+        quantity: nextTarget?.qty ?? 0,
+      });
+      return { ...current, [tableId]: nextLines };
     });
 
     setLastMutatedLineId(lineId);
@@ -2139,15 +2218,22 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const removeLine = (lineId: string) => {
     if (!currentTable) return;
     updatePaymentRequested(currentTable.id, false);
+    const tableId = currentTable.id;
 
     setOrdersByTable((current) => {
       rememberUndo(current, 'Ürün silindi');
-      const currentLines = current[currentTable.id] ?? [];
+      const currentLines = current[tableId] ?? [];
       const target = currentLines.find((line) => line.id === lineId);
+      if (!target) {
+        console.error('[business-flow] line remove failed', { tableId, lineId, reason: 'line-not-found' });
+        setFeedbackMessage('Silinecek satir bulunamadi.');
+        return current;
+      }
       const nextLines = currentLines.filter((line) => line.id !== lineId);
 
       setFeedbackMessage(`${target?.name ?? 'Ürün'} silindi`);
-      return { ...current, [currentTable.id]: nextLines };
+      void persistLineMutation({ action: 'remove_line', tableId, lineId, quantity: 0 });
+      return { ...current, [tableId]: nextLines };
     });
 
     setLastMutatedLineId(lineId);
