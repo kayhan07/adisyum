@@ -78,7 +78,8 @@ export function loadTableLayoutState() {
         ? parsed.tables
         : getDefaultTableLayoutState().tables,
     } satisfies TableLayoutState;
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] table layout load failed', error);
     return getDefaultTableLayoutState();
   }
 }
@@ -89,8 +90,8 @@ export function saveTableLayoutState(state: TableLayoutState) {
   try {
     writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(state));
     emitChange();
-  } catch {
-    // ignore storage errors
+  } catch (error) {
+    console.error('[business-flow] table layout save failed', error);
   }
 }
 

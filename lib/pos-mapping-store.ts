@@ -163,7 +163,8 @@ export function loadProductMappings(): ProductMapping[] {
       writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(seeded));
     }
     return seeded;
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] product mappings load failed', error);
     return [];
   }
 }

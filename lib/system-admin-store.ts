@@ -228,7 +228,8 @@ export function loadSystemAdminState(): SystemAdminState {
     const parsed = mergeDefaultState(JSON.parse(raw));
     const hasDemo = parsed.tenants.some((tenant) => tenant.tenant_id === 'ABN-48291');
     return hasDemo ? parsed : { ...parsed, tenants: [...defaultState.tenants, ...parsed.tenants] };
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] system-admin state load failed', error);
     return defaultState;
   }
 }

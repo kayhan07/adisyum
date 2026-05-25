@@ -28,7 +28,8 @@ export function loadStoredRawIngredients() {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? (parsed as StoredRawIngredient[]) : [];
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] raw ingredients load failed', error);
     return [];
   }
 }
@@ -43,7 +44,7 @@ export function saveStoredRawIngredients(items: StoredRawIngredient[]) {
       (item) => !incomingKeys.has(item.id) && !incomingKeys.has(normalizeIngredientKey(item.name)),
     );
     writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify([...items, ...preserved]));
-  } catch {
-    // ignore storage errors in demo env
+  } catch (error) {
+    console.error('[business-flow] raw ingredients save failed', error);
   }
 }

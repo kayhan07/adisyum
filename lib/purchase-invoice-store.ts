@@ -34,7 +34,8 @@ export function loadStoredPurchaseInvoices(): StoredPurchaseInvoice[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as StoredPurchaseInvoice[];
     return Array.isArray(parsed) ? parsed : [];
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] purchase invoices load failed', error);
     return [];
   }
 }
@@ -55,8 +56,8 @@ export function saveStoredPurchaseInvoices(invoices: StoredPurchaseInvoice[]) {
     });
     writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(merged));
     emitChange();
-  } catch {
-    // no-op
+  } catch (error) {
+    console.error('[business-flow] purchase invoices save failed', error);
   }
 }
 

@@ -54,7 +54,8 @@ function loadCustomTreasuryAccounts(): TreasuryAccount[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as TreasuryAccount[];
     return Array.isArray(parsed) ? parsed : [];
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] custom treasury accounts load failed', error);
     return [];
   }
 }

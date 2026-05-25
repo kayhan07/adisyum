@@ -340,7 +340,8 @@ export function loadIntegrationState() {
       printerMappings: Array.isArray(parsed.printerMappings) ? parsed.printerMappings : DEFAULT_STATE.printerMappings,
       printLogs: Array.isArray(parsed.printLogs) ? parsed.printLogs : DEFAULT_STATE.printLogs,
     } satisfies IntegrationState;
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] integration state load failed', error);
     return getDefaultIntegrationState();
   }
 }
@@ -357,8 +358,8 @@ export function saveIntegrationState(state: IntegrationState) {
       printerSettings: normalizePrinterSettings(state.printerSettings, printerDevices),
     }));
     emitChange();
-  } catch {
-    // ignore
+  } catch (error) {
+    console.error('[business-flow] integration state save failed', error);
   }
 }
 

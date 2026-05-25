@@ -720,7 +720,8 @@ function loadRawStockCountOverrides() {
       acc[key] = { currentQuantity, lastCountedAt };
       return acc;
     }, {});
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] raw stock count overrides load failed', error);
     return {} as Record<string, RawStockCountOverride>;
   }
 }
@@ -730,8 +731,8 @@ function saveRawStockCountOverrides(overrides: Record<string, RawStockCountOverr
 
   try {
     writeRuntimeItem('tenant', RAW_STOCK_COUNT_STORAGE_KEY, JSON.stringify(overrides));
-  } catch {
-    // ignore storage errors in demo env
+  } catch (error) {
+    console.error('[business-flow] raw stock count overrides save failed', error);
   }
 }
 

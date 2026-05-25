@@ -57,7 +57,8 @@ export function loadBranchState() {
       branches: Array.isArray(parsed.branches) ? parsed.branches : DEFAULT_STATE.branches,
       transfers: Array.isArray(parsed.transfers) ? parsed.transfers : DEFAULT_STATE.transfers,
     } satisfies BranchState;
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] branch state load failed', error);
     return DEFAULT_STATE;
   }
 }
@@ -67,8 +68,8 @@ export function saveBranchState(state: BranchState) {
   try {
     writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(state));
     emitChange();
-  } catch {
-    // ignore
+  } catch (error) {
+    console.error('[business-flow] branch state save failed', error);
   }
 }
 

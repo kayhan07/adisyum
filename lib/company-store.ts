@@ -48,7 +48,8 @@ export function loadCompanyState(): CompanyState {
       ...getDefaultCompanyState(),
       ...(JSON.parse(raw) as Partial<CompanyState>),
     };
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] company state load failed', error);
     return getDefaultCompanyState();
   }
 }

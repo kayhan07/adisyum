@@ -56,7 +56,8 @@ export function loadStoredTableReservations() {
 
     const parsed = JSON.parse(raw) as StoredTableReservation[];
     return Array.isArray(parsed) ? uniqueById(parsed) : [];
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] table reservations load failed', error);
     return [];
   }
 }

@@ -101,7 +101,8 @@ export function loadAccessState() {
       customRoles: Array.isArray(parsed.customRoles) ? parsed.customRoles : DEFAULT_STATE.customRoles,
       users,
     } satisfies AccessState;
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] access state load failed', error);
     return DEFAULT_STATE;
   }
 }
@@ -111,8 +112,8 @@ export function saveAccessState(state: AccessState) {
   try {
     writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(state));
     emitChange();
-  } catch {
-    // ignore
+  } catch (error) {
+    console.error('[business-flow] access state save failed', error);
   }
 }
 

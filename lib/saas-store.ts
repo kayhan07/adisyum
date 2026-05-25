@@ -208,7 +208,8 @@ function loadStoredPackages(): StoredPackageDefinition[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as { packages?: StoredPackageDefinition[] };
     return Array.isArray(parsed?.packages) ? parsed.packages : [];
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] stored packages load failed', error);
     return [];
   }
 }

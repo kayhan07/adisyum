@@ -88,7 +88,8 @@ export function loadWarehouses(): Warehouse[] {
     // Ensure main warehouse is always first
     const hasMain = parsed.some((w) => w.id === MAIN_WAREHOUSE_ID);
     return hasMain ? parsed : [MAIN_WAREHOUSE, ...parsed];
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] warehouses load failed', error);
     return [MAIN_WAREHOUSE];
   }
 }
@@ -102,8 +103,8 @@ export function saveWarehouses(warehouses: Warehouse[]): void {
       (warehouse) => warehouse.id,
     );
     writeRuntimeItem('tenant', WAREHOUSES_KEY, JSON.stringify(merged));
-  } catch {
-    // ignore
+  } catch (error) {
+    console.error('[business-flow] warehouses save failed', error);
   }
 }
 
@@ -118,7 +119,8 @@ export function loadAllWarehouseStocks(): Record<string, WarehouseStockLine[]> {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return {};
     return parsed as Record<string, WarehouseStockLine[]>;
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] warehouse stocks load failed', error);
     return {};
   }
 }
@@ -128,8 +130,8 @@ export function saveAllWarehouseStocks(stocks: Record<string, WarehouseStockLine
 
   try {
     writeRuntimeItem('tenant', WAREHOUSE_STOCKS_KEY, JSON.stringify(stocks));
-  } catch {
-    // ignore
+  } catch (error) {
+    console.error('[business-flow] warehouse stocks save failed', error);
   }
 }
 
@@ -158,7 +160,8 @@ export function loadTransferRecords(): TransferRecord[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? (parsed as TransferRecord[]) : [];
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] warehouse transfers load failed', error);
     return [];
   }
 }
@@ -172,8 +175,8 @@ export function saveTransferRecords(records: TransferRecord[]): void {
       (record) => record.id,
     );
     writeRuntimeItem('tenant', WAREHOUSE_TRANSFERS_KEY, JSON.stringify(merged));
-  } catch {
-    // ignore
+  } catch (error) {
+    console.error('[business-flow] warehouse transfers save failed', error);
   }
 }
 

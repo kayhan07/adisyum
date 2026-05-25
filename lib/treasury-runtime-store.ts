@@ -38,7 +38,8 @@ export function loadStoredTreasuryMovements() {
 
     const parsed = JSON.parse(raw) as TreasuryMovement[];
     return Array.isArray(parsed) ? parsed : [];
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] treasury movements load failed', error);
     return [];
   }
 }
@@ -52,8 +53,8 @@ export function saveStoredTreasuryMovements(movements: TreasuryMovement[]) {
     const merged = uniqueById([...movements, ...loadStoredTreasuryMovements()]);
     writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(merged));
     emitChange();
-  } catch {
-    // ignore storage errors in demo env
+  } catch (error) {
+    console.error('[business-flow] treasury movements save failed', error);
   }
 }
 

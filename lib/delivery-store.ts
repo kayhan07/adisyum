@@ -69,7 +69,8 @@ export function loadDeliveryState(): DeliveryState {
       couriers: Array.isArray(parsed.couriers) ? parsed.couriers : getDefaultDeliveryState().couriers,
       orders: Array.isArray(parsed.orders) ? parsed.orders : [],
     };
-  } catch {
+  } catch (error) {
+    console.error('[business-flow] delivery state load failed', error);
     return getDefaultDeliveryState();
   }
 }
