@@ -2817,7 +2817,33 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     }
   };
 
-  const completePayment = () => {
+  const closePaidTableOrder = async (tableId: string, amount: number) => {
+    const mutationId = `${tableId}-payment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const response = await runtimeFetch('/api/pos/table-orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'close_table_payment',
+        mutationId,
+        tableId,
+        payment: {
+          amount: roundCurrency(amount),
+          method: paymentMethod,
+          scope: paymentScope,
+        },
+      }),
+    });
+    const payload = await response.json().catch(() => null) as { ok?: boolean; ordersByTable?: Record<string, OrderLine[]>; error?: string } | null;
+    if (!response.ok || !payload?.ok) {
+      throw new Error(payload?.error ?? `Masa kapatma istegi basarisiz: ${response.status}`);
+    }
+    if (payload.ordersByTable) {
+      replaceAuthoritativeOrdersByTable(payload.ordersByTable);
+      setOrdersByTable(payload.ordersByTable);
+    }
+  };
+
+  const completePayment = async () => {
     if (!currentTable || lines.length === 0 || !hasPermission('payments.take')) {
       console.error('[business-flow] payment complete blocked', {
         currentTableId: currentTable?.id,
@@ -2998,6 +3024,8 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       rememberUndo(current, `${paymentLabel} tahsilat\u0131`);
       return { ...current, [currentTableId]: [] };
     });
+    replaceAuthoritativeOrdersByTable({ ...ordersByTable, [currentTableId]: [] });
+    persistTableLiveTotals({ [currentTableId]: 0 });
 
     setPaymentOpen(false);
     setPaymentScope('full');
@@ -3012,6 +3040,14 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       tableId: currentTableId,
       amount: paymentTargetTotal,
       paymentMethod,
+    });
+    void closePaidTableOrder(currentTableId, paymentTargetTotal).catch((error) => {
+      console.error('[business-flow] payment table close failed', {
+        tableId: currentTableId,
+        amount: paymentTargetTotal,
+        error,
+      });
+      setFeedbackMessage('Tahsilat kaydedildi ancak masa kapatma sunucuya yazilamadi. Masalar ekranini yenileyip kontrol edin.');
     });
     setDiscountRateInput('0');
     setRoundingDiscountEnabled(false);

@@ -307,6 +307,7 @@ function normalizeTableOrderMutationBody(body: unknown) {
   const receivedItem = extractProductItem(record);
   const product = normalizeProductMutationPayload(receivedItem);
   return {
+    action: stringField(record, ['action', 'type', 'mutationType']),
     mutationId: stringField(record, ['mutationId', 'mutation_id', 'clientMutationId']),
     tableId: stringField(record, ['tableId', 'tableKey', 'tableNo', 'table_id', 'table_key', 'table_no'])
       ?? stringField(table, ['id', 'key', 'no', 'tableId', 'tableKey', 'tableNo'])
@@ -506,6 +507,54 @@ export async function POST(request: Request) {
 
     traceId = mutationTraceId(normalizedBody.mutationId);
     tableId = normalizedBody.tableId;
+    if (normalizedBody.action === 'close_table_payment' || normalizedBody.action === 'payment_completed') {
+      if (!tableId) {
+        return runtimeInsertionErrorResponse({
+          status: 400,
+          reason: 'missing_tableId',
+          traceId,
+          tenantId,
+          branchId: tenant.branchId,
+          tableId,
+        });
+      }
+
+      const orderNo = tableOrderNo(tableId);
+      const order = await prisma.order.findUnique({
+        where: { tenantId_orderNo: { tenantId, orderNo } },
+        select: { id: true, metadata: true },
+      });
+
+      if (order) {
+        await prisma.$transaction(async (tx) => {
+          await tx.orderItem.deleteMany({ where: { tenantId, orderId: order.id } });
+          await tx.order.update({
+            where: { id: order.id, tenantId },
+            data: {
+              status: 'paid',
+              metadata: {
+                ...normalizeMetadata(order.metadata),
+                tableKey: tableId,
+                lastMutationId: normalizedBody.mutationId,
+                paidAt: new Date().toISOString(),
+                closedBy: 'pos-table-orders',
+                updatedAtMs: Date.now(),
+              },
+            },
+          });
+        });
+      }
+
+      await publishTenantEvent(tenantId, 'orders', {
+        type: 'order.paid',
+        tableId,
+        mutationId: normalizedBody.mutationId,
+      }).catch(() => undefined);
+
+      const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId);
+      return NextResponse.json({ ok: true, source: 'db', mutationId: normalizedBody.mutationId, ordersByTable });
+    }
+
     const product = normalizedBody.product;
     let productSnapshot = product?.productSnapshot && typeof product.productSnapshot === 'object'
       ? product.productSnapshot
