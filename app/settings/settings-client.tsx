@@ -344,7 +344,7 @@ export default function SettingsPage() {
 
     for (let attempt = 1; attempt <= retries; attempt += 1) {
       try {
-        await fetchLocalAgentJson<unknown>('/printers');
+        await fetchLocalAgentJson<unknown>('/health');
         setAgentStatus('online');
         return true;
       } catch (error) {

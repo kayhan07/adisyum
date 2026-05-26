@@ -15,6 +15,7 @@ type LocalAgentFetchInit = RequestInit & {
 };
 
 const PROXY_ROUTES: Record<string, string> = {
+  '/health': '/api/printers/local-agent',
   '/printers': '/api/printers/local-agent',
   '/print': '/api/printers/local-agent/print',
 };
@@ -50,7 +51,8 @@ async function fetchDirectLocalAgent(path: string, options: LocalAgentRequestOpt
 
   for (const base of directLocalAgentBases()) {
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 8000);
+    const timeoutMs = path === '/printers' ? 30000 : 5000;
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       console.info('[business-flow] trying direct local agent', { base, path });
