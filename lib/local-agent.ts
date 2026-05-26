@@ -35,11 +35,51 @@ export function getLocalBridgeHealthUrl() {
 }
 
 export function getLocalAgentBaseHint() {
-  return `${HTTP_BASES[0]} / ${HTTP_BASES[1]} veya ${HTTPS_BASES[0]} / ${HTTPS_BASES[1]} (proxy: /api/printers/local-agent)`;
+  return `${HTTP_BASES[0]} / ${HTTP_BASES[1]} (yedek proxy: /api/printers/local-agent)`;
+}
+
+function directLocalAgentBases() {
+  return [...HTTP_BASES, ...HTTPS_BASES];
+}
+
+async function fetchDirectLocalAgent(path: string, options: LocalAgentRequestOptions = {}) {
+  let lastError: unknown = null;
+
+  for (const base of directLocalAgentBases()) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 2500);
+
+    try {
+      const response = await fetch(`${base}${path}`, {
+        method: options.method ?? 'GET',
+        cache: 'no-store',
+        mode: 'cors',
+        credentials: 'omit',
+        headers: {
+          ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+          ...(options.headers ?? {}),
+        },
+        body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        lastError = new Error(`Local agent status ${response.status}`);
+        continue;
+      }
+
+      return { response, base };
+    } catch (error) {
+      lastError = error;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
+  throw (lastError ?? new Error('Local agent erişilemedi.'));
 }
 
 export async function fetchFromLocalAgent(path: string, options: LocalAgentRequestOptions = {}) {
-  const proxyRoute = PROXY_ROUTES[path] ?? '/api/printers/local-agent';
   const nextBody = (() => {
     if (path !== '/print' || options.body === undefined || options.body === null || typeof options.body !== 'object') {
       return options.body;
@@ -50,9 +90,21 @@ export async function fetchFromLocalAgent(path: string, options: LocalAgentReque
       return body;
     }
 
-    return { ...body, source: 'proxy:local-agent-client' };
+    return { ...body, source: 'local-agent-client' };
   })();
 
+  if (typeof window !== 'undefined') {
+    try {
+      return await fetchDirectLocalAgent(path, { ...options, body: nextBody });
+    } catch (error) {
+      console.warn('[business-flow] direct local agent fetch failed; trying proxy fallback', {
+        path,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  const proxyRoute = PROXY_ROUTES[path] ?? '/api/printers/local-agent';
   const response = await runtimeFetch(proxyRoute as `/api/${string}`, {
     method: options.method ?? 'GET',
     cache: 'no-store',
