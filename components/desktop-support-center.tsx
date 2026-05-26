@@ -92,6 +92,7 @@ export function DesktopSupportCenter() {
 
   const downloads = useMemo(() => metadata?.files ?? fallbackDownloads, [metadata]);
   const releaseDate = metadata?.releasedAt ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium' }).format(new Date(metadata.releasedAt)) : 'Kontrol ediliyor';
+  const shortBuildId = metadata?.buildId ? metadata.buildId.replace(/^windows-/, '').slice(-8) : 'kontrol';
 
   function trackDownload(fileName: string) {
     const payload = JSON.stringify({ fileName, version: metadata?.version, status: 'started', source: 'desktop-support-center' });
@@ -142,6 +143,9 @@ export function DesktopSupportCenter() {
                   {ready ? 'Geçerli EXE' : 'Yayın dışı'}
                 </span>
                 <span className="rounded-full bg-white/5 px-2 py-1">{item.fileName}</span>
+                <span className="rounded-full bg-cyan-500/10 px-2 py-1 text-cyan-100">v{metadata?.version ?? '...'}</span>
+                <span className="rounded-full bg-white/5 px-2 py-1">sha {item.sha256.slice(0, 8)}</span>
+                <span className="rounded-full bg-white/5 px-2 py-1">build {shortBuildId}</span>
               </div>
               <span className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-cyan-100">
                 <Download className="h-4 w-4" />
