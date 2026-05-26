@@ -91,7 +91,16 @@ export async function POST(request: Request) {
       targetDeviceId: job.targetDeviceId,
       printerName: job.printerName,
       mutationId: job.mutationId,
-    }).catch(() => undefined);
+    }).catch((eventError) => {
+      console.warn('[print-requests] tenant event publish failed', {
+        timestamp: new Date().toISOString(),
+        tenantId: tenant.tenantId,
+        jobId: job.id,
+        targetDeviceId: job.targetDeviceId,
+        mutationId: job.mutationId,
+        error: eventError instanceof Error ? eventError.message : String(eventError),
+      });
+    });
 
     return NextResponse.json({ ok: true, job });
   } catch (error) {

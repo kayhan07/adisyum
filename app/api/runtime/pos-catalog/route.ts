@@ -58,7 +58,16 @@ export async function POST(request: Request) {
       catalogRevision: catalog.catalogRevision,
       itemCount: catalog.itemCount,
       checksum: catalog.checksum,
-    }).catch(() => undefined);
+    }).catch((eventError) => {
+      console.warn('[runtime-pos-catalog] tenant event publish failed', {
+        timestamp: new Date().toISOString(),
+        tenantId: tenant.tenantId,
+        branchId,
+        channel,
+        catalogRevision: catalog.catalogRevision,
+        error: eventError instanceof Error ? eventError.message : String(eventError),
+      });
+    });
 
     return NextResponse.json({ ok: true, catalog });
   } catch (error) {

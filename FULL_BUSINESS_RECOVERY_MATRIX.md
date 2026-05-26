@@ -19,6 +19,7 @@ Scope: Adisyum POS/ERP business recovery only. No architecture expansion, no new
 | KDS sync | PARTIAL, live QA required | Sync visibility | Product insertion must be verified against KDS screen after backend 200. |
 | Multi-terminal same table | PARTIAL, live QA required | Reconciliation | Line edits publish tenant order events and return authoritative table state. Requires two-browser live proof for add/delete/quantity/payment. |
 | Hesap adisyonu yazdirma | WORKING, guarded | UI dead action | Disabled or invalid print attempts now surface `[business-flow]` console errors and UI feedback instead of silently returning. |
+| POS/API side-effect visibility | WORKING, guarded | Hidden async failure | Table-order tenant events, operational event recording, POS catalog publication, printer queue event publishing and runtime state delete misses now log contextual warnings instead of disappearing silently. |
 
 ## Gunluk Rapor / Kasa
 

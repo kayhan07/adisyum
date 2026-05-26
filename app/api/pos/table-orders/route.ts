@@ -633,7 +633,17 @@ export async function POST(request: Request) {
         lineId,
         quantity: nextQuantity,
         mutationId: normalizedBody.mutationId,
-      }).catch(() => undefined);
+      }).catch((eventError) => {
+        console.warn('[pos-table-orders] tenant event publish failed', {
+          timestamp: new Date().toISOString(),
+          tenantId,
+          tableId,
+          lineId,
+          mutationId: normalizedBody.mutationId,
+          eventType: normalizedBody.action === 'remove_line' ? 'order.item.removed' : 'order.item.quantity_updated',
+          error: eventError instanceof Error ? eventError.message : String(eventError),
+        });
+      });
 
       const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId);
       return NextResponse.json({ ok: true, source: 'db', mutationId: normalizedBody.mutationId, ordersByTable });
@@ -681,7 +691,16 @@ export async function POST(request: Request) {
         type: 'order.paid',
         tableId,
         mutationId: normalizedBody.mutationId,
-      }).catch(() => undefined);
+      }).catch((eventError) => {
+        console.warn('[pos-table-orders] tenant event publish failed', {
+          timestamp: new Date().toISOString(),
+          tenantId,
+          tableId,
+          mutationId: normalizedBody.mutationId,
+          eventType: 'order.paid',
+          error: eventError instanceof Error ? eventError.message : String(eventError),
+        });
+      });
 
       const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId);
       return NextResponse.json({ ok: true, source: 'db', mutationId: normalizedBody.mutationId, ordersByTable });
@@ -1413,7 +1432,16 @@ export async function POST(request: Request) {
       type: 'order.updated',
       tableId,
       mutationId,
-    }).catch(() => undefined);
+    }).catch((eventError) => {
+      console.warn('[pos-table-orders] tenant event publish failed', {
+        timestamp: new Date().toISOString(),
+        tenantId,
+        tableId,
+        mutationId,
+        eventType: 'order.updated',
+        error: eventError instanceof Error ? eventError.message : String(eventError),
+      });
+    });
     await recordOperationalEvent({
       tenantId,
       branchId: tenant.branchId,
@@ -1432,7 +1460,18 @@ export async function POST(request: Request) {
         quantityToAdd,
         lineCount: updatedLineCount,
       },
-    }).catch(() => undefined);
+    }).catch((eventError) => {
+      console.warn('[pos-table-orders] operational event record failed', {
+        timestamp: new Date().toISOString(),
+        tenantId,
+        branchId: tenant.branchId,
+        userId: tenant.userId,
+        tableId,
+        mutationId,
+        productId: product?.id,
+        error: eventError instanceof Error ? eventError.message : String(eventError),
+      });
+    });
 
     const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId);
     logTableOrderEvent('response-ready', {

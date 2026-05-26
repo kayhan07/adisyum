@@ -159,7 +159,15 @@ export async function DELETE(request: Request, context: { params: Promise<{ scop
     tenantId = target.tenantId;
     await prisma.runtimeState.delete({
       where: runtimeStateTenantKey(target.tenantId, target.key),
-    }).catch(() => undefined);
+    }).catch((deleteError) => {
+      console.warn('[runtime-state] delete skipped or failed', {
+        timestamp: new Date().toISOString(),
+        tenantId: target.tenantId,
+        key: target.key,
+        scope,
+        error: deleteError instanceof Error ? deleteError.message : String(deleteError),
+      });
+    });
 
     recordRequestMetric({
       tenantId,
