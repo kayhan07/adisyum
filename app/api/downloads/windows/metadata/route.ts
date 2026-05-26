@@ -17,8 +17,10 @@ type DownloadFile = {
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round((bytes / 1024) * 10) / 10} KB`;
-  return `${Math.round((bytes / 1024 / 1024) * 10) / 10} MB`;
+  if (bytes < 1024 * 1024) return `${Math.round((bytes / 1000) * 10) / 10} KB`;
+  const decimalMb = Math.round((bytes / 1000 / 1000) * 10) / 10;
+  const binaryMib = Math.round((bytes / 1024 / 1024) * 10) / 10;
+  return `${decimalMb} MB / ${binaryMib} MiB`;
 }
 
 function isWindowsExecutable(filePath: string, sizeBytes: number) {
