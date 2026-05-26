@@ -183,7 +183,7 @@ function withSecurityHeaders(response: NextResponse) {
   response.headers.set('x-content-type-options', 'nosniff');
   response.headers.set('x-frame-options', 'DENY');
   response.headers.set('referrer-policy', 'strict-origin-when-cross-origin');
-  response.headers.set('permissions-policy', 'camera=(), microphone=(), geolocation=()');
+  response.headers.set('permissions-policy', 'camera=(), microphone=(), geolocation=(), local-network-access=(self), loopback-network=(self)');
   response.headers.set(
     'content-security-policy',
     "default-src 'self'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https: ws: wss: http://127.0.0.1:4891 http://localhost:4891 https://127.0.0.1:3443 https://localhost:3443; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",

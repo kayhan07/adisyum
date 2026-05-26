@@ -10,6 +10,10 @@ type LocalAgentRequestOptions = {
   headers?: Record<string, string>;
 };
 
+type LocalAgentFetchInit = RequestInit & {
+  targetAddressSpace?: 'local' | 'loopback' | 'private' | 'public';
+};
+
 const PROXY_ROUTES: Record<string, string> = {
   '/printers': '/api/printers/local-agent',
   '/print': '/api/printers/local-agent/print',
@@ -50,18 +54,21 @@ async function fetchDirectLocalAgent(path: string, options: LocalAgentRequestOpt
 
     try {
       console.info('[business-flow] trying direct local agent', { base, path });
-      const response = await fetch(`${base}${path}`, {
+      const init: LocalAgentFetchInit = {
         method: options.method ?? 'GET',
         cache: 'no-store',
         mode: 'cors',
         credentials: 'omit',
+        targetAddressSpace: 'loopback',
         headers: {
           ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
           ...(options.headers ?? {}),
         },
         body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
         signal: controller.signal,
-      });
+      };
+
+      const response = await fetch(`${base}${path}`, init);
 
       if (!response.ok) {
         lastError = new Error(`Local agent status ${response.status}`);
