@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing.Printing;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -98,6 +99,11 @@ namespace AdisyumPosAgentInstaller
         private const string RunArg = "--run-agent";
         private const string ServiceName = "AdisyumDesktopBridge";
         private const string TaskName = "AdisyumDesktopBridge";
+        private static readonly string PrinterCachePath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "Adisyum",
+            "DesktopBridge",
+            "printer-cache.json");
 
         private static int Main(string[] args)
         {
@@ -391,18 +397,265 @@ namespace AdisyumPosAgentInstaller
             WriteText(response, "Not found", "text/plain; charset=utf-8");
         }
 
-        private static List<string> GetInstalledPrinters()
+        private static List<PrinterInventoryItem> GetInstalledPrinters()
         {
-            var printers = new List<string>();
-            foreach (string printer in PrinterSettings.InstalledPrinters)
+            var discovered = new Dictionary<string, PrinterInventoryItem>(StringComparer.OrdinalIgnoreCase);
+            var diagnostics = new List<object>();
+
+            foreach (var method in GetDiscoveryMethods())
             {
-                if (!string.IsNullOrWhiteSpace(printer))
+                try
                 {
-                    printers.Add(printer);
+                    var rows = ParseJsonRows(RunPowerShell(method.Script));
+                    var accepted = 0;
+                    foreach (var row in rows)
+                    {
+                        var printer = NormalizePrinter(row, method.Name);
+                        if (printer == null) continue;
+                        if (discovered.TryGetValue(printer.Name, out var existing))
+                        {
+                            discovered[printer.Name] = MergePrinter(existing, printer);
+                        }
+                        else
+                        {
+                            discovered[printer.Name] = printer;
+                        }
+
+                        accepted += 1;
+                    }
+
+                    diagnostics.Add(new { method = method.Name, ok = true, count = accepted });
+                }
+                catch (Exception ex)
+                {
+                    diagnostics.Add(new { method = method.Name, ok = false, error = ex.Message });
+                    Console.Error.WriteLine("[adisyum-agent] printer discovery method failed: " + method.Name + " " + ex.Message);
                 }
             }
 
+            try
+            {
+                foreach (string name in PrinterSettings.InstalledPrinters)
+                {
+                    if (string.IsNullOrWhiteSpace(name)) continue;
+                    var fallback = new PrinterInventoryItem
+                    {
+                        Name = name.Trim(),
+                        DriverName = string.Empty,
+                        PortName = string.Empty,
+                        Status = "Installed",
+                        Shared = false,
+                        Default = false,
+                        WorkOffline = false,
+                        Online = true,
+                        ConnectionType = "local",
+                        Escpos = IsEscPosCandidate(name, string.Empty),
+                        Source = "PrinterSettings",
+                        DiscoveredAt = DateTimeOffset.UtcNow,
+                    };
+
+                    if (discovered.TryGetValue(fallback.Name, out var existing))
+                    {
+                        discovered[fallback.Name] = MergePrinter(existing, fallback);
+                    }
+                    else
+                    {
+                        discovered[fallback.Name] = fallback;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                diagnostics.Add(new { method = "PrinterSettings", ok = false, error = ex.Message });
+                Console.Error.WriteLine("[adisyum-agent] PrinterSettings fallback failed: " + ex.Message);
+            }
+
+            var printers = discovered.Values
+                .OrderByDescending(item => item.Default)
+                .ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (printers.Count > 0)
+            {
+                WritePrinterCache(printers, diagnostics);
+                return printers;
+            }
+
+            var cached = ReadPrinterCache();
+            if (cached.Count > 0)
+            {
+                Console.Error.WriteLine("[adisyum-agent] printer discovery empty; returning cached inventory.");
+                return cached;
+            }
+
             return printers;
+        }
+
+        private static IEnumerable<DiscoveryMethod> GetDiscoveryMethods()
+        {
+            return new[]
+            {
+                new DiscoveryMethod("Get-Printer", "Get-Printer | Select-Object Name,DriverName,PortName,PrinterStatus,Shared,Type | ConvertTo-Json -Depth 4"),
+                new DiscoveryMethod("Win32_Printer", "Get-CimInstance Win32_Printer | Select-Object Name,DriverName,PortName,PrinterStatus,Shared,WorkOffline,Default | ConvertTo-Json -Depth 4"),
+                new DiscoveryMethod("WMI-Object", "Get-WmiObject Win32_Printer | Select-Object Name,DriverName,PortName,PrinterStatus,Shared,WorkOffline,Default | ConvertTo-Json -Depth 4"),
+            };
+        }
+
+        private static string RunPowerShell(string script)
+        {
+            var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+            return RunProcessWithOutput("powershell.exe", "-NoProfile -ExecutionPolicy Bypass -EncodedCommand " + encoded, 10000);
+        }
+
+        private static string RunProcessWithOutput(string fileName, string arguments, int timeoutMs)
+        {
+            using (var process = Process.Start(new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = arguments,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+            }))
+            {
+                if (process == null) throw new InvalidOperationException(fileName + " baslatilamadi.");
+                var stdout = process.StandardOutput.ReadToEnd();
+                var stderr = process.StandardError.ReadToEnd();
+                if (!process.WaitForExit(timeoutMs))
+                {
+                    try { process.Kill(); } catch { }
+                    throw new TimeoutException(fileName + " timeout.");
+                }
+                if (process.ExitCode != 0)
+                {
+                    throw new InvalidOperationException(string.IsNullOrWhiteSpace(stderr) ? fileName + " failed." : stderr);
+                }
+                return stdout ?? string.Empty;
+            }
+        }
+
+        private static IEnumerable<JsonElement> ParseJsonRows(string stdout)
+        {
+            if (string.IsNullOrWhiteSpace(stdout)) return Array.Empty<JsonElement>();
+            using (var jsonDoc = JsonDocument.Parse(stdout))
+            {
+                var root = jsonDoc.RootElement.Clone();
+                if (root.ValueKind == JsonValueKind.Array) return root.EnumerateArray().Select(item => item.Clone()).ToArray();
+                if (root.ValueKind == JsonValueKind.Object) return new[] { root };
+            }
+            return Array.Empty<JsonElement>();
+        }
+
+        private static PrinterInventoryItem NormalizePrinter(JsonElement row, string source)
+        {
+            var name = ReadString(row, "Name");
+            if (string.IsNullOrWhiteSpace(name)) return null;
+            var driverName = ReadString(row, "DriverName");
+            var portName = ReadString(row, "PortName");
+            var status = ReadString(row, "PrinterStatus");
+            var workOffline = ReadBool(row, "WorkOffline");
+
+            return new PrinterInventoryItem
+            {
+                Name = name.Trim(),
+                DriverName = driverName,
+                PortName = portName,
+                Status = string.IsNullOrWhiteSpace(status) ? "Ready" : status,
+                Shared = ReadBool(row, "Shared"),
+                Default = ReadBool(row, "Default"),
+                WorkOffline = workOffline,
+                Online = !workOffline && status != "7" && !status.Equals("Offline", StringComparison.OrdinalIgnoreCase),
+                ConnectionType = InferConnectionType(portName, name),
+                Escpos = IsEscPosCandidate(name, driverName),
+                Source = source,
+                DiscoveredAt = DateTimeOffset.UtcNow,
+            };
+        }
+
+        private static PrinterInventoryItem MergePrinter(PrinterInventoryItem existing, PrinterInventoryItem next)
+        {
+            return new PrinterInventoryItem
+            {
+                Name = existing.Name,
+                DriverName = string.IsNullOrWhiteSpace(existing.DriverName) ? next.DriverName : existing.DriverName,
+                PortName = string.IsNullOrWhiteSpace(existing.PortName) ? next.PortName : existing.PortName,
+                Status = string.IsNullOrWhiteSpace(existing.Status) ? next.Status : existing.Status,
+                Shared = existing.Shared || next.Shared,
+                Default = existing.Default || next.Default,
+                WorkOffline = existing.WorkOffline && next.WorkOffline,
+                Online = existing.Online || next.Online,
+                ConnectionType = existing.ConnectionType == "local" ? next.ConnectionType : existing.ConnectionType,
+                Escpos = existing.Escpos || next.Escpos,
+                Source = existing.Source + "," + next.Source,
+                DiscoveredAt = DateTimeOffset.UtcNow,
+            };
+        }
+
+        private static string ReadString(JsonElement row, string propertyName)
+        {
+            if (!row.TryGetProperty(propertyName, out var value)) return string.Empty;
+            return value.ValueKind == JsonValueKind.String ? value.GetString() ?? string.Empty : value.ToString();
+        }
+
+        private static bool ReadBool(JsonElement row, string propertyName)
+        {
+            if (!row.TryGetProperty(propertyName, out var value)) return false;
+            if (value.ValueKind == JsonValueKind.True) return true;
+            if (value.ValueKind == JsonValueKind.False) return false;
+            return bool.TryParse(value.ToString(), out var parsed) && parsed;
+        }
+
+        private static string InferConnectionType(string portName, string printerName)
+        {
+            var normalized = ((portName ?? string.Empty) + " " + (printerName ?? string.Empty)).ToLowerInvariant();
+            if (normalized.Contains("usb") || normalized.Contains("dot4")) return "usb";
+            if (normalized.Contains("ip_") || normalized.Contains("tcp") || normalized.Contains("9100")) return "network";
+            if (normalized.StartsWith("\\\\")) return "shared";
+            if (normalized.Contains("nul") || normalized.Contains("file:")) return "virtual";
+            return "local";
+        }
+
+        private static bool IsEscPosCandidate(string name, string driverName)
+        {
+            var normalized = ((name ?? string.Empty) + " " + (driverName ?? string.Empty)).ToLowerInvariant();
+            var tokens = new[] { "thermal", "receipt", "pos", "esc", "epson", "xprinter", "bixolon", "star", "citizen", "rongta", "sunmi" };
+            return tokens.Any(token => normalized.Contains(token));
+        }
+
+        private static List<PrinterInventoryItem> ReadPrinterCache()
+        {
+            try
+            {
+                if (!File.Exists(PrinterCachePath)) return new List<PrinterInventoryItem>();
+                var cache = JsonSerializer.Deserialize<PrinterInventoryCache>(File.ReadAllText(PrinterCachePath));
+                return cache?.Printers ?? new List<PrinterInventoryItem>();
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("[adisyum-agent] printer cache read failed: " + ex.Message);
+                return new List<PrinterInventoryItem>();
+            }
+        }
+
+        private static void WritePrinterCache(List<PrinterInventoryItem> printers, List<object> diagnostics)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(PrinterCachePath));
+                var cache = new PrinterInventoryCache
+                {
+                    SavedAt = DateTimeOffset.UtcNow,
+                    Printers = printers,
+                    Diagnostics = diagnostics,
+                };
+                File.WriteAllText(PrinterCachePath, JsonSerializer.Serialize(cache));
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("[adisyum-agent] printer cache write failed: " + ex.Message);
+            }
         }
 
         private static void WriteJson(HttpListenerResponse response, object payload)
@@ -427,6 +680,41 @@ namespace AdisyumPosAgentInstaller
             public string BytesBase64 { get; set; }
             public string Source      { get; set; }
             public string Mode        { get; set; }
+        }
+
+        private sealed class DiscoveryMethod
+        {
+            public DiscoveryMethod(string name, string script)
+            {
+                Name = name;
+                Script = script;
+            }
+
+            public string Name { get; }
+            public string Script { get; }
+        }
+
+        private sealed class PrinterInventoryItem
+        {
+            public string Name { get; set; }
+            public string DriverName { get; set; }
+            public string PortName { get; set; }
+            public string Status { get; set; }
+            public bool Shared { get; set; }
+            public bool Default { get; set; }
+            public bool WorkOffline { get; set; }
+            public bool Online { get; set; }
+            public string ConnectionType { get; set; }
+            public bool Escpos { get; set; }
+            public string Source { get; set; }
+            public DateTimeOffset DiscoveredAt { get; set; }
+        }
+
+        private sealed class PrinterInventoryCache
+        {
+            public DateTimeOffset SavedAt { get; set; }
+            public List<PrinterInventoryItem> Printers { get; set; }
+            public List<object> Diagnostics { get; set; }
         }
     }
 }

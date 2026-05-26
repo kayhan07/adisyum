@@ -1,7 +1,7 @@
 {
-  "version": "0.1.4",
-  "buildId": "windows-1779794811108",
-  "releasedAt": "2026-05-26T11:26:51.108Z",
+  "version": "0.1.5",
+  "buildId": "windows-1779802106884",
+  "releasedAt": "2026-05-26T13:28:26.884Z",
   "mandatory": false,
   "channel": "latest",
   "appVersion": "0.1.0",
@@ -15,32 +15,32 @@
     {
       "name": "Adisyum Desktop",
       "fileName": "AdisyumDesktopSetup.exe",
-      "sha256": "6c458d1d3a731441064bba393475fd6dddbc604ed724f67e2cb08fd60e81bc9e",
-      "sizeBytes": 85927999,
+      "sha256": "54ff6abbdba45e97fdd350caf9b07e19d7058e77cb20a44703e26058b4dd67ab",
+      "sizeBytes": 85927977,
       "mandatory": false,
       "component": "desktop",
       "path": "/downloads/windows/latest/AdisyumDesktopSetup.exe",
-      "versionedPath": "/downloads/windows/v0.1.4/AdisyumDesktopSetup.exe"
+      "versionedPath": "/downloads/windows/v0.1.5/AdisyumDesktopSetup.exe"
     },
     {
       "name": "Printer Bridge",
       "fileName": "PrinterBridgeSetup.exe",
-      "sha256": "ba915ffdfd41b0972b46dd2f20c61abf51972d49fdbe30004f1ea581eb352ea5",
-      "sizeBytes": 69239825,
+      "sha256": "30f434e4d62989860a8d5d82a50f47e35cca7d585d47b848b5c8a5bca3f4003e",
+      "sizeBytes": 69254673,
       "mandatory": false,
       "component": "printer-bridge",
       "path": "/downloads/windows/latest/PrinterBridgeSetup.exe",
-      "versionedPath": "/downloads/windows/v0.1.4/PrinterBridgeSetup.exe"
+      "versionedPath": "/downloads/windows/v0.1.5/PrinterBridgeSetup.exe"
     },
     {
       "name": "Fiscal POS Bridge",
       "fileName": "FiscalPosBridgeSetup.exe",
-      "sha256": "ba915ffdfd41b0972b46dd2f20c61abf51972d49fdbe30004f1ea581eb352ea5",
-      "sizeBytes": 69239825,
+      "sha256": "30f434e4d62989860a8d5d82a50f47e35cca7d585d47b848b5c8a5bca3f4003e",
+      "sizeBytes": 69254673,
       "mandatory": false,
       "component": "fiscal-pos-bridge",
       "path": "/downloads/windows/latest/FiscalPosBridgeSetup.exe",
-      "versionedPath": "/downloads/windows/v0.1.4/FiscalPosBridgeSetup.exe"
+      "versionedPath": "/downloads/windows/v0.1.5/FiscalPosBridgeSetup.exe"
     }
   ]
 }
