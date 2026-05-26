@@ -30,40 +30,40 @@ const fallbackDownloads: DownloadItem[] = [
     name: 'Adisyum Desktop',
     fileName: 'AdisyumDesktopSetup.exe',
     path: '/downloads/windows/latest/AdisyumDesktopSetup.exe',
-    versionedPath: '/downloads/windows/v0.1.5/AdisyumDesktopSetup.exe',
-    url: 'https://adisyum.com/downloads/windows/v0.1.5/AdisyumDesktopSetup.exe?v=windows-1779802106884',
+    versionedPath: '/downloads/windows/v0.1.6/AdisyumDesktopSetup.exe',
+    url: 'https://adisyum.com/downloads/windows/v0.1.6/AdisyumDesktopSetup.exe?v=windows-1779822987588',
     exists: true,
     executable: true,
     healthy: true,
-    sizeBytes: 85927977,
-    sizeLabel: '81.9 MB (85.927.977 byte)',
-    sha256: '54ff6abbdba45e97fdd350caf9b07e19d7058e77cb20a44703e26058b4dd67ab',
+    sizeBytes: 85928011,
+    sizeLabel: '81.9 MB (85.928.011 byte)',
+    sha256: '5b62f38475242011cba5f6e7485af34da92273f4315191310752162fa516a0d2',
   },
   {
     name: 'Printer Bridge',
     fileName: 'PrinterBridgeSetup.exe',
     path: '/downloads/windows/latest/PrinterBridgeSetup.exe',
-    versionedPath: '/downloads/windows/v0.1.5/PrinterBridgeSetup.exe',
-    url: 'https://adisyum.com/downloads/windows/v0.1.5/PrinterBridgeSetup.exe?v=windows-1779802106884',
+    versionedPath: '/downloads/windows/v0.1.6/PrinterBridgeSetup.exe',
+    url: 'https://adisyum.com/downloads/windows/v0.1.6/PrinterBridgeSetup.exe?v=windows-1779822987588',
     exists: true,
     executable: true,
     healthy: true,
-    sizeBytes: 69254673,
-    sizeLabel: '66 MB (69.254.673 byte)',
-    sha256: '30f434e4d62989860a8d5d82a50f47e35cca7d585d47b848b5c8a5bca3f4003e',
+    sizeBytes: 69260817,
+    sizeLabel: '66.1 MB (69.260.817 byte)',
+    sha256: 'ba8f413d590adc2b2eff30de774ed9f759b88e58eaee2dc97e604a7861978453',
   },
   {
     name: 'Fiscal POS Bridge',
     fileName: 'FiscalPosBridgeSetup.exe',
     path: '/downloads/windows/latest/FiscalPosBridgeSetup.exe',
-    versionedPath: '/downloads/windows/v0.1.5/FiscalPosBridgeSetup.exe',
-    url: 'https://adisyum.com/downloads/windows/v0.1.5/FiscalPosBridgeSetup.exe?v=windows-1779802106884',
+    versionedPath: '/downloads/windows/v0.1.6/FiscalPosBridgeSetup.exe',
+    url: 'https://adisyum.com/downloads/windows/v0.1.6/FiscalPosBridgeSetup.exe?v=windows-1779822987588',
     exists: true,
     executable: true,
     healthy: true,
-    sizeBytes: 69254673,
-    sizeLabel: '66 MB (69.254.673 byte)',
-    sha256: '30f434e4d62989860a8d5d82a50f47e35cca7d585d47b848b5c8a5bca3f4003e',
+    sizeBytes: 69260817,
+    sizeLabel: '66.1 MB (69.260.817 byte)',
+    sha256: 'ba8f413d590adc2b2eff30de774ed9f759b88e58eaee2dc97e604a7861978453',
   },
 ];
 
@@ -97,8 +97,8 @@ export function DesktopSupportCenter() {
   }, []);
 
   const downloads = useMemo(() => metadata?.files ?? fallbackDownloads, [metadata]);
-  const releaseVersion = metadata?.version ?? '0.1.5';
-  const releaseBuildId = metadata?.buildId ?? 'windows-1779802106884';
+  const releaseVersion = metadata?.version ?? '0.1.6';
+  const releaseBuildId = metadata?.buildId ?? 'windows-1779822987588';
   const releaseDate = metadata?.releasedAt ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium' }).format(new Date(metadata.releasedAt)) : '26 May 2026';
   const shortBuildId = releaseBuildId.replace(/^windows-/, '').slice(-8);
 

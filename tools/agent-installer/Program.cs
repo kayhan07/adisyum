@@ -94,7 +94,6 @@ namespace AdisyumPosAgentInstaller
 
     internal static class Program
     {
-        private const string ListenPrefix = "http://127.0.0.1:3001/";
         private const string LocalApiPrefix = "http://127.0.0.1:4891/";
         private const string RunArg = "--run-agent";
         private const string ServiceName = "AdisyumDesktopBridge";
@@ -104,9 +103,15 @@ namespace AdisyumPosAgentInstaller
             "Adisyum",
             "DesktopBridge",
             "printer-cache.json");
+        private static readonly string BridgeLogPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "Adisyum",
+            "DesktopBridge",
+            "bridge.log");
 
         private static int Main(string[] args)
         {
+            Console.OutputEncoding = Encoding.UTF8;
             if (args != null)
             {
                 foreach (var arg in args)
@@ -121,7 +126,17 @@ namespace AdisyumPosAgentInstaller
 
             try
             {
+                Console.WriteLine("Adisyum Printer Bridge setup starting...");
+                Console.WriteLine("Administrator: " + (IsAdministrator() ? "yes" : "no"));
                 InstallAndStartAgent();
+                var printers = GetInstalledPrinters();
+                Console.WriteLine("Local API: " + LocalApiPrefix);
+                Console.WriteLine("Printers discovered: " + printers.Count);
+                foreach (var printer in printers.Take(8))
+                {
+                    Console.WriteLine("- " + printer.Name + " [" + printer.ConnectionType + "] " + (printer.Online ? "online" : "offline"));
+                }
+                Console.WriteLine("Refresh Adisyum printer integration and scan again.");
                 Console.WriteLine("Adisyum POS Agent kuruldu ve başlatıldı.");
                 Console.WriteLine("Sayfayı yenileyip agent durumunu kontrol edebilirsiniz.");
                 return 0;
@@ -138,6 +153,7 @@ namespace AdisyumPosAgentInstaller
             var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
             var installDir = Path.Combine(programData, "Adisyum", "DesktopBridge");
             Directory.CreateDirectory(installDir);
+            Console.WriteLine("Install dir: " + installDir);
 
             var currentExe = Process.GetCurrentProcess().MainModule.FileName;
             var targetExe = Path.Combine(installDir, "AdisyumDesktopBridge.exe");
@@ -145,6 +161,7 @@ namespace AdisyumPosAgentInstaller
             if (!string.Equals(currentExe, targetExe, StringComparison.OrdinalIgnoreCase))
             {
                 File.Copy(currentExe, targetExe, true);
+                Console.WriteLine("Bridge copied: " + targetExe);
             }
 
             RegisterWindowsService(targetExe);
@@ -166,19 +183,25 @@ namespace AdisyumPosAgentInstaller
 
         private static void RegisterWindowsService(string targetExe)
         {
-            if (!IsAdministrator()) return;
+            if (!IsAdministrator())
+            {
+                Console.WriteLine("No administrator permission; using user startup fallback.");
+                return;
+            }
 
             RunProcess("sc.exe", "stop " + ServiceName, false);
             RunProcess("sc.exe", "delete " + ServiceName, false);
             RunProcess("sc.exe", "create " + ServiceName + " binPath= \"" + targetExe + " " + RunArg + "\" start= auto DisplayName= \"Adisyum Desktop Bridge\"", true);
             RunProcess("sc.exe", "description " + ServiceName + " \"Adisyum local printer, fiscal POS and offline queue bridge\"", false);
             RunProcess("sc.exe", "failure " + ServiceName + " reset= 60 actions= restart/5000/restart/10000/restart/30000", false);
+            Console.WriteLine("Windows service registered: " + ServiceName);
         }
 
         private static void RegisterStartupTask(string targetExe)
         {
             var args = "/Create /TN \"" + TaskName + "\" /TR \"\\\"" + targetExe + "\\\" " + RunArg + "\" /SC ONLOGON /RL HIGHEST /F";
             RunProcess("schtasks.exe", args, false);
+            Console.WriteLine("Startup task registered: " + TaskName);
         }
 
         private static void StartServiceOrFallback(string targetExe, string installDir)
@@ -196,6 +219,7 @@ namespace AdisyumPosAgentInstaller
             };
 
             Process.Start(info);
+            Console.WriteLine("Bridge agent process started.");
         }
 
         private static bool IsAdministrator()
@@ -243,21 +267,26 @@ namespace AdisyumPosAgentInstaller
                 {
                     var request = WebRequest.Create(LocalApiPrefix + "health");
                     request.Timeout = 1500;
-                    using (var response = request.GetResponse()) { return; }
+                    using (var response = request.GetResponse())
+                    {
+                        Console.WriteLine("Bridge health OK.");
+                        return;
+                    }
                 }
                 catch
                 {
                     System.Threading.Thread.Sleep(500);
                 }
             }
+            throw new TimeoutException("Bridge health endpoint did not answer: " + LocalApiPrefix + "health");
         }
 
         private static void RunAgent()
         {
             var listener = new HttpListener();
-            listener.Prefixes.Add(ListenPrefix);
             listener.Prefixes.Add(LocalApiPrefix);
             listener.Start();
+            Log("Bridge agent listening on " + LocalApiPrefix);
 
             while (true)
             {
@@ -266,8 +295,9 @@ namespace AdisyumPosAgentInstaller
                 {
                     HandleRequest(context);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Log("Request failed: " + ex.Message);
                     context.Response.StatusCode = 500;
                     WriteText(context.Response, "Internal server error", "text/plain; charset=utf-8");
                 }
@@ -311,6 +341,38 @@ namespace AdisyumPosAgentInstaller
             }
 
             var path = request.Url.AbsolutePath.Trim('/').ToLowerInvariant();
+
+            // ---------- GET /health ----------
+            if (request.HttpMethod == "GET" && path == "health")
+            {
+                WriteJson(response, new
+                {
+                    ok = true,
+                    service = "adisyum-desktop-bridge",
+                    localApi = LocalApiPrefix,
+                    startedAt = DateTimeOffset.UtcNow,
+                    printerCachePath = PrinterCachePath,
+                    administrator = IsAdministrator(),
+                });
+                return;
+            }
+
+            // ---------- GET /diagnostics ----------
+            if (request.HttpMethod == "GET" && path == "diagnostics")
+            {
+                var printers = GetInstalledPrinters();
+                WriteJson(response, new
+                {
+                    ok = true,
+                    service = "adisyum-desktop-bridge",
+                    localApi = LocalApiPrefix,
+                    printers = printers,
+                    printerCount = printers.Count,
+                    printerCachePath = PrinterCachePath,
+                    administrator = IsAdministrator(),
+                });
+                return;
+            }
 
             // ---------- GET /printers ----------
             if (request.HttpMethod == "GET" && path == "printers")
@@ -477,6 +539,7 @@ namespace AdisyumPosAgentInstaller
 
             if (printers.Count > 0)
             {
+                Log("Printer discovery returned " + printers.Count + " printer(s).");
                 WritePrinterCache(printers, diagnostics);
                 return printers;
             }
@@ -484,10 +547,11 @@ namespace AdisyumPosAgentInstaller
             var cached = ReadPrinterCache();
             if (cached.Count > 0)
             {
-                Console.Error.WriteLine("[adisyum-agent] printer discovery empty; returning cached inventory.");
+                Log("Printer discovery empty; returning cached inventory with " + cached.Count + " printer(s).");
                 return cached;
             }
 
+            Log("Printer discovery returned no printers.");
             return printers;
         }
 
@@ -672,6 +736,23 @@ namespace AdisyumPosAgentInstaller
             response.ContentEncoding = Encoding.UTF8;
             response.ContentLength64 = bytes.Length;
             response.OutputStream.Write(bytes, 0, bytes.Length);
+        }
+
+        private static void Log(string message)
+        {
+            var line = DateTimeOffset.Now.ToString("O") + " " + message;
+            try
+            {
+                Console.WriteLine(line);
+            }
+            catch { }
+
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(BridgeLogPath));
+                File.AppendAllText(BridgeLogPath, line + Environment.NewLine, Encoding.UTF8);
+            }
+            catch { }
         }
 
         private sealed class PrintPayload
