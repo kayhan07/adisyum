@@ -328,7 +328,8 @@ export default function SettingsPage() {
       }
 
       setMessage('Local agent çalışıyor ancak yazıcı bulunamadı.');
-    } catch {
+    } catch (error) {
+      console.error('[business-flow] system printer scan failed', error);
       setMessage(`Yazıcılar okunamadı. POS bilgisayarında Adisyum Local Agent çalışmalı ve ${getLocalAgentBaseHint()} erişilebilir olmalı.`);
     } finally {
       setPrinterScanLoading(false);
@@ -346,7 +347,12 @@ export default function SettingsPage() {
         await fetchLocalAgentJson<unknown>('/printers');
         setAgentStatus('online');
         return true;
-      } catch {
+      } catch (error) {
+        console.warn('[business-flow] local agent status check failed', {
+          attempt,
+          retries,
+          error: error instanceof Error ? error.message : String(error),
+        });
         if (attempt < retries) {
           await new Promise((resolve) => window.setTimeout(resolve, AGENT_STATUS_RETRY_DELAY_MS));
         }
@@ -357,31 +363,40 @@ export default function SettingsPage() {
     return false;
   }
 
-  async function scanLocalAgentPrinters() {
+  async function scanLocalAgentPrinters(): Promise<{ printers: SystemPrinter[]; error?: string }> {
     try {
       const { data } = await fetchLocalAgentJson<
-        Array<string | { Name?: string; name?: string }>
-        | { ok?: boolean; printers?: Array<string | { Name?: string; name?: string }>; error?: string }
+        Array<string | { Name?: string; name?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string }>
+        | { ok?: boolean; printers?: Array<string | { Name?: string; name?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string }>; error?: string }
       >('/printers');
       const rawPrinters = Array.isArray(data)
         ? data
         : Array.isArray(data.printers)
           ? data.printers
           : [];
-      const names = Array.isArray(rawPrinters)
+      const printers: SystemPrinter[] = Array.isArray(rawPrinters)
         ? rawPrinters
-            .map((item) => (typeof item === 'string' ? item : (item.Name ?? item.name ?? '')))
-            .filter((name): name is string => Boolean(name && name.trim()))
+            .flatMap((item) => {
+              const name = typeof item === 'string' ? item : (item.Name ?? item.name ?? '');
+              if (!name.trim()) return [];
+              const connectionType = typeof item === 'string' || item.connectionType !== 'network' ? 'usb' : 'network';
+              return [{
+                name: name.trim(),
+                driverName: typeof item === 'string' ? '' : item.driverName ?? '',
+                portName: typeof item === 'string' ? '' : item.portName ?? '',
+                status: typeof item === 'string' ? '' : item.status ?? '',
+                shared: typeof item === 'string' ? false : Boolean(item.shared),
+                connectionType: connectionType as PrinterConnectionType,
+                ip: typeof item === 'string' ? '' : item.ip ?? '',
+              }];
+            })
         : [];
 
       return {
-        printers: names.map((name) => ({
-          name,
-          connectionType: 'usb' as const,
-          ip: '',
-        })),
+        printers,
       };
     } catch (error) {
+      console.error('[business-flow] local agent printer scan failed', error);
       return {
         printers: [] as SystemPrinter[],
         error: error instanceof Error ? error.message : 'Local agent erişilemedi.',

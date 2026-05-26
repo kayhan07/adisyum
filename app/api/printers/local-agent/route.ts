@@ -39,12 +39,42 @@ async function fetchLocalAgent(path: string, init?: RequestInit) {
 export async function GET() {
   try {
     const { response, base } = await fetchLocalAgent('/printers');
-    const payload = await response.json() as Array<string | { Name?: string; name?: string }>;
+    const payload = await response.json() as Array<string | {
+      Name?: string;
+      name?: string;
+      driverName?: string;
+      DriverName?: string;
+      portName?: string;
+      PortName?: string;
+      status?: string;
+      PrinterStatus?: string | number;
+      shared?: boolean;
+      Shared?: boolean;
+      default?: boolean;
+      online?: boolean;
+      connectionType?: string;
+      escpos?: boolean;
+      source?: string;
+    }>;
 
     const printers = Array.isArray(payload)
       ? payload
-          .map((item) => (typeof item === 'string' ? item : (item.Name ?? item.name ?? '')))
-          .filter((name): name is string => Boolean(name && name.trim()))
+          .map((item) => {
+            if (typeof item === 'string') return { name: item.trim() };
+            return {
+              name: (item.Name ?? item.name ?? '').trim(),
+              driverName: item.DriverName ?? item.driverName ?? '',
+              portName: item.PortName ?? item.portName ?? '',
+              status: String(item.PrinterStatus ?? item.status ?? ''),
+              shared: Boolean(item.Shared ?? item.shared ?? false),
+              default: Boolean(item.default ?? false),
+              online: item.online !== false,
+              connectionType: item.connectionType ?? 'local',
+              escpos: Boolean(item.escpos ?? false),
+              source: item.source ?? 'local-agent',
+            };
+          })
+          .filter((printer) => Boolean(printer.name))
       : [];
 
     return NextResponse.json({ ok: true, base, printers });

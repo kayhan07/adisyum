@@ -10,6 +10,8 @@ type RawWindowsPrinter = {
   PortName?: string;
   PrinterStatus?: number | string;
   Shared?: boolean;
+  WorkOffline?: boolean;
+  Default?: boolean;
 };
 
 function inferConnectionType(portName = '') {
@@ -52,7 +54,7 @@ export async function GET() {
       );
     } catch {
       output = await runPowerShell(
-        "Get-CimInstance Win32_Printer | Select-Object Name,DriverName,PortName,PrinterStatus,Shared | ConvertTo-Json -Depth 3",
+        "Get-CimInstance Win32_Printer | Select-Object Name,DriverName,PortName,PrinterStatus,Shared,WorkOffline,Default | ConvertTo-Json -Depth 3",
       );
     }
 
@@ -68,6 +70,8 @@ export async function GET() {
           portName: printer.PortName ?? '',
           status: String(printer.PrinterStatus ?? ''),
           shared: Boolean(printer.Shared),
+          default: Boolean(printer.Default),
+          online: !Boolean(printer.WorkOffline),
           connectionType: inferConnectionType(printer.PortName),
           ip: extractIp(printer.PortName),
         })),

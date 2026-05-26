@@ -58,17 +58,31 @@ downloadFiscalBridge.addEventListener('click', () => api.openExternal('https://a
 
 scanPrinters.addEventListener('click', async () => {
   printerList.innerHTML = '';
+  write(supportResult, 'Yazicilar taraniyor...');
   const printers = await api.listPrinters().catch((error) => ({ ok: false, error: error.message }));
   if (!Array.isArray(printers)) {
     write(supportResult, printers);
     return;
   }
+  write(supportResult, { ok: true, count: printers.length, printers });
   for (const printer of printers) {
     const name = typeof printer === 'string' ? printer : printer.Name || printer.name;
+    const meta = typeof printer === 'string'
+      ? ''
+      : [
+          printer.default ? 'Varsayilan' : '',
+          printer.online === false ? 'Offline' : 'Online',
+          printer.connectionType || '',
+          printer.escpos ? 'ESC/POS aday' : '',
+          printer.portName || '',
+        ].filter(Boolean).join(' / ');
     const row = document.createElement('div');
     row.className = 'item';
-    row.innerHTML = `<span>${name}</span><button>Test yazdır</button>`;
-    row.querySelector('button').addEventListener('click', () => api.testPrint(name));
+    row.innerHTML = `<span><strong>${name}</strong><small>${meta}</small></span><button>Test yazdir</button>`;
+    row.querySelector('button').addEventListener('click', async () => {
+      const result = await api.testPrint(name).catch((error) => ({ ok: false, error: error.message }));
+      write(supportResult, result);
+    });
     printerList.appendChild(row);
   }
 });

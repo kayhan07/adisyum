@@ -131,6 +131,22 @@ async function bridgeJson(route, init) {
   return response.json();
 }
 
+function buildRawTestReceipt() {
+  const lines = [
+    '\x1B@',
+    '\x1Ba\x01',
+    '\x1BE\x01ADISYUM TEST PRINT\x1BE\x00',
+    '\x1Ba\x00',
+    `Device: ${ensureDeviceId()}`,
+    `Time: ${new Date().toISOString()}`,
+    '',
+    'Printer bridge OK',
+    '\n\n\n',
+    '\x1DV\x00',
+  ];
+  return Buffer.from(lines.join('\n'), 'utf8').toString('base64');
+}
+
 async function activateDevice(input) {
   const tenantId = String(input?.tenantId || '').trim();
   const username = String(input?.username || '').trim();
@@ -261,9 +277,9 @@ ipcMain.handle('desktop:test-print', (_event, printerName) => bridgeJson('/print
   headers: { 'content-type': 'application/json' },
   body: JSON.stringify({
     printerName,
-    text: 'ADISYUM TEST PRINT',
-    ticketType: 'cashier',
-    dedupeKey: `desktop-test-${Date.now()}`,
+    bytesBase64: buildRawTestReceipt(),
+    mode: 'raw',
+    source: 'standard-mode-test',
   }),
 }));
 ipcMain.handle('desktop:fiscal-status', () => bridgeJson('/pos/status'));

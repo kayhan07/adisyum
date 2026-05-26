@@ -121,7 +121,7 @@ namespace AdisyumPosAgent
 
                 if (context.Request.HttpMethod == "GET" && path == "/printers")
                 {
-                    WriteJson(context.Response, PrinterDiscovery.GetPrinters());
+                    WriteJson(context.Response, PrinterDiscovery.GetPrinterInventory());
                     return;
                 }
 
@@ -716,25 +716,77 @@ namespace AdisyumPosAgent
 
     internal static class PrinterDiscovery
     {
+        private static readonly string CachePath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "Adisyum",
+            "DesktopBridge",
+            "printer-cache.json");
+
         public static string[] GetPrinters()
         {
-            var stdout = Run("powershell", "-Command \"Get-Printer | Select-Object Name | ConvertTo-Json\"");
-            if (string.IsNullOrWhiteSpace(stdout)) return Array.Empty<string>();
-            using var jsonDoc = JsonDocument.Parse(stdout);
-            var root = jsonDoc.RootElement;
-            if (root.ValueKind == JsonValueKind.Array)
+            return GetPrinterInventory().Select(item => item.name).Where(name => !string.IsNullOrWhiteSpace(name)).ToArray();
+        }
+
+        public static PrinterInventoryItem[] GetPrinterInventory()
+        {
+            var diagnostics = new List<object>();
+            var discovered = new Dictionary<string, PrinterInventoryItem>(StringComparer.OrdinalIgnoreCase);
+            var methods = new[]
             {
-                return root.EnumerateArray()
-                    .Select(item => item.TryGetProperty("Name", out var nameProp) ? nameProp.GetString() : null)
-                    .Where(name => !string.IsNullOrWhiteSpace(name))
-                    .ToArray();
-            }
-            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("Name", out var single))
+                new PrinterDiscoveryMethod("Get-Printer", "Get-Printer | Select-Object Name,DriverName,PortName,PrinterStatus,Shared,Type | ConvertTo-Json -Depth 4"),
+                new PrinterDiscoveryMethod("Win32_Printer", "Get-CimInstance Win32_Printer | Select-Object Name,DriverName,PortName,PrinterStatus,Shared,WorkOffline,Default | ConvertTo-Json -Depth 4"),
+                new PrinterDiscoveryMethod("WMI-Object", "Get-WmiObject Win32_Printer | Select-Object Name,DriverName,PortName,PrinterStatus,Shared,WorkOffline,Default | ConvertTo-Json -Depth 4"),
+            };
+
+            foreach (var method in methods)
             {
-                var value = single.GetString();
-                return string.IsNullOrWhiteSpace(value) ? Array.Empty<string>() : new[] { value };
+                try
+                {
+                    var rows = ParseJsonRows(RunPowerShell(method.script));
+                    var accepted = 0;
+                    foreach (var row in rows)
+                    {
+                        var printer = Normalize(row, method.name);
+                        if (printer == null) continue;
+                        if (discovered.TryGetValue(printer.name, out var existing))
+                        {
+                            discovered[printer.name] = Merge(existing, printer);
+                        }
+                        else
+                        {
+                            discovered[printer.name] = printer;
+                        }
+                        accepted += 1;
+                    }
+                    diagnostics.Add(new { method = method.name, ok = true, count = accepted });
+                }
+                catch (Exception ex)
+                {
+                    diagnostics.Add(new { method = method.name, ok = false, error = ex.Message });
+                    Console.WriteLine("[adisyum-bridge] printer discovery method failed: " + method.name + " " + ex.Message);
+                }
             }
-            return Array.Empty<string>();
+
+            var printers = discovered.Values
+                .OrderByDescending(item => item.@default)
+                .ThenBy(item => item.name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            if (printers.Length > 0)
+            {
+                WriteCache(printers, diagnostics);
+                return printers;
+            }
+
+            var cached = ReadCache();
+            if (cached.Length > 0)
+            {
+                Console.WriteLine("[adisyum-bridge] printer discovery empty; returning cached inventory.");
+                return cached;
+            }
+
+            Console.WriteLine("[adisyum-bridge] printer discovery returned no printers.");
+            return Array.Empty<PrinterInventoryItem>();
         }
 
         public static void PrintText(string printerName, string text)
@@ -743,6 +795,138 @@ namespace AdisyumPosAgent
             var escapedText = text.Replace("'", "''");
             var command = "$content = '" + escapedText + "'; $content | Out-Printer -Name '" + escapedPrinter + "'";
             Run("powershell", "-Command \"" + command + "\"", true);
+        }
+
+        private static string RunPowerShell(string script)
+        {
+            var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+            return Run("powershell", "-NoProfile -ExecutionPolicy Bypass -EncodedCommand " + encoded);
+        }
+
+        private static IEnumerable<JsonElement> ParseJsonRows(string stdout)
+        {
+            if (string.IsNullOrWhiteSpace(stdout)) return Array.Empty<JsonElement>();
+            using var jsonDoc = JsonDocument.Parse(stdout);
+            var root = jsonDoc.RootElement.Clone();
+            if (root.ValueKind == JsonValueKind.Array) return root.EnumerateArray().Select(item => item.Clone()).ToArray();
+            if (root.ValueKind == JsonValueKind.Object) return new[] { root };
+            return Array.Empty<JsonElement>();
+        }
+
+        private static PrinterInventoryItem Normalize(JsonElement row, string source)
+        {
+            var name = ReadString(row, "Name");
+            if (string.IsNullOrWhiteSpace(name)) return null;
+            var driverName = ReadString(row, "DriverName");
+            var portName = ReadString(row, "PortName");
+            var status = ReadString(row, "PrinterStatus");
+            var workOffline = ReadBoolean(row, "WorkOffline");
+
+            return new PrinterInventoryItem
+            {
+                name = name.Trim(),
+                driverName = driverName,
+                portName = portName,
+                status = string.IsNullOrWhiteSpace(status) ? "Ready" : status,
+                shared = ReadBoolean(row, "Shared"),
+                @default = ReadBoolean(row, "Default"),
+                workOffline = workOffline,
+                online = !workOffline && status != "7" && !status.Equals("Offline", StringComparison.OrdinalIgnoreCase),
+                connectionType = InferConnectionType(portName, name),
+                escpos = IsEscPosCandidate(name, driverName),
+                source = source,
+                discoveredAt = DateTimeOffset.UtcNow,
+            };
+        }
+
+        private static PrinterInventoryItem Merge(PrinterInventoryItem existing, PrinterInventoryItem next)
+        {
+            return new PrinterInventoryItem
+            {
+                name = existing.name,
+                driverName = string.IsNullOrWhiteSpace(existing.driverName) ? next.driverName : existing.driverName,
+                portName = string.IsNullOrWhiteSpace(existing.portName) ? next.portName : existing.portName,
+                status = string.IsNullOrWhiteSpace(existing.status) ? next.status : existing.status,
+                shared = existing.shared || next.shared,
+                @default = existing.@default || next.@default,
+                workOffline = existing.workOffline && next.workOffline,
+                online = existing.online || next.online,
+                connectionType = existing.connectionType == "local" ? next.connectionType : existing.connectionType,
+                escpos = existing.escpos || next.escpos,
+                source = existing.source + "," + next.source,
+                discoveredAt = DateTimeOffset.UtcNow,
+            };
+        }
+
+        private static string ReadString(JsonElement row, string propertyName)
+        {
+            if (!row.TryGetProperty(propertyName, out var value)) return string.Empty;
+            return value.ValueKind == JsonValueKind.String ? value.GetString() ?? string.Empty : value.ToString();
+        }
+
+        private static bool ReadBoolean(JsonElement row, string propertyName)
+        {
+            if (!row.TryGetProperty(propertyName, out var value)) return false;
+            if (value.ValueKind == JsonValueKind.True) return true;
+            if (value.ValueKind == JsonValueKind.False) return false;
+            return bool.TryParse(value.ToString(), out var parsed) && parsed;
+        }
+
+        private static string InferConnectionType(string portName, string printerName)
+        {
+            var normalized = ((portName ?? string.Empty) + " " + (printerName ?? string.Empty)).ToLowerInvariant();
+            if (normalized.Contains("usb") || normalized.Contains("dot4")) return "usb";
+            if (normalized.Contains("ip_") || normalized.Contains("tcp") || normalized.Contains("9100")) return "network";
+            if (normalized.StartsWith("\\\\")) return "shared";
+            if (normalized.Contains("nul") || normalized.Contains("file:")) return "virtual";
+            return "local";
+        }
+
+        private static bool IsEscPosCandidate(string name, string driverName)
+        {
+            var normalized = ((name ?? string.Empty) + " " + (driverName ?? string.Empty)).ToLowerInvariant();
+            var tokens = new[] { "thermal", "receipt", "pos", "esc", "epson", "xprinter", "bixolon", "star", "citizen", "rongta", "sunmi" };
+            return tokens.Any(normalized.Contains);
+        }
+
+        private static PrinterInventoryItem[] ReadCache()
+        {
+            try
+            {
+                if (!File.Exists(CachePath)) return Array.Empty<PrinterInventoryItem>();
+                var payload = File.ReadAllText(CachePath);
+                var cache = JsonSerializer.Deserialize<PrinterInventoryCache>(payload, JsonOptions());
+                return cache?.printers ?? Array.Empty<PrinterInventoryItem>();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[adisyum-bridge] printer cache read failed: " + ex.Message);
+                return Array.Empty<PrinterInventoryItem>();
+            }
+        }
+
+        private static void WriteCache(PrinterInventoryItem[] printers, IEnumerable<object> diagnostics)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(CachePath) ?? ".");
+                var cache = new PrinterInventoryCache
+                {
+                    savedAt = DateTimeOffset.UtcNow,
+                    printers = printers,
+                    diagnostics = diagnostics.ToArray(),
+                };
+                File.WriteAllText(CachePath, JsonSerializer.Serialize(cache, JsonOptions()));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[adisyum-bridge] printer cache write failed: " + ex.Message);
+            }
+        }
+
+        private static JsonSerializerOptions JsonOptions()
+        {
+            return new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
         }
 
         private static string Run(string fileName, string arguments, bool throwOnFailure = false)
@@ -758,13 +942,53 @@ namespace AdisyumPosAgent
             });
             var stdout = process?.StandardOutput.ReadToEnd() ?? string.Empty;
             var stderr = process?.StandardError.ReadToEnd() ?? string.Empty;
-            process?.WaitForExit(8000);
+            if (process != null && !process.WaitForExit(10000))
+            {
+                try { process.Kill(); } catch { }
+                if (throwOnFailure) throw new TimeoutException("Printer command timeout.");
+                return string.Empty;
+            }
             if (throwOnFailure && (process == null || process.ExitCode != 0))
             {
                 throw new InvalidOperationException(string.IsNullOrWhiteSpace(stderr) ? "Yazdirma basarisiz." : stderr);
             }
             return stdout;
         }
+
+        private sealed class PrinterDiscoveryMethod
+        {
+            public PrinterDiscoveryMethod(string name, string script)
+            {
+                this.name = name;
+                this.script = script;
+            }
+
+            public string name { get; }
+            public string script { get; }
+        }
+    }
+
+    internal sealed class PrinterInventoryItem
+    {
+        public string name { get; set; }
+        public string driverName { get; set; }
+        public string portName { get; set; }
+        public string status { get; set; }
+        public bool shared { get; set; }
+        public bool @default { get; set; }
+        public bool workOffline { get; set; }
+        public bool online { get; set; }
+        public string connectionType { get; set; }
+        public bool escpos { get; set; }
+        public string source { get; set; }
+        public DateTimeOffset discoveredAt { get; set; }
+    }
+
+    internal sealed class PrinterInventoryCache
+    {
+        public DateTimeOffset savedAt { get; set; }
+        public PrinterInventoryItem[] printers { get; set; } = Array.Empty<PrinterInventoryItem>();
+        public object[] diagnostics { get; set; } = Array.Empty<object>();
     }
 
     internal static class DeviceRegistry

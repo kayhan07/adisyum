@@ -112,6 +112,13 @@ input {
   background: rgba(255,255,255,0.04);
   padding: 14px;
 }
+.item span {
+  display: grid;
+  gap: 4px;
+}
+.item small {
+  color: #94a3b8;
+}
 pre {
   white-space: pre-wrap;
   color: #cbd5e1;

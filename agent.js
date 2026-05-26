@@ -3,6 +3,7 @@ const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const os = require('os');
 const iconv = require('iconv-lite');
 
 const app = express();
@@ -10,6 +11,8 @@ const HTTP_PORT = Number(process.env.PORT || 3001);
 const HTTPS_PORT = Number(process.env.HTTPS_PORT || 3443);
 const printerQueues = new Map();
 let printJobCounter = 0;
+const CACHE_DIR = path.join(process.env.LOCALAPPDATA || os.tmpdir(), 'AdisyumPosAgent');
+const PRINTER_CACHE_PATH = path.join(CACHE_DIR, 'printer-cache.json');
 const ALLOWED_PRINT_SOURCES = [
   'receipt-formatter:',
   'proxy:',
@@ -41,24 +44,209 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get('/printers', (req, res) => {
-  exec(
-    'powershell -Command "Get-Printer | Select-Object Name | ConvertTo-Json"',
-    (error, stdout) => {
-      if (error) return res.status(500).send(error.message || String(error));
-
-      try {
-        const data = JSON.parse(stdout);
-        const printers = Array.isArray(data)
-          ? data.map((p) => p.Name).filter(Boolean)
-          : [data.Name].filter(Boolean);
-
-        res.json(printers);
-      } catch {
-        res.status(500).send('Parse error');
+function runCommand(command, timeout = 12000) {
+  return new Promise((resolve, reject) => {
+    exec(command, { timeout, windowsHide: true }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error((stderr && stderr.trim()) || error.message || String(error)));
+        return;
       }
-    },
+
+      resolve(String(stdout || ''));
+    });
+  });
+}
+
+function runPowerShell(script, timeout = 12000) {
+  const encoded = Buffer.from(script, 'utf16le').toString('base64');
+  return runCommand(`powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encoded}`, timeout);
+}
+
+function parseJsonRows(output) {
+  const trimmed = String(output || '').trim();
+  if (!trimmed) return [];
+  const parsed = JSON.parse(trimmed);
+  return Array.isArray(parsed) ? parsed : [parsed];
+}
+
+function inferConnectionType(portName = '', printerName = '') {
+  const normalized = `${portName} ${printerName}`.toLowerCase();
+  if (normalized.includes('usb') || normalized.includes('dot4')) return 'usb';
+  if (normalized.includes('ip_') || normalized.includes('tcp') || /\d+\.\d+\.\d+\.\d+/.test(normalized)) return 'network';
+  if (normalized.includes('nul') || normalized.includes('file:')) return 'virtual';
+  if (normalized.includes('share') || normalized.startsWith('\\\\')) return 'shared';
+  return 'local';
+}
+
+function isEscPosCandidate(name = '', driverName = '') {
+  const normalized = `${name} ${driverName}`.toLowerCase();
+  return ['thermal', 'receipt', 'pos', 'esc', 'epson', 'xprinter', 'bixolon', 'star', 'citizen', 'rongta', 'sunmi'].some((token) =>
+    normalized.includes(token),
   );
+}
+
+function normalizePrinter(row, source) {
+  const name = String(row.Name ?? row.name ?? '').trim();
+  if (!name) return null;
+
+  const driverName = String(row.DriverName ?? row.driverName ?? '').trim();
+  const portName = String(row.PortName ?? row.portName ?? '').trim();
+  const rawStatus = row.PrinterStatus ?? row.Status ?? row.status ?? '';
+  const workOffline = Boolean(row.WorkOffline ?? row.workOffline ?? false);
+  const online = !workOffline && !['7', 'Offline', 'Error'].includes(String(rawStatus));
+
+  return {
+    name,
+    driverName,
+    portName,
+    status: String(rawStatus || (online ? 'Ready' : 'Unknown')),
+    shared: Boolean(row.Shared ?? row.shared ?? false),
+    default: Boolean(row.Default ?? row.default ?? false),
+    workOffline,
+    online,
+    connectionType: inferConnectionType(portName, name),
+    escpos: isEscPosCandidate(name, driverName),
+    source,
+    discoveredAt: new Date().toISOString(),
+  };
+}
+
+async function getSpoolerStatus() {
+  if (process.platform !== 'win32') {
+    return { ok: false, status: 'unsupported', message: 'Windows spooler is only available on Windows.' };
+  }
+
+  try {
+    const rows = parseJsonRows(await runPowerShell("Get-Service Spooler | Select-Object Name,Status | ConvertTo-Json -Depth 2", 8000));
+    const status = rows[0]?.Status ? String(rows[0].Status) : 'Unknown';
+    return { ok: status.toLowerCase() === 'running', status };
+  } catch (error) {
+    return { ok: false, status: 'unknown', error: error.message || String(error) };
+  }
+}
+
+function readPrinterCache() {
+  try {
+    if (!fs.existsSync(PRINTER_CACHE_PATH)) return null;
+    const cache = JSON.parse(fs.readFileSync(PRINTER_CACHE_PATH, 'utf8'));
+    if (!Array.isArray(cache.printers)) return null;
+    return cache;
+  } catch (error) {
+    console.warn('[adisyum-print] PRINTER_CACHE_READ_FAILED', { error: error.message || String(error) });
+    return null;
+  }
+}
+
+function writePrinterCache(printers, diagnostics) {
+  try {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+    fs.writeFileSync(
+      PRINTER_CACHE_PATH,
+      JSON.stringify({ savedAt: new Date().toISOString(), printers, diagnostics }, null, 2),
+      'utf8',
+    );
+  } catch (error) {
+    console.warn('[adisyum-print] PRINTER_CACHE_WRITE_FAILED', { error: error.message || String(error) });
+  }
+}
+
+async function discoverPrinters() {
+  const diagnostics = {
+    platform: process.platform,
+    hostname: os.hostname(),
+    cachePath: PRINTER_CACHE_PATH,
+    methods: [],
+    spooler: await getSpoolerStatus(),
+  };
+
+  if (process.platform !== 'win32') {
+    const cache = readPrinterCache();
+    return {
+      ok: false,
+      cached: Boolean(cache),
+      printers: cache?.printers ?? [],
+      diagnostics,
+      error: 'Printer discovery requires Windows.',
+    };
+  }
+
+  const methods = [
+    {
+      name: 'Get-Printer',
+      script: "Get-Printer | Select-Object Name,DriverName,PortName,PrinterStatus,Shared,Type | ConvertTo-Json -Depth 4",
+    },
+    {
+      name: 'Win32_Printer',
+      script: "Get-CimInstance Win32_Printer | Select-Object Name,DriverName,PortName,PrinterStatus,Shared,WorkOffline,Default | ConvertTo-Json -Depth 4",
+    },
+    {
+      name: 'WMI-Object',
+      script: "Get-WmiObject Win32_Printer | Select-Object Name,DriverName,PortName,PrinterStatus,Shared,WorkOffline,Default | ConvertTo-Json -Depth 4",
+    },
+  ];
+
+  const discovered = new Map();
+
+  for (const method of methods) {
+    try {
+      const rows = parseJsonRows(await runPowerShell(method.script));
+      let accepted = 0;
+      for (const row of rows) {
+        const printer = normalizePrinter(row, method.name);
+        if (!printer) continue;
+        const key = printer.name.toLowerCase();
+        const existing = discovered.get(key);
+        discovered.set(key, existing ? { ...printer, ...existing, default: existing.default || printer.default } : printer);
+        accepted += 1;
+      }
+      diagnostics.methods.push({ name: method.name, ok: true, count: accepted });
+    } catch (error) {
+      diagnostics.methods.push({ name: method.name, ok: false, error: error.message || String(error) });
+    }
+  }
+
+  const printers = Array.from(discovered.values()).sort((a, b) => {
+    if (a.default && !b.default) return -1;
+    if (!a.default && b.default) return 1;
+    return a.name.localeCompare(b.name, 'tr');
+  });
+
+  if (printers.length > 0) {
+    writePrinterCache(printers, diagnostics);
+    console.log('[adisyum-print] PRINTER_DISCOVERY_OK', { count: printers.length, methods: diagnostics.methods });
+    return { ok: true, cached: false, printers, diagnostics };
+  }
+
+  const cache = readPrinterCache();
+  console.warn('[adisyum-print] PRINTER_DISCOVERY_EMPTY', { methods: diagnostics.methods, cached: Boolean(cache) });
+  return {
+    ok: false,
+    cached: Boolean(cache),
+    printers: cache?.printers ?? [],
+    diagnostics,
+    error: 'No Windows printers discovered. Returned cache if available.',
+  };
+}
+
+app.get('/health', async (_req, res) => {
+  const discovery = await discoverPrinters();
+  res.json({
+    ok: true,
+    service: 'adisyum-pos-agent',
+    version: process.env.npm_package_version || 'local',
+    uptimeSeconds: Math.round(process.uptime()),
+    queueCount: printerQueues.size,
+    printers: discovery.printers,
+    spooler: discovery.diagnostics.spooler,
+    diagnostics: discovery.diagnostics,
+    cached: discovery.cached,
+    error: discovery.error,
+  });
+});
+
+app.get('/printers', async (_req, res) => {
+  const discovery = await discoverPrinters();
+  res.json(discovery.printers);
 });
 
 function printRawToWindowsPrinter(printerName, rawBuffer) {
@@ -169,8 +357,8 @@ Write-Output "RAW_PRINT_OK bytes=$($bytes.Length)"
     exec(`powershell -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}"`, (error, stdout, stderr) => {
       try {
         fs.rmSync(tempDir, { recursive: true, force: true });
-      } catch {
-        // noop
+      } catch (cleanupError) {
+        console.warn('[adisyum-print] TEMP_CLEANUP_FAILED', { error: cleanupError.message || String(cleanupError) });
       }
 
       if (error) {
@@ -229,6 +417,21 @@ app.post('/print', (req, res) => {
   if (!printerName || !bytesBase64) {
     return res.status(400).json({ error: 'printerName ve bytesBase64 zorunlu.' });
   }
+
+  discoverPrinters()
+    .then((discovery) => {
+      const known = discovery.printers.some((printer) => printer.name.toLowerCase() === printerName.toLowerCase());
+      if (!known) {
+        console.warn('[adisyum-print] PRINT_TARGET_NOT_DISCOVERED', {
+          printerName,
+          discoveredCount: discovery.printers.length,
+          cached: discovery.cached,
+        });
+      }
+    })
+    .catch((error) => {
+      console.warn('[adisyum-print] PRINT_PREFLIGHT_DISCOVERY_FAILED', { printerName, error: error.message || String(error) });
+    });
 
   if (mode !== 'raw') {
     return res.status(400).json({ error: 'Sadece RAW ESC/POS desteklenir. mode="raw" gönderin.' });
