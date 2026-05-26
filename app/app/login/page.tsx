@@ -4,6 +4,7 @@ import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { LogIn } from 'lucide-react';
+import { DesktopSupportCenter } from '@/components/desktop-support-center';
 import { authQueryKeys } from '@/lib/query/keys';
 import { resetRuntimeAuthFailureLock, runtimeFetch } from '@/lib/runtime/runtime-api';
 import { hydrateSessionStateFromAuth } from '@/lib/session-store';
@@ -85,8 +86,9 @@ export default function AppLoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#0F172A] px-4 py-8 text-white">
-      <section className="w-full max-w-md rounded-[1.5rem] border border-white/10 bg-[#111C30] p-6 shadow-[0_24px_80px_rgba(2,8,23,0.45)]">
+    <main className="min-h-screen bg-[#0F172A] px-4 py-8 text-white">
+      <div className="mx-auto grid min-h-[calc(100vh-4rem)] w-full max-w-7xl items-center gap-6 lg:grid-cols-[minmax(360px,420px)_1fr]">
+      <section className="w-full rounded-[1.5rem] border border-white/10 bg-[#111C30] p-6 shadow-[0_24px_80px_rgba(2,8,23,0.45)]">
         <div className="mb-6 flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-500 text-white">
             <LogIn className="h-5 w-5" />
@@ -145,6 +147,8 @@ export default function AppLoginPage() {
           </button>
         </form>
       </section>
+      <DesktopSupportCenter />
+      </div>
     </main>
   );
 }

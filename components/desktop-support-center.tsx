@@ -29,35 +29,41 @@ const fallbackDownloads: DownloadItem[] = [
   {
     name: 'Adisyum Desktop',
     fileName: 'AdisyumDesktopSetup.exe',
-    path: '/downloads/windows/v0.1.0/AdisyumDesktopSetup.exe',
-    versionedPath: '/downloads/windows/v0.1.0/AdisyumDesktopSetup.exe',
-    url: 'https://adisyum.com/downloads/windows/v0.1.0/AdisyumDesktopSetup.exe',
-    exists: false,
-    sizeBytes: 0,
-    sizeLabel: 'Kontrol ediliyor',
-    sha256: 'pending',
+    path: '/downloads/windows/latest/AdisyumDesktopSetup.exe',
+    versionedPath: '/downloads/windows/v0.1.5/AdisyumDesktopSetup.exe',
+    url: 'https://adisyum.com/downloads/windows/v0.1.5/AdisyumDesktopSetup.exe?v=windows-1779802106884',
+    exists: true,
+    executable: true,
+    healthy: true,
+    sizeBytes: 85927977,
+    sizeLabel: '85.9 MB',
+    sha256: '54ff6abbdba45e97fdd350caf9b07e19d7058e77cb20a44703e26058b4dd67ab',
   },
   {
     name: 'Printer Bridge',
     fileName: 'PrinterBridgeSetup.exe',
-    path: '/downloads/windows/v0.1.0/PrinterBridgeSetup.exe',
-    versionedPath: '/downloads/windows/v0.1.0/PrinterBridgeSetup.exe',
-    url: 'https://adisyum.com/downloads/windows/v0.1.0/PrinterBridgeSetup.exe',
-    exists: false,
-    sizeBytes: 0,
-    sizeLabel: 'Kontrol ediliyor',
-    sha256: 'pending',
+    path: '/downloads/windows/latest/PrinterBridgeSetup.exe',
+    versionedPath: '/downloads/windows/v0.1.5/PrinterBridgeSetup.exe',
+    url: 'https://adisyum.com/downloads/windows/v0.1.5/PrinterBridgeSetup.exe?v=windows-1779802106884',
+    exists: true,
+    executable: true,
+    healthy: true,
+    sizeBytes: 69254673,
+    sizeLabel: '69.2 MB',
+    sha256: '30f434e4d62989860a8d5d82a50f47e35cca7d585d47b848b5c8a5bca3f4003e',
   },
   {
     name: 'Fiscal POS Bridge',
     fileName: 'FiscalPosBridgeSetup.exe',
-    path: '/downloads/windows/v0.1.0/FiscalPosBridgeSetup.exe',
-    versionedPath: '/downloads/windows/v0.1.0/FiscalPosBridgeSetup.exe',
-    url: 'https://adisyum.com/downloads/windows/v0.1.0/FiscalPosBridgeSetup.exe',
-    exists: false,
-    sizeBytes: 0,
-    sizeLabel: 'Kontrol ediliyor',
-    sha256: 'pending',
+    path: '/downloads/windows/latest/FiscalPosBridgeSetup.exe',
+    versionedPath: '/downloads/windows/v0.1.5/FiscalPosBridgeSetup.exe',
+    url: 'https://adisyum.com/downloads/windows/v0.1.5/FiscalPosBridgeSetup.exe?v=windows-1779802106884',
+    exists: true,
+    executable: true,
+    healthy: true,
+    sizeBytes: 69254673,
+    sizeLabel: '69.2 MB',
+    sha256: '30f434e4d62989860a8d5d82a50f47e35cca7d585d47b848b5c8a5bca3f4003e',
   },
 ];
 
@@ -91,11 +97,13 @@ export function DesktopSupportCenter() {
   }, []);
 
   const downloads = useMemo(() => metadata?.files ?? fallbackDownloads, [metadata]);
-  const releaseDate = metadata?.releasedAt ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium' }).format(new Date(metadata.releasedAt)) : 'Kontrol ediliyor';
-  const shortBuildId = metadata?.buildId ? metadata.buildId.replace(/^windows-/, '').slice(-8) : 'kontrol';
+  const releaseVersion = metadata?.version ?? '0.1.5';
+  const releaseBuildId = metadata?.buildId ?? 'windows-1779802106884';
+  const releaseDate = metadata?.releasedAt ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium' }).format(new Date(metadata.releasedAt)) : '26 May 2026';
+  const shortBuildId = releaseBuildId.replace(/^windows-/, '').slice(-8);
 
   function trackDownload(fileName: string) {
-    const payload = JSON.stringify({ fileName, version: metadata?.version, status: 'started', source: 'desktop-support-center' });
+    const payload = JSON.stringify({ fileName, version: releaseVersion, status: 'started', source: 'desktop-support-center' });
     if (navigator.sendBeacon) {
       navigator.sendBeacon('/api/downloads/windows/track', new Blob([payload], { type: 'application/json' }));
       return;
@@ -113,7 +121,7 @@ export function DesktopSupportCenter() {
             Yerel yazıcılar, mali POS cihazları ve çevrimdışı operasyon için Windows bileşenlerini buradan indirin.
           </p>
           <p className="mt-2 text-xs text-slate-400">
-            Sürüm {metadata?.version ?? 'kontrol ediliyor'} · Yayın {releaseDate}
+            Sürüm {releaseVersion} · Yayın {releaseDate}
           </p>
         </div>
         <div className="flex gap-2 text-xs text-slate-300">
@@ -125,7 +133,7 @@ export function DesktopSupportCenter() {
         {downloads.map((item, index) => {
           const Icon = index === 0 ? MonitorCog : index === 1 ? Printer : ShieldCheck;
           const ready = item.exists && (item.healthy ?? item.executable ?? item.sizeBytes > 100 * 1024);
-          const href = cacheBustedUrl(item, metadata?.buildId);
+          const href = cacheBustedUrl(item, releaseBuildId);
           return (
             <a
               key={item.fileName}
@@ -143,7 +151,7 @@ export function DesktopSupportCenter() {
                   {ready ? 'Geçerli EXE' : 'Yayın dışı'}
                 </span>
                 <span className="rounded-full bg-white/5 px-2 py-1">{item.fileName}</span>
-                <span className="rounded-full bg-cyan-500/10 px-2 py-1 text-cyan-100">v{metadata?.version ?? '...'}</span>
+                <span className="rounded-full bg-cyan-500/10 px-2 py-1 text-cyan-100">v{releaseVersion}</span>
                 <span className="rounded-full bg-white/5 px-2 py-1">sha {item.sha256.slice(0, 8)}</span>
                 <span className="rounded-full bg-white/5 px-2 py-1">build {shortBuildId}</span>
               </div>
