@@ -36,7 +36,7 @@ const fallbackDownloads: DownloadItem[] = [
     executable: true,
     healthy: true,
     sizeBytes: 85927977,
-    sizeLabel: '85.9 MB (85.927.977 byte)',
+    sizeLabel: '81.9 MB (85.927.977 byte)',
     sha256: '54ff6abbdba45e97fdd350caf9b07e19d7058e77cb20a44703e26058b4dd67ab',
   },
   {
@@ -49,7 +49,7 @@ const fallbackDownloads: DownloadItem[] = [
     executable: true,
     healthy: true,
     sizeBytes: 69254673,
-    sizeLabel: '69.3 MB (69.254.673 byte)',
+    sizeLabel: '66 MB (69.254.673 byte)',
     sha256: '30f434e4d62989860a8d5d82a50f47e35cca7d585d47b848b5c8a5bca3f4003e',
   },
   {
@@ -62,7 +62,7 @@ const fallbackDownloads: DownloadItem[] = [
     executable: true,
     healthy: true,
     sizeBytes: 69254673,
-    sizeLabel: '69.3 MB (69.254.673 byte)',
+    sizeLabel: '66 MB (69.254.673 byte)',
     sha256: '30f434e4d62989860a8d5d82a50f47e35cca7d585d47b848b5c8a5bca3f4003e',
   },
 ];
