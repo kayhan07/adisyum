@@ -2,8 +2,7 @@
 
 import { runtimeFetch } from '@/lib/runtime/runtime-api';
 
-const HTTP_BASES = ['http://127.0.0.1:4891', 'http://localhost:4891'];
-const HTTPS_BASES = ['https://127.0.0.1:3443', 'https://localhost:3443'];
+const HTTP_BASES = ['http://localhost:4891', 'http://127.0.0.1:4891'];
 
 type LocalAgentRequestOptions = {
   method?: 'GET' | 'POST';
@@ -39,7 +38,7 @@ export function getLocalAgentBaseHint() {
 }
 
 function directLocalAgentBases() {
-  return [...HTTP_BASES, ...HTTPS_BASES];
+  return HTTP_BASES;
 }
 
 async function fetchDirectLocalAgent(path: string, options: LocalAgentRequestOptions = {}) {
@@ -47,9 +46,10 @@ async function fetchDirectLocalAgent(path: string, options: LocalAgentRequestOpt
 
   for (const base of directLocalAgentBases()) {
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 2500);
+    const timeout = window.setTimeout(() => controller.abort(), 8000);
 
     try {
+      console.info('[business-flow] trying direct local agent', { base, path });
       const response = await fetch(`${base}${path}`, {
         method: options.method ?? 'GET',
         cache: 'no-store',
@@ -65,12 +65,19 @@ async function fetchDirectLocalAgent(path: string, options: LocalAgentRequestOpt
 
       if (!response.ok) {
         lastError = new Error(`Local agent status ${response.status}`);
+        console.warn('[business-flow] direct local agent returned non-ok status', { base, path, status: response.status });
         continue;
       }
 
+      console.info('[business-flow] direct local agent connected', { base, path });
       return { response, base };
     } catch (error) {
       lastError = error;
+      console.warn('[business-flow] direct local agent base failed', {
+        base,
+        path,
+        error: error instanceof Error ? error.message : String(error),
+      });
     } finally {
       window.clearTimeout(timeout);
     }
