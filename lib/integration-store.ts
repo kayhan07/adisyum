@@ -117,6 +117,7 @@ export type IntegrationState = {
 };
 
 const STORAGE_KEY = 'adisyon-integrations-state';
+const LOCAL_STORAGE_KEY = 'adisyum-local-integrations-state';
 const EVENT_NAME = 'adisyon-integrations-state:changed';
 
 const DEFAULT_STATE: IntegrationState = {
@@ -319,11 +320,30 @@ function emitChange() {
   window.dispatchEvent(new CustomEvent(EVENT_NAME));
 }
 
+function readLocalIntegrationState() {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem(LOCAL_STORAGE_KEY);
+  } catch (error) {
+    console.error('[business-flow] local integration state read failed', error);
+    return null;
+  }
+}
+
+function writeLocalIntegrationState(value: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(LOCAL_STORAGE_KEY, value);
+  } catch (error) {
+    console.error('[business-flow] local integration state save failed', error);
+  }
+}
+
 export function loadIntegrationState() {
   if (typeof window === 'undefined') return getDefaultIntegrationState();
 
   try {
-    const raw = readRuntimeItem('tenant', STORAGE_KEY);
+    const raw = readRuntimeItem('tenant', STORAGE_KEY) ?? readLocalIntegrationState();
     if (!raw) return getDefaultIntegrationState();
     const parsed = JSON.parse(raw) as Partial<IntegrationState>;
     const printerDevices = normalizePrinterDevices(Array.isArray(parsed.printerDevices) ? parsed.printerDevices : DEFAULT_STATE.printerDevices);
@@ -350,13 +370,15 @@ export function saveIntegrationState(state: IntegrationState) {
   if (typeof window === 'undefined') return;
   try {
     const printerDevices = normalizePrinterDevices(state.printerDevices);
-
-    writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify({
+    const serialized = JSON.stringify({
       ...state,
       partnerIntegrations: normalizePartnerIntegrations(state.partnerIntegrations),
       printerDevices,
       printerSettings: normalizePrinterSettings(state.printerSettings, printerDevices),
-    }));
+    });
+
+    writeLocalIntegrationState(serialized);
+    writeRuntimeItem('tenant', STORAGE_KEY, serialized);
     emitChange();
   } catch (error) {
     console.error('[business-flow] integration state save failed', error);
@@ -366,10 +388,15 @@ export function saveIntegrationState(state: IntegrationState) {
 export function subscribeToIntegrationChanges(callback: () => void) {
   if (typeof window === 'undefined') return () => {};
   const onCustom = () => callback();
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === LOCAL_STORAGE_KEY) callback();
+  };
   window.addEventListener(EVENT_NAME, onCustom);
+  window.addEventListener('storage', onStorage);
   const unsubscribeRuntime = subscribeRuntimeScope('tenant', callback);
   return () => {
     window.removeEventListener(EVENT_NAME, onCustom);
+    window.removeEventListener('storage', onStorage);
     unsubscribeRuntime();
   };
 }
