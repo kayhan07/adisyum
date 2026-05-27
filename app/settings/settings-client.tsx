@@ -43,7 +43,6 @@ const deviceTypeLabels: Record<PrinterDeviceType, string> = {
 };
 
 const printableDeviceTypeOptions: PrintableDeviceType[] = ['receipt_printer', 'kitchen_printer', 'bar_printer'];
-const AGENT_INSTALLER_VERSION = '20260512-5';
 const AGENT_STATUS_RETRY_COUNT = 3;
 const AGENT_STATUS_RETRY_DELAY_MS = 500;
 const AGENT_HEARTBEAT_MS = 6000;
@@ -918,31 +917,9 @@ export default function SettingsPage() {
                 </button>
               </div>
 
-              <div className="mt-4 rounded-3xl border border-line bg-canvas p-4">
-                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted">POS Agent Kurulumu</p>
-                    <h3 className="mt-2 text-lg font-semibold text-ink">Her POS bilgisayarı kendi agent’ını çalıştırmalı</h3>
-                    <p className="mt-1 text-sm text-muted">Yazıcı listesi sunucudan değil sadece local agent üzerinden okunur.</p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <a href={`/downloads/adisyum-pos-agent-x64.exe?v=${AGENT_INSTALLER_VERSION}`} className="inline-flex h-10 items-center rounded-2xl bg-accent px-4 text-sm font-semibold text-white">Windows (64-bit)</a>
-                    <a href={`/downloads/adisyum-pos-agent-x86.exe?v=${AGENT_INSTALLER_VERSION}`} className="inline-flex h-10 items-center rounded-2xl border border-line bg-panel px-4 text-sm font-semibold text-ink">Windows (32-bit)</a>
-                  </div>
-                </div>
-
-                <div className="mt-4 rounded-2xl border border-line bg-panel px-4 py-3 text-sm text-muted">
-                  <p className="font-semibold text-ink">Kurulum adımları</p>
-                  <p className="mt-1">1. İndir</p>
-                  <p>2. Çalıştır</p>
-                  <p>3. Agent otomatik başlar</p>
-                  <p>4. Sayfayı yenile</p>
-                </div>
-
-                <div className={`mt-4 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${agentStatus === 'online' ? 'bg-emerald-500/10 text-emerald-700' : 'bg-rose-500/10 text-rose-700'}`}>
-                  {agentStatus === 'online' ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-                  {agentStatus === 'online' ? 'Agent aktif' : 'Agent bulunamadı'}
-                </div>
+              <div className={`mt-4 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${agentStatus === 'online' ? 'bg-emerald-500/10 text-emerald-700' : 'bg-rose-500/10 text-rose-700'}`}>
+                {agentStatus === 'online' ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+                {agentStatus === 'online' ? 'Agent aktif' : 'Agent bulunamadı'}
               </div>
 
               <div className="mt-5 grid gap-4 lg:grid-cols-2">
