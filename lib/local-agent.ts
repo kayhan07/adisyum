@@ -55,7 +55,6 @@ async function fetchDirectLocalAgent(path: string, options: LocalAgentRequestOpt
     const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      console.info('[business-flow] trying direct local agent', { base, path });
       const init: LocalAgentFetchInit = {
         method: options.method ?? 'GET',
         cache: 'no-store',
@@ -74,19 +73,25 @@ async function fetchDirectLocalAgent(path: string, options: LocalAgentRequestOpt
 
       if (!response.ok) {
         lastError = new Error(`Local agent status ${response.status}`);
-        console.warn('[business-flow] direct local agent returned non-ok status', { base, path, status: response.status });
+        if (path !== '/health') {
+          console.warn('[business-flow] direct local agent returned non-ok status', { base, path, status: response.status });
+        }
         continue;
       }
 
-      console.info('[business-flow] direct local agent connected', { base, path });
+      if (path !== '/health') {
+        console.info('[business-flow] direct local agent connected', { base, path });
+      }
       return { response, base };
     } catch (error) {
       lastError = error;
-      console.warn('[business-flow] direct local agent base failed', {
-        base,
-        path,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      if (path !== '/health') {
+        console.warn('[business-flow] direct local agent base failed', {
+          base,
+          path,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     } finally {
       window.clearTimeout(timeout);
     }
@@ -113,10 +118,12 @@ export async function fetchFromLocalAgent(path: string, options: LocalAgentReque
     try {
       return await fetchDirectLocalAgent(path, { ...options, body: nextBody });
     } catch (error) {
-      console.warn('[business-flow] direct local agent fetch failed; trying proxy fallback', {
-        path,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      if (path !== '/health') {
+        console.warn('[business-flow] direct local agent fetch failed; trying proxy fallback', {
+          path,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 

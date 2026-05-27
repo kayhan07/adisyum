@@ -137,6 +137,9 @@ export default function SettingsPage() {
   });
   const [message, setMessage] = useState('');
   const integrationStateRef = useRef(integrationState);
+  const systemPrintersRef = useRef<SystemPrinter[]>([]);
+  const agentStatusCheckInFlightRef = useRef<Promise<boolean> | null>(null);
+  const printerScanInFlightRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     const tab = searchParams.get('tab');
@@ -168,6 +171,10 @@ export default function SettingsPage() {
   useEffect(() => {
     integrationStateRef.current = integrationState;
   }, [integrationState]);
+
+  useEffect(() => {
+    systemPrintersRef.current = systemPrinters;
+  }, [systemPrinters]);
 
   useEffect(() => {
     const persistBeforeUnload = () => {
@@ -212,8 +219,8 @@ export default function SettingsPage() {
       const isOnline = await checkAgentStatus({ quiet: true, retries: 1 });
       if (isOnline && !hadOnline) {
         hadOnline = true;
-        if (systemPrinters.length === 0) {
-          await scanSystemPrinters();
+        if (systemPrintersRef.current.length === 0) {
+          await scanSystemPrinters({ skipStatusCheck: true });
         }
         return;
       }
@@ -231,7 +238,7 @@ export default function SettingsPage() {
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [activeTab, systemPrinters.length]);
+  }, [activeTab]);
 
   const availablePrinterDevices = useMemo(
     () => integrationState.printerDevices.filter((printer) => printer.deviceType !== 'fiscal_pos'),
@@ -306,61 +313,93 @@ export default function SettingsPage() {
     setIntegrationState(nextState);
   }
 
-  async function scanSystemPrinters() {
-    setPrinterScanLoading(true);
-    setMessage('');
+  async function scanSystemPrinters(options: { skipStatusCheck?: boolean } = {}) {
+    if (printerScanInFlightRef.current) {
+      return printerScanInFlightRef.current;
+    }
 
+    const run = (async () => {
+      setPrinterScanLoading(true);
+      setMessage('');
+
+      try {
+        const isOnline = options.skipStatusCheck === true
+          ? true
+          : await checkAgentStatus({ retries: AGENT_STATUS_RETRY_COUNT });
+        if (!isOnline) {
+          setSystemPrinters([]);
+          setSelectedSystemPrinterName('');
+          setMessage('Agent bulunamadı. Yazıcılar sadece bu bilgisayardaki local agent üzerinden okunur.');
+          return;
+        }
+
+        const localAgentResult = await scanLocalAgentPrinters();
+        setSystemPrinters(localAgentResult.printers);
+        setSelectedSystemPrinterName(localAgentResult.printers[0]?.name ?? '');
+        if (localAgentResult.printers.length > 0) {
+          setMessage(`${localAgentResult.printers.length} yazıcı local agent üzerinden bulundu.`);
+          return;
+        }
+
+        setMessage('Local agent çalışıyor ancak yazıcı bulunamadı.');
+      } catch (error) {
+        console.error('[business-flow] system printer scan failed', error);
+        setMessage(`Yazıcılar okunamadı. POS bilgisayarında Adisyum Local Agent çalışmalı ve ${getLocalAgentBaseHint()} erişilebilir olmalı.`);
+      } finally {
+        setPrinterScanLoading(false);
+      }
+    })();
+
+    printerScanInFlightRef.current = run;
     try {
-      const isOnline = await checkAgentStatus({ retries: AGENT_STATUS_RETRY_COUNT });
-      if (!isOnline) {
-        setSystemPrinters([]);
-        setSelectedSystemPrinterName('');
-        setMessage('Agent bulunamadı. Yazıcılar sadece bu bilgisayardaki local agent üzerinden okunur.');
-        return;
-      }
-
-      const localAgentResult = await scanLocalAgentPrinters();
-      setSystemPrinters(localAgentResult.printers);
-      setSelectedSystemPrinterName(localAgentResult.printers[0]?.name ?? '');
-      if (localAgentResult.printers.length > 0) {
-        setMessage(`${localAgentResult.printers.length} yazıcı local agent üzerinden bulundu.`);
-        return;
-      }
-
-      setMessage('Local agent çalışıyor ancak yazıcı bulunamadı.');
-    } catch (error) {
-      console.error('[business-flow] system printer scan failed', error);
-      setMessage(`Yazıcılar okunamadı. POS bilgisayarında Adisyum Local Agent çalışmalı ve ${getLocalAgentBaseHint()} erişilebilir olmalı.`);
+      return await run;
     } finally {
-      setPrinterScanLoading(false);
+      if (printerScanInFlightRef.current === run) {
+        printerScanInFlightRef.current = null;
+      }
     }
   }
 
   async function checkAgentStatus(options: { quiet?: boolean; retries?: number } = {}) {
+    if (agentStatusCheckInFlightRef.current) {
+      return agentStatusCheckInFlightRef.current;
+    }
+
     const retries = options.retries ?? 1;
     if (!options.quiet) {
       setAgentStatus('checking');
     }
 
-    for (let attempt = 1; attempt <= retries; attempt += 1) {
-      try {
-        await fetchLocalAgentJson<unknown>('/health');
-        setAgentStatus('online');
-        return true;
-      } catch (error) {
-        console.warn('[business-flow] local agent status check failed', {
-          attempt,
-          retries,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        if (attempt < retries) {
-          await new Promise((resolve) => window.setTimeout(resolve, AGENT_STATUS_RETRY_DELAY_MS));
+    const run = (async () => {
+      for (let attempt = 1; attempt <= retries; attempt += 1) {
+        try {
+          await fetchLocalAgentJson<unknown>('/health');
+          setAgentStatus('online');
+          return true;
+        } catch (error) {
+          console.warn('[business-flow] local agent status check failed', {
+            attempt,
+            retries,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          if (attempt < retries) {
+            await new Promise((resolve) => window.setTimeout(resolve, AGENT_STATUS_RETRY_DELAY_MS));
+          }
         }
       }
-    }
 
-    setAgentStatus('offline');
-    return false;
+      setAgentStatus('offline');
+      return false;
+    })();
+
+    agentStatusCheckInFlightRef.current = run;
+    try {
+      return await run;
+    } finally {
+      if (agentStatusCheckInFlightRef.current === run) {
+        agentStatusCheckInFlightRef.current = null;
+      }
+    }
   }
 
   async function scanLocalAgentPrinters(): Promise<{ printers: SystemPrinter[]; error?: string }> {
@@ -873,7 +912,7 @@ export default function SettingsPage() {
                   <h2 className="mt-2 text-2xl font-semibold text-ink">USB ve ağ yazıcıları</h2>
                   <p className="mt-1 text-sm text-muted">USB yazıcı Windows'a kuruluysa listeden seçilir. Ağ yazıcıları IP ve port ile eklenir.</p>
                 </div>
-                <button type="button" onClick={scanSystemPrinters} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-accent px-4 text-sm font-semibold text-white">
+                <button type="button" onClick={() => void scanSystemPrinters()} disabled={printerScanLoading} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-accent px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">
                   <RefreshCw className={`h-4 w-4 ${printerScanLoading ? 'animate-spin' : ''}`} />
                   Sistem yazıcılarını tara
                 </button>
