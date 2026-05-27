@@ -343,7 +343,7 @@ export function loadIntegrationState() {
   if (typeof window === 'undefined') return getDefaultIntegrationState();
 
   try {
-    const raw = readRuntimeItem('tenant', STORAGE_KEY) ?? readLocalIntegrationState();
+    const raw = readLocalIntegrationState() ?? readRuntimeItem('tenant', STORAGE_KEY);
     if (!raw) return getDefaultIntegrationState();
     const parsed = JSON.parse(raw) as Partial<IntegrationState>;
     const printerDevices = normalizePrinterDevices(Array.isArray(parsed.printerDevices) ? parsed.printerDevices : DEFAULT_STATE.printerDevices);
