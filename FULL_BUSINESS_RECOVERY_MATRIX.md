@@ -1,6 +1,6 @@
 # Full Business Recovery Matrix
 
-Last updated: 2026-05-25
+Last updated: 2026-05-28
 
 Scope: Adisyum POS/ERP business recovery only. No architecture expansion, no new runtime layer, no communication-platform scope.
 
@@ -33,12 +33,12 @@ Scope: Adisyum POS/ERP business recovery only. No architecture expansion, no new
 
 | Flow | Code status | Risk class | Notes |
 | --- | --- | --- | --- |
-| Kategori ekleme | WORKING | Persistence/cache | Custom categories persist after refresh; empty category is no longer silent. |
-| Hammadde ekleme | WORKING, guarded | Product domain | Empty name is no longer silent. POS catalog exclusion remains intentional. |
-| Satis urunu ekleme | WORKING, guarded | Catalog visibility | Empty name is no longer silent; catalog refresh must be live verified. |
+| Kategori ekleme | WORKING | Persistence/cache | Custom categories persist after refresh; empty category is no longer silent. Browser-local fallback is tenant-scoped and only reads legacy global key for `ABN-48291` migration. |
+| Hammadde ekleme | WORKING, guarded | Product domain | Empty name is no longer silent. POS catalog exclusion remains intentional. Browser-local fallback is tenant-scoped. |
+| Satis urunu ekleme | WORKING, guarded | Catalog visibility | Empty name is no longer silent; catalog refresh must be live verified. Browser-local fallback is tenant-scoped and cannot leak into a different tenant session. |
 | Hizli satis urunu | WORKING, guarded | Catalog visibility | Empty quick product name is no longer silent. |
-| Recete satiri | WORKING, guarded | Stock deduction | Missing product/ingredient/quantity now shows feedback. |
-| Recete havuzu yayinlama | WORKING, guarded | Versioning | Empty recipe publish is no longer silent. |
+| Recete satiri | WORKING, guarded | Stock deduction | Missing product/ingredient/quantity now shows feedback. Recipe pool fallback is tenant-scoped. |
+| Recete havuzu yayinlama | WORKING, guarded | Versioning | Empty recipe publish is no longer silent. Tenant-scoped browser fallback prevents stale recipe reuse across tenants. |
 
 ## Cari / Kasa
 
@@ -55,6 +55,16 @@ Scope: Adisyum POS/ERP business recovery only. No architecture expansion, no new
 | Yeni tenant olusturma | WORKING, guarded | Tenant lifecycle | Missing company/admin/password now shows provisioning feedback. |
 | Temiz tenant baslangici | PARTIAL, live QA required | Tenant isolation | Must verify new tenant has no demo/cross-tenant product, stock, cari or kasa data. |
 | Sifre degistirme / sure uzatma | PARTIAL, live QA required | Subscription ownership | Existing screens/routes require manual validation. |
+
+## Persistence / Authoritative State
+
+| Flow | Code status | Risk class | Notes |
+| --- | --- | --- | --- |
+| Runtime tenant switch safety | WORKING, guarded | Cross-tenant snapshot leakage | `lib/client/runtime-state.ts` now tracks the active tenant identity. When tenant identity changes in the same browser, pending flushes are cancelled, tenant snapshot memory is cleared, stale bootstrap state is dropped and the tenant BroadcastChannel is recreated with a tenant-specific key. |
+| Runtime stale table snapshot rejection | WORKING, guarded | Stale hydration | Table runtime snapshots keep version/updatedAt metadata and reject older incoming table snapshots while preserving newer local table keys. |
+| Product/category/raw/recipe local fallback | WORKING, guarded | Cross-tenant localStorage leakage | `lib/sale-product-catalog.ts`, `app/products/page.tsx`, `lib/raw-ingredient-store.ts` and `lib/recipe-pool.ts` use tenant-scoped local fallback keys. Legacy unscoped keys are migration-only for `ABN-48291`. |
+| Printer integration local fallback | WORKING, guarded | Stale printer mapping | `lib/integration-store.ts` uses tenant-scoped local fallback keys so saved printer mappings survive refresh without crossing tenants. |
+| Warehouse/ledger/runtime stores | WORKING, guarded | Tenant-scoped runtime state | Warehouse, access, cari/kasa, treasury, payment journal, layout and table state stores persist through `readRuntimeItem('tenant', ...)`, which is now protected by active tenant identity reset. |
 
 ## Silent Failure Cleanup
 

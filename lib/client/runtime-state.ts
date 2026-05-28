@@ -1,6 +1,7 @@
 'use client';
 
 import { isRuntimeAuthRequired, runtimeFetch } from '@/lib/runtime/runtime-api';
+import { loadSessionState } from '@/lib/session-store';
 
 export type RuntimeScope = 'tenant' | 'system-admin';
 
@@ -19,7 +20,11 @@ const listeners: Record<RuntimeScope, Set<RuntimeListener>> = {
 
 const pendingFlushes = new Map<RuntimeScope, ReturnType<typeof globalThis.setTimeout>>();
 const bootstrapPromises = new Map<RuntimeScope, Promise<Record<string, string>>>();
-const channels = new Map<RuntimeScope, BroadcastChannel>();
+const channels = new Map<string, BroadcastChannel>();
+const activeTenantIds: Record<RuntimeScope, string> = {
+	tenant: 'ABN-48291',
+	'system-admin': 'system-admin',
+};
 const LOCAL_WRITE_REFRESH_GRACE_MS = 8000;
 const TABLE_RUNTIME_KEYS = [
 	'aurelia-table-payment-requested',
@@ -50,6 +55,41 @@ function areSnapshotsEqual(first: RuntimeSnapshot, second: RuntimeSnapshot) {
 	const secondKeys = Object.keys(second);
 	if (firstKeys.length !== secondKeys.length) return false;
 	return firstKeys.every((key) => first[key] === second[key]);
+}
+
+function currentScopeIdentity(scope: RuntimeScope) {
+	if (scope === 'system-admin') return 'system-admin';
+	return loadSessionState().tenantId || 'ABN-48291';
+}
+
+function ensureScopeIdentity(scope: RuntimeScope) {
+	const currentIdentity = currentScopeIdentity(scope);
+	if (activeTenantIds[scope] === currentIdentity) return;
+
+	const pending = pendingFlushes.get(scope);
+	if (pending) {
+		globalThis.clearTimeout(pending);
+		pendingFlushes.delete(scope);
+	}
+
+	for (const [key, channel] of channels.entries()) {
+		if (key.startsWith(`${scope}:`)) {
+			channel.close();
+			channels.delete(key);
+		}
+	}
+
+	snapshots[scope] = {};
+	dirtyScopes[scope] = false;
+	persistInFlight[scope] = false;
+	lastLocalWriteAt[scope] = 0;
+	bootstrapPromises.delete(scope);
+	activeTenantIds[scope] = currentIdentity;
+
+	console.info('[runtime-state] scope identity changed; local snapshot cleared', {
+		scope,
+		currentIdentity,
+	});
 }
 
 function readTableSnapshotVersion(snapshot: RuntimeSnapshot) {
@@ -106,11 +146,14 @@ function emit(scope: RuntimeScope) {
 
 function getChannel(scope: RuntimeScope) {
 	if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return null;
-	const existing = channels.get(scope);
+	ensureScopeIdentity(scope);
+	const channelKey = `${scope}:${activeTenantIds[scope]}`;
+	const existing = channels.get(channelKey);
 	if (existing) return existing;
 
-	const channel = new BroadcastChannel(`adisyum-runtime:${scope}`);
+	const channel = new BroadcastChannel(`adisyum-runtime:${channelKey}`);
 	channel.onmessage = (event: MessageEvent<{ snapshot?: RuntimeSnapshot }>) => {
+		ensureScopeIdentity(scope);
 		if (!event.data?.snapshot || typeof event.data.snapshot !== 'object') return;
 		if (dirtyScopes[scope] || persistInFlight[scope] || Date.now() - lastLocalWriteAt[scope] < LOCAL_WRITE_REFRESH_GRACE_MS) {
 			console.info('[runtime-state] broadcast snapshot ignored during local mutation', {
@@ -126,7 +169,7 @@ function getChannel(scope: RuntimeScope) {
 		snapshots[scope] = nextSnapshot;
 		emit(scope);
 	};
-	channels.set(scope, channel);
+	channels.set(channelKey, channel);
 	return channel;
 }
 
@@ -176,14 +219,17 @@ function schedulePersist(scope: RuntimeScope) {
 }
 
 export function getRuntimeSnapshot(scope: RuntimeScope) {
+	ensureScopeIdentity(scope);
 	return { ...snapshots[scope] };
 }
 
 export function readRuntimeItem(scope: RuntimeScope, key: string) {
+	ensureScopeIdentity(scope);
 	return snapshots[scope][key] ?? null;
 }
 
 export function writeRuntimeItem(scope: RuntimeScope, key: string, value: string | null | undefined, options: { persist?: boolean } = {}) {
+	ensureScopeIdentity(scope);
 	const previous = snapshots[scope][key];
 	if ((value === null || value === undefined) && previous === undefined) {
 		return;
@@ -215,6 +261,7 @@ export function removeRuntimeItem(scope: RuntimeScope, key: string, options?: { 
 }
 
 export function subscribeRuntimeScope(scope: RuntimeScope, callback: RuntimeListener) {
+	ensureScopeIdentity(scope);
 	listeners[scope].add(callback);
 	return () => {
 		listeners[scope].delete(callback);
@@ -223,6 +270,7 @@ export function subscribeRuntimeScope(scope: RuntimeScope, callback: RuntimeList
 
 export async function bootstrapRuntimeScope(scope: RuntimeScope) {
 	if (typeof window === 'undefined') return {};
+	ensureScopeIdentity(scope);
 	if (isRuntimeAuthRequired()) return snapshots[scope];
 	const existing = bootstrapPromises.get(scope);
 	if (existing) return existing;
@@ -259,6 +307,7 @@ export async function bootstrapRuntimeScope(scope: RuntimeScope) {
 
 export async function refreshRuntimeScope(scope: RuntimeScope) {
 	if (typeof window === 'undefined') return snapshots[scope];
+	ensureScopeIdentity(scope);
 	if (isRuntimeAuthRequired()) return snapshots[scope];
 	if (dirtyScopes[scope] || persistInFlight[scope] || pendingFlushes.has(scope) || Date.now() - lastLocalWriteAt[scope] < LOCAL_WRITE_REFRESH_GRACE_MS) {
 		console.info('[runtime-state] refresh skipped during local mutation', {
@@ -287,6 +336,7 @@ export async function refreshRuntimeScope(scope: RuntimeScope) {
 
 export async function persistRuntimeScope(scope: RuntimeScope) {
 	if (typeof window === 'undefined') return snapshots[scope];
+	ensureScopeIdentity(scope);
 	if (isRuntimeAuthRequired()) return snapshots[scope];
 	persistInFlight[scope] = true;
 	try {
@@ -313,6 +363,7 @@ export async function persistRuntimeScope(scope: RuntimeScope) {
 }
 
 export async function clearRuntimeScope(scope: RuntimeScope) {
+	ensureScopeIdentity(scope);
 	snapshots[scope] = {};
 	dirtyScopes[scope] = false;
 	emit(scope);
