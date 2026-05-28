@@ -82,6 +82,14 @@ Scope: Adisyum POS/ERP business recovery only. No architecture expansion, no new
 | Alert delivery visibility | WORKING, guarded | Silent notification failure | Alert delivery channels keep fire-and-forget behavior but now warn with tenantId, alertId, channel and timestamp when delivery promises reject. |
 | POS runtime sync timing | WORKING, guarded | Slow reconcile / hidden fetch failure | Authoritative POS hydration and interval/focus reconciliation diagnostics now include durationMs and structured failure payloads. |
 
+## Business Critical Risks
+
+| Issue | Severity | Business impact | Revenue impact | Affected module | Affected files | Fix applied |
+| --- | --- | --- | --- | --- | --- | --- |
+| Full payment could write local journal/cari before server table close | CRITICAL | Operator could see payment success while the authoritative table stayed open after an API failure. | Potential duplicate collection, stale open table and day-end mismatch. | Masa/adisyon payment | `components/order-composer.tsx`, `app/api/pos/table-orders/route.ts` | Full payment now closes the authoritative table through `/api/pos/table-orders` before local journal/cari/kasa side effects. If server close fails, no local financial side effect is committed and the operator sees a retry message. |
+| Duplicate full payment close could create repeated financial intent | HIGH | Rapid/repeated close requests could represent the same paid order more than once. | Potential duplicate payment rows and incorrect revenue totals. | POS payment API | `app/api/pos/table-orders/route.ts` | Table close transaction now records a paid `Payment` row once per order and warns/skips repeated paid payment closes while still cleaning stale order lines safely. |
+| Missing order during payment close was silently treated as success | HIGH | A client with stale table state could believe the payment closed when no authoritative order existed. | Potential missing payment/order reconciliation. | POS payment API | `app/api/pos/table-orders/route.ts` | Missing authoritative order now returns `409 order_not_found_for_payment`, preventing local financial commit and surfacing the mismatch. |
+
 ## Silent Failure Cleanup
 
 | Area | Status | Notes |

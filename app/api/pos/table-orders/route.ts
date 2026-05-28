@@ -304,6 +304,7 @@ function normalizeProductMutationPayload(item: Record<string, unknown> | null): 
 function normalizeTableOrderMutationBody(body: unknown) {
   const record = isRecord(body) ? body : {};
   const table = isRecord(record.table) ? record.table : null;
+  const payment = isRecord(record.payment) ? record.payment : {};
   const receivedItem = extractProductItem(record);
   const product = normalizeProductMutationPayload(receivedItem);
   return {
@@ -314,6 +315,11 @@ function normalizeTableOrderMutationBody(body: unknown) {
       ?? '',
     lineId: stringField(record, ['lineId', 'orderItemId', 'line_id', 'order_item_id']),
     quantity: numberField(record, ['quantity', 'qty']),
+    payment: {
+      amount: numberField(payment, ['amount', 'total']),
+      method: stringField(payment, ['method', 'paymentMethod', 'payment_method']) ?? 'unknown',
+      scope: stringField(payment, ['scope', 'paymentScope', 'payment_scope']) ?? 'full',
+    },
     product,
     receivedItem,
   };
@@ -664,12 +670,65 @@ export async function POST(request: Request) {
       const orderNo = tableOrderNo(tableId);
       const order = await prisma.order.findUnique({
         where: { tenantId_orderNo: { tenantId, orderNo } },
-        select: { id: true, metadata: true },
+        select: { id: true, metadata: true, status: true, total: true },
       });
 
-      if (order) {
-        await prisma.$transaction(async (tx) => {
-          await tx.orderItem.deleteMany({ where: { tenantId, orderId: order.id } });
+      if (!order) {
+        return runtimeInsertionErrorResponse({
+          status: 409,
+          reason: 'order_not_found_for_payment',
+          traceId,
+          tenantId,
+          branchId: tenant.branchId,
+          tableId,
+        });
+      }
+
+      await prisma.$transaction(async (tx) => {
+        const itemTotals = await tx.orderItem.aggregate({
+          where: { tenantId, orderId: order.id },
+          _sum: { total: true },
+        });
+        const authoritativeAmount = decimalToNumber(itemTotals._sum.total) || decimalToNumber(order.total);
+        const requestedAmount = Number(normalizedBody.payment.amount ?? 0);
+        const paymentAmount = Number.isFinite(requestedAmount) && requestedAmount > 0
+          ? requestedAmount
+          : authoritativeAmount;
+        const existingPaidPayment = await tx.payment.findFirst({
+          where: { tenantId, orderId: order.id, status: 'paid' },
+          select: { id: true },
+        });
+
+        if (!existingPaidPayment && paymentAmount > 0) {
+          await tx.payment.create({
+            data: {
+              tenantId,
+              orderId: order.id,
+              method: normalizedBody.payment.method || 'unknown',
+              status: 'paid',
+              amount: paymentAmount,
+              metadata: {
+                tableKey: tableId,
+                mutationId: normalizedBody.mutationId,
+                paymentScope: normalizedBody.payment.scope,
+                source: 'pos-table-orders',
+                recordedAt: new Date().toISOString(),
+              },
+            },
+          });
+        } else if (existingPaidPayment) {
+          console.warn('[pos-table-orders] duplicate payment close ignored', {
+            timestamp: new Date().toISOString(),
+            tenantId,
+            tableId,
+            orderId: order.id,
+            mutationId: normalizedBody.mutationId,
+            existingPaymentId: existingPaidPayment.id,
+          });
+        }
+
+        await tx.orderItem.deleteMany({ where: { tenantId, orderId: order.id } });
+        if (order.status !== 'paid') {
           await tx.order.update({
             where: { id: order.id, tenantId },
             data: {
@@ -684,8 +743,8 @@ export async function POST(request: Request) {
               },
             },
           });
-        });
-      }
+        }
+      });
 
       await publishTenantEvent(tenantId, 'orders', {
         type: 'order.paid',

@@ -3038,8 +3038,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     }
   };
 
-  const closePaidTableOrder = async (tableId: string, amount: number) => {
-    const mutationId = `${tableId}-payment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const closePaidTableOrder = async (tableId: string, amount: number, mutationId: string) => {
     const response = await runtimeFetch('/api/pos/table-orders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3281,6 +3280,23 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       return;
     }
 
+    try {
+      await closePaidTableOrder(currentTableId, paymentTargetTotal, paymentMutationId);
+    } catch (error) {
+      console.error('[business-flow] payment table close failed', {
+        tableId: currentTableId,
+        tenantId: sessionState.tenantId,
+        mutationId: paymentMutationId,
+        amount: paymentTargetTotal,
+        durationMs: businessDurationMs(paymentStartedAt),
+        timestamp: new Date().toISOString(),
+        error,
+      });
+      setFeedbackMessage('Tahsilat sunucuya yazilamadi. Kasa/cari kaydi yapilmadi; lutfen tekrar deneyin.');
+      releasePaymentSubmission();
+      return;
+    }
+
     if (paymentMethod === 'account' && selectedAccount) {
       postAccountCharge(
         selectedAccount,
@@ -3333,22 +3349,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         slowThresholdMs: SLOW_PAYMENT_COMMIT_MS,
       });
     }
-    try {
-      await closePaidTableOrder(currentTableId, paymentTargetTotal);
-    } catch (error) {
-      console.error('[business-flow] payment table close failed', {
-        tableId: currentTableId,
-        tenantId: sessionState.tenantId,
-        mutationId: paymentMutationId,
-        amount: paymentTargetTotal,
-        durationMs: businessDurationMs(paymentStartedAt),
-        timestamp: new Date().toISOString(),
-        error,
-      });
-      setFeedbackMessage('Tahsilat kaydedildi ancak masa kapatma sunucuya yazilamadi. Masalar ekranini yenileyip kontrol edin.');
-    } finally {
-      releasePaymentSubmission();
-    }
+    releasePaymentSubmission();
     setDiscountRateInput('0');
     setRoundingDiscountEnabled(false);
     setDiscountReason('');
