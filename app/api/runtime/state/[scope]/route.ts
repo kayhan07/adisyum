@@ -15,24 +15,99 @@ export const runtime = 'nodejs';
 
 const SYSTEM_ADMIN_TENANT_ID = '__system_admin__';
 const SALE_PRODUCTS_RUNTIME_KEY = 'adisyon-sale-products';
+const SNAPSHOT_META_KEY = '__adisyumRuntimeSnapshotMeta';
+const SNAPSHOT_SCHEMA_VERSION = 1;
+const VOLATILE_SNAPSHOT_TTL_MS = 1000 * 60 * 60 * 24;
+const VOLATILE_RUNTIME_KEYS = [
+  'aurelia-table-payment-requested',
+  'aurelia-table-live-totals',
+  'aurelia-table-meta',
+  'aurelia-table-state-sync-meta',
+] as const;
 
-function normalizeSnapshot(input: unknown) {
+function snapshotMeta(tenantId: string, scope: string) {
+  return JSON.stringify({
+    snapshotVersion: Date.now(),
+    snapshotTimestamp: new Date().toISOString(),
+    snapshotTenantId: tenantId,
+    snapshotScope: scope,
+    snapshotSchemaVersion: SNAPSHOT_SCHEMA_VERSION,
+    snapshotTtlMs: VOLATILE_SNAPSHOT_TTL_MS,
+  });
+}
+
+function parseSnapshotMeta(raw: string | undefined) {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const timestamp = typeof parsed.snapshotTimestamp === 'string' ? parsed.snapshotTimestamp : '';
+    const timestampMs = Date.parse(timestamp);
+    return {
+      snapshotTenantId: typeof parsed.snapshotTenantId === 'string' ? parsed.snapshotTenantId : '',
+      snapshotScope: typeof parsed.snapshotScope === 'string' ? parsed.snapshotScope : '',
+      snapshotSchemaVersion: Number(parsed.snapshotSchemaVersion),
+      snapshotTimestampMs: Number.isFinite(timestampMs) ? timestampMs : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function normalizeSnapshot(input: unknown, target: { tenantId: string; scope: string }) {
   if (!input || typeof input !== 'object') return {} as Record<string, string>;
   const state = Object.fromEntries(
     Object.entries(input).filter((entry): entry is [string, string] => typeof entry[0] === 'string' && typeof entry[1] === 'string'),
   );
+  const meta = parseSnapshotMeta(state[SNAPSHOT_META_KEY]);
+  if (meta) {
+    const schemaMismatch = meta.snapshotSchemaVersion !== SNAPSHOT_SCHEMA_VERSION;
+    const tenantMismatch = meta.snapshotTenantId !== target.tenantId || meta.snapshotScope !== target.scope;
+    if (schemaMismatch || tenantMismatch) {
+      console.warn('[runtime-state] snapshot rejected by metadata guard', {
+        tenantId: target.tenantId,
+        scope: target.scope,
+        schemaMismatch,
+        tenantMismatch,
+        meta,
+      });
+      return {};
+    }
+
+    if (Date.now() - meta.snapshotTimestampMs > VOLATILE_SNAPSHOT_TTL_MS) {
+      for (const key of VOLATILE_RUNTIME_KEYS) {
+        delete state[key];
+      }
+      console.warn('[runtime-state] expired volatile snapshot keys discarded', {
+        tenantId: target.tenantId,
+        scope: target.scope,
+        expiredKeys: VOLATILE_RUNTIME_KEYS,
+        meta,
+      });
+    }
+  }
+
   const rawSaleProducts = state[SALE_PRODUCTS_RUNTIME_KEY];
-  if (!rawSaleProducts) return state;
+  if (!rawSaleProducts) {
+    state[SNAPSHOT_META_KEY] = snapshotMeta(target.tenantId, target.scope);
+    return state;
+  }
 
   try {
     const parsed = JSON.parse(rawSaleProducts);
-    if (!Array.isArray(parsed)) return state;
-    const filtered = filterSellableProducts(parsed, 'runtime-state-sale-products');
-    state[SALE_PRODUCTS_RUNTIME_KEY] = JSON.stringify(filtered);
-  } catch {
+    if (Array.isArray(parsed)) {
+      const filtered = filterSellableProducts(parsed, 'runtime-state-sale-products');
+      state[SALE_PRODUCTS_RUNTIME_KEY] = JSON.stringify(filtered);
+    }
+  } catch (error) {
+    console.warn('[runtime-state] invalid sale product snapshot discarded', {
+      tenantId: target.tenantId,
+      scope: target.scope,
+      error: error instanceof Error ? error.message : String(error),
+    });
     delete state[SALE_PRODUCTS_RUNTIME_KEY];
   }
 
+  state[SNAPSHOT_META_KEY] = snapshotMeta(target.tenantId, target.scope);
   return state;
 }
 
@@ -78,7 +153,7 @@ export async function GET(request: Request, context: { params: Promise<{ scope: 
 
     const response = NextResponse.json({
       ok: true,
-      state: normalizeSnapshot(stored?.payload),
+      state: normalizeSnapshot(stored?.payload, { tenantId: target.tenantId, scope }),
     });
 
     recordRequestMetric({
@@ -116,7 +191,7 @@ export async function POST(request: Request, context: { params: Promise<{ scope:
     const target = await resolveScope(request, scope);
     tenantId = target.tenantId;
     const body = (await request.json().catch(() => null)) as { state?: unknown } | null;
-    const state = normalizeSnapshot(body?.state);
+    const state = normalizeSnapshot(body?.state, { tenantId: target.tenantId, scope });
 
     await prisma.runtimeState.upsert({
       where: runtimeStateTenantKey(target.tenantId, target.key),
