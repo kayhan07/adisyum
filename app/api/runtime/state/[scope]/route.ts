@@ -18,12 +18,19 @@ const SALE_PRODUCTS_RUNTIME_KEY = 'adisyon-sale-products';
 const SNAPSHOT_META_KEY = '__adisyumRuntimeSnapshotMeta';
 const SNAPSHOT_SCHEMA_VERSION = 1;
 const VOLATILE_SNAPSHOT_TTL_MS = 1000 * 60 * 60 * 24;
+const MAX_RUNTIME_SNAPSHOT_BYTES = 512_000;
 const VOLATILE_RUNTIME_KEYS = [
   'aurelia-table-payment-requested',
   'aurelia-table-live-totals',
   'aurelia-table-meta',
   'aurelia-table-state-sync-meta',
 ] as const;
+
+type NormalizedSnapshot = {
+  state: Record<string, string>;
+  gcAction: 'none' | 'delete' | 'prune';
+  gcReason?: string;
+};
 
 function snapshotMeta(tenantId: string, scope: string) {
   return JSON.stringify({
@@ -54,11 +61,17 @@ function parseSnapshotMeta(raw: string | undefined) {
 }
 
 function normalizeSnapshot(input: unknown, target: { tenantId: string; scope: string }) {
-  if (!input || typeof input !== 'object') return {} as Record<string, string>;
+  if (!input || typeof input !== 'object') return { state: {}, gcAction: 'none' } satisfies NormalizedSnapshot;
   const state = Object.fromEntries(
     Object.entries(input).filter((entry): entry is [string, string] => typeof entry[0] === 'string' && typeof entry[1] === 'string'),
   );
+  let gcAction: NormalizedSnapshot['gcAction'] = 'none';
+  let gcReason: string | undefined;
   const meta = parseSnapshotMeta(state[SNAPSHOT_META_KEY]);
+  if (!meta && Object.keys(state).length > 0) {
+    gcAction = 'prune';
+    gcReason = 'legacy_snapshot_metadata_backfill';
+  }
   if (meta) {
     const schemaMismatch = meta.snapshotSchemaVersion !== SNAPSHOT_SCHEMA_VERSION;
     const tenantMismatch = meta.snapshotTenantId !== target.tenantId || meta.snapshotScope !== target.scope;
@@ -70,7 +83,7 @@ function normalizeSnapshot(input: unknown, target: { tenantId: string; scope: st
         tenantMismatch,
         meta,
       });
-      return {};
+      return { state: {}, gcAction: 'delete', gcReason: schemaMismatch ? 'schema_mismatch' : 'tenant_mismatch' } satisfies NormalizedSnapshot;
     }
 
     if (Date.now() - meta.snapshotTimestampMs > VOLATILE_SNAPSHOT_TTL_MS) {
@@ -83,13 +96,32 @@ function normalizeSnapshot(input: unknown, target: { tenantId: string; scope: st
         expiredKeys: VOLATILE_RUNTIME_KEYS,
         meta,
       });
+      gcAction = 'prune';
+      gcReason = 'expired_volatile_keys';
     }
+  }
+
+  const snapshotBytes = JSON.stringify(state).length;
+  if (snapshotBytes > MAX_RUNTIME_SNAPSHOT_BYTES) {
+    for (const key of VOLATILE_RUNTIME_KEYS) {
+      delete state[key];
+    }
+    delete state[SALE_PRODUCTS_RUNTIME_KEY];
+    console.warn('[runtime-state] oversized runtime snapshot pruned', {
+      tenantId: target.tenantId,
+      scope: target.scope,
+      snapshotBytes,
+      maxRuntimeSnapshotBytes: MAX_RUNTIME_SNAPSHOT_BYTES,
+      prunedKeys: [...VOLATILE_RUNTIME_KEYS, SALE_PRODUCTS_RUNTIME_KEY],
+    });
+    gcAction = 'prune';
+    gcReason = 'oversized_snapshot';
   }
 
   const rawSaleProducts = state[SALE_PRODUCTS_RUNTIME_KEY];
   if (!rawSaleProducts) {
     state[SNAPSHOT_META_KEY] = snapshotMeta(target.tenantId, target.scope);
-    return state;
+    return { state, gcAction, gcReason } satisfies NormalizedSnapshot;
   }
 
   try {
@@ -105,10 +137,41 @@ function normalizeSnapshot(input: unknown, target: { tenantId: string; scope: st
       error: error instanceof Error ? error.message : String(error),
     });
     delete state[SALE_PRODUCTS_RUNTIME_KEY];
+    gcAction = 'prune';
+    gcReason = 'invalid_sale_product_snapshot';
   }
 
   state[SNAPSHOT_META_KEY] = snapshotMeta(target.tenantId, target.scope);
-  return state;
+  return { state, gcAction, gcReason } satisfies NormalizedSnapshot;
+}
+
+async function applyRuntimeSnapshotGc(target: { tenantId: string; key: string }, normalized: NormalizedSnapshot) {
+  if (normalized.gcAction === 'none') return;
+  if (normalized.gcAction === 'delete') {
+    await prisma.runtimeState.delete({
+      where: runtimeStateTenantKey(target.tenantId, target.key),
+    }).catch((error) => {
+      console.warn('[runtime-state] rejected snapshot delete skipped', {
+        tenantId: target.tenantId,
+        key: target.key,
+        reason: normalized.gcReason,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+    return;
+  }
+
+  await prisma.runtimeState.update({
+    where: runtimeStateTenantKey(target.tenantId, target.key),
+    data: { payload: JSON.parse(JSON.stringify(normalized.state)) as Prisma.InputJsonValue },
+  }).catch((error) => {
+    console.warn('[runtime-state] snapshot prune persistence skipped', {
+      tenantId: target.tenantId,
+      key: target.key,
+      reason: normalized.gcReason,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
 }
 
 async function resolveScope(request: Request, scope: string) {
@@ -150,10 +213,12 @@ export async function GET(request: Request, context: { params: Promise<{ scope: 
       where: runtimeStateTenantKey(target.tenantId, target.key),
       select: { payload: true },
     });
+    const normalized = normalizeSnapshot(stored?.payload, { tenantId: target.tenantId, scope });
+    await applyRuntimeSnapshotGc(target, normalized);
 
     const response = NextResponse.json({
       ok: true,
-      state: normalizeSnapshot(stored?.payload, { tenantId: target.tenantId, scope }),
+      state: normalized.state,
     });
 
     recordRequestMetric({
@@ -191,7 +256,14 @@ export async function POST(request: Request, context: { params: Promise<{ scope:
     const target = await resolveScope(request, scope);
     tenantId = target.tenantId;
     const body = (await request.json().catch(() => null)) as { state?: unknown } | null;
-    const state = normalizeSnapshot(body?.state, { tenantId: target.tenantId, scope });
+    const normalized = normalizeSnapshot(body?.state, { tenantId: target.tenantId, scope });
+    if (normalized.gcAction === 'delete') {
+      await prisma.runtimeState.delete({
+        where: runtimeStateTenantKey(target.tenantId, target.key),
+      }).catch(() => undefined);
+      return NextResponse.json({ ok: true, state: {} });
+    }
+    const state = normalized.state;
 
     await prisma.runtimeState.upsert({
       where: runtimeStateTenantKey(target.tenantId, target.key),
