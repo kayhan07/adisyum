@@ -76,6 +76,11 @@ Scope: Adisyum POS/ERP business recovery only. No architecture expansion, no new
 | Masa move/merge timing | WORKING, guarded | Operational anomaly visibility | Move/merge commit and blocked-target logs include tenantId, runtimeScope, timestamp and durationMs so stale UI actions are traceable. |
 | Runtime snapshot observability | WORKING, guarded | Snapshot growth / stale hydrate | Runtime refresh, bootstrap, broadcast, persist and stale snapshot logs now include tenantId, runtimeScope, snapshot key count, snapshot bytes, pending flush, channel count and runtimeSnapshotVersion. Snapshots larger than 512 KB emit a warning before persist/write. |
 | Local agent / printer telemetry | WORKING, guarded | Printer reconnect / silent failure | Direct local agent, proxy fallback, status checks and printer scans now log durationMs, timestamps, printer counts and failure context. |
+| Global runtime error surface | WORKING, guarded | Hidden runtime degradation | Window `error` and `unhandledrejection` listeners now remain active even in product recovery minimal runtime mode and log tenant/scope/timestamp context without enabling advanced runtime layers. |
+| KDS timing and failure surface | WORKING, guarded | Stale KDS / hidden status rollback | KDS refresh/status updates now log slow refresh/status operations, missing ticket skips, auth-lock blocks and rollback failures with tenant/station/timing context. |
+| Tenant runtime activation visibility | WORKING, guarded | Silent bootstrap failure | Tenant runtime initialize/activate now catches rejected bootstrap/clear promises and warns with tenant/scope metadata instead of silently swallowing activation failures. |
+| Alert delivery visibility | WORKING, guarded | Silent notification failure | Alert delivery channels keep fire-and-forget behavior but now warn with tenantId, alertId, channel and timestamp when delivery promises reject. |
+| POS runtime sync timing | WORKING, guarded | Slow reconcile / hidden fetch failure | Authoritative POS hydration and interval/focus reconciliation diagnostics now include durationMs and structured failure payloads. |
 
 ## Silent Failure Cleanup
 

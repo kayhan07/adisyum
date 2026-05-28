@@ -143,6 +143,7 @@ export async function hydrateAuthoritativeRuntime<TLine extends RuntimeOrderLine
     } satisfies RuntimeHydrationResult<TLine>;
   }
   runtimeHydrationCount += 1;
+  const hydrationStartedAtMs = Date.now();
   input.diagnostics?.('runtime hydration started', {
     source: 'initial-hydration',
     hydrationCount: runtimeHydrationCount,
@@ -151,6 +152,7 @@ export async function hydrateAuthoritativeRuntime<TLine extends RuntimeOrderLine
   input.diagnostics?.('authoritative payload received', {
     source: 'initial-hydration',
     tableCount: Object.keys(payload.ordersByTable).length,
+    durationMs: Date.now() - hydrationStartedAtMs,
   });
   const protection = protectPendingOptimisticMutation({
     source: 'initial-hydration',
@@ -184,6 +186,7 @@ export async function hydrateAuthoritativeRuntime<TLine extends RuntimeOrderLine
   } satisfies RuntimeSyncSnapshot<TLine>;
   input.diagnostics?.('runtime hydration completed', {
     hydrationCount: runtimeHydrationCount,
+    durationMs: Date.now() - hydrationStartedAtMs,
     tableCount: Object.keys(ordersByTable).length,
     activeOrderTables: Object.entries(ordersByTable).filter(([, value]) => value.length > 0).map(([tableId]) => tableId),
   });
@@ -285,12 +288,14 @@ export function startAuthoritativeRuntimeSync<TLine extends RuntimeOrderLine>(in
     }
 
     reconcileInFlight = true;
+    const startedAtMs = Date.now();
     void fetchAuthoritativeTablePayload<TLine>()
       .then((payload) => {
         if (cancelled) return;
         input.diagnostics?.('authoritative payload received', {
           source,
           tableCount: Object.keys(payload.ordersByTable).length,
+          durationMs: Date.now() - startedAtMs,
         });
         const ordersByTable = input.normalizeOrders({
           ...input.initialOrders,
@@ -315,6 +320,11 @@ export function startAuthoritativeRuntimeSync<TLine extends RuntimeOrderLine>(in
           });
           return;
         }
+        input.diagnostics?.('authoritative sync failed', {
+          source,
+          durationMs: Date.now() - startedAtMs,
+          error: error instanceof Error ? error.message : String(error),
+        });
         input.onError(source, error);
       })
       .finally(() => {

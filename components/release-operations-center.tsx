@@ -46,8 +46,21 @@ export function ReleaseOperationsCenter() {
   async function load() {
     setLoading(true);
     setError('');
-    const response = await fetch('/api/system-admin/release-operations', { credentials: 'include', cache: 'no-store' }).catch(() => null);
+    const startedAt = Date.now();
+    const response = await fetch('/api/system-admin/release-operations', { credentials: 'include', cache: 'no-store' }).catch((error) => {
+      console.error('[business-flow] release operations load failed', {
+        durationMs: Date.now() - startedAt,
+        timestamp: new Date().toISOString(),
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    });
     if (!response?.ok) {
+      console.warn('[business-flow] release operations returned non-ok', {
+        status: response?.status ?? null,
+        durationMs: Date.now() - startedAt,
+        timestamp: new Date().toISOString(),
+      });
       setError('Release operasyon verisi alınamadı.');
       setLoading(false);
       return;

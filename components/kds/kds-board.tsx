@@ -11,6 +11,8 @@ const stations = [
   { id: 'bar', label: 'Bar', icon: CupSoda },
   { id: 'dessert', label: 'Tatlı', icon: Dessert },
 ] as const;
+const SLOW_KDS_REFRESH_MS = 2500;
+const SLOW_KDS_STATUS_MS = 2500;
 
 const statusColumns = [
   { id: 'new', label: 'Yeni', badgeClass: 'bg-sky-500/16 text-sky-200 ring-sky-400/30' },
@@ -103,9 +105,16 @@ export function KdsBoard({ branchId }: KdsBoardProps) {
   const firstLoadDone = useRef(false);
 
   async function refreshTickets(silent = false) {
+    const startedAt = Date.now();
     if (isRuntimeAuthRequired()) {
       if (!silent) setLoading(false);
       setError('Oturum gerekli.');
+      console.warn('[business-flow] kds refresh blocked by auth runtime lock', {
+        station,
+        branchId,
+        silent,
+        timestamp: new Date().toISOString(),
+      });
       return;
     }
     if (!silent) setLoading(true);
@@ -131,7 +140,35 @@ export function KdsBoard({ branchId }: KdsBoardProps) {
       startTransition(() => {
         setTickets(payload.tickets);
       });
+      const durationMs = Date.now() - startedAt;
+      if (!silent || durationMs > SLOW_KDS_REFRESH_MS) {
+        const logPayload = {
+          tenantId: payload.tenant_id,
+          runtimeScope: 'tenant',
+          station,
+          branchId,
+          silent,
+          ticketCount: payload.tickets.length,
+          durationMs,
+          timestamp: new Date().toISOString(),
+        };
+        if (durationMs > SLOW_KDS_REFRESH_MS) {
+          console.warn('[business-flow] slow kds refresh', { ...logPayload, slowThresholdMs: SLOW_KDS_REFRESH_MS });
+        } else {
+          console.info('[business-flow] kds refresh completed', logPayload);
+        }
+      }
     } catch (requestError) {
+      console.error('[business-flow] kds refresh failed', {
+        tenantId,
+        runtimeScope: 'tenant',
+        station,
+        branchId,
+        silent,
+        durationMs: Date.now() - startedAt,
+        timestamp: new Date().toISOString(),
+        error: requestError instanceof Error ? requestError.message : String(requestError),
+      });
       setError(requestError instanceof Error ? requestError.message : 'KDS verisi alınamadı.');
     } finally {
       if (!silent) setLoading(false);
@@ -140,12 +177,30 @@ export function KdsBoard({ branchId }: KdsBoardProps) {
   }
 
   async function updateStatus(ticketId: string, status: KdsStatus) {
+    const startedAt = Date.now();
     if (isRuntimeAuthRequired()) {
       setError('Oturum gerekli.');
+      console.warn('[business-flow] kds status update blocked by auth runtime lock', {
+        tenantId,
+        ticketId,
+        status,
+        station,
+        timestamp: new Date().toISOString(),
+      });
       return;
     }
     const currentTicket = tickets.find((ticket) => ticket.id === ticketId);
-    if (!currentTicket) return;
+    if (!currentTicket) {
+      console.warn('[business-flow] kds status update skipped missing ticket', {
+        tenantId,
+        ticketId,
+        status,
+        station,
+        ticketCount: tickets.length,
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
 
     const optimisticTicket = { ...currentTicket, status };
     setUpdatingTicketId(ticketId);
@@ -177,9 +232,32 @@ export function KdsBoard({ branchId }: KdsBoardProps) {
         setTickets((current) => upsertTicket(current, payload));
       });
 
+      const durationMs = Date.now() - startedAt;
+      if (durationMs > SLOW_KDS_STATUS_MS) {
+        console.warn('[business-flow] slow kds status update', {
+          tenantId,
+          runtimeScope: 'tenant',
+          ticketId,
+          status,
+          station,
+          durationMs,
+          slowThresholdMs: SLOW_KDS_STATUS_MS,
+          timestamp: new Date().toISOString(),
+        });
+      }
       if (soundEnabled && status === 'ready') playTone('ready');
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'KDS durumu güncellenemedi.');
+      console.error('[business-flow] kds status update failed', {
+        tenantId,
+        runtimeScope: 'tenant',
+        ticketId,
+        status,
+        station,
+        durationMs: Date.now() - startedAt,
+        timestamp: new Date().toISOString(),
+        error: requestError instanceof Error ? requestError.message : String(requestError),
+      });
       startTransition(() => {
         setTickets((current) => upsertTicket(current, currentTicket));
       });

@@ -242,22 +242,62 @@ export async function fireAlert(input: {
 
   if (channelsToUse.includes('webhook')) {
     deliveryPromises.push(
-      sendWebhook(cfg, alert).then((ok) => { if (ok) alert.deliveredTo.push('webhook'); }).catch(() => undefined),
+      sendWebhook(cfg, alert)
+        .then((ok) => { if (ok) alert.deliveredTo.push('webhook'); })
+        .catch((error) => {
+          console.warn('[alert-engine] webhook delivery failed', {
+            tenantId: input.tenantId,
+            alertId: alert.id,
+            channel: 'webhook',
+            timestamp: new Date().toISOString(),
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }),
     );
   }
   if (channelsToUse.includes('telegram')) {
     deliveryPromises.push(
-      sendTelegram(cfg, alert).then((ok) => { if (ok) alert.deliveredTo.push('telegram'); }).catch(() => undefined),
+      sendTelegram(cfg, alert)
+        .then((ok) => { if (ok) alert.deliveredTo.push('telegram'); })
+        .catch((error) => {
+          console.warn('[alert-engine] telegram delivery failed', {
+            tenantId: input.tenantId,
+            alertId: alert.id,
+            channel: 'telegram',
+            timestamp: new Date().toISOString(),
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }),
     );
   }
   if (channelsToUse.includes('discord')) {
     deliveryPromises.push(
-      sendDiscord(cfg, alert).then((ok) => { if (ok) alert.deliveredTo.push('discord'); }).catch(() => undefined),
+      sendDiscord(cfg, alert)
+        .then((ok) => { if (ok) alert.deliveredTo.push('discord'); })
+        .catch((error) => {
+          console.warn('[alert-engine] discord delivery failed', {
+            tenantId: input.tenantId,
+            alertId: alert.id,
+            channel: 'discord',
+            timestamp: new Date().toISOString(),
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }),
     );
   }
   if (channelsToUse.includes('email')) {
     deliveryPromises.push(
-      sendEmail(cfg, alert).then((ok) => { if (ok) alert.deliveredTo.push('email'); }).catch(() => undefined),
+      sendEmail(cfg, alert)
+        .then((ok) => { if (ok) alert.deliveredTo.push('email'); })
+        .catch((error) => {
+          console.warn('[alert-engine] email delivery failed', {
+            tenantId: input.tenantId,
+            alertId: alert.id,
+            channel: 'email',
+            timestamp: new Date().toISOString(),
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }),
     );
   }
 

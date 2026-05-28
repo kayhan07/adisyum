@@ -102,7 +102,6 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   }, [data, isAuthEntryRoute, isFetched, isProtectedRoute, pathname]);
 
   useEffect(() => {
-    if (PRODUCT_RECOVERY_MINIMAL_RUNTIME) return;
     if (!tenantId) return;
 
     let runtimeErrorCount = 0;
@@ -114,7 +113,13 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
           ...payload,
         },
       });
-      console.error('[runtime-diagnostics]', { errorCount: runtimeErrorCount, ...payload });
+      console.error('[runtime-diagnostics]', {
+        tenantId,
+        runtimeScope: role === 'super_admin' ? 'system-admin' : 'tenant',
+        errorCount: runtimeErrorCount,
+        timestamp: new Date().toISOString(),
+        ...payload,
+      });
     };
 
     const onError = (event: ErrorEvent) => {
@@ -144,7 +149,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('error', onError);
       window.removeEventListener('unhandledrejection', onUnhandledRejection);
     };
-  }, [tenantId]);
+  }, [role, tenantId]);
 
   useEffect(() => {
     let cancelled = false;
