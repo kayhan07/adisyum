@@ -15,16 +15,36 @@ export type StoredRawIngredient = {
 };
 
 const STORAGE_KEY = 'adisyon-created-raw-ingredients';
+const LOCAL_STORAGE_KEY = 'adisyum-local-created-raw-ingredients';
 
 function normalizeIngredientKey(value: string) {
   return value.trim().toLocaleLowerCase('tr-TR');
+}
+
+function readLocalRawIngredients() {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem(LOCAL_STORAGE_KEY);
+  } catch (error) {
+    console.error('[business-flow] local raw ingredients read failed', error);
+    return null;
+  }
+}
+
+function writeLocalRawIngredients(value: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(LOCAL_STORAGE_KEY, value);
+  } catch (error) {
+    console.error('[business-flow] local raw ingredients save failed', error);
+  }
 }
 
 export function loadStoredRawIngredients() {
   if (typeof window === 'undefined') return [];
 
   try {
-    const raw = readRuntimeItem('tenant', STORAGE_KEY);
+    const raw = readLocalRawIngredients() ?? readRuntimeItem('tenant', STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? (parsed as StoredRawIngredient[]) : [];
@@ -43,7 +63,9 @@ export function saveStoredRawIngredients(items: StoredRawIngredient[]) {
     const preserved = existing.filter(
       (item) => !incomingKeys.has(item.id) && !incomingKeys.has(normalizeIngredientKey(item.name)),
     );
-    writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify([...items, ...preserved]));
+    const serialized = JSON.stringify([...items, ...preserved]);
+    writeLocalRawIngredients(serialized);
+    writeRuntimeItem('tenant', STORAGE_KEY, serialized);
   } catch (error) {
     console.error('[business-flow] raw ingredients save failed', error);
   }

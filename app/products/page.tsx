@@ -105,6 +105,7 @@ const branchId = 'mrk';
 const DEFAULT_PRODUCT_CATEGORIES = ['Satış Ürünleri', 'İçecekler', 'Combo', 'Hammaddeler', 'Yarı Mamüller', 'Modifier', 'Varyant', 'Kahve', 'Soğuk İçecek', 'Alkol', 'Burger', 'Et', 'Balık', 'Tavuk', 'Tatlı', 'Salata', 'Diğer'] as const;
 const RAW_STOCK_COUNT_STORAGE_KEY = 'adisyon-raw-stock-counts';
 const PRODUCT_CATEGORY_STORAGE_KEY = 'adisyon-product-categories';
+const LOCAL_PRODUCT_CATEGORY_STORAGE_KEY = 'adisyum-local-product-categories';
 
 type ProductWindow = 'raw' | 'sale' | 'quick' | 'bar' | 'recipe' | 'warehouse';
 type CreateItemType = 'sale' | 'raw' | 'semi' | 'combo' | 'modifier' | 'variant';
@@ -127,7 +128,9 @@ function mergeProductCategories(...categoryLists: Array<readonly string[]>) {
 
 function loadStoredProductCategories() {
   try {
-    const raw = readRuntimeItem('tenant', PRODUCT_CATEGORY_STORAGE_KEY);
+    const raw = typeof window === 'undefined'
+      ? readRuntimeItem('tenant', PRODUCT_CATEGORY_STORAGE_KEY)
+      : window.localStorage.getItem(LOCAL_PRODUCT_CATEGORY_STORAGE_KEY) ?? readRuntimeItem('tenant', PRODUCT_CATEGORY_STORAGE_KEY);
     if (!raw) return [] as string[];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed)
@@ -141,7 +144,11 @@ function loadStoredProductCategories() {
 
 function saveStoredProductCategories(categories: string[]) {
   try {
-    writeRuntimeItem('tenant', PRODUCT_CATEGORY_STORAGE_KEY, JSON.stringify(mergeProductCategories(categories)));
+    const serialized = JSON.stringify(mergeProductCategories(categories));
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(LOCAL_PRODUCT_CATEGORY_STORAGE_KEY, serialized);
+    }
+    writeRuntimeItem('tenant', PRODUCT_CATEGORY_STORAGE_KEY, serialized);
   } catch (error) {
     console.error('[business-flow] product categories save failed', error);
   }

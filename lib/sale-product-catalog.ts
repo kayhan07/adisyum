@@ -117,6 +117,7 @@ export type SalePriceContext = {
 };
 
 const STORAGE_KEY = 'adisyon-sale-products';
+const LOCAL_STORAGE_KEY = 'adisyum-local-sale-products';
 const EVENT_NAME = 'adisyon-sale-products:changed';
 
 function normalizeProductKey(value: string) {
@@ -126,6 +127,25 @@ function normalizeProductKey(value: string) {
 function emitSaleProductsChange() {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent(EVENT_NAME));
+}
+
+function readLocalSaleProducts() {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem(LOCAL_STORAGE_KEY);
+  } catch (error) {
+    console.error('[business-flow] local sale products read failed', error);
+    return null;
+  }
+}
+
+function writeLocalSaleProducts(value: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(LOCAL_STORAGE_KEY, value);
+  } catch (error) {
+    console.error('[business-flow] local sale products save failed', error);
+  }
 }
 
 export const DEFAULT_SALE_PRODUCT_BASE: Array<Pick<StoredSaleProduct, 'id' | 'name' | 'category' | 'salePrice' | 'vatRate'>> = [
@@ -271,7 +291,7 @@ export function loadStoredSaleProducts() {
   if (typeof window === 'undefined') return null;
 
   try {
-    const raw = readRuntimeItem('tenant', STORAGE_KEY);
+    const raw = readLocalSaleProducts() ?? readRuntimeItem('tenant', STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     const products = Array.isArray(parsed)
@@ -325,7 +345,9 @@ export function saveStoredSaleProducts(products: StoredSaleProduct[]) {
     const preserved = existing.filter(
       (item) => !incomingKeys.has(item.id) && !incomingKeys.has(normalizeProductKey(item.name)),
     );
-    writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify([...incoming, ...preserved]));
+    const serialized = JSON.stringify([...incoming, ...preserved]);
+    writeLocalSaleProducts(serialized);
+    writeRuntimeItem('tenant', STORAGE_KEY, serialized);
     emitSaleProductsChange();
   } catch (error) {
     console.error('[business-flow] sale products save failed', error);
@@ -340,12 +362,17 @@ export function subscribeToStoredSaleProductsChanges(callback: () => void) {
   const handleCustom = () => {
     callback();
   };
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key === LOCAL_STORAGE_KEY) callback();
+  };
 
   window.addEventListener(EVENT_NAME, handleCustom);
+  window.addEventListener('storage', handleStorage);
   const unsubscribeRuntime = subscribeRuntimeScope('tenant', callback);
 
   return () => {
     window.removeEventListener(EVENT_NAME, handleCustom);
+    window.removeEventListener('storage', handleStorage);
     unsubscribeRuntime();
   };
 }
