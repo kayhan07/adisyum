@@ -1,5 +1,6 @@
 import type { ProductRecipeOverride, RecipePoolUnit } from '@/lib/recipe-pool';
 import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
+import { loadSessionState } from '@/lib/session-store';
 import { compileCanonicalPosCatalog } from '@/lib/canonical-pos-catalog';
 import type { ProductLifecycleStatus, ProductPublishState } from '@/lib/product-lifecycle-governance';
 import {
@@ -132,7 +133,9 @@ function emitSaleProductsChange() {
 function readLocalSaleProducts() {
   if (typeof window === 'undefined') return null;
   try {
-    return window.localStorage.getItem(LOCAL_STORAGE_KEY);
+    const tenantId = loadSessionState().tenantId || 'ABN-48291';
+    return window.localStorage.getItem(`${LOCAL_STORAGE_KEY}:${tenantId}`)
+      ?? (tenantId === 'ABN-48291' ? window.localStorage.getItem(LOCAL_STORAGE_KEY) : null);
   } catch (error) {
     console.error('[business-flow] local sale products read failed', error);
     return null;
@@ -142,7 +145,8 @@ function readLocalSaleProducts() {
 function writeLocalSaleProducts(value: string) {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(LOCAL_STORAGE_KEY, value);
+    const tenantId = loadSessionState().tenantId || 'ABN-48291';
+    window.localStorage.setItem(`${LOCAL_STORAGE_KEY}:${tenantId}`, value);
   } catch (error) {
     console.error('[business-flow] local sale products save failed', error);
   }
@@ -363,7 +367,8 @@ export function subscribeToStoredSaleProductsChanges(callback: () => void) {
     callback();
   };
   const handleStorage = (event: StorageEvent) => {
-    if (event.key === LOCAL_STORAGE_KEY) callback();
+    const tenantId = loadSessionState().tenantId || 'ABN-48291';
+    if (event.key === `${LOCAL_STORAGE_KEY}:${tenantId}`) callback();
   };
 
   window.addEventListener(EVENT_NAME, handleCustom);

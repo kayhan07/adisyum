@@ -1,6 +1,7 @@
 'use client';
 
 import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
+import { loadSessionState } from '@/lib/session-store';
 
 export type ApiKeyRecord = {
   id: string;
@@ -323,7 +324,9 @@ function emitChange() {
 function readLocalIntegrationState() {
   if (typeof window === 'undefined') return null;
   try {
-    return window.localStorage.getItem(LOCAL_STORAGE_KEY);
+    const tenantId = loadSessionState().tenantId || 'ABN-48291';
+    return window.localStorage.getItem(`${LOCAL_STORAGE_KEY}:${tenantId}`)
+      ?? (tenantId === 'ABN-48291' ? window.localStorage.getItem(LOCAL_STORAGE_KEY) : null);
   } catch (error) {
     console.error('[business-flow] local integration state read failed', error);
     return null;
@@ -333,7 +336,8 @@ function readLocalIntegrationState() {
 function writeLocalIntegrationState(value: string) {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(LOCAL_STORAGE_KEY, value);
+    const tenantId = loadSessionState().tenantId || 'ABN-48291';
+    window.localStorage.setItem(`${LOCAL_STORAGE_KEY}:${tenantId}`, value);
   } catch (error) {
     console.error('[business-flow] local integration state save failed', error);
   }
@@ -389,7 +393,8 @@ export function subscribeToIntegrationChanges(callback: () => void) {
   if (typeof window === 'undefined') return () => {};
   const onCustom = () => callback();
   const onStorage = (event: StorageEvent) => {
-    if (event.key === LOCAL_STORAGE_KEY) callback();
+    const tenantId = loadSessionState().tenantId || 'ABN-48291';
+    if (event.key === `${LOCAL_STORAGE_KEY}:${tenantId}`) callback();
   };
   window.addEventListener(EVENT_NAME, onCustom);
   window.addEventListener('storage', onStorage);

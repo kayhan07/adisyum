@@ -1,4 +1,5 @@
 import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
+import { loadSessionState } from '@/lib/session-store';
 
 export type VatRate = 1 | 10 | 20;
 export type RawUnit = 'kg' | 'lt' | 'adet';
@@ -24,7 +25,9 @@ function normalizeIngredientKey(value: string) {
 function readLocalRawIngredients() {
   if (typeof window === 'undefined') return null;
   try {
-    return window.localStorage.getItem(LOCAL_STORAGE_KEY);
+    const tenantId = loadSessionState().tenantId || 'ABN-48291';
+    return window.localStorage.getItem(`${LOCAL_STORAGE_KEY}:${tenantId}`)
+      ?? (tenantId === 'ABN-48291' ? window.localStorage.getItem(LOCAL_STORAGE_KEY) : null);
   } catch (error) {
     console.error('[business-flow] local raw ingredients read failed', error);
     return null;
@@ -34,7 +37,8 @@ function readLocalRawIngredients() {
 function writeLocalRawIngredients(value: string) {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(LOCAL_STORAGE_KEY, value);
+    const tenantId = loadSessionState().tenantId || 'ABN-48291';
+    window.localStorage.setItem(`${LOCAL_STORAGE_KEY}:${tenantId}`, value);
   } catch (error) {
     console.error('[business-flow] local raw ingredients save failed', error);
   }

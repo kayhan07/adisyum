@@ -100,6 +100,7 @@ import {
   type ProductMapping,
 } from '@/lib/pos-mapping-store';
 import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
+import { loadSessionState } from '@/lib/session-store';
 
 const branchId = 'mrk';
 const DEFAULT_PRODUCT_CATEGORIES = ['Satış Ürünleri', 'İçecekler', 'Combo', 'Hammaddeler', 'Yarı Mamüller', 'Modifier', 'Varyant', 'Kahve', 'Soğuk İçecek', 'Alkol', 'Burger', 'Et', 'Balık', 'Tavuk', 'Tatlı', 'Salata', 'Diğer'] as const;
@@ -128,9 +129,13 @@ function mergeProductCategories(...categoryLists: Array<readonly string[]>) {
 
 function loadStoredProductCategories() {
   try {
+    const tenantId = loadSessionState().tenantId || 'ABN-48291';
+    const localKey = `${LOCAL_PRODUCT_CATEGORY_STORAGE_KEY}:${tenantId}`;
     const raw = typeof window === 'undefined'
       ? readRuntimeItem('tenant', PRODUCT_CATEGORY_STORAGE_KEY)
-      : window.localStorage.getItem(LOCAL_PRODUCT_CATEGORY_STORAGE_KEY) ?? readRuntimeItem('tenant', PRODUCT_CATEGORY_STORAGE_KEY);
+      : window.localStorage.getItem(localKey)
+        ?? (tenantId === 'ABN-48291' ? window.localStorage.getItem(LOCAL_PRODUCT_CATEGORY_STORAGE_KEY) : null)
+        ?? readRuntimeItem('tenant', PRODUCT_CATEGORY_STORAGE_KEY);
     if (!raw) return [] as string[];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed)
@@ -146,7 +151,8 @@ function saveStoredProductCategories(categories: string[]) {
   try {
     const serialized = JSON.stringify(mergeProductCategories(categories));
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(LOCAL_PRODUCT_CATEGORY_STORAGE_KEY, serialized);
+      const tenantId = loadSessionState().tenantId || 'ABN-48291';
+      window.localStorage.setItem(`${LOCAL_PRODUCT_CATEGORY_STORAGE_KEY}:${tenantId}`, serialized);
     }
     writeRuntimeItem('tenant', PRODUCT_CATEGORY_STORAGE_KEY, serialized);
   } catch (error) {

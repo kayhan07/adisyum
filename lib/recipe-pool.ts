@@ -41,9 +41,15 @@ type DefaultRecipeTemplate = {
 };
 
 import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
+import { loadSessionState } from '@/lib/session-store';
 
 const STORAGE_KEY = 'adisyon-recipe-pool';
 const LOCAL_STORAGE_KEY = 'adisyum-local-recipe-pool';
+
+function localRecipePoolKey() {
+  const tenantId = loadSessionState().tenantId || 'ABN-48291';
+  return `${LOCAL_STORAGE_KEY}:${tenantId}`;
+}
 
 const DEFAULT_RECIPE_TEMPLATES: DefaultRecipeTemplate[] = [
   {
@@ -447,7 +453,10 @@ export function loadStoredRecipePool() {
   }
 
   try {
-    const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY) ?? readRuntimeItem('tenant', STORAGE_KEY);
+    const tenantId = loadSessionState().tenantId || 'ABN-48291';
+    const raw = window.localStorage.getItem(localRecipePoolKey())
+      ?? (tenantId === 'ABN-48291' ? window.localStorage.getItem(LOCAL_STORAGE_KEY) : null)
+      ?? readRuntimeItem('tenant', STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredRecipePoolState;
     if (!Array.isArray(parsed?.recipes) || !Array.isArray(parsed?.versions)) {
@@ -471,7 +480,7 @@ export function saveStoredRecipePool(recipes: RecipePoolRecipe[], versions: Reci
   try {
     const merged = mergeRecipePoolStates(loadStoredRecipePool(), { recipes, versions });
     const serialized = JSON.stringify(merged);
-    window.localStorage.setItem(LOCAL_STORAGE_KEY, serialized);
+    window.localStorage.setItem(localRecipePoolKey(), serialized);
     writeRuntimeItem('tenant', STORAGE_KEY, serialized);
   } catch (error) {
     console.error('[business-flow] recipe pool save failed', error);
