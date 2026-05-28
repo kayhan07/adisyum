@@ -249,6 +249,16 @@ function areOrderMapsEqual(first: Record<string, OrderLine[]>, second: Record<st
 }
 
 const logOrderFlow = createRuntimeDiagnostics('adisyon-flow');
+const SLOW_POS_MUTATION_MS = 3000;
+const SLOW_PAYMENT_COMMIT_MS = 5000;
+
+function businessNowMs() {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+function businessDurationMs(startedAt: number) {
+  return Math.round(businessNowMs() - startedAt);
+}
 
 function getProductSnapshotStatus(product: ProductCard) {
   const snapshot = product.productSnapshot;
@@ -1387,14 +1397,15 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   };
 
   const mergeCurrentTable = () => {
+    const mergeStartedAt = businessNowMs();
     if (!currentTable || !mergeTargetId) {
-      console.error('[business-flow] table merge blocked', { currentTableId: currentTable?.id, mergeTargetId });
+      console.error('[business-flow] table merge blocked', { currentTableId: currentTable?.id, mergeTargetId, tenantId: sessionState.tenantId, timestamp: new Date().toISOString() });
       setFeedbackMessage('Birlestirme icin kaynak ve hedef masa secin.');
       return;
     }
     const targetTable = allTables.find((table) => table.id === mergeTargetId);
     if (!targetTable) {
-      console.error('[business-flow] table merge target missing', { mergeTargetId });
+      console.error('[business-flow] table merge target missing', { mergeTargetId, tenantId: sessionState.tenantId, timestamp: new Date().toISOString() });
       setFeedbackMessage('Hedef masa bulunamadi.');
       return;
     }
@@ -1455,8 +1466,12 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     console.log('[business-flow] table merge commit', {
       sourceTableId: currentTable.id,
       targetTableId: mergeTargetId,
+      tenantId: sessionState.tenantId,
+      runtimeScope: 'tenant',
       movedLineCount: selectedOrders.length,
       remainingLineCount: remainingOrders.length,
+      durationMs: businessDurationMs(mergeStartedAt),
+      timestamp: new Date().toISOString(),
     });
     replaceAuthoritativeOrdersByTable(nextOrders);
     setOrdersByTable(nextOrders);
@@ -1469,14 +1484,15 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   };
 
   const moveCurrentTable = () => {
+    const moveStartedAt = businessNowMs();
     if (!currentTable || !moveTargetId) {
-      console.error('[business-flow] table move blocked', { currentTableId: currentTable?.id, moveTargetId });
+      console.error('[business-flow] table move blocked', { currentTableId: currentTable?.id, moveTargetId, tenantId: sessionState.tenantId, timestamp: new Date().toISOString() });
       setFeedbackMessage('Tasima icin kaynak ve hedef masa secin.');
       return;
     }
     const targetTable = allTables.find((table) => table.id === moveTargetId);
     if (!targetTable) {
-      console.error('[business-flow] table move target missing', { moveTargetId });
+      console.error('[business-flow] table move target missing', { moveTargetId, tenantId: sessionState.tenantId, timestamp: new Date().toISOString() });
       setFeedbackMessage('Hedef masa bulunamadi.');
       return;
     }
@@ -1510,7 +1526,11 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     console.log('[business-flow] table move commit', {
       sourceTableId: currentTable.id,
       targetTableId: moveTargetId,
+      tenantId: sessionState.tenantId,
+      runtimeScope: 'tenant',
       movedLineCount: sourceOrders.length,
+      durationMs: businessDurationMs(moveStartedAt),
+      timestamp: new Date().toISOString(),
     });
     replaceAuthoritativeOrdersByTable(nextOrders);
     setOrdersByTable(nextOrders);
@@ -1750,11 +1770,15 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       },
     });
 
+    const mutationStartedAt = businessNowMs();
     try {
       logOrderFlow('add-product-db-mutation-start', {
         source,
         tableId,
         mutationId: mutation.mutationId,
+        tenantId: sessionState.tenantId,
+        runtimeScope: 'tenant',
+        timestamp: new Date().toISOString(),
         sessionTenantId: sessionState.tenantId,
         sessionBranchId: sessionState.activeBranchId,
         sessionRole: sessionState.currentUser.role,
@@ -1781,15 +1805,30 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         persistTableLiveTotals({ [tableId]: getOrderGross(committedLines) });
         return merged;
       });
+      const durationMs = businessDurationMs(mutationStartedAt);
       logOrderFlow('add-product-db-mutation-complete', {
         source,
         tableId,
         mutationId: result.mutationId,
+        tenantId: sessionState.tenantId,
+        runtimeScope: 'tenant',
+        durationMs,
+        timestamp: new Date().toISOString(),
         productId: product.id,
         productName: product.name,
         nextLineCount: committedLines.length,
         total: getOrderGross(committedLines),
       });
+      if (durationMs > SLOW_POS_MUTATION_MS) {
+        console.warn('[business-flow] slow product mutation', {
+          source,
+          tableId,
+          mutationId: result.mutationId,
+          tenantId: sessionState.tenantId,
+          durationMs,
+          slowThresholdMs: SLOW_POS_MUTATION_MS,
+        });
+      }
       recordPosClickDebug('mutation committed', {
         source,
         tableId,
@@ -1809,11 +1848,16 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       setFeedbackMessage(`${product.name} adisyona eklendi`);
       setProductSearch('');
     } catch (error) {
+      const durationMs = businessDurationMs(mutationStartedAt);
       setOrdersByTable((current) => rollbackOrderMutation(current, mutation));
       logOrderFlow('add-product-db-mutation-failed', {
         source,
         tableId,
         mutationId: mutation.mutationId,
+        tenantId: sessionState.tenantId,
+        runtimeScope: 'tenant',
+        durationMs,
+        timestamp: new Date().toISOString(),
         productId: product.id,
         productName: product.name,
         message: error instanceof Error ? error.message : String(error),
@@ -2001,11 +2045,15 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       payload: { tableId, mutationId: mutation.mutationId, product: mutation.product },
     });
 
+    const mutationStartedAt = businessNowMs();
     try {
       logOrderFlow('add-product-db-mutation-start', {
         source: 'product-card',
         tableId,
         mutationId: mutation.mutationId,
+        tenantId: sessionState.tenantId,
+        runtimeScope: 'tenant',
+        timestamp: new Date().toISOString(),
         sessionTenantId: sessionState.tenantId,
         sessionBranchId: sessionState.activeBranchId,
         sessionRole: sessionState.currentUser.role,
@@ -2034,15 +2082,30 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         return merged;
       });
       const touchedLineId = committedLines[committedLines.length - 1]?.id ?? null;
+      const durationMs = businessDurationMs(mutationStartedAt);
       logOrderFlow('add-product-db-mutation-complete', {
         source: 'product-card',
         tableId,
         mutationId: result.mutationId,
+        tenantId: sessionState.tenantId,
+        runtimeScope: 'tenant',
+        durationMs,
+        timestamp: new Date().toISOString(),
         productId: productCardProduct.id,
         productName: productCardProduct.name,
         nextLineCount: committedLines.length,
         total: getOrderGross(committedLines),
       });
+      if (durationMs > SLOW_POS_MUTATION_MS) {
+        console.warn('[business-flow] slow product mutation', {
+          source: 'product-card',
+          tableId,
+          mutationId: result.mutationId,
+          tenantId: sessionState.tenantId,
+          durationMs,
+          slowThresholdMs: SLOW_POS_MUTATION_MS,
+        });
+      }
       recordPosClickDebug('mutation committed', {
         source: 'product-card',
         tableId,
@@ -2063,11 +2126,16 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       setProductSearch('');
       closeProductCard();
     } catch (error) {
+      const durationMs = businessDurationMs(mutationStartedAt);
       setOrdersByTable((current) => rollbackOrderMutation(current, mutation));
       logOrderFlow('add-product-db-mutation-failed', {
         source: 'product-card',
         tableId,
         mutationId: mutation.mutationId,
+        tenantId: sessionState.tenantId,
+        runtimeScope: 'tenant',
+        durationMs,
+        timestamp: new Date().toISOString(),
         productId: productCardProduct.id,
         productName: productCardProduct.name,
         message: error instanceof Error ? error.message : String(error),
@@ -2108,11 +2176,16 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         lineId: input.lineId,
         action: input.action,
         quantity: input.quantity,
+        tenantId: sessionState.tenantId,
+        mutationId,
+        inFlightCount: lineMutationInFlightRef.current.size,
+        timestamp: new Date().toISOString(),
       });
       setFeedbackMessage('Bu satir guncelleniyor. Bir saniye sonra tekrar deneyin.');
       return;
     }
     lineMutationInFlightRef.current.add(inFlightKey);
+    const mutationStartedAt = businessNowMs();
     try {
       logOrderFlow('line-mutation-start', {
         tableId: input.tableId,
@@ -2120,6 +2193,9 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         action: input.action,
         quantity: input.quantity,
         mutationId,
+        tenantId: sessionState.tenantId,
+        runtimeScope: 'tenant',
+        timestamp: new Date().toISOString(),
       });
       const response = await runtimeFetch('/api/pos/table-orders', {
         method: 'POST',
@@ -2145,19 +2221,41 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           return merged;
         });
       }
+      const durationMs = businessDurationMs(mutationStartedAt);
       logOrderFlow('line-mutation-complete', {
         tableId: input.tableId,
         lineId: input.lineId,
         action: input.action,
         quantity: input.quantity,
         mutationId,
+        tenantId: sessionState.tenantId,
+        runtimeScope: 'tenant',
+        durationMs,
+        timestamp: new Date().toISOString(),
       });
+      if (durationMs > SLOW_POS_MUTATION_MS) {
+        console.warn('[business-flow] slow line mutation', {
+          tableId: input.tableId,
+          lineId: input.lineId,
+          action: input.action,
+          mutationId,
+          tenantId: sessionState.tenantId,
+          durationMs,
+          slowThresholdMs: SLOW_POS_MUTATION_MS,
+        });
+      }
     } catch (error) {
+      const durationMs = businessDurationMs(mutationStartedAt);
       console.error('[business-flow] line mutation failed', {
         tableId: input.tableId,
         lineId: input.lineId,
         action: input.action,
         quantity: input.quantity,
+        mutationId,
+        tenantId: sessionState.tenantId,
+        runtimeScope: 'tenant',
+        durationMs,
+        timestamp: new Date().toISOString(),
         error,
       });
       setFeedbackMessage('Adisyon degisikligi kaydedilemedi. Sayfayi yenileyip tekrar deneyin.');
@@ -3026,25 +3124,33 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     if (paymentInFlightRef.current) {
       console.warn('[business-flow] duplicate payment submit blocked', {
         tableId: currentTable.id,
+        tenantId: sessionState.tenantId,
         paymentTargetTotal,
         paymentScope,
+        timestamp: new Date().toISOString(),
       });
       setFeedbackMessage('Tahsilat isleniyor. Lutfen sonucu bekleyin.');
       return;
     }
 
     const currentTableId = currentTable.id;
+    const paymentMutationId = `${currentTableId}-payment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const paymentStartedAt = businessNowMs();
     const isPartialPayment = paymentScope === 'split' && paymentTargetTotal < discountedSettlementTotal;
     paymentInFlightRef.current = true;
     setPaymentSubmitting(true);
     lastPaymentGuardRef.current = { tableId: currentTableId, total: paymentTargetTotal, at: Date.now() };
     console.log('[business-flow] payment commit started', {
       tableId: currentTableId,
+      tenantId: sessionState.tenantId,
+      mutationId: paymentMutationId,
+      runtimeScope: 'tenant',
       lineCount: lines.length,
       paymentScope,
       paymentMethod,
       paymentTargetTotal,
       discountedSettlementTotal,
+      timestamp: new Date().toISOString(),
     });
 
     if (paymentScope === 'split' && splitMode === 'person') {
@@ -3103,11 +3209,26 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       setCashReceived('');
       setCardAmount('');
       updatePaymentRequested(currentTableId, false);
+      const durationMs = businessDurationMs(paymentStartedAt);
       console.log('[business-flow] payment split commit completed', {
         tableId: currentTableId,
+        tenantId: sessionState.tenantId,
+        mutationId: paymentMutationId,
         paidItemCount: paidItems.length,
         amount: paymentTargetTotal,
+        durationMs,
+        timestamp: new Date().toISOString(),
       });
+      if (durationMs > SLOW_PAYMENT_COMMIT_MS) {
+        console.warn('[business-flow] slow payment commit', {
+          tableId: currentTableId,
+          tenantId: sessionState.tenantId,
+          mutationId: paymentMutationId,
+          paymentScope,
+          durationMs,
+          slowThresholdMs: SLOW_PAYMENT_COMMIT_MS,
+        });
+      }
       setDiscountRateInput('0');
       setRoundingDiscountEnabled(false);
       setDiscountReason('');
@@ -3135,11 +3256,26 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       setRoundingDiscountEnabled(false);
       setDiscountReason('');
       updatePaymentRequested(currentTableId, false);
+      const durationMs = businessDurationMs(paymentStartedAt);
       console.log('[business-flow] payment partial commit completed', {
         tableId: currentTableId,
+        tenantId: sessionState.tenantId,
+        mutationId: paymentMutationId,
         amount: paymentTargetTotal,
         remaining: discountedSettlementTotal - paymentTargetTotal,
+        durationMs,
+        timestamp: new Date().toISOString(),
       });
+      if (durationMs > SLOW_PAYMENT_COMMIT_MS) {
+        console.warn('[business-flow] slow payment commit', {
+          tableId: currentTableId,
+          tenantId: sessionState.tenantId,
+          mutationId: paymentMutationId,
+          paymentScope,
+          durationMs,
+          slowThresholdMs: SLOW_PAYMENT_COMMIT_MS,
+        });
+      }
       setFeedbackMessage(`${formatMoney(paymentTargetTotal)} tahsil edildi, kalan ${formatMoney(discountedSettlementTotal - paymentTargetTotal)}`);
       releasePaymentSubmission();
       return;
@@ -3177,17 +3313,36 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     setCardAmount('');
     setMixedAccountEnabled(false);
     updatePaymentRequested(currentTableId, false);
+    const fullPaymentDurationMs = businessDurationMs(paymentStartedAt);
     console.log('[business-flow] payment full commit completed', {
       tableId: currentTableId,
+      tenantId: sessionState.tenantId,
+      mutationId: paymentMutationId,
       amount: paymentTargetTotal,
       paymentMethod,
+      durationMs: fullPaymentDurationMs,
+      timestamp: new Date().toISOString(),
     });
+    if (fullPaymentDurationMs > SLOW_PAYMENT_COMMIT_MS) {
+      console.warn('[business-flow] slow payment commit', {
+        tableId: currentTableId,
+        tenantId: sessionState.tenantId,
+        mutationId: paymentMutationId,
+        paymentScope,
+        durationMs: fullPaymentDurationMs,
+        slowThresholdMs: SLOW_PAYMENT_COMMIT_MS,
+      });
+    }
     try {
       await closePaidTableOrder(currentTableId, paymentTargetTotal);
     } catch (error) {
       console.error('[business-flow] payment table close failed', {
         tableId: currentTableId,
+        tenantId: sessionState.tenantId,
+        mutationId: paymentMutationId,
         amount: paymentTargetTotal,
+        durationMs: businessDurationMs(paymentStartedAt),
+        timestamp: new Date().toISOString(),
         error,
       });
       setFeedbackMessage('Tahsilat kaydedildi ancak masa kapatma sunucuya yazilamadi. Masalar ekranini yenileyip kontrol edin.');

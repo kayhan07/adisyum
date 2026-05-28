@@ -66,6 +66,17 @@ Scope: Adisyum POS/ERP business recovery only. No architecture expansion, no new
 | Printer integration local fallback | WORKING, guarded | Stale printer mapping | `lib/integration-store.ts` uses tenant-scoped local fallback keys so saved printer mappings survive refresh without crossing tenants. |
 | Warehouse/ledger/runtime stores | WORKING, guarded | Tenant-scoped runtime state | Warehouse, access, cari/kasa, treasury, payment journal, layout and table state stores persist through `readRuntimeItem('tenant', ...)`, which is now protected by active tenant identity reset. |
 
+## Production Observability / Long Session Stability
+
+| Flow | Code status | Risk class | Notes |
+| --- | --- | --- | --- |
+| POS product mutation timing | WORKING, guarded | Slow mutation / retry visibility | Product add logs now include tenantId, tableId, mutationId, runtimeScope, timestamp and durationMs. Mutations slower than 3000 ms emit `[business-flow] slow product mutation`. |
+| POS line mutation timing | WORKING, guarded | Duplicate mutation / race visibility | Quantity/delete mutations now log durationMs and tenant/runtime context. In-flight duplicate skips include mutationId and inFlightCount. Slow line mutations emit `[business-flow] slow line mutation`. |
+| Payment timing and duplicate visibility | WORKING, guarded | Duplicate payment / partial finalize | Payment commit now gets a payment mutationId, tenant context, timestamp and durationMs. Duplicate submits and table-close failures include contextual metadata; slow commits warn after 5000 ms. |
+| Masa move/merge timing | WORKING, guarded | Operational anomaly visibility | Move/merge commit and blocked-target logs include tenantId, runtimeScope, timestamp and durationMs so stale UI actions are traceable. |
+| Runtime snapshot observability | WORKING, guarded | Snapshot growth / stale hydrate | Runtime refresh, bootstrap, broadcast, persist and stale snapshot logs now include tenantId, runtimeScope, snapshot key count, snapshot bytes, pending flush, channel count and runtimeSnapshotVersion. Snapshots larger than 512 KB emit a warning before persist/write. |
+| Local agent / printer telemetry | WORKING, guarded | Printer reconnect / silent failure | Direct local agent, proxy fallback, status checks and printer scans now log durationMs, timestamps, printer counts and failure context. |
+
 ## Silent Failure Cleanup
 
 | Area | Status | Notes |

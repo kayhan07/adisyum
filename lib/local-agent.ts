@@ -52,6 +52,7 @@ async function fetchDirectLocalAgent(path: string, options: LocalAgentRequestOpt
   for (const base of directLocalAgentBases()) {
     const controller = new AbortController();
     const timeoutMs = path === '/printers' ? 30000 : 5000;
+    const startedAt = Date.now();
     const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
     try {
@@ -74,13 +75,24 @@ async function fetchDirectLocalAgent(path: string, options: LocalAgentRequestOpt
       if (!response.ok) {
         lastError = new Error(`Local agent status ${response.status}`);
         if (path !== '/health') {
-          console.warn('[business-flow] direct local agent returned non-ok status', { base, path, status: response.status });
+          console.warn('[business-flow] direct local agent returned non-ok status', {
+            base,
+            path,
+            status: response.status,
+            durationMs: Date.now() - startedAt,
+            timestamp: new Date().toISOString(),
+          });
         }
         continue;
       }
 
       if (path !== '/health') {
-        console.info('[business-flow] direct local agent connected', { base, path });
+        console.info('[business-flow] direct local agent connected', {
+          base,
+          path,
+          durationMs: Date.now() - startedAt,
+          timestamp: new Date().toISOString(),
+        });
       }
       return { response, base };
     } catch (error) {
@@ -89,6 +101,9 @@ async function fetchDirectLocalAgent(path: string, options: LocalAgentRequestOpt
         console.warn('[business-flow] direct local agent base failed', {
           base,
           path,
+          durationMs: Date.now() - startedAt,
+          timeoutMs,
+          timestamp: new Date().toISOString(),
           error: error instanceof Error ? error.message : String(error),
         });
       }
@@ -101,6 +116,7 @@ async function fetchDirectLocalAgent(path: string, options: LocalAgentRequestOpt
 }
 
 export async function fetchFromLocalAgent(path: string, options: LocalAgentRequestOptions = {}) {
+  const startedAt = Date.now();
   const nextBody = (() => {
     if (path !== '/print' || options.body === undefined || options.body === null || typeof options.body !== 'object') {
       return options.body;
@@ -121,6 +137,8 @@ export async function fetchFromLocalAgent(path: string, options: LocalAgentReque
       if (path !== '/health') {
         console.warn('[business-flow] direct local agent fetch failed; trying proxy fallback', {
           path,
+          durationMs: Date.now() - startedAt,
+          timestamp: new Date().toISOString(),
           error: error instanceof Error ? error.message : String(error),
         });
       }
@@ -140,6 +158,15 @@ export async function fetchFromLocalAgent(path: string, options: LocalAgentReque
 
   if (!response.ok) {
     throw new Error(`Local agent proxy status ${response.status}`);
+  }
+
+  if (path !== '/health') {
+    console.info('[business-flow] local agent proxy connected', {
+      path,
+      proxyRoute,
+      durationMs: Date.now() - startedAt,
+      timestamp: new Date().toISOString(),
+    });
   }
 
   return { response, base: proxyRoute };

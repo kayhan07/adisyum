@@ -318,6 +318,7 @@ export default function SettingsPage() {
     }
 
     const run = (async () => {
+      const scanStartedAt = Date.now();
       setPrinterScanLoading(true);
       setMessage('');
 
@@ -335,6 +336,12 @@ export default function SettingsPage() {
         const localAgentResult = await scanLocalAgentPrinters();
         setSystemPrinters(localAgentResult.printers);
         setSelectedSystemPrinterName(localAgentResult.printers[0]?.name ?? '');
+        console.info('[business-flow] system printer scan completed', {
+          printerCount: localAgentResult.printers.length,
+          durationMs: Date.now() - scanStartedAt,
+          source: 'local-agent',
+          timestamp: new Date().toISOString(),
+        });
         if (localAgentResult.printers.length > 0) {
           setMessage(`${localAgentResult.printers.length} yazıcı local agent üzerinden bulundu.`);
           return;
@@ -342,7 +349,11 @@ export default function SettingsPage() {
 
         setMessage('Local agent çalışıyor ancak yazıcı bulunamadı.');
       } catch (error) {
-        console.error('[business-flow] system printer scan failed', error);
+        console.error('[business-flow] system printer scan failed', {
+          durationMs: Date.now() - scanStartedAt,
+          timestamp: new Date().toISOString(),
+          error,
+        });
         setMessage(`Yazıcılar okunamadı. POS bilgisayarında Adisyum Local Agent çalışmalı ve ${getLocalAgentBaseHint()} erişilebilir olmalı.`);
       } finally {
         setPrinterScanLoading(false);
@@ -371,14 +382,25 @@ export default function SettingsPage() {
 
     const run = (async () => {
       for (let attempt = 1; attempt <= retries; attempt += 1) {
+        const attemptStartedAt = Date.now();
         try {
           await fetchLocalAgentJson<unknown>('/health');
           setAgentStatus('online');
+          if (!options.quiet) {
+            console.info('[business-flow] local agent status check completed', {
+              attempt,
+              retries,
+              durationMs: Date.now() - attemptStartedAt,
+              timestamp: new Date().toISOString(),
+            });
+          }
           return true;
         } catch (error) {
           console.warn('[business-flow] local agent status check failed', {
             attempt,
             retries,
+            durationMs: Date.now() - attemptStartedAt,
+            timestamp: new Date().toISOString(),
             error: error instanceof Error ? error.message : String(error),
           });
           if (attempt < retries) {
@@ -402,6 +424,7 @@ export default function SettingsPage() {
   }
 
   async function scanLocalAgentPrinters(): Promise<{ printers: SystemPrinter[]; error?: string }> {
+    const scanStartedAt = Date.now();
     try {
       const { data } = await fetchLocalAgentJson<
         Array<string | { Name?: string; name?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string }>
@@ -434,7 +457,11 @@ export default function SettingsPage() {
         printers,
       };
     } catch (error) {
-      console.error('[business-flow] local agent printer scan failed', error);
+      console.error('[business-flow] local agent printer scan failed', {
+        durationMs: Date.now() - scanStartedAt,
+        timestamp: new Date().toISOString(),
+        error,
+      });
       return {
         printers: [] as SystemPrinter[],
         error: error instanceof Error ? error.message : 'Local agent erişilemedi.',

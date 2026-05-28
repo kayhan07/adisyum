@@ -33,6 +33,7 @@ const TABLE_RUNTIME_KEYS = [
 	'aurelia-table-state-sync-meta',
 ] as const;
 const TABLE_STATE_META_KEY = 'aurelia-table-state-sync-meta';
+const LARGE_RUNTIME_SNAPSHOT_BYTES = 512_000;
 const lastLocalWriteAt: Record<RuntimeScope, number> = {
 	tenant: 0,
 	'system-admin': 0,
@@ -48,6 +49,47 @@ const persistInFlight: Record<RuntimeScope, boolean> = {
 
 function isRuntimeStateAuthFailure(error: unknown) {
 	return error instanceof Error && /sync unauthorized with (401|403)/.test(error.message);
+}
+
+function snapshotBytes(snapshot: RuntimeSnapshot) {
+	try {
+		return JSON.stringify(snapshot).length;
+	} catch {
+		return -1;
+	}
+}
+
+function runtimeTimestamp() {
+	return new Date().toISOString();
+}
+
+function runtimeDiagnostics(scope: RuntimeScope, extra: Record<string, unknown> = {}) {
+	const snapshot = snapshots[scope];
+	const bytes = snapshotBytes(snapshot);
+	return {
+		scope,
+		runtimeScope: scope,
+		tenantId: activeTenantIds[scope],
+		runtimeSnapshotVersion: readTableSnapshotVersion(snapshot)?.version ?? null,
+		snapshotKeyCount: Object.keys(snapshot).length,
+		snapshotBytes: bytes,
+		pendingFlush: pendingFlushes.has(scope),
+		persistInFlight: persistInFlight[scope],
+		dirty: dirtyScopes[scope],
+		channelCount: channels.size,
+		timestamp: runtimeTimestamp(),
+		...extra,
+	};
+}
+
+function warnLargeRuntimeSnapshot(scope: RuntimeScope, operation: string) {
+	const bytes = snapshotBytes(snapshots[scope]);
+	if (bytes <= LARGE_RUNTIME_SNAPSHOT_BYTES) return;
+	console.warn('[runtime-state] large runtime snapshot detected', runtimeDiagnostics(scope, {
+		operation,
+		snapshotBytes: bytes,
+		largeRuntimeSnapshotBytes: LARGE_RUNTIME_SNAPSHOT_BYTES,
+	}));
 }
 
 function areSnapshotsEqual(first: RuntimeSnapshot, second: RuntimeSnapshot) {
@@ -86,10 +128,9 @@ function ensureScopeIdentity(scope: RuntimeScope) {
 	bootstrapPromises.delete(scope);
 	activeTenantIds[scope] = currentIdentity;
 
-	console.info('[runtime-state] scope identity changed; local snapshot cleared', {
-		scope,
+	console.info('[runtime-state] scope identity changed; local snapshot cleared', runtimeDiagnostics(scope, {
 		currentIdentity,
-	});
+	}));
 }
 
 function readTableSnapshotVersion(snapshot: RuntimeSnapshot) {
@@ -130,13 +171,12 @@ function mergeIncomingSnapshot(scope: RuntimeScope, incoming: RuntimeSnapshot, s
 			merged[key] = snapshots[scope][key];
 		}
 	}
-	console.info('[runtime-state] stale table snapshot rejected', {
-		scope,
+	console.info('[runtime-state] stale table snapshot rejected', runtimeDiagnostics(scope, {
 		source,
 		localMeta,
 		incomingMeta,
 		preservedKeys: TABLE_RUNTIME_KEYS.filter((key) => snapshots[scope][key] !== undefined),
-	});
+	}));
 	return merged;
 }
 
@@ -156,12 +196,9 @@ function getChannel(scope: RuntimeScope) {
 		ensureScopeIdentity(scope);
 		if (!event.data?.snapshot || typeof event.data.snapshot !== 'object') return;
 		if (dirtyScopes[scope] || persistInFlight[scope] || Date.now() - lastLocalWriteAt[scope] < LOCAL_WRITE_REFRESH_GRACE_MS) {
-			console.info('[runtime-state] broadcast snapshot ignored during local mutation', {
-				scope,
-				dirty: dirtyScopes[scope],
-				persistInFlight: persistInFlight[scope],
+			console.info('[runtime-state] broadcast snapshot ignored during local mutation', runtimeDiagnostics(scope, {
 				ageMs: Date.now() - lastLocalWriteAt[scope],
-			});
+			}));
 			return;
 		}
 		const nextSnapshot = mergeIncomingSnapshot(scope, { ...event.data.snapshot }, 'broadcast');
@@ -252,6 +289,7 @@ export function writeRuntimeItem(scope: RuntimeScope, key: string, value: string
 	broadcast(scope);
 
 	if (options.persist !== false) {
+		warnLargeRuntimeSnapshot(scope, 'write');
 		schedulePersist(scope);
 	}
 }
@@ -278,12 +316,9 @@ export async function bootstrapRuntimeScope(scope: RuntimeScope) {
 	const promise = requestSnapshot(scope, 'GET')
 		.then((snapshot) => {
 			if (dirtyScopes[scope] || persistInFlight[scope] || Date.now() - lastLocalWriteAt[scope] < LOCAL_WRITE_REFRESH_GRACE_MS) {
-				console.info('[runtime-state] bootstrap snapshot ignored during local mutation', {
-					scope,
-					dirty: dirtyScopes[scope],
-					persistInFlight: persistInFlight[scope],
+				console.info('[runtime-state] bootstrap snapshot ignored during local mutation', runtimeDiagnostics(scope, {
 					ageMs: Date.now() - lastLocalWriteAt[scope],
-				});
+				}));
 				return snapshots[scope];
 			}
 			const nextSnapshot = mergeIncomingSnapshot(scope, snapshot, 'bootstrap');
@@ -294,7 +329,7 @@ export async function bootstrapRuntimeScope(scope: RuntimeScope) {
 			return snapshot;
 		})
 		.catch((error) => {
-			console.warn('[runtime-state] bootstrap failed; keeping local snapshot', { scope, error });
+			console.warn('[runtime-state] bootstrap failed; keeping local snapshot', runtimeDiagnostics(scope, { error }));
 			return snapshots[scope];
 		})
 		.finally(() => {
@@ -310,15 +345,12 @@ export async function refreshRuntimeScope(scope: RuntimeScope) {
 	ensureScopeIdentity(scope);
 	if (isRuntimeAuthRequired()) return snapshots[scope];
 	if (dirtyScopes[scope] || persistInFlight[scope] || pendingFlushes.has(scope) || Date.now() - lastLocalWriteAt[scope] < LOCAL_WRITE_REFRESH_GRACE_MS) {
-		console.info('[runtime-state] refresh skipped during local mutation', {
-			scope,
-			dirty: dirtyScopes[scope],
-			persistInFlight: persistInFlight[scope],
-			pendingFlush: pendingFlushes.has(scope),
+		console.info('[runtime-state] refresh skipped during local mutation', runtimeDiagnostics(scope, {
 			ageMs: Date.now() - lastLocalWriteAt[scope],
-		});
+		}));
 		return snapshots[scope];
 	}
+	const refreshStartedAt = Date.now();
 	try {
 		const snapshot = await requestSnapshot(scope, 'GET');
 		if (dirtyScopes[scope] || persistInFlight[scope] || Date.now() - lastLocalWriteAt[scope] < LOCAL_WRITE_REFRESH_GRACE_MS) return snapshots[scope];
@@ -327,9 +359,15 @@ export async function refreshRuntimeScope(scope: RuntimeScope) {
 		snapshots[scope] = nextSnapshot;
 		emit(scope);
 		broadcast(scope);
+		console.info('[runtime-state] refresh applied', runtimeDiagnostics(scope, {
+			durationMs: Date.now() - refreshStartedAt,
+		}));
 		return snapshot;
 	} catch (error) {
-		console.warn('[runtime-state] refresh failed; keeping local snapshot', { scope, error });
+		console.warn('[runtime-state] refresh failed; keeping local snapshot', runtimeDiagnostics(scope, {
+			durationMs: Date.now() - refreshStartedAt,
+			error,
+		}));
 		return snapshots[scope];
 	}
 }
@@ -339,6 +377,8 @@ export async function persistRuntimeScope(scope: RuntimeScope) {
 	ensureScopeIdentity(scope);
 	if (isRuntimeAuthRequired()) return snapshots[scope];
 	persistInFlight[scope] = true;
+	warnLargeRuntimeSnapshot(scope, 'persist');
+	const persistStartedAt = Date.now();
 	try {
 		const next = await requestSnapshot(scope, 'POST', snapshots[scope]);
 		dirtyScopes[scope] = false;
@@ -351,11 +391,11 @@ export async function persistRuntimeScope(scope: RuntimeScope) {
 		return snapshots[scope];
 	} catch (error) {
 		dirtyScopes[scope] = !isRuntimeStateAuthFailure(error);
-		console.warn('[runtime-state] persist failed; keeping local snapshot', {
-			scope,
+		console.warn('[runtime-state] persist failed; keeping local snapshot', runtimeDiagnostics(scope, {
 			retrySuppressed: isRuntimeStateAuthFailure(error),
+			durationMs: Date.now() - persistStartedAt,
 			error,
-		});
+		}));
 		return snapshots[scope];
 	} finally {
 		persistInFlight[scope] = false;
