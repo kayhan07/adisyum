@@ -4,7 +4,7 @@ import { clearSessionCookie } from '@/lib/session';
 import { prisma } from '@/lib/db/prisma';
 import { userTenantIdKey } from '@/lib/db/compound-keys';
 import { isSessionActive } from '@/lib/server/session-guard';
-import { assertTenantIsActive } from '@/lib/db/tenant-repository';
+import { assertTenantCanAccess } from '@/lib/db/tenant-repository';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
 
   if (session.role !== 'super_admin') {
     try {
-      await assertTenantIsActive(session.tenantId);
+      await assertTenantCanAccess(session.tenantId, { readOnly: true });
     } catch (error) {
       console.warn('[auth/me] stale tenant session rejected', {
         tenantId: session.tenantId,
@@ -50,8 +50,7 @@ export async function GET(request: Request) {
         prisma.subscription.findFirst({
           where: {
             tenantId: session.tenantId,
-            status: { in: ['active', 'trial', 'demo'] },
-            endsAt: { gte: new Date() },
+            deletedAt: null,
           },
           orderBy: { endsAt: 'desc' },
           select: { endsAt: true },

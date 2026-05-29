@@ -19,6 +19,10 @@ function normalizePackageType(value: string | null | undefined) {
   return value === 'gold' || value === 'premium' ? value : 'mini';
 }
 
+function hasUnlimitedLicense(metadata: unknown) {
+  return Boolean(metadata && typeof metadata === 'object' && !Array.isArray(metadata) && (metadata as Record<string, unknown>).unlimitedLicense === true);
+}
+
 function getRequestIp(request: Request) {
   return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
     || request.headers.get('x-real-ip')
@@ -50,11 +54,10 @@ export async function POST(request: Request) {
     prisma.subscription.findFirst({
       where: {
         tenantId,
-        status: { in: ['active', 'trial', 'demo'] },
-        endsAt: { gte: new Date() },
+        deletedAt: null,
       },
       orderBy: { endsAt: 'desc' },
-      select: { id: true, packageType: true, endsAt: true },
+      select: { id: true, packageType: true, status: true, endsAt: true, metadata: true },
     }),
     prisma.user.findFirst({
       where: { tenantId, username, active: true },
@@ -66,7 +69,14 @@ export async function POST(request: Request) {
     ? await verifyPassword(password, user.passwordHash)
     : { valid: false, needsRehash: false };
 
-  if (!tenant || !['active', 'trial', 'demo'].includes(tenant.status) || !subscription || !user || !passwordResult.valid) {
+  const subscriptionAllowsLogin = subscription
+    ? hasUnlimitedLicense(subscription.metadata)
+      || (['active', 'trial', 'demo'].includes(subscription.status) && subscription.endsAt >= new Date())
+      || tenant?.status === 'expired'
+    : false;
+  const tenantAllowsLogin = tenant ? ['active', 'trial', 'demo', 'expired'].includes(tenant.status) : false;
+
+  if (!tenant || !tenantAllowsLogin || !subscriptionAllowsLogin || !user || !passwordResult.valid) {
     console.warn('[auth/login] failed login diagnostic', {
       tenantId,
       username,
@@ -89,7 +99,7 @@ export async function POST(request: Request) {
       ip,
       userAgent,
       metadata: {
-        reason: !tenant || !subscription ? 'inactive_tenant_or_subscription' : 'invalid_credentials',
+        reason: !tenant || !subscription || !tenantAllowsLogin || !subscriptionAllowsLogin ? 'inactive_tenant_or_subscription' : 'invalid_credentials',
         username,
       },
     }).catch(() => undefined);
@@ -108,6 +118,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Kullanici adi veya sifre hatali.' }, { status: 401 });
   }
 
+  const activeSubscription = subscription!;
   if (passwordResult.needsRehash) {
     await prisma.user.update({
       where: userTenantIdKey(tenantId, user.id),
@@ -125,9 +136,9 @@ export async function POST(request: Request) {
     userId: user.id,
     tenantId,
     role: user.role,
-    subscriptionId: subscription.id,
+    subscriptionId: activeSubscription.id,
     permissions: normalizePermissions(user.permissions),
-    packageType: normalizePackageType(subscription.packageType || tenant.packageType),
+    packageType: normalizePackageType(activeSubscription.packageType || tenant.packageType),
     branchId,
   });
 

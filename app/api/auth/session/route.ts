@@ -25,6 +25,10 @@ function normalizePackageType(value: string | null | undefined) {
   return value === 'gold' || value === 'premium' ? value : 'mini';
 }
 
+function hasUnlimitedLicense(metadata: unknown) {
+  return Boolean(metadata && typeof metadata === 'object' && !Array.isArray(metadata) && (metadata as Record<string, unknown>).unlimitedLicense === true);
+}
+
 function getRequestIp(request: Request) {
   return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
     || request.headers.get('x-real-ip')
@@ -47,11 +51,10 @@ export async function POST(request: Request) {
     prisma.subscription.findFirst({
       where: {
         tenantId: body.tenantId,
-        status: { in: ['active', 'trial', 'demo'] },
-        endsAt: { gte: new Date() },
+        deletedAt: null,
       },
       orderBy: { endsAt: 'desc' },
-      select: { id: true, packageType: true },
+      select: { id: true, packageType: true, status: true, endsAt: true, metadata: true },
     }),
     prisma.user.findUnique({
       where: userTenantIdKey(body.tenantId, body.userId),
@@ -59,7 +62,14 @@ export async function POST(request: Request) {
     }),
   ]);
 
-  if (!tenant || !['active', 'trial', 'demo'].includes(tenant.status) || !subscription || !user || !user.active) {
+  const subscriptionAllowsLogin = subscription
+    ? hasUnlimitedLicense(subscription.metadata)
+      || (['active', 'trial', 'demo'].includes(subscription.status) && subscription.endsAt >= new Date())
+      || tenant?.status === 'expired'
+    : false;
+  const tenantAllowsLogin = tenant ? ['active', 'trial', 'demo', 'expired'].includes(tenant.status) : false;
+
+  if (!tenant || !tenantAllowsLogin || !subscriptionAllowsLogin || !user || !user.active) {
     await writeAuditLog({
       tenantId: body.tenantId,
       userId: body.userId,
@@ -74,13 +84,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Tenant, abonelik veya kullanici aktif degil.' }, { status: 403 });
   }
 
+  const activeSubscription = subscription!;
   const token = await createSessionToken({
     userId: body.userId,
     tenantId: body.tenantId,
     role: user.role || body.role,
-    subscriptionId: subscription.id,
+    subscriptionId: activeSubscription.id,
     permissions: normalizePermissions(user.permissions),
-    packageType: normalizePackageType(subscription.packageType || tenant.packageType),
+    packageType: normalizePackageType(activeSubscription.packageType || tenant.packageType),
     branchId: user.branchId ?? body.branchId,
   });
 

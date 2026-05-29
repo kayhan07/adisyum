@@ -103,6 +103,16 @@ Scope: Adisyum POS/ERP business recovery only. No architecture expansion, no new
 | System Admin lacked direct operational controls for subscription/status/password recovery | MEDIUM | Operators had limited ability to recover expired/suspended tenants or force safe password reset from the SaaS panel. | `app/api/system-admin/tenants/route.ts`, `lib/system-admin/provisioning.ts`, `app/system-admin/page.tsx` | Added guarded PATCH actions for subscription edits, duration extension, unlimited license, password reset/force change and tenant status updates. |
 | Clean tenant verification was not visible from the tenant drawer | MEDIUM | Cross-tenant leakage or accidental seeded data required manual DB checks. | `lib/system-admin/provisioning.ts`, `app/system-admin/page.tsx` | Tenant rows now include product/category/stock/recipe/current-account/cash/report/printer/runtime counts and the drawer displays them. |
 
+## Tenant Lifecycle Findings
+
+| Finding | Severity | Lifecycle impact | Affected files | Fix applied |
+| --- | --- | --- | --- | --- |
+| Expired tenant access was all-or-nothing | HIGH | Expired tenants could not log in for read-only review, while the desired lifecycle behavior is read access with new mutations blocked. | `lib/db/tenant-repository.ts`, `lib/requireTenant.ts`, `app/api/auth/login/route.ts`, `app/api/auth/session/route.ts`, `app/api/auth/me/route.ts` | Expired tenants can keep read-only access through GET/HEAD checks, but POST/PATCH/DELETE tenant endpoints remain blocked. Suspended and disabled/blocked tenants remain fully blocked. Unlimited licenses are recognized from subscription metadata. |
+| Reactivating or extending an expired subscription could leave stale canceled/expired state | HIGH | System Admin could set a future/unlimited date while the subscription status still prevented login. | `lib/system-admin/provisioning.ts` | Subscription extension and unlimited license actions now reactivate the latest subscription when the resulting expiry is valid; setting tenant status back to active extends an already-expired latest subscription by a recovery-safe 30 days. |
+| Duplicate tenant creation was only protected by tenant code | HIGH | Same company, tax number or admin email could create conflicting SaaS tenants. | `lib/system-admin/provisioning.ts` | Provisioning queue creation now rejects conflicts by tenant code, company name, tax number and admin email before a job is queued. |
+| Tenant health dashboard lacked lifecycle scale indicators | MEDIUM | Operators could not quickly audit table/order/sales volume, last login or footprint from the tenant drawer. | `lib/system-admin/provisioning.ts`, `app/system-admin/page.tsx` | Tenant rows now include table count, order count, total paid sales, last login and database footprint, and the drawer displays them. |
+| Tenant export path was missing from System Admin tenant operations | MEDIUM | Support could not export tenant products, recipes, stock, cari and settings from the management center. | `app/api/system-admin/tenants/route.ts`, `lib/system-admin/provisioning.ts`, `app/system-admin/page.tsx` | Added guarded System Admin export JSON for products, recipes, stock, cari and settings/printer mappings. |
+
 ## Silent Failure Cleanup
 
 | Area | Status | Notes |

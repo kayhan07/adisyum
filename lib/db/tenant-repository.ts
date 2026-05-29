@@ -14,27 +14,41 @@ export function tenantWhere<T extends object>(tenant: TenantContext, where?: T):
   } as T & TenantScopedWhere;
 }
 
-export async function assertTenantIsActive(tenantId: string) {
+function isUnlimitedSubscription(metadata: Prisma.JsonValue | null | undefined) {
+  return Boolean(metadata && typeof metadata === 'object' && !Array.isArray(metadata) && metadata.unlimitedLicense === true);
+}
+
+export async function assertTenantCanAccess(tenantId: string, options: { readOnly?: boolean } = {}) {
   const tenant = await prisma.tenant.findUnique({
     where: { tenantId },
     select: { tenantId: true, status: true },
   });
 
-  if (!tenant || !['active', 'trial', 'demo'].includes(tenant.status)) {
+  if (!tenant || tenant.status === 'suspended' || tenant.status === 'blocked') {
     throw new Error('Tenant aktif değil veya bulunamadı.');
   }
 
   const subscription = await prisma.subscription.findFirst({
     where: {
       tenantId,
-      status: { in: ['active', 'trial', 'demo'] },
-      endsAt: { gte: new Date() },
+      deletedAt: null,
     },
-    select: { id: true },
+    orderBy: { endsAt: 'desc' },
+    select: { id: true, status: true, endsAt: true, metadata: true },
   });
 
   if (!subscription) throw new Error('Aktif abonelik bulunamadı.');
+  const unlimited = isUnlimitedSubscription(subscription.metadata);
+  const activeSubscription = ['active', 'trial', 'demo'].includes(subscription.status) && (unlimited || subscription.endsAt >= new Date());
+  const expiredReadAllowed = options.readOnly === true
+    && (tenant.status === 'expired' || subscription.endsAt < new Date() || ['expired', 'canceled'].includes(subscription.status));
+
+  if (!activeSubscription && !expiredReadAllowed) throw new Error('Aktif abonelik bulunamadÄ±.');
   return tenant;
+}
+
+export async function assertTenantIsActive(tenantId: string) {
+  return assertTenantCanAccess(tenantId, { readOnly: false });
 }
 
 export async function listTenantProducts(tenant: TenantContext, options: { take?: number; skip?: number } = {}) {

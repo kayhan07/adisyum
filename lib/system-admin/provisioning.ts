@@ -202,6 +202,48 @@ function provisioningJobKey(input: ProvisionTenantInput) {
   return `tenant:${(input.tenantId?.trim() || input.companyName.trim()).toUpperCase()}`;
 }
 
+function normalizeConflictValue(value: string | null | undefined) {
+  return value?.trim().toLowerCase() || null;
+}
+
+async function assertTenantProvisioningConflicts(input: ProvisionTenantInput) {
+  const tenantId = input.tenantId?.trim().toUpperCase() || null;
+  const companyName = normalizeConflictValue(input.companyName);
+  const taxNumber = normalizeConflictValue(input.taxNumber);
+  const adminEmail = normalizeConflictValue(input.adminEmail);
+
+  const [tenantConflict, emailConflict] = await Promise.all([
+    prisma.tenant.findFirst({
+      where: {
+        deletedAt: null,
+        OR: [
+          ...(tenantId ? [{ tenantId }] : []),
+          ...(companyName ? [{ name: { equals: input.companyName.trim(), mode: Prisma.QueryMode.insensitive } }] : []),
+          ...(taxNumber ? [{ taxNumber: { equals: input.taxNumber?.trim(), mode: Prisma.QueryMode.insensitive } }] : []),
+        ],
+      },
+      select: { tenantId: true, name: true, taxNumber: true },
+    }),
+    adminEmail
+      ? prisma.user.findFirst({
+          where: {
+            deletedAt: null,
+            email: { equals: input.adminEmail?.trim(), mode: Prisma.QueryMode.insensitive },
+            tenantId: { not: 'system' },
+          },
+          select: { tenantId: true, email: true },
+        })
+      : Promise.resolve(null),
+  ]);
+
+  if (tenantConflict) {
+    throw new Error(`Tenant cakismasi: ${tenantConflict.tenantId} / ${tenantConflict.name}`);
+  }
+  if (emailConflict) {
+    throw new Error(`Tenant admin e-posta cakismasi: ${emailConflict.email}`);
+  }
+}
+
 function serializeDiagnostic(step: string, status: 'ok' | 'failed', startedAt: number, detail?: Record<string, unknown>) {
   return {
     step,
@@ -252,6 +294,7 @@ async function recordProvisioningEvents(jobId: string, events: ProvisioningTrace
 }
 
 export async function createProvisioningJob(input: ProvisionTenantInput) {
+  await assertTenantProvisioningConflicts(input);
   const jobKey = provisioningJobKey(input);
   return prisma.provisioningJob.upsert({
     where: { jobKey },
@@ -758,6 +801,9 @@ export async function listSaasTenants() {
         categoryCount,
         stockCount,
         recipeCount,
+        tableCount,
+        orderCount,
+        salesTotal,
         customerCount,
         supplierCount,
         cashRegisterCount,
@@ -770,6 +816,9 @@ export async function listSaasTenants() {
         prisma.productCategory.count({ where: { tenantId, deletedAt: null } }),
         prisma.stockItem.count({ where: { tenantId } }),
         prisma.recipe.count({ where: { tenantId } }),
+        prisma.posTable.count({ where: { tenantId } }),
+        prisma.order.count({ where: { tenantId } }),
+        prisma.payment.aggregate({ where: { tenantId, status: 'paid' }, _sum: { amount: true } }),
         prisma.customer.count({ where: { tenantId } }),
         prisma.supplier.count({ where: { tenantId } }),
         prisma.cashRegister.count({ where: { tenantId } }),
@@ -785,6 +834,9 @@ export async function listSaasTenants() {
           categoryCount,
           stockCount,
           recipeCount,
+          tableCount,
+          orderCount,
+          salesTotal: Number(salesTotal._sum.amount ?? 0),
           currentAccountCount: customerCount + supplierCount,
           cashRecordCount: cashRegisterCount + cashTransactionCount,
           reportCount,
@@ -815,6 +867,7 @@ export async function listSaasTenants() {
       activeBranchCount: tenant.branches.filter((branch) => branch.active).length,
       activeUsers: tenant.users.filter((user) => user.active).length,
       lastActivity: tenant.users.map((user) => user.lastLoginAt?.toISOString()).filter(Boolean).sort().at(-1) ?? tenant.updatedAt.toISOString(),
+      lastLogin: tenant.users.map((user) => user.lastLoginAt?.toISOString()).filter(Boolean).sort().at(-1) ?? null,
       expiresAt: subscription?.endsAt.toISOString() ?? null,
       subscriptionStatus: subscription?.status ?? 'none',
       balance: Number(metadata.initialBalance ?? subscriptionMetadata.initialBalance ?? 0),
@@ -827,12 +880,52 @@ export async function listSaasTenants() {
       categoryCount: counts?.categoryCount ?? 0,
       stockCount: counts?.stockCount ?? 0,
       recipeCount: counts?.recipeCount ?? 0,
+      tableCount: counts?.tableCount ?? 0,
+      orderCount: counts?.orderCount ?? 0,
+      salesTotal: counts?.salesTotal ?? 0,
       currentAccountCount: counts?.currentAccountCount ?? 0,
       cashRecordCount: counts?.cashRecordCount ?? 0,
       reportCount: counts?.reportCount ?? 0,
       printerCount: counts?.printerCount ?? 0,
       runtimeSnapshotCount: counts?.runtimeSnapshotCount ?? 0,
+      databaseFootprint: Object.entries(counts ?? {}).reduce((sum, [, value]) => sum + (typeof value === 'number' ? value : 0), 0),
     };
+  });
+}
+
+function jsonSafe<T>(input: T): T {
+  return JSON.parse(JSON.stringify(input)) as T;
+}
+
+export async function exportTenantData(tenantIdInput: string) {
+  const tenantId = tenantIdInput.trim().toUpperCase();
+  if (!tenantId) throw new Error('tenantId zorunludur.');
+  const tenant = await prisma.tenant.findUnique({
+    where: { tenantId },
+    select: { tenantId: true, name: true, legalName: true, taxNumber: true, packageType: true, status: true, settings: true, metadata: true },
+  });
+  if (!tenant) throw new Error('Tenant bulunamadi.');
+  const [products, categories, recipes, recipeItems, stock, stockMovements, customers, suppliers, printers, printerGroups] = await Promise.all([
+    prisma.product.findMany({ where: { tenantId, deletedAt: null }, orderBy: { createdAt: 'asc' } }),
+    prisma.productCategory.findMany({ where: { tenantId, deletedAt: null }, orderBy: { createdAt: 'asc' } }),
+    prisma.recipe.findMany({ where: { tenantId }, orderBy: { createdAt: 'asc' } }),
+    prisma.recipeItem.findMany({ where: { tenantId }, orderBy: { createdAt: 'asc' } }),
+    prisma.stockItem.findMany({ where: { tenantId }, orderBy: { createdAt: 'asc' } }),
+    prisma.stockMovement.findMany({ where: { tenantId }, orderBy: { createdAt: 'asc' } }),
+    prisma.customer.findMany({ where: { tenantId }, orderBy: { createdAt: 'asc' } }),
+    prisma.supplier.findMany({ where: { tenantId }, orderBy: { createdAt: 'asc' } }),
+    prisma.printer.findMany({ where: { tenantId }, orderBy: { createdAt: 'asc' } }),
+    prisma.printerGroup.findMany({ where: { tenantId }, orderBy: { createdAt: 'asc' } }),
+  ]);
+
+  return jsonSafe({
+    exportedAt: new Date().toISOString(),
+    tenant,
+    products: { categories, products },
+    recipes: { recipes, recipeItems },
+    stock: { items: stock, movements: stockMovements },
+    cari: { customers, suppliers },
+    settings: { tenantSettings: tenant.settings, printers, printerGroups },
   });
 }
 
@@ -860,6 +953,7 @@ export async function updateTenantSubscription(input: Extract<TenantManagementIn
   if (Number(input.addYears ?? 0)) nextEndsAt = addYears(nextEndsAt, Number(input.addYears));
 
   const packageType = (input.packageType ?? current.packageType) as PackageType;
+  const nextStatus = input.status ?? (nextEndsAt >= new Date() || input.unlimitedLicense ? 'active' : current.status);
   const limits = licenseLimits(packageType);
   const metadata = compactJson({
     ...metadataObject(current.metadata),
@@ -873,7 +967,7 @@ export async function updateTenantSubscription(input: Extract<TenantManagementIn
       where: { tenantId_id: { tenantId, id: current.id } },
       data: {
         packageType,
-        status: input.status ?? current.status,
+        status: nextStatus,
         billingPeriod: input.billingPeriod ?? current.billingPeriod,
         startsAt: input.startsAt ? new Date(input.startsAt) : current.startsAt,
         endsAt: nextEndsAt,
@@ -945,13 +1039,23 @@ export async function updateTenantStatus(input: Extract<TenantManagementInput, {
   const status = (input.status === 'disabled' ? 'blocked' : input.status) as TenantStatus;
   if (!tenantId) throw new Error('tenantId zorunludur.');
   return prisma.$transaction(async (tx) => {
+    const latestSubscription = await tx.subscription.findFirst({
+      where: { tenantId, deletedAt: null },
+      orderBy: { endsAt: 'desc' },
+      select: { id: true, endsAt: true },
+    });
     const tenant = await tx.tenant.update({
       where: { tenantId },
       data: { status },
     });
     await tx.subscription.updateMany({
       where: { tenantId, deletedAt: null },
-      data: { status: normalizeSubscriptionStatus(status) },
+      data: {
+        status: normalizeSubscriptionStatus(status),
+        ...(status === 'active' && latestSubscription && latestSubscription.endsAt < new Date()
+          ? { endsAt: addDays(new Date(), 30) }
+          : {}),
+      },
     });
     await writeAuditLog({
       tenantId,

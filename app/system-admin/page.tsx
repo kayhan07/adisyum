@@ -40,17 +40,22 @@ type SaasTenantRow = {
   kontorBalance: number;
   dailyOrders: number;
   dailyRevenue: number;
+  lastLogin?: string | null;
   mainBranchId?: string | null;
   createdAt: string;
   productCount?: number;
   categoryCount?: number;
   stockCount?: number;
   recipeCount?: number;
+  tableCount?: number;
+  orderCount?: number;
+  salesTotal?: number;
   currentAccountCount?: number;
   cashRecordCount?: number;
   reportCount?: number;
   printerCount?: number;
   runtimeSnapshotCount?: number;
+  databaseFootprint?: number;
 };
 type SaasSummary = {
   totalTenants: number;
@@ -1365,9 +1370,14 @@ function DrawerOverview({ tenant, tenantState, presence, devices, jobs, events }
     <Metric label="Products" value={String(tenant?.productCount ?? 0)} />
     <Metric label="Stock" value={String(tenant?.stockCount ?? 0)} />
     <Metric label="Cari" value={String(tenant?.currentAccountCount ?? 0)} />
+    <Metric label="Tables" value={String(tenant?.tableCount ?? 0)} />
+    <Metric label="Orders" value={String(tenant?.orderCount ?? 0)} />
+    <Metric label="Sales" value={formatAdminMoney(tenant?.salesTotal ?? 0)} />
     <Metric label="Reports" value={String(tenant?.reportCount ?? 0)} />
     <Metric label="Printers" value={String(tenant?.printerCount ?? 0)} />
     <Metric label="Runtime snapshots" value={String(tenant?.runtimeSnapshotCount ?? 0)} />
+    <Metric label="Last login" value={tenant?.lastLogin ? tenant.lastLogin.slice(0, 10) : '-'} />
+    <Metric label="DB footprint" value={String(tenant?.databaseFootprint ?? 0)} />
     <div className="md:col-span-2 xl:col-span-3"><DrawerSimple title="Subscription" rows={[`Durum: ${tenant?.subscriptionStatus ?? '-'}`, `Yenileme: ${tenantState ? createRenewalNotice(tenantState) : '-'}`, `BitiÅŸ: ${tenant?.expiresAt?.slice(0, 10) ?? '-'}`]} /></div>
   </div>;
 }
@@ -1406,6 +1416,10 @@ function DrawerTenantManagement({ tenantId, loading, message, onAction }: { tena
         <button disabled={loading || !tempPassword.trim()} type="button" onClick={() => onAction({ action: 'update_password', username: 'admin', temporaryPassword: tempPassword.trim(), forcePasswordChange: true })} className="btn-blue">Admin sifresini sifirla</button>
       </div>
       {message ? <p className="mt-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200">{message}</p> : null}
+    </article>
+    <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5 md:col-span-2">
+      <h3 className="text-lg font-semibold">Tenant export</h3>
+      <button disabled={loading} type="button" onClick={() => window.open(`/api/system-admin/tenants?exportTenantId=${encodeURIComponent(tenantId)}`, '_blank', 'noopener,noreferrer')} className="btn-blue">Export JSON</button>
     </article>
   </div>;
 }

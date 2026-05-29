@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { forbiddenResponse, getSessionFromRequest } from '@/lib/session';
 import { tenantFromSession, type TenantContext } from '@/lib/tenant';
-import { assertTenantIsActive } from '@/lib/db/tenant-repository';
+import { assertTenantCanAccess } from '@/lib/db/tenant-repository';
 import { isSessionActive } from '@/lib/server/session-guard';
 
 export class TenantAuthError extends Error {
@@ -71,7 +71,7 @@ export async function requireTenant(request: Request, options: { allowSuperAdmin
   }
 
   try {
-    await assertTenantIsActive(session.tenantId);
+    await assertTenantCanAccess(session.tenantId, { readOnly: ['GET', 'HEAD', 'OPTIONS'].includes(request.method) });
   } catch (error) {
     logTenantRejection(request, 'inactive_tenant_or_subscription', 403, {
       userId: session.userId,

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { isRouteResponse, requireSystemAdmin } from '@/lib/system-admin/auth';
 import {
   createProvisioningJob,
+  exportTenantData,
   getProvisioningMetrics,
   listProvisioningJobs,
   listSaasTenants,
@@ -18,6 +19,12 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   try {
     await requireSystemAdmin(request);
+    const url = new URL(request.url);
+    const exportTenantId = url.searchParams.get('exportTenantId');
+    if (exportTenantId) {
+      const exported = await exportTenantData(exportTenantId);
+      return NextResponse.json({ ok: true, export: exported, generatedAt: new Date().toISOString() });
+    }
     const [tenants, jobs, provisioningMetrics] = await Promise.all([listSaasTenants(), listProvisioningJobs(), getProvisioningMetrics()]);
     return NextResponse.json({
       ok: true,
