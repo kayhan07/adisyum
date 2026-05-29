@@ -2919,73 +2919,81 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     });
   };
 
-  const recordPaymentJournal = (tableName: string, amount: number) => {
+  const recordPaymentJournal = (tableName: string, amount: number, mutationId: string) => {
     const date = new Date().toISOString().slice(0, 10);
     const entries = [] as ReturnType<typeof buildPaymentJournalEntry>[];
+    const sourceId = currentTable?.id ?? tableName;
+    const reconciliationBase = `${sourceId}:${mutationId}`;
 
     if (paymentMethod === 'cash') {
       entries.push(
         buildPaymentJournalEntry({
+          reconciliationKey: `${reconciliationBase}:cash`,
           date,
           amount: roundCurrency(amount),
           method: 'cash',
           source: 'table',
-          sourceId: currentTable?.id ?? tableName,
+          sourceId,
           label: `${tableName} adisyon tahsilatı`,
         }),
       );
     } else if (paymentMethod === 'card') {
       entries.push(
         buildPaymentJournalEntry({
+          reconciliationKey: `${reconciliationBase}:card`,
           date,
           amount: roundCurrency(amount),
           method: 'card',
           source: 'table',
-          sourceId: currentTable?.id ?? tableName,
+          sourceId,
           label: `${tableName} adisyon tahsilatı`,
         }),
       );
     } else if (paymentMethod === 'meal') {
       entries.push(
         buildPaymentJournalEntry({
+          reconciliationKey: `${reconciliationBase}:meal`,
           date,
           amount: roundCurrency(amount),
           method: 'meal',
           source: 'table',
-          sourceId: currentTable?.id ?? tableName,
+          sourceId,
           label: `${tableName} yemek kartı tahsilatı`,
         }),
       );
     } else if (paymentMethod === 'euro') {
       entries.push(
         buildPaymentJournalEntry({
+          reconciliationKey: `${reconciliationBase}:euro`,
           date,
           amount: roundCurrency(amount),
           method: 'euro',
           source: 'table',
-          sourceId: currentTable?.id ?? tableName,
+          sourceId,
           label: `${tableName} euro tahsilatı (${formatForeignMoney(euroPaymentAmount, 'EUR')} / kur ${euroRate.toLocaleString('tr-TR')})`,
         }),
       );
     } else if (paymentMethod === 'dollar') {
       entries.push(
         buildPaymentJournalEntry({
+          reconciliationKey: `${reconciliationBase}:dollar`,
           date,
           amount: roundCurrency(amount),
           method: 'dollar',
           source: 'table',
-          sourceId: currentTable?.id ?? tableName,
+          sourceId,
           label: `${tableName} dolar tahsilatı (${formatForeignMoney(dollarPaymentAmount, 'USD')} / kur ${dollarRate.toLocaleString('tr-TR')})`,
         }),
       );
     } else if (paymentMethod === 'account') {
       entries.push(
         buildPaymentJournalEntry({
+          reconciliationKey: `${reconciliationBase}:account`,
           date,
           amount: roundCurrency(amount),
           method: 'account',
           source: 'table',
-          sourceId: currentTable?.id ?? tableName,
+          sourceId,
           label: `${tableName} cari tahsilat`,
         }),
       );
@@ -2998,11 +3006,12 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       if (cashPart > 0) {
         entries.push(
           buildPaymentJournalEntry({
+            reconciliationKey: `${reconciliationBase}:cash`,
             date,
             amount: cashPart,
             method: 'cash',
             source: 'table',
-            sourceId: currentTable?.id ?? tableName,
+            sourceId,
             label: `${tableName} karma tahsilat - nakit`,
           }),
         );
@@ -3010,11 +3019,12 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       if (cardPart > 0) {
         entries.push(
           buildPaymentJournalEntry({
+            reconciliationKey: `${reconciliationBase}:card`,
             date,
             amount: cardPart,
             method: 'card',
             source: 'table',
-            sourceId: currentTable?.id ?? tableName,
+            sourceId,
             label: `${tableName} karma tahsilat - kart`,
           }),
         );
@@ -3022,11 +3032,12 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       if (accountPart > 0) {
         entries.push(
           buildPaymentJournalEntry({
+            reconciliationKey: `${reconciliationBase}:account`,
             date,
             amount: accountPart,
             method: 'account',
             source: 'table',
-            sourceId: currentTable?.id ?? tableName,
+            sourceId,
             label: `${tableName} karma tahsilat - cari`,
           }),
         );
@@ -3154,7 +3165,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
     if (paymentScope === 'split' && splitMode === 'person') {
       const paidItems = lines.filter((line) => (splitSelection[line.id] ?? 0) > 0);
-      recordPaymentJournal(currentTable.name, paymentTargetTotal);
+      recordPaymentJournal(currentTable.name, paymentTargetTotal, paymentMutationId);
       if (paymentMethod === 'account' && selectedAccount) {
         postAccountCharge(
           selectedAccount,
@@ -3237,7 +3248,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     }
 
     if (isPartialPayment) {
-      recordPaymentJournal(currentTable.name, paymentTargetTotal);
+      recordPaymentJournal(currentTable.name, paymentTargetTotal, paymentMutationId);
       if (paymentMethod === 'account' && selectedAccount) {
         postAccountCharge(
           selectedAccount,
@@ -3311,7 +3322,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         `${currentTable.name} masa adisyonu - karma tahsilat kalan tutar`,
       );
     }
-    recordPaymentJournal(currentTable.name, paymentTargetTotal);
+    recordPaymentJournal(currentTable.name, paymentTargetTotal, paymentMutationId);
 
     setOrdersByTable((current) => {
       rememberUndo(current, `${paymentLabel} tahsilat\u0131`);

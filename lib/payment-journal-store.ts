@@ -9,6 +9,7 @@ export type PaymentJournalMethod = 'cash' | 'card' | 'account' | 'meal' | 'euro'
 
 export type PaymentJournalEntry = {
   id: string;
+  reconciliationKey?: string;
   date: string;
   amount: number;
   method: PaymentJournalMethod;
@@ -23,11 +24,12 @@ function emitChange() {
   window.dispatchEvent(new CustomEvent(EVENT_NAME));
 }
 
-function uniqueById<T extends { id: string }>(items: T[]) {
+function uniqueById<T extends { id: string; reconciliationKey?: string }>(items: T[]) {
   const seen = new Set<string>();
   return items.filter((item) => {
-    if (seen.has(item.id)) return false;
-    seen.add(item.id);
+    const key = item.reconciliationKey || item.id;
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
   });
 }
@@ -78,9 +80,10 @@ export function subscribeToPaymentJournalChanges(callback: () => void) {
 }
 
 export function buildPaymentJournalEntry(params: Omit<PaymentJournalEntry, 'id' | 'createdAt'>) {
+  const stableKey = params.reconciliationKey?.trim();
   return {
     ...params,
-    id: `payment-journal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: stableKey ? `payment-journal-${stableKey}` : `payment-journal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     createdAt: new Date().toISOString(),
   } satisfies PaymentJournalEntry;
 }

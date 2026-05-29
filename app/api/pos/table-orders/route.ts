@@ -729,14 +729,21 @@ export async function POST(request: Request) {
 
         await tx.orderItem.deleteMany({ where: { tenantId, orderId: order.id } });
         if (order.status !== 'paid') {
+          const discountAmount = Math.max(authoritativeAmount - paymentAmount, 0);
           await tx.order.update({
             where: { id: order.id, tenantId },
             data: {
               status: 'paid',
+              subtotal: authoritativeAmount,
+              discount: discountAmount,
+              total: paymentAmount,
               metadata: {
                 ...normalizeMetadata(order.metadata),
                 tableKey: tableId,
                 lastMutationId: normalizedBody.mutationId,
+                paymentAmount,
+                prePaymentLineTotal: authoritativeAmount,
+                discountAmount,
                 paidAt: new Date().toISOString(),
                 closedBy: 'pos-table-orders',
                 updatedAtMs: Date.now(),
