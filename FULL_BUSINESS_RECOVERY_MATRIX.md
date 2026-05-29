@@ -53,8 +53,10 @@ Scope: Adisyum POS/ERP business recovery only. No architecture expansion, no new
 | Flow | Code status | Risk class | Notes |
 | --- | --- | --- | --- |
 | Yeni tenant olusturma | WORKING, guarded | Tenant lifecycle | Missing company/admin/password now shows provisioning feedback. |
-| Temiz tenant baslangici | PARTIAL, live QA required | Tenant isolation | Must verify new tenant has no demo/cross-tenant product, stock, cari or kasa data. |
-| Sifre degistirme / sure uzatma | PARTIAL, live QA required | Subscription ownership | Existing screens/routes require manual validation. |
+| Temiz tenant baslangici | WORKING, guarded; live QA required | Tenant isolation | Provisioning creates only tenant, subscription, branch, roles and admin user. It no longer creates runtime snapshots, products, categories, stock, cash, current accounts, reports, printer mappings, KDS or demo orders. |
+| Sifre degistirme / sure uzatma | WORKING, guarded; live QA required | Subscription ownership | System Admin PATCH actions now support subscription date edit, add days/months/years, unlimited license, admin password reset and force-password-change metadata. |
+| Tenant status management | WORKING, guarded; live QA required | Access control | System Admin can set active, suspended, expired or disabled/blocked and synchronizes subscription status. |
+| Tenant forensics visibility | WORKING | Isolation visibility | Tenant drawer now exposes product, stock, current account, report, printer and runtime snapshot counts for clean-tenant verification. |
 
 ## Persistence / Authoritative State
 
@@ -91,6 +93,15 @@ Scope: Adisyum POS/ERP business recovery only. No architecture expansion, no new
 | Missing order during payment close was silently treated as success | HIGH | A client with stale table state could believe the payment closed when no authoritative order existed. | Potential missing payment/order reconciliation. | POS payment API | `app/api/pos/table-orders/route.ts` | Missing authoritative order now returns `409 order_not_found_for_payment`, preventing local financial commit and surfacing the mismatch. |
 | Payment journal rows used random IDs | HIGH | Refresh, retry or multi-terminal replay could write the same successful payment into local daily report more than once. | Duplicate report revenue, duplicate cash/POS handover totals. | Floor daily report / payment journal | `lib/payment-journal-store.ts`, `components/order-composer.tsx` | Journal entries now carry deterministic `reconciliationKey` values derived from table + payment mutation + method. The store deduplicates by reconciliation key before saving. |
 | Paid order total could differ from accepted payment amount | HIGH | Discounts or adjusted settlement could leave paid order totals out of sync with payment/report totals. | Order total vs payment total mismatch in reconciliation. | POS payment API | `app/api/pos/table-orders/route.ts` | Table close now stores paid order subtotal, discount, total, paymentAmount and prePaymentLineTotal metadata so paid order total reconciles to the accepted payment amount. |
+
+## System Admin Findings
+
+| Finding | Severity | Security / isolation impact | Affected files | Fix applied |
+| --- | --- | --- | --- | --- |
+| New tenant provisioning created a tenant runtime state row | HIGH | A clean tenant could start with a browser/runtime restore surface even before restaurant data exists. | `lib/system-admin/provisioning.ts` | Provisioning now keeps company profile in authoritative tenant fields only and does not create runtime snapshots for new tenants. |
+| Provisioning rollback did not remove all tenant-scoped business data | HIGH | A failed or rolled-back tenant could leave orphan products, orders, stock, cash, reports, printer mappings or runtime state behind. | `lib/system-admin/provisioning.ts` | Rollback now deletes tenant-scoped product, stock, order, payment, cash, customer/supplier, report, printer, device and runtime rows before deleting tenant records. |
+| System Admin lacked direct operational controls for subscription/status/password recovery | MEDIUM | Operators had limited ability to recover expired/suspended tenants or force safe password reset from the SaaS panel. | `app/api/system-admin/tenants/route.ts`, `lib/system-admin/provisioning.ts`, `app/system-admin/page.tsx` | Added guarded PATCH actions for subscription edits, duration extension, unlimited license, password reset/force change and tenant status updates. |
+| Clean tenant verification was not visible from the tenant drawer | MEDIUM | Cross-tenant leakage or accidental seeded data required manual DB checks. | `lib/system-admin/provisioning.ts`, `app/system-admin/page.tsx` | Tenant rows now include product/category/stock/recipe/current-account/cash/report/printer/runtime counts and the drawer displays them. |
 
 ## Silent Failure Cleanup
 

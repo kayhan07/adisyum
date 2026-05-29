@@ -49,6 +49,37 @@ export type ProvisionTenantInput = {
   createdBy: string;
 };
 
+export type TenantManagementInput =
+  | {
+      action: 'update_subscription';
+      tenantId: string;
+      startsAt?: string;
+      endsAt?: string;
+      addDays?: number;
+      addMonths?: number;
+      addYears?: number;
+      unlimitedLicense?: boolean;
+      status?: SubscriptionStatus;
+      billingPeriod?: 'monthly' | 'quarterly' | 'yearly';
+      packageType?: PackageType;
+      requestedBy: string;
+    }
+  | {
+      action: 'update_password';
+      tenantId: string;
+      username?: string;
+      password?: string;
+      temporaryPassword?: string;
+      forcePasswordChange?: boolean;
+      requestedBy: string;
+    }
+  | {
+      action: 'update_status';
+      tenantId: string;
+      status: TenantStatus | 'disabled';
+      requestedBy: string;
+    };
+
 export type ProvisioningJobState =
   | 'pending'
   | 'provisioning'
@@ -81,6 +112,18 @@ function addDays(date: Date, days: number) {
   return next;
 }
 
+function addMonths(date: Date, months: number) {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  return next;
+}
+
+function addYears(date: Date, years: number) {
+  const next = new Date(date);
+  next.setFullYear(next.getFullYear() + years);
+  return next;
+}
+
 function durationDays(period: ProvisionTenantInput['billingPeriod'], trialDays = 14) {
   if (trialDays > 0) return trialDays;
   if (period === 'yearly') return 365;
@@ -98,6 +141,7 @@ function normalizeTenantStatus(value: ProvisionTenantInput['status'], trialDays:
 function normalizeSubscriptionStatus(status: TenantStatus): SubscriptionStatus {
   if (status === 'suspended') return 'past_due';
   if (status === 'expired') return 'canceled';
+  if (status === 'blocked') return 'suspended';
   if (status === 'trial') return 'trial';
   return 'active';
 }
@@ -503,22 +547,6 @@ export async function provisionTenant(input: ProvisionTenantInput) {
       });
     }
 
-    await tx.runtimeState.upsert({
-      where: { tenantId_key: { tenantId, key: 'client-runtime:tenant' } },
-      update: {
-        payload: compactJson({
-          'adisyon-company-state': JSON.stringify({ name: tenant.name, legalName: tenant.legalName, taxNumber: tenant.taxNumber }),
-        }),
-      },
-      create: {
-        tenantId,
-        key: 'client-runtime:tenant',
-        payload: compactJson({
-          'adisyon-company-state': JSON.stringify({ name: tenant.name, legalName: tenant.legalName, taxNumber: tenant.taxNumber }),
-        }),
-      },
-    });
-
     await writeAuditLog({
       tenantId,
       userId: input.createdBy,
@@ -623,10 +651,35 @@ export async function rollbackProvisioningJob(jobId: string) {
   await prisma.provisioningJob.update({ where: { id: jobId }, data: { status: 'rollback_pending', currentStep: 'rollback_pending' } });
   try {
     await prisma.$transaction(async (tx) => {
+      await tx.tenantPrintJob.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.tenantDeviceRegistry.deleteMany({ where: { tenantId: job.targetTenantId } });
       await tx.templatePackImport.deleteMany({ where: { tenantId: job.targetTenantId } });
       await tx.templateImport.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.orderItem.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.payment.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.order.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.recipeItem.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.recipe.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.productRevision.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.productVariant.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.mediaAsset.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.product.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.productCategory.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.stockMovement.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.stockItem.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.warehouse.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.cashTransaction.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.cashRegister.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.customer.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.supplier.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.report.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.printer.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.printerGroup.deleteMany({ where: { tenantId: job.targetTenantId } });
       await tx.runtimeState.deleteMany({ where: { tenantId: job.targetTenantId } });
       await tx.userRole.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.userPermission.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.rolePermission.deleteMany({ where: { tenantId: job.targetTenantId } });
+      await tx.permission.deleteMany({ where: { tenantId: job.targetTenantId } });
       await tx.user.deleteMany({ where: { tenantId: job.targetTenantId } });
       await tx.role.deleteMany({ where: { tenantId: job.targetTenantId } });
       await tx.subscription.deleteMany({ where: { tenantId: job.targetTenantId } });
@@ -697,6 +750,51 @@ export async function listSaasTenants() {
 
   const ordersByTenant = new Map(ordersToday.map((row) => [row.tenantId, row._count.id]));
   const revenueByTenant = new Map(paymentsToday.map((row) => [row.tenantId, Number(row._sum.amount ?? 0)]));
+  const tenantIds = tenants.map((tenant) => tenant.tenantId);
+  const forensicCounts = await Promise.all(
+    tenantIds.map(async (tenantId) => {
+      const [
+        productCount,
+        categoryCount,
+        stockCount,
+        recipeCount,
+        customerCount,
+        supplierCount,
+        cashRegisterCount,
+        cashTransactionCount,
+        reportCount,
+        printerCount,
+        runtimeSnapshotCount,
+      ] = await Promise.all([
+        prisma.product.count({ where: { tenantId, deletedAt: null } }),
+        prisma.productCategory.count({ where: { tenantId, deletedAt: null } }),
+        prisma.stockItem.count({ where: { tenantId } }),
+        prisma.recipe.count({ where: { tenantId } }),
+        prisma.customer.count({ where: { tenantId } }),
+        prisma.supplier.count({ where: { tenantId } }),
+        prisma.cashRegister.count({ where: { tenantId } }),
+        prisma.cashTransaction.count({ where: { tenantId } }),
+        prisma.report.count({ where: { tenantId } }),
+        prisma.printer.count({ where: { tenantId } }),
+        prisma.runtimeState.count({ where: { tenantId } }),
+      ]);
+      return [
+        tenantId,
+        {
+          productCount,
+          categoryCount,
+          stockCount,
+          recipeCount,
+          currentAccountCount: customerCount + supplierCount,
+          cashRecordCount: cashRegisterCount + cashTransactionCount,
+          reportCount,
+          printerCount,
+          runtimeSnapshotCount,
+        },
+      ] as const;
+    }),
+  );
+  const countsByTenant = new Map(forensicCounts);
 
   return tenants.map((tenant) => {
     const subscription = tenant.subscriptions[0] ?? null;
@@ -706,6 +804,7 @@ export async function listSaasTenants() {
     const subscriptionMetadata = subscription?.metadata && typeof subscription.metadata === 'object' && !Array.isArray(subscription.metadata)
       ? subscription.metadata as Record<string, unknown>
       : {};
+    const counts = countsByTenant.get(tenant.tenantId);
     return {
       tenantId: tenant.tenantId,
       companyName: tenant.name,
@@ -724,6 +823,145 @@ export async function listSaasTenants() {
       dailyRevenue: revenueByTenant.get(tenant.tenantId) ?? 0,
       mainBranchId: tenant.mainBranchId,
       createdAt: tenant.createdAt.toISOString(),
+      productCount: counts?.productCount ?? 0,
+      categoryCount: counts?.categoryCount ?? 0,
+      stockCount: counts?.stockCount ?? 0,
+      recipeCount: counts?.recipeCount ?? 0,
+      currentAccountCount: counts?.currentAccountCount ?? 0,
+      cashRecordCount: counts?.cashRecordCount ?? 0,
+      reportCount: counts?.reportCount ?? 0,
+      printerCount: counts?.printerCount ?? 0,
+      runtimeSnapshotCount: counts?.runtimeSnapshotCount ?? 0,
     };
+  });
+}
+
+function metadataObject(input: Prisma.JsonValue | null | undefined): Record<string, unknown> {
+  return input && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, unknown> : {};
+}
+
+export async function updateTenantSubscription(input: Extract<TenantManagementInput, { action: 'update_subscription' }>) {
+  const tenantId = input.tenantId.trim().toUpperCase();
+  if (!tenantId) throw new Error('tenantId zorunludur.');
+  const tenant = await prisma.tenant.findUnique({ where: { tenantId }, select: { tenantId: true, packageType: true } });
+  if (!tenant) throw new Error('Tenant bulunamadi.');
+
+  const current = await prisma.subscription.findFirst({
+    where: { tenantId, deletedAt: null },
+    orderBy: { endsAt: 'desc' },
+  });
+  if (!current) throw new Error('Tenant subscription bulunamadi.');
+
+  let nextEndsAt = current.endsAt;
+  if (input.endsAt) nextEndsAt = new Date(input.endsAt);
+  if (input.unlimitedLicense) nextEndsAt = new Date('9999-12-31T23:59:59.000Z');
+  if (Number(input.addDays ?? 0)) nextEndsAt = addDays(nextEndsAt, Number(input.addDays));
+  if (Number(input.addMonths ?? 0)) nextEndsAt = addMonths(nextEndsAt, Number(input.addMonths));
+  if (Number(input.addYears ?? 0)) nextEndsAt = addYears(nextEndsAt, Number(input.addYears));
+
+  const packageType = (input.packageType ?? current.packageType) as PackageType;
+  const limits = licenseLimits(packageType);
+  const metadata = compactJson({
+    ...metadataObject(current.metadata),
+    unlimitedLicense: Boolean(input.unlimitedLicense) || metadataObject(current.metadata).unlimitedLicense === true,
+    lastSystemAdminUpdateAt: new Date().toISOString(),
+    lastSystemAdminUpdatedBy: input.requestedBy,
+  });
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const subscription = await tx.subscription.update({
+      where: { tenantId_id: { tenantId, id: current.id } },
+      data: {
+        packageType,
+        status: input.status ?? current.status,
+        billingPeriod: input.billingPeriod ?? current.billingPeriod,
+        startsAt: input.startsAt ? new Date(input.startsAt) : current.startsAt,
+        endsAt: nextEndsAt,
+        branchLimit: current.branchLimit ?? limits.branchLimit,
+        seats: current.seats ?? limits.userLimit,
+        metadata,
+      },
+    });
+    await tx.tenant.update({
+      where: { tenantId },
+      data: {
+        packageType,
+        status: subscription.status === 'trial' ? 'trial' : subscription.status === 'suspended' || subscription.status === 'past_due' ? 'suspended' : subscription.status === 'expired' || subscription.status === 'canceled' ? 'expired' : 'active',
+      },
+    });
+    await writeAuditLog({
+      tenantId,
+      userId: input.requestedBy,
+      action: 'system_admin_action',
+      entity: 'subscription',
+      entityId: current.id,
+      metadata: compactJson({ actionName: 'system_admin_subscription_update', packageType, status: subscription.status, endsAt: subscription.endsAt.toISOString() }),
+      db: tx,
+    });
+    return subscription;
+  });
+
+  return updated;
+}
+
+export async function updateTenantPassword(input: Extract<TenantManagementInput, { action: 'update_password' }>) {
+  const tenantId = input.tenantId.trim().toUpperCase();
+  const username = input.username?.trim() || 'admin';
+  const password = input.temporaryPassword?.trim() || input.password?.trim();
+  if (!tenantId || !username || !password) throw new Error('tenantId, username ve password zorunludur.');
+  const user = await prisma.user.findUnique({ where: userTenantUsernameKey(tenantId, username) });
+  if (!user || user.deletedAt) throw new Error('Kullanici bulunamadi.');
+  const passwordHash = await hashPassword(password);
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.user.update({
+      where: userTenantUsernameKey(tenantId, username),
+      data: {
+        passwordHash,
+        active: true,
+        metadata: compactJson({
+          ...metadataObject(user.metadata),
+          resetRequired: input.forcePasswordChange ?? Boolean(input.temporaryPassword),
+          passwordUpdatedAt: new Date().toISOString(),
+          passwordUpdatedBy: input.requestedBy,
+        }),
+      },
+      select: { id: true, tenantId: true, username: true, active: true, metadata: true },
+    });
+    await writeAuditLog({
+      tenantId,
+      userId: input.requestedBy,
+      action: 'system_admin_action',
+      entity: 'user',
+      entityId: user.id,
+      metadata: compactJson({ actionName: 'system_admin_password_update', username, forcePasswordChange: input.forcePasswordChange ?? Boolean(input.temporaryPassword) }),
+      db: tx,
+    });
+    return updated;
+  });
+}
+
+export async function updateTenantStatus(input: Extract<TenantManagementInput, { action: 'update_status' }>) {
+  const tenantId = input.tenantId.trim().toUpperCase();
+  const status = (input.status === 'disabled' ? 'blocked' : input.status) as TenantStatus;
+  if (!tenantId) throw new Error('tenantId zorunludur.');
+  return prisma.$transaction(async (tx) => {
+    const tenant = await tx.tenant.update({
+      where: { tenantId },
+      data: { status },
+    });
+    await tx.subscription.updateMany({
+      where: { tenantId, deletedAt: null },
+      data: { status: normalizeSubscriptionStatus(status) },
+    });
+    await writeAuditLog({
+      tenantId,
+      userId: input.requestedBy,
+      action: 'system_admin_action',
+      entity: 'tenant',
+      entityId: tenantId,
+      metadata: compactJson({ actionName: 'system_admin_tenant_status_update', status }),
+      db: tx,
+    });
+    return tenant;
   });
 }

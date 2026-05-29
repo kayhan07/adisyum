@@ -6,6 +6,9 @@ import {
   listProvisioningJobs,
   listSaasTenants,
   recordProvisioningEvent,
+  updateTenantPassword,
+  updateTenantStatus,
+  updateTenantSubscription,
 } from '@/lib/system-admin/provisioning';
 import { enqueueProvisioningRun } from '@/lib/queue/orchestration';
 
@@ -108,10 +111,78 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    await requireSystemAdmin(request);
-    const body = await request.json().catch(() => ({})) as { jobId?: string; action?: 'retry' | 'rollback' };
+    const admin = await requireSystemAdmin(request);
+    const body = await request.json().catch(() => ({})) as {
+      action?: 'retry' | 'rollback' | 'update_subscription' | 'update_password' | 'update_status';
+      jobId?: string;
+      tenantId?: string;
+      startsAt?: string;
+      endsAt?: string;
+      addDays?: number;
+      addMonths?: number;
+      addYears?: number;
+      unlimitedLicense?: boolean;
+      subscriptionStatus?: 'active' | 'trial' | 'demo' | 'past_due' | 'canceled' | 'expired' | 'suspended';
+      tenantStatus?: 'active' | 'suspended' | 'expired' | 'trial' | 'demo' | 'blocked' | 'disabled';
+      billingPeriod?: 'monthly' | 'quarterly' | 'yearly';
+      packageType?: 'mini' | 'gold' | 'premium';
+      username?: string;
+      password?: string;
+      temporaryPassword?: string;
+      forcePasswordChange?: boolean;
+    };
+
+    if (body.action === 'update_subscription') {
+      if (!body.tenantId) return NextResponse.json({ ok: false, error: 'tenantId zorunludur.' }, { status: 400 });
+      const subscription = await updateTenantSubscription({
+        action: 'update_subscription',
+        tenantId: body.tenantId,
+        startsAt: body.startsAt,
+        endsAt: body.endsAt,
+        addDays: body.addDays,
+        addMonths: body.addMonths,
+        addYears: body.addYears,
+        unlimitedLicense: body.unlimitedLicense,
+        status: body.subscriptionStatus,
+        billingPeriod: body.billingPeriod,
+        packageType: body.packageType,
+        requestedBy: admin.userId,
+      });
+      const [tenants, jobs, provisioningMetrics] = await Promise.all([listSaasTenants(), listProvisioningJobs(), getProvisioningMetrics()]);
+      return NextResponse.json({ ok: true, subscription, tenants, jobs, provisioningMetrics });
+    }
+
+    if (body.action === 'update_password') {
+      if (!body.tenantId) return NextResponse.json({ ok: false, error: 'tenantId zorunludur.' }, { status: 400 });
+      const user = await updateTenantPassword({
+        action: 'update_password',
+        tenantId: body.tenantId,
+        username: body.username,
+        password: body.password,
+        temporaryPassword: body.temporaryPassword,
+        forcePasswordChange: body.forcePasswordChange,
+        requestedBy: admin.userId,
+      });
+      return NextResponse.json({ ok: true, user });
+    }
+
+    if (body.action === 'update_status') {
+      if (!body.tenantId || !body.tenantStatus) return NextResponse.json({ ok: false, error: 'tenantId ve tenantStatus zorunludur.' }, { status: 400 });
+      const tenant = await updateTenantStatus({
+        action: 'update_status',
+        tenantId: body.tenantId,
+        status: body.tenantStatus,
+        requestedBy: admin.userId,
+      });
+      const [tenants, jobs, provisioningMetrics] = await Promise.all([listSaasTenants(), listProvisioningJobs(), getProvisioningMetrics()]);
+      return NextResponse.json({ ok: true, tenant, tenants, jobs, provisioningMetrics });
+    }
+
     if (!body.jobId || !body.action) {
       return NextResponse.json({ ok: false, error: 'jobId ve action zorunludur.' }, { status: 400 });
+    }
+    if (body.action !== 'retry' && body.action !== 'rollback') {
+      return NextResponse.json({ ok: false, error: 'Gecersiz tenant aksiyonu.' }, { status: 400 });
     }
     const existing = await listProvisioningJobs();
     const current = existing.find((item) => item.id === body.jobId);

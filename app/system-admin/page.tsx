@@ -42,6 +42,15 @@ type SaasTenantRow = {
   dailyRevenue: number;
   mainBranchId?: string | null;
   createdAt: string;
+  productCount?: number;
+  categoryCount?: number;
+  stockCount?: number;
+  recipeCount?: number;
+  currentAccountCount?: number;
+  cashRecordCount?: number;
+  reportCount?: number;
+  printerCount?: number;
+  runtimeSnapshotCount?: number;
 };
 type SaasSummary = {
   totalTenants: number;
@@ -819,7 +828,7 @@ export default function SystemAdminPage() {
           </div>
         </section>
       </div>
-      {selectedTenantDrawerId ? <TenantOperationsDrawer tenantId={selectedTenantDrawerId} tenant={saasTenants.find((item) => item.tenantId === selectedTenantDrawerId) ?? null} liveOps={liveOps} provisioningJobs={provisioningJobs} state={state} onClose={() => setSelectedTenantDrawerId('')} /> : null}
+      {selectedTenantDrawerId ? <TenantOperationsDrawer tenantId={selectedTenantDrawerId} tenant={saasTenants.find((item) => item.tenantId === selectedTenantDrawerId) ?? null} liveOps={liveOps} provisioningJobs={provisioningJobs} state={state} onRefresh={loadSaasTenants} onClose={() => setSelectedTenantDrawerId('')} /> : null}
       {commandPaletteOpen ? <CommandPalette tenants={saasTenants} onClose={() => setCommandPaletteOpen(false)} onSelectTenant={(tenantId) => { setSelectedTenantDrawerId(tenantId); setActiveModule('tenants'); setCommandPaletteOpen(false); }} /> : null}
     </main>
   );
@@ -1249,8 +1258,10 @@ function ResellerCenter(props: any) {
   return <DealersModule {...props} />;
 }
 
-function TenantOperationsDrawer({ tenantId, tenant, liveOps, provisioningJobs, state, onClose }: { tenantId: string; tenant: SaasTenantRow | null; liveOps: LiveOperationsPayload | null; provisioningJobs: ProvisioningJobRow[]; state: SystemAdminState; onClose: () => void }) {
+function TenantOperationsDrawer({ tenantId, tenant, liveOps, provisioningJobs, state, onRefresh, onClose }: { tenantId: string; tenant: SaasTenantRow | null; liveOps: LiveOperationsPayload | null; provisioningJobs: ProvisioningJobRow[]; state: SystemAdminState; onRefresh: () => Promise<void>; onClose: () => void }) {
   const [activeTab, setActiveTab] = useState<TenantDrawerTab>('overview');
+  const [managementMessage, setManagementMessage] = useState('');
+  const [managementLoading, setManagementLoading] = useState(false);
   const presence = liveOps?.presence.filter((row) => row.tenantId === tenantId) ?? [];
   const devices = liveOps?.devices.filter((row) => row.tenantId === tenantId) ?? [];
   const events = liveOps?.events.filter((row) => row.tenantId === tenantId) ?? [];
@@ -1318,7 +1329,25 @@ function TenantOperationsDrawer({ tenantId, tenant, liveOps, provisioningJobs, s
           {activeTab === 'billing' ? <DrawerSimple title="Billing" rows={[`Plan: ${tenant?.plan ?? '-'}`, `BitiÅŸ: ${tenant?.expiresAt?.slice(0, 10) ?? '-'}`, `Bakiye: ${tenant?.balance ?? 0}`]} /> : null}
           {activeTab === 'ai' ? <DrawerAi tenant={tenant} events={events} /> : null}
           {activeTab === 'security' ? <DrawerSimple title="Security" rows={[`${events.filter((event) => event.type === 'auth.login_failed').length} baÅŸar?s?z giriÅŸ`, `${presence.length} aktif oturum`]} /> : null}
-          {activeTab === 'settings' ? <DrawerSimple title="Settings" rows={['Tenant isolation aktif', 'Runtime tenant scope doÄŸruland?', 'Destek iÅŸlemleri kontroll?']} /> : null}
+          {activeTab === 'settings' ? <DrawerTenantManagement tenantId={tenantId} loading={managementLoading} message={managementMessage} onAction={async (body) => {
+            if (managementLoading) return;
+            setManagementLoading(true);
+            setManagementMessage('');
+            const response = await fetch('/api/system-admin/tenants', {
+              method: 'PATCH',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ tenantId, ...body }),
+            }).catch(() => null);
+            const payload = response ? await response.json().catch(() => null) as { error?: string } | null : null;
+            setManagementLoading(false);
+            if (!response?.ok) {
+              setManagementMessage(payload?.error ?? 'Tenant aksiyonu uygulanamadi.');
+              return;
+            }
+            setManagementMessage('Tenant aksiyonu uygulandi.');
+            await onRefresh();
+          }} /> : null}
         </div>
       </aside>
     </div>
@@ -1333,7 +1362,51 @@ function DrawerOverview({ tenant, tenantState, presence, devices, jobs, events }
     <Metric label="Aktif ÅŸube" value={String(tenant?.activeBranchCount ?? 0)} />
     <Metric label="Failed ops" value={String(events.filter((event) => event.severity === 'error' || event.severity === 'critical').length)} />
     <Metric label="Onboarding jobs" value={String(jobs.length)} />
+    <Metric label="Products" value={String(tenant?.productCount ?? 0)} />
+    <Metric label="Stock" value={String(tenant?.stockCount ?? 0)} />
+    <Metric label="Cari" value={String(tenant?.currentAccountCount ?? 0)} />
+    <Metric label="Reports" value={String(tenant?.reportCount ?? 0)} />
+    <Metric label="Printers" value={String(tenant?.printerCount ?? 0)} />
+    <Metric label="Runtime snapshots" value={String(tenant?.runtimeSnapshotCount ?? 0)} />
     <div className="md:col-span-2 xl:col-span-3"><DrawerSimple title="Subscription" rows={[`Durum: ${tenant?.subscriptionStatus ?? '-'}`, `Yenileme: ${tenantState ? createRenewalNotice(tenantState) : '-'}`, `BitiÅŸ: ${tenant?.expiresAt?.slice(0, 10) ?? '-'}`]} /></div>
+  </div>;
+}
+function DrawerTenantManagement({ tenantId, loading, message, onAction }: { tenantId: string; loading: boolean; message: string; onAction: (body: Record<string, unknown>) => Promise<void> }) {
+  const [manualEndsAt, setManualEndsAt] = useState('');
+  const [tempPassword, setTempPassword] = useState('');
+  return <div className="grid gap-5 md:grid-cols-2">
+    <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
+      <h3 className="text-lg font-semibold">Subscription</h3>
+      <div className="mt-4 grid gap-3">
+        <div className="grid grid-cols-3 gap-2">
+          <button disabled={loading} type="button" onClick={() => onAction({ action: 'update_subscription', addDays: 30 })} className="btn-blue">+30 gun</button>
+          <button disabled={loading} type="button" onClick={() => onAction({ action: 'update_subscription', addMonths: 1 })} className="btn-blue">+1 ay</button>
+          <button disabled={loading} type="button" onClick={() => onAction({ action: 'update_subscription', addYears: 1 })} className="btn-blue">+1 yil</button>
+        </div>
+        <button disabled={loading} type="button" onClick={() => onAction({ action: 'update_subscription', unlimitedLicense: true })} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-100">Limitsiz lisans</button>
+        <div className="grid gap-2 md:grid-cols-[1fr_auto]">
+          <input type="date" value={manualEndsAt} onChange={(event) => setManualEndsAt(event.target.value)} className="input-dark" />
+          <button disabled={loading || !manualEndsAt} type="button" onClick={() => onAction({ action: 'update_subscription', endsAt: manualEndsAt })} className="btn-blue">Tarih uygula</button>
+        </div>
+      </div>
+    </article>
+    <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
+      <h3 className="text-lg font-semibold">Tenant status</h3>
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <button disabled={loading} type="button" onClick={() => onAction({ action: 'update_status', tenantStatus: 'active' })} className="btn-blue">Aktif</button>
+        <button disabled={loading} type="button" onClick={() => onAction({ action: 'update_status', tenantStatus: 'suspended' })} className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100">Askida</button>
+        <button disabled={loading} type="button" onClick={() => onAction({ action: 'update_status', tenantStatus: 'expired' })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold">Suresi doldu</button>
+        <button disabled={loading} type="button" onClick={() => onAction({ action: 'update_status', tenantStatus: 'disabled' })} className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm font-semibold text-rose-100">Devre disi</button>
+      </div>
+    </article>
+    <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5 md:col-span-2">
+      <h3 className="text-lg font-semibold">Password</h3>
+      <div className="mt-4 grid gap-2 md:grid-cols-[1fr_auto]">
+        <input type="text" value={tempPassword} onChange={(event) => setTempPassword(event.target.value)} placeholder={`${tenantId}-gecici-sifre`} className="input-dark" />
+        <button disabled={loading || !tempPassword.trim()} type="button" onClick={() => onAction({ action: 'update_password', username: 'admin', temporaryPassword: tempPassword.trim(), forcePasswordChange: true })} className="btn-blue">Admin sifresini sifirla</button>
+      </div>
+      {message ? <p className="mt-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200">{message}</p> : null}
+    </article>
   </div>;
 }
 function DrawerLiveOps({ presence, events }: { presence: LivePresenceRow[]; events: LiveEventRow[] }) { return <div className="grid gap-5"><DrawerSimple title="Aktif kullan?c?lar" rows={presence.map((row) => `${row.username} / ${row.role} / ${row.currentRoute ?? '-'}`)} /><DrawerActivity events={events} /></div>; }
