@@ -1061,6 +1061,37 @@ wait_for_route_status() {
   fail "${method} ${url} expected HTTP ${expected}, got HTTP ${code:-none}"
 }
 
+validate_next_page_asset() {
+  local page_url="$1"
+  local base_url="$2"
+  local strip_prefix="${3:-}"
+  local html_file asset_path asset_url code
+  html_file="$(mktemp)"
+
+  curl -ksS --max-time 15 "${page_url}" -o "${html_file}" || {
+    rm -f "${html_file}"
+    fail "Could not fetch page HTML for asset validation: ${page_url}"
+  }
+
+  asset_path="$(
+    grep -Eo '(/[^"]*_next/static/[^"]+\.(css|js))' "${html_file}" \
+      | head -n 1 \
+      | sed 's/&amp;/\&/g' || true
+  )"
+  rm -f "${html_file}"
+
+  [[ -n "${asset_path}" ]] || fail "${page_url} did not include a Next.js CSS/JS asset path"
+
+  if [[ -n "${strip_prefix}" && "${asset_path}" == "${strip_prefix}"/* ]]; then
+    asset_path="${asset_path#"${strip_prefix}"}"
+  fi
+
+  asset_url="${base_url}${asset_path}"
+  code="$(curl -ksS -o /dev/null -w '%{http_code}' --max-time 15 "${asset_url}" || true)"
+  [[ "${code}" == "200" ]] || fail "Next.js page asset is not reachable: ${asset_url} HTTP ${code:-none}"
+  log "Next.js page asset reachable: ${asset_url} HTTP ${code}"
+}
+
 validate_runtime_routes() {
   log "Validating local and public runtime routes"
   if ss -ltnp | grep -q ':3020'; then
@@ -1076,6 +1107,7 @@ validate_runtime_routes() {
   wait_for_route_not_404 "GET" "http://127.0.0.1:${ROOT_PORT}/api/runtime/pos-catalog"
   wait_for_route_not_404 "GET" "http://127.0.0.1:${ROOT_PORT}/api/runtime-build-id"
   validate_runtime_build_identity "http://127.0.0.1:${ROOT_PORT}/api/runtime-build-id"
+  validate_next_page_asset "http://127.0.0.1:${ROOT_PORT}/app" "http://127.0.0.1:${ROOT_PORT}" "${ROOT_ASSET_PREFIX}"
 
   wait_for_healthy_route "https://${DOMAIN}"
   wait_for_healthy_route "https://${DOMAIN}/app"
@@ -1084,6 +1116,7 @@ validate_runtime_routes() {
   wait_for_route_status "POST" "https://${DOMAIN}/api/pos/table-orders" "401"
   wait_for_route_not_404 "GET" "https://${DOMAIN}/api/runtime-build-id"
   validate_runtime_build_identity "https://${DOMAIN}/api/runtime-build-id"
+  validate_next_page_asset "https://${DOMAIN}/app" "https://${DOMAIN}" ""
 }
 
 print_final_state() {
