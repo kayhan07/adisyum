@@ -21,10 +21,10 @@ function isUnlimitedSubscription(metadata: Prisma.JsonValue | null | undefined) 
 export async function assertTenantCanAccess(tenantId: string, options: { readOnly?: boolean } = {}) {
   const tenant = await prisma.tenant.findUnique({
     where: { tenantId },
-    select: { tenantId: true, status: true },
+    select: { tenantId: true, status: true, deletedAt: true },
   });
 
-  if (!tenant || tenant.status === 'suspended' || tenant.status === 'blocked') {
+  if (!tenant || tenant.deletedAt || tenant.status === 'suspended' || tenant.status === 'blocked') {
     throw new Error('Tenant aktif değil veya bulunamadı.');
   }
 

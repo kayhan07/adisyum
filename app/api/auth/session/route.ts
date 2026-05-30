@@ -46,7 +46,7 @@ export async function POST(request: Request) {
   const [tenant, subscription, user] = await Promise.all([
     prisma.tenant.findUnique({
       where: { tenantId: body.tenantId },
-      select: { tenantId: true, status: true, packageType: true },
+      select: { tenantId: true, status: true, packageType: true, deletedAt: true },
     }),
     prisma.subscription.findFirst({
       where: {
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
     }),
     prisma.user.findUnique({
       where: userTenantIdKey(body.tenantId, body.userId),
-      select: { id: true, role: true, branchId: true, permissions: true, active: true },
+      select: { id: true, role: true, branchId: true, permissions: true, active: true, deletedAt: true },
     }),
   ]);
 
@@ -67,9 +67,9 @@ export async function POST(request: Request) {
       || (['active', 'trial', 'demo'].includes(subscription.status) && subscription.endsAt >= new Date())
       || tenant?.status === 'expired'
     : false;
-  const tenantAllowsLogin = tenant ? ['active', 'trial', 'demo', 'expired'].includes(tenant.status) : false;
+  const tenantAllowsLogin = tenant ? !tenant.deletedAt && ['active', 'trial', 'demo', 'expired'].includes(tenant.status) : false;
 
-  if (!tenant || !tenantAllowsLogin || !subscriptionAllowsLogin || !user || !user.active) {
+  if (!tenant || !tenantAllowsLogin || !subscriptionAllowsLogin || !user || !user.active || user.deletedAt) {
     await writeAuditLog({
       tenantId: body.tenantId,
       userId: body.userId,

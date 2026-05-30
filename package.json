@@ -10,6 +10,7 @@
     "routes:audit": "node scripts/audit-next-routes.mjs",
     "runtime:audit-production": "node scripts/audit-production-runtime.mjs",
     "auth:runtime-lock-test": "node scripts/verify-auth-failure-runtime-lock.mjs",
+    "tenant:access-policy": "node scripts/verify-tenant-access-policy.mjs",
     "product:recovery-validate": "node scripts/verify-product-recovery.mjs",
     "env:audit-production": "node scripts/audit-production-env.mjs",
     "deploy:verify-runtime": "node scripts/verify-deploy-runtime.mjs",

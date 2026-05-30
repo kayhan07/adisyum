@@ -49,7 +49,7 @@ export async function POST(request: Request) {
   const [tenant, subscription, user] = await Promise.all([
     prisma.tenant.findUnique({
       where: { tenantId },
-      select: { tenantId: true, status: true, packageType: true, name: true, mainBranchId: true },
+      select: { tenantId: true, status: true, packageType: true, name: true, mainBranchId: true, deletedAt: true },
     }),
     prisma.subscription.findFirst({
       where: {
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
       select: { id: true, packageType: true, status: true, endsAt: true, metadata: true },
     }),
     prisma.user.findFirst({
-      where: { tenantId, username, active: true },
+      where: { tenantId, username, active: true, deletedAt: null },
       select: { id: true, username: true, name: true, role: true, branchId: true, permissions: true, passwordHash: true },
     }),
   ]);
@@ -74,7 +74,7 @@ export async function POST(request: Request) {
       || (['active', 'trial', 'demo'].includes(subscription.status) && subscription.endsAt >= new Date())
       || tenant?.status === 'expired'
     : false;
-  const tenantAllowsLogin = tenant ? ['active', 'trial', 'demo', 'expired'].includes(tenant.status) : false;
+  const tenantAllowsLogin = tenant ? !tenant.deletedAt && ['active', 'trial', 'demo', 'expired'].includes(tenant.status) : false;
 
   if (!tenant || !tenantAllowsLogin || !subscriptionAllowsLogin || !user || !passwordResult.valid) {
     console.warn('[auth/login] failed login diagnostic', {

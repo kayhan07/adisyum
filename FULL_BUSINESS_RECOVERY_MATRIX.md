@@ -113,6 +113,18 @@ Scope: Adisyum POS/ERP business recovery only. No architecture expansion, no new
 | Tenant health dashboard lacked lifecycle scale indicators | MEDIUM | Operators could not quickly audit table/order/sales volume, last login or footprint from the tenant drawer. | `lib/system-admin/provisioning.ts`, `app/system-admin/page.tsx` | Tenant rows now include table count, order count, total paid sales, last login and database footprint, and the drawer displays them. |
 | Tenant export path was missing from System Admin tenant operations | MEDIUM | Support could not export tenant products, recipes, stock, cari and settings from the management center. | `app/api/system-admin/tenants/route.ts`, `lib/system-admin/provisioning.ts`, `app/system-admin/page.tsx` | Added guarded System Admin export JSON for products, recipes, stock, cari and settings/printer mappings. |
 
+## Tenant Access Policy Findings
+
+| Status / area | Result | APIs audited | Risk found | Fix applied |
+| --- | --- | --- | --- | --- |
+| active / trial / demo | WORKING | Web login, session, `requireTenant`, POS/product/runtime/printer APIs | No blocking regression found; writes remain allowed while the subscription is valid. | Added `tenant:access-policy` validation script to pin the method/status matrix. |
+| expired | WORKING, guarded | Web login, `/api/auth/me`, all `requireTenant` guarded APIs | Expired tenants previously behaved as all-or-nothing access. | Expired tenants can authenticate and perform GET/HEAD read access, while POST/PATCH/PUT/DELETE mutations are rejected by `assertTenantCanAccess(..., readOnly: false)`. |
+| suspended / blocked / disabled | WORKING, guarded | Web login, POS order/payment, runtime state, printer/device APIs | Guard relied on active-subscription failure rather than an explicit status matrix. | `assertTenantCanAccess` now explicitly blocks suspended and blocked tenants for read and write. |
+| deleted tenant | WORKING, guarded | Web login, session restore, tenant API guard | Soft-deleted tenant state was not explicitly part of the access guard. | Tenant access guard and login/session routes now read and reject `deletedAt` tenant/user state. |
+| unlimited license | WORKING, guarded | Web login, session creation, tenant API guard | Unlimited license had to avoid stale end-date rejection. | Subscription metadata `unlimitedLicense` bypasses end-date checks while status remains active/trial/demo. |
+| desktop / printer bridge | WORKING, guarded | Device registry, printer print-requests, POS mapping/settings APIs | Expired tenant could potentially mutate if method enforcement drifted. | All existing bridge/printer routes remain behind `requireTenant`; method mapping now blocks expired write calls and allows only read calls. |
+| System Admin lifecycle override | WORKING, guarded | `/api/system-admin/tenants` | Reactivating expired tenants could leave stale subscription conflicts. | Subscription/status actions now normalize status/date together, and duplicate tenant checks run before provisioning jobs are queued. |
+
 ## Silent Failure Cleanup
 
 | Area | Status | Notes |
