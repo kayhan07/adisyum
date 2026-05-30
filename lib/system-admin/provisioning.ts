@@ -770,12 +770,12 @@ export async function listSaasTenants() {
         createdAt: true,
         updatedAt: true,
         branches: { where: { deletedAt: null }, select: { id: true, active: true } },
-        users: { where: { deletedAt: null }, select: { id: true, active: true, lastLoginAt: true } },
+        users: { where: { deletedAt: null }, select: { id: true, active: true, username: true, email: true, role: true, lastLoginAt: true, metadata: true, updatedAt: true } },
         subscriptions: {
           where: { deletedAt: null },
           orderBy: { endsAt: 'desc' },
           take: 1,
-          select: { id: true, status: true, packageType: true, billingPeriod: true, endsAt: true, seats: true, branchLimit: true, metadata: true },
+          select: { id: true, status: true, packageType: true, billingPeriod: true, startsAt: true, endsAt: true, seats: true, branchLimit: true, metadata: true, updatedAt: true },
         },
       },
     }),
@@ -857,12 +857,21 @@ export async function listSaasTenants() {
       ? subscription.metadata as Record<string, unknown>
       : {};
     const counts = countsByTenant.get(tenant.tenantId);
+    const adminUser = tenant.users.find((user) => user.username === 'admin') ?? tenant.users.find((user) => user.role.toLowerCase() === 'admin') ?? tenant.users[0] ?? null;
     return {
       tenantId: tenant.tenantId,
       companyName: tenant.name,
       status: tenant.status,
       plan: subscription?.packageType ?? tenant.packageType,
       billingPeriod: subscription?.billingPeriod ?? 'monthly',
+      subscriptionId: subscription?.id ?? null,
+      startsAt: subscription?.startsAt.toISOString() ?? null,
+      subscriptionUpdatedAt: subscription?.updatedAt.toISOString() ?? null,
+      unlimitedLicense: subscriptionMetadata.unlimitedLicense === true,
+      adminEmail: adminUser?.email ?? null,
+      adminUsername: adminUser?.username ?? null,
+      adminPasswordResetRequired: metadataObject(adminUser?.metadata).resetRequired === true,
+      adminUpdatedAt: adminUser?.updatedAt.toISOString() ?? null,
       branchCount: tenant.branches.length,
       activeBranchCount: tenant.branches.filter((branch) => branch.active).length,
       activeUsers: tenant.users.filter((user) => user.active).length,
@@ -946,7 +955,10 @@ export async function updateTenantSubscription(input: Extract<TenantManagementIn
   if (!current) throw new Error('Tenant subscription bulunamadi.');
 
   let nextEndsAt = current.endsAt;
-  if (input.endsAt) nextEndsAt = new Date(input.endsAt);
+  if (input.endsAt) {
+    nextEndsAt = new Date(input.endsAt);
+    if (Number.isNaN(nextEndsAt.getTime())) throw new Error('Gecersiz abonelik bitis tarihi.');
+  }
   if (input.unlimitedLicense) nextEndsAt = new Date('9999-12-31T23:59:59.000Z');
   if (Number(input.addDays ?? 0)) nextEndsAt = addDays(nextEndsAt, Number(input.addDays));
   if (Number(input.addMonths ?? 0)) nextEndsAt = addMonths(nextEndsAt, Number(input.addMonths));
@@ -955,9 +967,14 @@ export async function updateTenantSubscription(input: Extract<TenantManagementIn
   const packageType = (input.packageType ?? current.packageType) as PackageType;
   const nextStatus = input.status ?? (nextEndsAt >= new Date() || input.unlimitedLicense ? 'active' : current.status);
   const limits = licenseLimits(packageType);
+  const unlimitedLicense = input.unlimitedLicense === true
+    ? true
+    : input.unlimitedLicense === false
+      ? false
+      : metadataObject(current.metadata).unlimitedLicense === true;
   const metadata = compactJson({
     ...metadataObject(current.metadata),
-    unlimitedLicense: Boolean(input.unlimitedLicense) || metadataObject(current.metadata).unlimitedLicense === true,
+    unlimitedLicense,
     lastSystemAdminUpdateAt: new Date().toISOString(),
     lastSystemAdminUpdatedBy: input.requestedBy,
   });
@@ -1002,10 +1019,10 @@ export async function updateTenantPassword(input: Extract<TenantManagementInput,
   const tenantId = input.tenantId.trim().toUpperCase();
   const username = input.username?.trim() || 'admin';
   const password = input.temporaryPassword?.trim() || input.password?.trim();
-  if (!tenantId || !username || !password) throw new Error('tenantId, username ve password zorunludur.');
+  if (!tenantId || !username || (!password && input.forcePasswordChange === undefined)) throw new Error('tenantId, username ve password zorunludur.');
   const user = await prisma.user.findUnique({ where: userTenantUsernameKey(tenantId, username) });
   if (!user || user.deletedAt) throw new Error('Kullanici bulunamadi.');
-  const passwordHash = await hashPassword(password);
+  const passwordHash = password ? await hashPassword(password) : user.passwordHash;
   return prisma.$transaction(async (tx) => {
     const updated = await tx.user.update({
       where: userTenantUsernameKey(tenantId, username),

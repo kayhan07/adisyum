@@ -18,6 +18,7 @@ const sessionRoute = read('app/api/auth/session/route.ts');
 const meRoute = read('app/api/auth/me/route.ts');
 const provisioning = read('lib/system-admin/provisioning.ts');
 const tenantsRoute = read('app/api/system-admin/tenants/route.ts');
+const systemAdminPage = read('app/system-admin/page.tsx');
 
 expect(tenantRepository, 'export async function assertTenantCanAccess', 'assertTenantCanAccess exists');
 expect(tenantRepository, /select:\s*\{[^}]*deletedAt:\s*true/s, 'tenant access guard reads deletedAt');
@@ -42,7 +43,16 @@ expect(meRoute, /assertTenantCanAccess\(session\.tenantId, \{ readOnly: true \}\
 expect(provisioning, /assertTenantProvisioningConflicts/, 'duplicate tenant conflict check exists');
 expect(provisioning, /tenantId[\s\S]*companyName[\s\S]*taxNumber[\s\S]*adminEmail/, 'duplicate check covers tenant code, company name, tax number and admin email');
 expect(provisioning, /export async function exportTenantData/, 'tenant export function exists');
+expect(provisioning, /input\.unlimitedLicense === false[\s\S]*false/, 'system-admin can remove unlimited license metadata');
+expect(provisioning, /Number\.isNaN\(nextEndsAt\.getTime\(\)\)/, 'manual subscription date rejects invalid dates');
+expect(provisioning, /!password && input\.forcePasswordChange === undefined/, 'system-admin can force password change without replacing password');
 expect(tenantsRoute, /exportTenantId/, 'system-admin tenants API exposes guarded tenant export');
+
+expect(systemAdminPage, /subscriptionAccessLabel/, 'system-admin UI surfaces access policy state');
+expect(systemAdminPage, /Limitsiz lisansi kaldir/, 'system-admin UI exposes remove unlimited license action');
+expect(systemAdminPage, /Gecici sifre \+ zorunlu degisim/, 'system-admin UI exposes reset password with force-change action');
+expect(systemAdminPage, /console\.error\('\[system-admin\] subscription action failed'/, 'system-admin UI logs failed subscription actions with context');
+expect(systemAdminPage, /await onRefresh\(\)/, 'system-admin UI refreshes tenant data after management actions');
 
 const failures = checks.filter((check) => !check.ok);
 if (failures.length) {

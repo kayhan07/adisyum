@@ -125,6 +125,17 @@ Scope: Adisyum POS/ERP business recovery only. No architecture expansion, no new
 | desktop / printer bridge | WORKING, guarded | Device registry, printer print-requests, POS mapping/settings APIs | Expired tenant could potentially mutate if method enforcement drifted. | All existing bridge/printer routes remain behind `requireTenant`; method mapping now blocks expired write calls and allows only read calls. |
 | System Admin lifecycle override | WORKING, guarded | `/api/system-admin/tenants` | Reactivating expired tenants could leave stale subscription conflicts. | Subscription/status actions now normalize status/date together, and duplicate tenant checks run before provisioning jobs are queued. |
 
+## System Admin Subscription UI Findings
+
+| Finding | Result | Affected files | Fix applied |
+| --- | --- | --- | --- |
+| Subscription drawer hid key license fields | WORKING | `app/system-admin/page.tsx`, `lib/system-admin/provisioning.ts` | Tenant rows now expose subscription id, start date, end date, remaining days, unlimited license state, subscription updated date, admin email, admin username and access-policy summary. |
+| Subscription actions were partially wired | WORKING | `app/system-admin/page.tsx`, `lib/system-admin/provisioning.ts` | Drawer now exposes manual expiry edit, +30 days, +1 month, +1 year, set unlimited, remove unlimited, active/suspended/expired/blocked/disabled status actions, reset password and force password change. |
+| Unlimited license could not be removed | WORKING | `lib/system-admin/provisioning.ts` | `updateTenantSubscription` now treats `unlimitedLicense: false` as an explicit metadata update and clears the unlimited flag without creating duplicate subscriptions. |
+| Invalid manual expiry date lacked a hard guard | WORKING | `app/system-admin/page.tsx`, `lib/system-admin/provisioning.ts` | UI validates the date before PATCH and backend rejects invalid dates before writing subscription state. |
+| Failed System Admin actions were not visible enough | WORKING | `app/system-admin/page.tsx` | Tenant management PATCH failures now log `console.error('[system-admin] subscription action failed', context)` and show a visible drawer message. |
+| Tenant list did not open the management drawer directly | WORKING | `app/system-admin/page.tsx` | Tenant rows now expose a direct management action so subscription controls are visible from the main subscription table. |
+
 ## Silent Failure Cleanup
 
 | Area | Status | Notes |

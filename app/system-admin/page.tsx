@@ -30,6 +30,14 @@ type SaasTenantRow = {
   status: string;
   plan: PackageType | string;
   billingPeriod: string;
+  subscriptionId?: string | null;
+  startsAt?: string | null;
+  subscriptionUpdatedAt?: string | null;
+  unlimitedLicense?: boolean;
+  adminEmail?: string | null;
+  adminUsername?: string | null;
+  adminPasswordResetRequired?: boolean;
+  adminUpdatedAt?: string | null;
   branchCount: number;
   activeBranchCount: number;
   activeUsers: number;
@@ -304,6 +312,25 @@ function addDays(startDate: string, days: number) {
   return date.toISOString().slice(0, 10);
 }
 
+function formatDate(value?: string | null) {
+  return value ? value.slice(0, 10) : '-';
+}
+
+function daysRemaining(value?: string | null) {
+  if (!value) return null;
+  const time = new Date(value).getTime();
+  if (Number.isNaN(time)) return null;
+  return Math.ceil((time - Date.now()) / 86400000);
+}
+
+function subscriptionAccessLabel(tenant?: SaasTenantRow | null) {
+  if (!tenant) return 'Tenant secilmedi';
+  if (tenant.unlimitedLicense) return 'Limitsiz lisans: okuma/yazma acik';
+  if (tenant.status === 'expired' || tenant.subscriptionStatus === 'expired') return 'Suresi doldu: okuma acik, yazma kapali';
+  if (tenant.status === 'suspended' || tenant.status === 'blocked' || tenant.status === 'disabled') return 'Erisim kapali';
+  return 'Okuma/yazma acik';
+}
+
 function createPackageDraft(packageType: PackageType = 'mini'): AdminPackage {
   return {
     id: `pkg-${Date.now()}`,
@@ -488,8 +515,8 @@ export default function SystemAdminPage() {
       package_id: packageIdForType(row.plan),
       package_type: (row.plan === 'gold' || row.plan === 'premium' ? row.plan : 'mini') as PackageType,
       start_date: row.createdAt.slice(0, 10),
-      end_date: row.expiresAt?.slice(0, 10) ?? today(),
-      status: row.status === 'trial' || row.status === 'demo' ? 'demo' : row.status === 'active' ? 'active' : row.status === 'suspended' ? 'blocked' : 'expired',
+      end_date: formatDate(row.expiresAt) === '-' ? today() : formatDate(row.expiresAt),
+      status: row.status === 'trial' || row.status === 'demo' ? 'demo' : row.status === 'active' ? 'active' : row.status === 'suspended' || row.status === 'blocked' || row.status === 'disabled' ? 'blocked' : 'expired',
       demo_enabled: row.status === 'demo' || row.status === 'trial',
       auto_renew: row.billingPeriod !== 'manual',
       admin_username: 'admin',
@@ -971,7 +998,7 @@ function DataTable({ headers, rows }: { headers: string[]; rows: Array<Array<Rea
   );
 }
 
-function TenantsModule({ saasTenants, liveOps }: any) {
+function TenantsModule({ saasTenants, liveOps, onOpenTenant }: any) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [packageFilter, setPackageFilter] = useState('all');
@@ -1024,22 +1051,22 @@ function TenantsModule({ saasTenants, liveOps }: any) {
       </div>
 
       <DataTable
-        headers={['Firma', 'Paket', 'Durum', 'Son Ödeme', 'Yenileme', 'Online Kullanıcı', 'Health', 'Oluşturulma Tarihi']}
+        headers={['Firma', 'Paket', 'Durum', 'Lisans', 'Yenileme', 'Online Kullanıcı', 'Health', 'Aksiyon']}
         rows={visibleSubscriptions.map((tenant: SaasTenantRow) => {
           const onlineUsers = liveOps?.presence.filter((presence: LivePresenceRow) => presence.tenantId === tenant.tenantId && presence.status === 'online').length ?? 0;
           const health = tenant.status === 'active' ? 92 : tenant.status === 'trial' ? 81 : 54;
           return [
-            <Link key={`${tenant.tenantId}-company`} href={`/system-admin/abonelikler/${tenant.tenantId}`} className="block rounded-xl px-3 py-2 transition hover:bg-white/5">
+            <button key={`${tenant.tenantId}-company`} type="button" onClick={() => onOpenTenant?.(tenant.tenantId)} className="block rounded-xl px-3 py-2 text-left transition hover:bg-white/5">
               <p className="font-semibold">{tenant.companyName}</p>
               <p className="text-xs text-slate-400">{tenant.tenantId}</p>
-            </Link>,
+            </button>,
             String(tenant.plan),
             <StatusPill key={`${tenant.tenantId}-status`} status={tenant.status} />,
-            tenant.lastActivity?.slice(0, 10) ?? '-',
-            tenant.expiresAt?.slice(0, 10) ?? '-',
+            tenant.unlimitedLicense ? 'Limitsiz' : tenant.subscriptionStatus,
+            formatDate(tenant.expiresAt),
             onlineUsers,
             `${health}%`,
-            tenant.createdAt?.slice(0, 10) ?? '-',
+            <button key={`${tenant.tenantId}-manage`} type="button" onClick={() => onOpenTenant?.(tenant.tenantId)} className="rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-100">Yonet</button>,
           ];
         })}
       />
@@ -1334,24 +1361,32 @@ function TenantOperationsDrawer({ tenantId, tenant, liveOps, provisioningJobs, s
           {activeTab === 'billing' ? <DrawerSimple title="Billing" rows={[`Plan: ${tenant?.plan ?? '-'}`, `BitiÅŸ: ${tenant?.expiresAt?.slice(0, 10) ?? '-'}`, `Bakiye: ${tenant?.balance ?? 0}`]} /> : null}
           {activeTab === 'ai' ? <DrawerAi tenant={tenant} events={events} /> : null}
           {activeTab === 'security' ? <DrawerSimple title="Security" rows={[`${events.filter((event) => event.type === 'auth.login_failed').length} baÅŸar?s?z giriÅŸ`, `${presence.length} aktif oturum`]} /> : null}
-          {activeTab === 'settings' ? <DrawerTenantManagement tenantId={tenantId} loading={managementLoading} message={managementMessage} onAction={async (body) => {
+          {activeTab === 'settings' ? <DrawerTenantManagement tenantId={tenantId} tenant={tenant} loading={managementLoading} message={managementMessage} onAction={async (body) => {
             if (managementLoading) return;
             setManagementLoading(true);
             setManagementMessage('');
-            const response = await fetch('/api/system-admin/tenants', {
-              method: 'PATCH',
-              credentials: 'include',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ tenantId, ...body }),
-            }).catch(() => null);
-            const payload = response ? await response.json().catch(() => null) as { error?: string } | null : null;
-            setManagementLoading(false);
-            if (!response?.ok) {
-              setManagementMessage(payload?.error ?? 'Tenant aksiyonu uygulanamadi.');
-              return;
+            const context = { tenantId, action: body.action, timestamp: new Date().toISOString() };
+            try {
+              const response = await fetch('/api/system-admin/tenants', {
+                method: 'PATCH',
+                credentials: 'include',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ tenantId, ...body }),
+              });
+              const payload = await response.json().catch(() => null) as { error?: string } | null;
+              if (!response.ok) {
+                console.error('[system-admin] subscription action failed', { ...context, status: response.status, error: payload?.error });
+                setManagementMessage(payload?.error ?? 'Tenant aksiyonu uygulanamadi.');
+                return;
+              }
+              setManagementMessage('Tenant aksiyonu uygulandi.');
+              await onRefresh();
+            } catch (error) {
+              console.error('[system-admin] subscription action failed', { ...context, error: error instanceof Error ? error.message : String(error) });
+              setManagementMessage('Tenant aksiyonu uygulanamadi.');
+            } finally {
+              setManagementLoading(false);
             }
-            setManagementMessage('Tenant aksiyonu uygulandi.');
-            await onRefresh();
           }} /> : null}
         </div>
       </aside>
@@ -1360,6 +1395,7 @@ function TenantOperationsDrawer({ tenantId, tenant, liveOps, provisioningJobs, s
 }
 
 function DrawerOverview({ tenant, tenantState, presence, devices, jobs, events }: { tenant: SaasTenantRow | null; tenantState?: AdminTenant; presence: LivePresenceRow[]; devices: LiveDeviceRow[]; jobs: ProvisioningJobRow[]; events: LiveEventRow[] }) {
+  const remaining = daysRemaining(tenant?.expiresAt);
   return <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
     <Metric label="Bug?n ciro" value={formatAdminMoney(tenant?.dailyRevenue ?? 0)} />
     <Metric label="Aktif kullan?c?" value={String(presence.length)} />
@@ -1376,44 +1412,93 @@ function DrawerOverview({ tenant, tenantState, presence, devices, jobs, events }
     <Metric label="Reports" value={String(tenant?.reportCount ?? 0)} />
     <Metric label="Printers" value={String(tenant?.printerCount ?? 0)} />
     <Metric label="Runtime snapshots" value={String(tenant?.runtimeSnapshotCount ?? 0)} />
-    <Metric label="Last login" value={tenant?.lastLogin ? tenant.lastLogin.slice(0, 10) : '-'} />
+    <Metric label="Last login" value={formatDate(tenant?.lastLogin)} />
     <Metric label="DB footprint" value={String(tenant?.databaseFootprint ?? 0)} />
-    <div className="md:col-span-2 xl:col-span-3"><DrawerSimple title="Subscription" rows={[`Durum: ${tenant?.subscriptionStatus ?? '-'}`, `Yenileme: ${tenantState ? createRenewalNotice(tenantState) : '-'}`, `BitiÅŸ: ${tenant?.expiresAt?.slice(0, 10) ?? '-'}`]} /></div>
+    <div className="md:col-span-2 xl:col-span-3"><DrawerSimple title="Subscription" rows={[
+      `Tenant status: ${tenant?.status ?? '-'}`,
+      `Subscription status: ${tenant?.subscriptionStatus ?? '-'}`,
+      `Baslangic: ${formatDate(tenant?.startsAt)}`,
+      `Bitis: ${formatDate(tenant?.expiresAt)}`,
+      `Kalan gun: ${tenant?.unlimitedLicense ? 'limitsiz' : remaining ?? '-'}`,
+      `Limitsiz lisans: ${tenant?.unlimitedLicense ? 'evet' : 'hayir'}`,
+      `Son guncelleme: ${formatDate(tenant?.subscriptionUpdatedAt)}`,
+      `Admin e-posta: ${tenant?.adminEmail ?? '-'}`,
+      `Admin kullanici: ${tenant?.adminUsername ?? 'admin'}`,
+      `Tenant kodu: ${tenant?.tenantId ?? '-'}`,
+      `Erisim politikasi: ${subscriptionAccessLabel(tenant)}`,
+      `Yenileme notu: ${tenantState ? createRenewalNotice(tenantState) : '-'}`,
+    ]} /></div>
   </div>;
 }
-function DrawerTenantManagement({ tenantId, loading, message, onAction }: { tenantId: string; loading: boolean; message: string; onAction: (body: Record<string, unknown>) => Promise<void> }) {
-  const [manualEndsAt, setManualEndsAt] = useState('');
+function DrawerTenantManagement({ tenantId, tenant, loading, message, onAction }: { tenantId: string; tenant: SaasTenantRow | null; loading: boolean; message: string; onAction: (body: Record<string, unknown>) => Promise<void> }) {
+  const [manualEndsAt, setManualEndsAt] = useState(tenant?.expiresAt?.slice(0, 10) ?? '');
   const [tempPassword, setTempPassword] = useState('');
+  const [localError, setLocalError] = useState('');
+  useEffect(() => {
+    setManualEndsAt(tenant?.expiresAt?.slice(0, 10) ?? '');
+  }, [tenant?.expiresAt, tenantId]);
+  async function submitAction(body: Record<string, unknown>) {
+    setLocalError('');
+    await onAction(body);
+  }
+  async function applyManualDate() {
+    if (!manualEndsAt || Number.isNaN(new Date(manualEndsAt).getTime())) {
+      setLocalError('Gecerli bir bitis tarihi secin.');
+      return;
+    }
+    await submitAction({ action: 'update_subscription', endsAt: manualEndsAt, unlimitedLicense: false });
+  }
   return <div className="grid gap-5 md:grid-cols-2">
+    <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5 md:col-span-2">
+      <h3 className="text-lg font-semibold">Abonelik durumu</h3>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <MiniMetric label="Tenant" value={tenant?.status ?? '-'} />
+        <MiniMetric label="Abonelik" value={tenant?.subscriptionStatus ?? '-'} />
+        <MiniMetric label="Kalan gun" value={tenant?.unlimitedLicense ? 'limitsiz' : String(daysRemaining(tenant?.expiresAt) ?? '-')} />
+        <MiniMetric label="Baslangic" value={formatDate(tenant?.startsAt)} />
+        <MiniMetric label="Bitis" value={formatDate(tenant?.expiresAt)} />
+        <MiniMetric label="Guncelleme" value={formatDate(tenant?.subscriptionUpdatedAt)} />
+        <MiniMetric label="Admin" value={tenant?.adminUsername ?? 'admin'} />
+        <MiniMetric label="E-posta" value={tenant?.adminEmail ?? '-'} />
+        <MiniMetric label="Politika" value={subscriptionAccessLabel(tenant)} />
+      </div>
+    </article>
     <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
       <h3 className="text-lg font-semibold">Subscription</h3>
       <div className="mt-4 grid gap-3">
         <div className="grid grid-cols-3 gap-2">
-          <button disabled={loading} type="button" onClick={() => onAction({ action: 'update_subscription', addDays: 30 })} className="btn-blue">+30 gun</button>
-          <button disabled={loading} type="button" onClick={() => onAction({ action: 'update_subscription', addMonths: 1 })} className="btn-blue">+1 ay</button>
-          <button disabled={loading} type="button" onClick={() => onAction({ action: 'update_subscription', addYears: 1 })} className="btn-blue">+1 yil</button>
+          <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_subscription', addDays: 30, unlimitedLicense: false })} className="btn-blue">{loading ? '...' : '+30 gun'}</button>
+          <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_subscription', addMonths: 1, unlimitedLicense: false })} className="btn-blue">{loading ? '...' : '+1 ay'}</button>
+          <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_subscription', addYears: 1, unlimitedLicense: false })} className="btn-blue">{loading ? '...' : '+1 yil'}</button>
         </div>
-        <button disabled={loading} type="button" onClick={() => onAction({ action: 'update_subscription', unlimitedLicense: true })} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-100">Limitsiz lisans</button>
+        <button disabled={loading || tenant?.unlimitedLicense === true} type="button" onClick={() => submitAction({ action: 'update_subscription', unlimitedLicense: true })} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-100 disabled:opacity-60">Limitsiz lisans yap</button>
+        <button disabled={loading || tenant?.unlimitedLicense !== true} type="button" onClick={() => submitAction({ action: 'update_subscription', unlimitedLicense: false, subscriptionStatus: 'active' })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold disabled:opacity-60">Limitsiz lisansi kaldir</button>
         <div className="grid gap-2 md:grid-cols-[1fr_auto]">
           <input type="date" value={manualEndsAt} onChange={(event) => setManualEndsAt(event.target.value)} className="input-dark" />
-          <button disabled={loading || !manualEndsAt} type="button" onClick={() => onAction({ action: 'update_subscription', endsAt: manualEndsAt })} className="btn-blue">Tarih uygula</button>
+          <button disabled={loading || !manualEndsAt} type="button" onClick={() => void applyManualDate()} className="btn-blue">Tarih uygula</button>
         </div>
+        {localError ? <p className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-sm text-rose-100">{localError}</p> : null}
       </div>
     </article>
     <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
       <h3 className="text-lg font-semibold">Tenant status</h3>
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <button disabled={loading} type="button" onClick={() => onAction({ action: 'update_status', tenantStatus: 'active' })} className="btn-blue">Aktif</button>
-        <button disabled={loading} type="button" onClick={() => onAction({ action: 'update_status', tenantStatus: 'suspended' })} className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100">Askida</button>
-        <button disabled={loading} type="button" onClick={() => onAction({ action: 'update_status', tenantStatus: 'expired' })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold">Suresi doldu</button>
-        <button disabled={loading} type="button" onClick={() => onAction({ action: 'update_status', tenantStatus: 'disabled' })} className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm font-semibold text-rose-100">Devre disi</button>
+        <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'active' })} className="btn-blue">Aktif</button>
+        <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'suspended' })} className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100">Askida</button>
+        <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'expired' })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold">Suresi doldu</button>
+        <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'blocked' })} className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm font-semibold text-rose-100">Bloke</button>
+        <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'disabled' })} className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm font-semibold text-rose-100">Devre disi</button>
       </div>
     </article>
     <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5 md:col-span-2">
       <h3 className="text-lg font-semibold">Password</h3>
       <div className="mt-4 grid gap-2 md:grid-cols-[1fr_auto]">
         <input type="text" value={tempPassword} onChange={(event) => setTempPassword(event.target.value)} placeholder={`${tenantId}-gecici-sifre`} className="input-dark" />
-        <button disabled={loading || !tempPassword.trim()} type="button" onClick={() => onAction({ action: 'update_password', username: 'admin', temporaryPassword: tempPassword.trim(), forcePasswordChange: true })} className="btn-blue">Admin sifresini sifirla</button>
+        <button disabled={loading || !tempPassword.trim()} type="button" onClick={() => submitAction({ action: 'update_password', username: 'admin', temporaryPassword: tempPassword.trim(), forcePasswordChange: false })} className="btn-blue">Admin sifresini sifirla</button>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button disabled={loading || !tempPassword.trim()} type="button" onClick={() => submitAction({ action: 'update_password', username: 'admin', temporaryPassword: tempPassword.trim(), forcePasswordChange: true })} className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100">Gecici sifre + zorunlu degisim</button>
+        <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_password', username: 'admin', forcePasswordChange: true })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold">Zorunlu degisim isaretle</button>
       </div>
       {message ? <p className="mt-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200">{message}</p> : null}
     </article>
