@@ -74,6 +74,44 @@ export type TenantManagementInput =
       requestedBy: string;
     }
   | {
+      action: 'update_tenant_info';
+      tenantId: string;
+      companyName?: string;
+      legalName?: string;
+      taxNumber?: string;
+      phone?: string;
+      email?: string;
+      contactName?: string;
+      address?: string;
+      notes?: string;
+      requestedBy: string;
+    }
+  | {
+      action: 'update_user_status';
+      tenantId: string;
+      username?: string;
+      active: boolean;
+      requestedBy: string;
+    }
+  | {
+      action: 'soft_delete_tenant';
+      tenantId: string;
+      confirmationTenantId: string;
+      requestedBy: string;
+    }
+  | {
+      action: 'restore_tenant';
+      tenantId: string;
+      status?: TenantStatus | 'disabled';
+      requestedBy: string;
+    }
+  | {
+      action: 'integration_action';
+      tenantId: string;
+      operation: 'clear_printer_mappings' | 'refresh_bridge_registration' | 'send_test_print';
+      requestedBy: string;
+    }
+  | {
       action: 'update_status';
       tenantId: string;
       status: TenantStatus | 'disabled';
@@ -758,7 +796,7 @@ export async function rollbackProvisioningJob(jobId: string) {
 export async function listSaasTenants() {
   const [tenants, ordersToday, paymentsToday] = await Promise.all([
     prisma.tenant.findMany({
-      where: { deletedAt: null, tenantId: { not: 'system' } },
+      where: { tenantId: { not: 'system' } },
       orderBy: { createdAt: 'desc' },
       select: {
         tenantId: true,
@@ -767,6 +805,9 @@ export async function listSaasTenants() {
         status: true,
         mainBranchId: true,
         metadata: true,
+        legalName: true,
+        taxNumber: true,
+        deletedAt: true,
         createdAt: true,
         updatedAt: true,
         branches: { where: { deletedAt: null }, select: { id: true, active: true } },
@@ -803,6 +844,7 @@ export async function listSaasTenants() {
         recipeCount,
         tableCount,
         orderCount,
+        paymentCount,
         salesTotal,
         customerCount,
         supplierCount,
@@ -811,6 +853,8 @@ export async function listSaasTenants() {
         reportCount,
         printerCount,
         runtimeSnapshotCount,
+        lastOrder,
+        lastPayment,
       ] = await Promise.all([
         prisma.product.count({ where: { tenantId, deletedAt: null } }),
         prisma.productCategory.count({ where: { tenantId, deletedAt: null } }),
@@ -818,6 +862,7 @@ export async function listSaasTenants() {
         prisma.recipe.count({ where: { tenantId } }),
         prisma.posTable.count({ where: { tenantId } }),
         prisma.order.count({ where: { tenantId } }),
+        prisma.payment.count({ where: { tenantId } }),
         prisma.payment.aggregate({ where: { tenantId, status: 'paid' }, _sum: { amount: true } }),
         prisma.customer.count({ where: { tenantId } }),
         prisma.supplier.count({ where: { tenantId } }),
@@ -826,6 +871,8 @@ export async function listSaasTenants() {
         prisma.report.count({ where: { tenantId } }),
         prisma.printer.count({ where: { tenantId } }),
         prisma.runtimeState.count({ where: { tenantId } }),
+        prisma.order.findFirst({ where: { tenantId }, orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
+        prisma.payment.findFirst({ where: { tenantId }, orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
       ]);
       return [
         tenantId,
@@ -836,12 +883,15 @@ export async function listSaasTenants() {
           recipeCount,
           tableCount,
           orderCount,
+          paymentCount,
           salesTotal: Number(salesTotal._sum.amount ?? 0),
           currentAccountCount: customerCount + supplierCount,
           cashRecordCount: cashRegisterCount + cashTransactionCount,
           reportCount,
           printerCount,
           runtimeSnapshotCount,
+          lastOrderAt: lastOrder?.createdAt.toISOString() ?? null,
+          lastPaymentAt: lastPayment?.createdAt.toISOString() ?? null,
         },
       ] as const;
     }),
@@ -861,7 +911,10 @@ export async function listSaasTenants() {
     return {
       tenantId: tenant.tenantId,
       companyName: tenant.name,
+      legalName: tenant.legalName,
+      taxNumber: tenant.taxNumber,
       status: tenant.status,
+      deletedAt: tenant.deletedAt?.toISOString() ?? null,
       plan: subscription?.packageType ?? tenant.packageType,
       billingPeriod: subscription?.billingPeriod ?? 'monthly',
       subscriptionId: subscription?.id ?? null,
@@ -870,6 +923,7 @@ export async function listSaasTenants() {
       unlimitedLicense: subscriptionMetadata.unlimitedLicense === true,
       adminEmail: adminUser?.email ?? null,
       adminUsername: adminUser?.username ?? null,
+      adminActive: adminUser?.active ?? false,
       adminPasswordResetRequired: metadataObject(adminUser?.metadata).resetRequired === true,
       adminUpdatedAt: adminUser?.updatedAt.toISOString() ?? null,
       branchCount: tenant.branches.length,
@@ -881,6 +935,11 @@ export async function listSaasTenants() {
       subscriptionStatus: subscription?.status ?? 'none',
       balance: Number(metadata.initialBalance ?? subscriptionMetadata.initialBalance ?? 0),
       kontorBalance: Number(metadata.kontorBalance ?? subscriptionMetadata.kontorBalance ?? 0),
+      phone: String(metadata.phone ?? ''),
+      email: String(metadata.email ?? ''),
+      contactName: String(metadata.contactName ?? ''),
+      address: String(metadata.address ?? ''),
+      notes: String(metadata.notes ?? ''),
       dailyOrders: ordersByTenant.get(tenant.tenantId) ?? 0,
       dailyRevenue: revenueByTenant.get(tenant.tenantId) ?? 0,
       mainBranchId: tenant.mainBranchId,
@@ -891,12 +950,15 @@ export async function listSaasTenants() {
       recipeCount: counts?.recipeCount ?? 0,
       tableCount: counts?.tableCount ?? 0,
       orderCount: counts?.orderCount ?? 0,
+      paymentCount: counts?.paymentCount ?? 0,
       salesTotal: counts?.salesTotal ?? 0,
       currentAccountCount: counts?.currentAccountCount ?? 0,
       cashRecordCount: counts?.cashRecordCount ?? 0,
       reportCount: counts?.reportCount ?? 0,
       printerCount: counts?.printerCount ?? 0,
       runtimeSnapshotCount: counts?.runtimeSnapshotCount ?? 0,
+      lastOrderAt: counts?.lastOrderAt ?? null,
+      lastPaymentAt: counts?.lastPaymentAt ?? null,
       databaseFootprint: Object.entries(counts ?? {}).reduce((sum, [, value]) => sum + (typeof value === 'number' ? value : 0), 0),
     };
   });
@@ -945,8 +1007,9 @@ function metadataObject(input: Prisma.JsonValue | null | undefined): Record<stri
 export async function updateTenantSubscription(input: Extract<TenantManagementInput, { action: 'update_subscription' }>) {
   const tenantId = input.tenantId.trim().toUpperCase();
   if (!tenantId) throw new Error('tenantId zorunludur.');
-  const tenant = await prisma.tenant.findUnique({ where: { tenantId }, select: { tenantId: true, packageType: true } });
+  const tenant = await prisma.tenant.findUnique({ where: { tenantId }, select: { tenantId: true, packageType: true, deletedAt: true } });
   if (!tenant) throw new Error('Tenant bulunamadı.');
+  if (tenant.deletedAt) throw new Error('Silinmiş tenant üzerinde bu işlem yapılamaz.');
 
   const current = await prisma.subscription.findFirst({
     where: { tenantId, deletedAt: null },
@@ -1020,6 +1083,9 @@ export async function updateTenantPassword(input: Extract<TenantManagementInput,
   const username = input.username?.trim() || 'admin';
   const password = input.temporaryPassword?.trim() || input.password?.trim();
   if (!tenantId || !username || (!password && input.forcePasswordChange === undefined)) throw new Error('tenantId, username ve password zorunludur.');
+  const tenant = await prisma.tenant.findUnique({ where: { tenantId }, select: { deletedAt: true } });
+  if (!tenant) throw new Error('Tenant bulunamadı.');
+  if (tenant.deletedAt) throw new Error('Silinmiş tenant üzerinde bu işlem yapılamaz.');
   const user = await prisma.user.findUnique({ where: userTenantUsernameKey(tenantId, username) });
   if (!user || user.deletedAt) throw new Error('Kullanıcı bulunamadı.');
   const passwordHash = password ? await hashPassword(password) : user.passwordHash;
@@ -1051,10 +1117,88 @@ export async function updateTenantPassword(input: Extract<TenantManagementInput,
   });
 }
 
+export async function updateTenantInfo(input: Extract<TenantManagementInput, { action: 'update_tenant_info' }>) {
+  const tenantId = input.tenantId.trim().toUpperCase();
+  if (!tenantId) throw new Error('tenantId zorunludur.');
+  const tenant = await prisma.tenant.findUnique({ where: { tenantId } });
+  if (!tenant) throw new Error('Tenant bulunamadı.');
+  if (tenant.deletedAt) throw new Error('Silinmiş tenant üzerinde bu işlem yapılamaz.');
+  const metadata = metadataObject(tenant.metadata);
+  const nextMetadata = compactJson({
+    ...metadata,
+    phone: input.phone?.trim() ?? metadata.phone,
+    email: input.email?.trim() ?? metadata.email,
+    contactName: input.contactName?.trim() ?? metadata.contactName,
+    address: input.address?.trim() ?? metadata.address,
+    notes: input.notes?.trim() ?? metadata.notes,
+    profileUpdatedAt: new Date().toISOString(),
+    profileUpdatedBy: input.requestedBy,
+  });
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.tenant.update({
+      where: { tenantId },
+      data: {
+        name: input.companyName?.trim() || tenant.name,
+        legalName: input.legalName === undefined ? tenant.legalName : input.legalName.trim() || null,
+        taxNumber: input.taxNumber === undefined ? tenant.taxNumber : input.taxNumber.trim() || null,
+        metadata: nextMetadata,
+      },
+    });
+    await writeAuditLog({
+      tenantId,
+      userId: input.requestedBy,
+      action: 'system_admin_action',
+      entity: 'tenant',
+      entityId: tenantId,
+      metadata: compactJson({ actionName: 'system_admin_tenant_info_update' }),
+      db: tx,
+    });
+    return updated;
+  });
+}
+
+export async function updateTenantUserStatus(input: Extract<TenantManagementInput, { action: 'update_user_status' }>) {
+  const tenantId = input.tenantId.trim().toUpperCase();
+  const username = input.username?.trim() || 'admin';
+  const tenant = await prisma.tenant.findUnique({ where: { tenantId }, select: { deletedAt: true } });
+  if (!tenant) throw new Error('Tenant bulunamadı.');
+  if (tenant.deletedAt) throw new Error('Silinmiş tenant üzerinde bu işlem yapılamaz.');
+  const user = await prisma.user.findUnique({ where: userTenantUsernameKey(tenantId, username) });
+  if (!user || user.deletedAt) throw new Error('Kullanıcı bulunamadı.');
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.user.update({
+      where: userTenantUsernameKey(tenantId, username),
+      data: {
+        active: input.active,
+        metadata: compactJson({
+          ...metadataObject(user.metadata),
+          lockedBySystemAdmin: !input.active,
+          statusUpdatedAt: new Date().toISOString(),
+          statusUpdatedBy: input.requestedBy,
+        }),
+      },
+      select: { id: true, tenantId: true, username: true, active: true, metadata: true },
+    });
+    await writeAuditLog({
+      tenantId,
+      userId: input.requestedBy,
+      action: 'system_admin_action',
+      entity: 'user',
+      entityId: user.id,
+      metadata: compactJson({ actionName: 'system_admin_user_status_update', username, active: input.active }),
+      db: tx,
+    });
+    return updated;
+  });
+}
+
 export async function updateTenantStatus(input: Extract<TenantManagementInput, { action: 'update_status' }>) {
   const tenantId = input.tenantId.trim().toUpperCase();
   const status = (input.status === 'disabled' ? 'blocked' : input.status) as TenantStatus;
   if (!tenantId) throw new Error('tenantId zorunludur.');
+  const existing = await prisma.tenant.findUnique({ where: { tenantId }, select: { deletedAt: true } });
+  if (!existing) throw new Error('Tenant bulunamadı.');
+  if (existing.deletedAt) throw new Error('Silinmiş tenant üzerinde bu işlem yapılamaz.');
   return prisma.$transaction(async (tx) => {
     const latestSubscription = await tx.subscription.findFirst({
       where: { tenantId, deletedAt: null },
@@ -1084,5 +1228,114 @@ export async function updateTenantStatus(input: Extract<TenantManagementInput, {
       db: tx,
     });
     return tenant;
+  });
+}
+
+export async function softDeleteTenant(input: Extract<TenantManagementInput, { action: 'soft_delete_tenant' }>) {
+  const tenantId = input.tenantId.trim().toUpperCase();
+  if (!tenantId || input.confirmationTenantId.trim().toUpperCase() !== tenantId) {
+    throw new Error('Abone silme için abone kodu doğrulaması zorunludur.');
+  }
+  const existing = await prisma.tenant.findUnique({ where: { tenantId }, select: { tenantId: true, deletedAt: true, metadata: true } });
+  if (!existing) throw new Error('Tenant bulunamadı.');
+  if (existing.deletedAt) throw new Error('Tenant zaten silinmiş durumda.');
+  return prisma.$transaction(async (tx) => {
+    const deletedAt = new Date();
+    const tenant = await tx.tenant.update({
+      where: { tenantId },
+      data: {
+        status: 'blocked',
+        deletedAt,
+        metadata: compactJson({
+          ...metadataObject(existing.metadata),
+          deletedAt: deletedAt.toISOString(),
+          deletedBy: input.requestedBy,
+        }),
+      },
+    });
+    await tx.subscription.updateMany({ where: { tenantId, deletedAt: null }, data: { status: 'suspended' } });
+    await tx.session.updateMany({ where: { tenantId, revokedAt: null }, data: { revokedAt: deletedAt } });
+    await writeAuditLog({
+      tenantId,
+      userId: input.requestedBy,
+      action: 'system_admin_action',
+      entity: 'tenant',
+      entityId: tenantId,
+      metadata: compactJson({ actionName: 'system_admin_tenant_soft_delete', deletedAt: deletedAt.toISOString() }),
+      db: tx,
+    });
+    return tenant;
+  });
+}
+
+export async function restoreTenant(input: Extract<TenantManagementInput, { action: 'restore_tenant' }>) {
+  const tenantId = input.tenantId.trim().toUpperCase();
+  if (!tenantId) throw new Error('tenantId zorunludur.');
+  const status = (input.status === 'disabled' ? 'blocked' : input.status ?? 'suspended') as TenantStatus;
+  const existing = await prisma.tenant.findUnique({ where: { tenantId }, select: { tenantId: true, deletedAt: true, metadata: true } });
+  if (!existing) throw new Error('Tenant bulunamadı.');
+  if (!existing.deletedAt) throw new Error('Tenant zaten aktif listede.');
+  return prisma.$transaction(async (tx) => {
+    const tenant = await tx.tenant.update({
+      where: { tenantId },
+      data: {
+        status,
+        deletedAt: null,
+        metadata: compactJson({
+          ...metadataObject(existing.metadata),
+          restoredAt: new Date().toISOString(),
+          restoredBy: input.requestedBy,
+        }),
+      },
+    });
+    await writeAuditLog({
+      tenantId,
+      userId: input.requestedBy,
+      action: 'system_admin_action',
+      entity: 'tenant',
+      entityId: tenantId,
+      metadata: compactJson({ actionName: 'system_admin_tenant_restore', status }),
+      db: tx,
+    });
+    return tenant;
+  });
+}
+
+export async function runTenantIntegrationAction(input: Extract<TenantManagementInput, { action: 'integration_action' }>) {
+  const tenantId = input.tenantId.trim().toUpperCase();
+  if (!tenantId) throw new Error('tenantId zorunludur.');
+  const existing = await prisma.tenant.findUnique({ where: { tenantId }, select: { tenantId: true, deletedAt: true } });
+  if (!existing) throw new Error('Tenant bulunamadı.');
+  if (existing.deletedAt) throw new Error('Silinmiş tenant üzerinde bu işlem yapılamaz.');
+
+  return prisma.$transaction(async (tx) => {
+    let affected = 0;
+    if (input.operation === 'clear_printer_mappings') {
+      const result = await tx.printer.updateMany({
+        where: { tenantId, active: true },
+        data: { active: false },
+      });
+      affected = result.count;
+    }
+
+    if (input.operation === 'refresh_bridge_registration') {
+      affected = await tx.deviceHeartbeat.count({ where: { tenantId, deviceType: { contains: 'bridge' } } });
+    }
+
+    if (input.operation === 'send_test_print') {
+      affected = await tx.deviceHeartbeat.count({ where: { tenantId, deviceType: { contains: 'printer' } } });
+    }
+
+    await writeAuditLog({
+      tenantId,
+      userId: input.requestedBy,
+      action: 'system_admin_action',
+      entity: 'tenant',
+      entityId: tenantId,
+      metadata: compactJson({ actionName: 'system_admin_integration_action', operation: input.operation, affected }),
+      db: tx,
+    });
+
+    return { tenantId, operation: input.operation, affected };
   });
 }

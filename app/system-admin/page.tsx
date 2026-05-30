@@ -27,7 +27,10 @@ type TenantDraft = ReturnType<typeof createAdminTenantDraft>;
 type SaasTenantRow = {
   tenantId: string;
   companyName: string;
+  legalName?: string | null;
+  taxNumber?: string | null;
   status: string;
+  deletedAt?: string | null;
   plan: PackageType | string;
   billingPeriod: string;
   subscriptionId?: string | null;
@@ -36,6 +39,7 @@ type SaasTenantRow = {
   unlimitedLicense?: boolean;
   adminEmail?: string | null;
   adminUsername?: string | null;
+  adminActive?: boolean;
   adminPasswordResetRequired?: boolean;
   adminUpdatedAt?: string | null;
   branchCount: number;
@@ -57,12 +61,20 @@ type SaasTenantRow = {
   recipeCount?: number;
   tableCount?: number;
   orderCount?: number;
+  paymentCount?: number;
   salesTotal?: number;
   currentAccountCount?: number;
   cashRecordCount?: number;
   reportCount?: number;
   printerCount?: number;
   runtimeSnapshotCount?: number;
+  phone?: string | null;
+  email?: string | null;
+  contactName?: string | null;
+  address?: string | null;
+  notes?: string | null;
+  lastOrderAt?: string | null;
+  lastPaymentAt?: string | null;
   databaseFootprint?: number;
 };
 type SaasSummary = {
@@ -189,6 +201,7 @@ type LiveDeviceRow = {
   failureCount: number;
   latencyMs?: number | null;
   lastHeartbeatAt: string;
+  metadata?: Record<string, unknown>;
 };
 type LiveEventRow = {
   id: string;
@@ -256,7 +269,7 @@ type DurableAuditRow = {
   after?: unknown;
   createdAt: string;
 };
-type TenantDrawerTab = 'overview' | 'live' | 'finance' | 'branches' | 'users' | 'devices' | 'printers' | 'queues' | 'audit' | 'activity' | 'billing' | 'ai' | 'security' | 'settings';
+type TenantDrawerTab = 'profile' | 'subscription' | 'password' | 'license' | 'data' | 'integrations' | 'export' | 'danger';
 
 const navGroups: Array<{ label: string; items: Array<{ id: AdminModule; label: string; icon: typeof LayoutDashboard }> }> = [
   {
@@ -325,10 +338,27 @@ function daysRemaining(value?: string | null) {
 
 function subscriptionAccessLabel(tenant?: SaasTenantRow | null) {
   if (!tenant) return 'Tenant seçilmedi';
+  if (tenant.deletedAt) return 'Silinmiş: erişim kapalı';
   if (tenant.unlimitedLicense) return 'Limitsiz lisans: okuma/yazma açık';
   if (tenant.status === 'expired' || tenant.subscriptionStatus === 'expired') return 'Süresi doldu: okuma açık, yazma kapalı';
   if (tenant.status === 'suspended' || tenant.status === 'blocked' || tenant.status === 'disabled') return 'Erişim kapalı';
   return 'Okuma/yazma açık';
+}
+
+function tenantStatusLabel(status?: string | null) {
+  if (status === 'active') return 'Aktif';
+  if (status === 'trial') return 'Deneme';
+  if (status === 'demo') return 'Demo';
+  if (status === 'expired') return 'Süresi Doldu';
+  if (status === 'suspended') return 'Askıya Alındı';
+  if (status === 'blocked' || status === 'disabled') return 'Devre Dışı';
+  return status ?? '-';
+}
+
+function tenantRemainingDays(tenant?: SaasTenantRow | null) {
+  if (!tenant) return null;
+  if (tenant.unlimitedLicense) return null;
+  return daysRemaining(tenant.expiresAt);
 }
 
 function createPackageDraft(packageType: PackageType = 'mini'): AdminPackage {
@@ -1005,8 +1035,18 @@ function TenantsModule({ saasTenants, liveOps, onOpenTenant }: any) {
   const [renewalFilter, setRenewalFilter] = useState('all');
 
   const visibleSubscriptions = saasTenants.filter((tenant: SaasTenantRow) => {
-    const matchesSearch = `${tenant.companyName} ${tenant.tenantId}`.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || tenant.status === statusFilter;
+    const haystack = `${tenant.companyName} ${tenant.tenantId} ${tenant.adminEmail ?? ''} ${tenant.email ?? ''} ${tenant.taxNumber ?? ''}`.toLowerCase();
+    const matchesSearch = haystack.includes(searchTerm.toLowerCase());
+    const isDeleted = Boolean(tenant.deletedAt);
+    const matchesStatus = statusFilter === 'all'
+      ? !isDeleted
+      : statusFilter === 'deleted'
+        ? isDeleted
+        : statusFilter === 'unlimited'
+          ? tenant.unlimitedLicense === true && !isDeleted
+          : statusFilter === 'disabled'
+            ? (tenant.status === 'blocked' || tenant.status === 'disabled') && !isDeleted
+            : tenant.status === statusFilter && !isDeleted;
     const matchesPackage = packageFilter === 'all' || tenant.plan === packageFilter;
     const renewalDate = tenant.expiresAt ? new Date(tenant.expiresAt) : null;
     const daysToRenewal = renewalDate ? Math.ceil((renewalDate.getTime() - Date.now()) / 86400000) : null;
@@ -1022,8 +1062,8 @@ function TenantsModule({ saasTenants, liveOps, onOpenTenant }: any) {
     <div className="mt-6 grid gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold">Abonelikler</h2>
-          <p className="mt-1 text-sm text-slate-400">Firma portföyünü, yenileme durumunu ve sağlık görünümünü tek yerde yönetin.</p>
+          <h2 className="text-2xl font-semibold">Abone Yönetim Merkezi</h2>
+          <p className="mt-1 text-sm text-slate-400">Aboneleri, lisansları, riskli işlemleri ve tenant sağlığını tek panelden yönetin.</p>
         </div>
         <Link href="/system-admin/onboarding" className="rounded-2xl bg-cyan-400/15 px-4 py-3 text-sm font-semibold text-cyan-100">Yeni Abonelik Oluştur</Link>
       </div>
@@ -1031,13 +1071,16 @@ function TenantsModule({ saasTenants, liveOps, onOpenTenant }: any) {
       <div className="grid gap-3 rounded-[1.5rem] border border-white/10 bg-slate-900 p-4 md:grid-cols-2 xl:grid-cols-5">
         <label className="relative xl:col-span-2">
           <Search className="pointer-events-none absolute left-4 top-3.5 h-4 w-4 text-slate-500" />
-          <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Firma veya abonelik no ara..." className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 pl-11 pr-4 text-sm outline-none" />
+          <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Firma adı, abone kodu, e-posta veya vergi no ara..." className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 pl-11 pr-4 text-sm outline-none" />
         </label>
         <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="input-dark">
-          <option value="all">Tüm durumlar</option>
+          <option value="all">Aktif liste</option>
           <option value="active">Aktif</option>
-          <option value="trial">Deneme</option>
-          <option value="suspended">Askıda</option>
+          <option value="expired">Süresi Doldu</option>
+          <option value="suspended">Askıya Alındı</option>
+          <option value="disabled">Devre Dışı</option>
+          <option value="unlimited">Limitsiz</option>
+          <option value="deleted">Silinmiş/Pasif</option>
         </select>
         <select value={packageFilter} onChange={(event) => setPackageFilter(event.target.value)} className="input-dark">
           <option value="all">Tüm paketler</option>
@@ -1045,27 +1088,28 @@ function TenantsModule({ saasTenants, liveOps, onOpenTenant }: any) {
         </select>
         <select value={renewalFilter} onChange={(event) => setRenewalFilter(event.target.value)} className="input-dark">
           <option value="all">Tüm yenilemeler</option>
-          <option value="soon">30 gün içinde</option>
+          <option value="soon">Yakında bitecek</option>
           <option value="expired">Süresi dolmuş</option>
         </select>
       </div>
 
       <DataTable
-        headers={['Firma', 'Paket', 'Durum', 'Lisans', 'Yenileme', 'Online Kullanıcı', 'Health', 'Aksiyon']}
+        headers={['Abone Kodu', 'Firma Adı', 'Admin E-posta', 'Durum', 'Abonelik Durumu', 'Bitiş Tarihi', 'Kalan Gün', 'Limitsiz Lisans', 'Son Giriş', 'İşlem']}
         rows={visibleSubscriptions.map((tenant: SaasTenantRow) => {
-          const onlineUsers = liveOps?.presence.filter((presence: LivePresenceRow) => presence.tenantId === tenant.tenantId && presence.status === 'online').length ?? 0;
-          const health = tenant.status === 'active' ? 92 : tenant.status === 'trial' ? 81 : 54;
+          const remaining = tenantRemainingDays(tenant);
           return [
+            <button key={`${tenant.tenantId}-code`} type="button" onClick={() => onOpenTenant?.(tenant.tenantId)} className="font-semibold text-cyan-100">{tenant.tenantId}</button>,
             <button key={`${tenant.tenantId}-company`} type="button" onClick={() => onOpenTenant?.(tenant.tenantId)} className="block rounded-xl px-3 py-2 text-left transition hover:bg-white/5">
               <p className="font-semibold">{tenant.companyName}</p>
-              <p className="text-xs text-slate-400">{tenant.tenantId}</p>
+              <p className="text-xs text-slate-400">{tenant.taxNumber || tenant.plan}</p>
             </button>,
-            String(tenant.plan),
+            tenant.adminEmail ?? tenant.email ?? '-',
             <StatusPill key={`${tenant.tenantId}-status`} status={tenant.status} />,
             tenant.unlimitedLicense ? 'Limitsiz' : tenant.subscriptionStatus,
             formatDate(tenant.expiresAt),
-            onlineUsers,
-            `${health}%`,
+            tenant.unlimitedLicense ? 'Limitsiz' : remaining ?? '-',
+            tenant.unlimitedLicense ? 'Evet' : 'Hayır',
+            formatDate(tenant.lastLogin),
             <button key={`${tenant.tenantId}-manage`} type="button" onClick={() => onOpenTenant?.(tenant.tenantId)} className="rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-100">Yönet</button>,
           ];
         })}
@@ -1291,7 +1335,7 @@ function ResellerCenter(props: any) {
 }
 
 function TenantOperationsDrawer({ tenantId, tenant, liveOps, provisioningJobs, state, onRefresh, onClose }: { tenantId: string; tenant: SaasTenantRow | null; liveOps: LiveOperationsPayload | null; provisioningJobs: ProvisioningJobRow[]; state: SystemAdminState; onRefresh: () => Promise<void>; onClose: () => void }) {
-  const [activeTab, setActiveTab] = useState<TenantDrawerTab>('settings');
+  const [activeTab, setActiveTab] = useState<TenantDrawerTab>('profile');
   const [managementMessage, setManagementMessage] = useState('');
   const [managementLoading, setManagementLoading] = useState(false);
   const presence = liveOps?.presence.filter((row) => row.tenantId === tenantId) ?? [];
@@ -1300,22 +1344,16 @@ function TenantOperationsDrawer({ tenantId, tenant, liveOps, provisioningJobs, s
   const jobs = provisioningJobs.filter((job) => job.targetTenantId === tenantId);
   const tenantState = state.tenants.find((row) => row.tenant_id === tenantId);
   const tabs: Array<{ id: TenantDrawerTab; label: string }> = [
-    { id: 'settings', label: 'Abonelik Yönetimi' },
-    { id: 'overview', label: 'Genel Bakış' },
-    { id: 'live', label: 'Canlı Operasyon' },
-    { id: 'finance', label: 'Finans' },
-    { id: 'branches', label: 'Şubeler' },
-    { id: 'users', label: 'Kullanıcılar' },
-    { id: 'devices', label: 'Cihazlar' },
-    { id: 'printers', label: 'Yazıcılar' },
-    { id: 'queues', label: 'Kuyruklar' },
-    { id: 'audit', label: 'Denetim Kayıtları' },
-    { id: 'activity', label: 'Aktivite Akışı' },
-    { id: 'billing', label: 'Faturalama' },
-    { id: 'ai', label: 'AI Analiz' },
-    { id: 'security', label: 'Güvenlik' },
+    { id: 'profile', label: 'Genel Bilgiler' },
+    { id: 'subscription', label: 'Abonelik' },
+    { id: 'password', label: 'Kullanıcı & Şifre' },
+    { id: 'license', label: 'Lisans / Durum' },
+    { id: 'data', label: 'Veri Özeti' },
+    { id: 'integrations', label: 'Yazıcı / Entegrasyon' },
+    { id: 'export', label: 'Dışa Aktar' },
+    { id: 'danger', label: 'Tehlikeli İşlemler' },
   ];
-  const health = tenant?.status === 'active' ? 92 : tenant?.status === 'trial' ? 81 : 54;
+  const health = tenant?.deletedAt ? 0 : tenant?.status === 'active' ? 92 : tenant?.status === 'trial' ? 81 : 54;
   useEffect(() => {
     const next = new URL(window.location.href);
     next.searchParams.set('tenant', tenantId);
@@ -1339,7 +1377,7 @@ function TenantOperationsDrawer({ tenantId, tenant, liveOps, provisioningJobs, s
                   <h2 className="text-2xl font-semibold">{tenant?.companyName ?? tenantId}</h2>
                   <span className="h-2.5 w-2.5 rounded-full bg-emerald-300 shadow-[0_0_16px_rgba(110,231,183,0.8)]" />
                 </div>
-                <p className="mt-1 text-sm text-slate-400">{tenantId} / {tenant?.plan ?? '-'} / sağlık {health}%</p>
+                <p className="mt-1 text-sm text-slate-400">{tenantId} / {tenantStatusLabel(tenant?.status)} / sağlık {health}%</p>
               </div>
             </div>
             <div className="flex items-center gap-2"><StatusPill status={tenant?.status ?? 'unknown'} /><button type="button" onClick={onClose} className="rounded-xl border border-white/10 px-3 py-2 text-sm">Kapat</button></div>
@@ -1349,19 +1387,7 @@ function TenantOperationsDrawer({ tenantId, tenant, liveOps, provisioningJobs, s
           </div>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto p-5">
-          {activeTab === 'overview' ? <DrawerOverview tenant={tenant} tenantState={tenantState} presence={presence} devices={devices} jobs={jobs} events={events} /> : null}
-          {activeTab === 'live' ? <DrawerLiveOps presence={presence} events={events} /> : null}
-          {activeTab === 'finance' ? <DrawerFinance tenantId={tenantId} state={state} /> : null}
-          {activeTab === 'branches' ? <DrawerSimple title="Şubeler" rows={[`${tenant?.activeBranchCount ?? 0}/${tenant?.branchCount ?? 0} aktif şube`, `Ana şube: ${tenant?.mainBranchId ?? '-'}`]} /> : null}
-          {activeTab === 'users' ? <DrawerSimple title="Kullanıcılar" rows={[`${tenant?.activeUsers ?? 0} aktif kullanıcı`, `${presence.length} canlı oturum`]} /> : null}
-          {activeTab === 'devices' || activeTab === 'printers' ? <DrawerDevices devices={devices} title={activeTab === 'printers' ? 'Yazıcılar' : 'Cihazlar'} /> : null}
-          {activeTab === 'queues' ? <DrawerQueues jobs={jobs} /> : null}
-          {activeTab === 'audit' ? <DrawerAudit events={events} /> : null}
-          {activeTab === 'activity' ? <DrawerActivity events={events} /> : null}
-          {activeTab === 'billing' ? <DrawerSimple title="Faturalama" rows={[`Plan: ${tenant?.plan ?? '-'}`, `Bitiş: ${tenant?.expiresAt?.slice(0, 10) ?? '-'}`, `Bakiye: ${tenant?.balance ?? 0}`]} /> : null}
-          {activeTab === 'ai' ? <DrawerAi tenant={tenant} events={events} /> : null}
-          {activeTab === 'security' ? <DrawerSimple title="Güvenlik" rows={[`${events.filter((event) => event.type === 'auth.login_failed').length} başarısız giriş`, `${presence.length} aktif oturum`]} /> : null}
-          {activeTab === 'settings' ? <DrawerTenantManagement tenantId={tenantId} tenant={tenant} loading={managementLoading} message={managementMessage} onAction={async (body) => {
+          <DrawerTenantManagement activeTab={activeTab} tenantId={tenantId} tenant={tenant} presence={presence} devices={devices} events={events} state={state} loading={managementLoading} message={managementMessage} onAction={async (body) => {
             if (managementLoading) return;
             setManagementLoading(true);
             setManagementMessage('');
@@ -1387,7 +1413,7 @@ function TenantOperationsDrawer({ tenantId, tenant, liveOps, provisioningJobs, s
             } finally {
               setManagementLoading(false);
             }
-          }} /> : null}
+          }} />
         </div>
       </aside>
     </div>
@@ -1430,13 +1456,35 @@ function DrawerOverview({ tenant, tenantState, presence, devices, jobs, events }
     ]} /></div>
   </div>;
 }
-function DrawerTenantManagement({ tenantId, tenant, loading, message, onAction }: { tenantId: string; tenant: SaasTenantRow | null; loading: boolean; message: string; onAction: (body: Record<string, unknown>) => Promise<void> }) {
+function DrawerTenantManagement({ activeTab, tenantId, tenant, presence, devices, events, state, loading, message, onAction }: { activeTab: TenantDrawerTab; tenantId: string; tenant: SaasTenantRow | null; presence: LivePresenceRow[]; devices: LiveDeviceRow[]; events: LiveEventRow[]; state: SystemAdminState; loading: boolean; message: string; onAction: (body: Record<string, unknown>) => Promise<void> }) {
   const [manualEndsAt, setManualEndsAt] = useState(tenant?.expiresAt?.slice(0, 10) ?? '');
   const [tempPassword, setTempPassword] = useState('');
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [profileDraft, setProfileDraft] = useState({
+    companyName: tenant?.companyName ?? '',
+    legalName: tenant?.legalName ?? '',
+    taxNumber: tenant?.taxNumber ?? '',
+    phone: tenant?.phone ?? '',
+    email: tenant?.email ?? tenant?.adminEmail ?? '',
+    contactName: tenant?.contactName ?? '',
+    address: tenant?.address ?? '',
+    notes: tenant?.notes ?? '',
+  });
   const [localError, setLocalError] = useState('');
   useEffect(() => {
     setManualEndsAt(tenant?.expiresAt?.slice(0, 10) ?? '');
-  }, [tenant?.expiresAt, tenantId]);
+    setDeleteConfirmation('');
+    setProfileDraft({
+      companyName: tenant?.companyName ?? '',
+      legalName: tenant?.legalName ?? '',
+      taxNumber: tenant?.taxNumber ?? '',
+      phone: tenant?.phone ?? '',
+      email: tenant?.email ?? tenant?.adminEmail ?? '',
+      contactName: tenant?.contactName ?? '',
+      address: tenant?.address ?? '',
+      notes: tenant?.notes ?? '',
+    });
+  }, [tenant?.expiresAt, tenantId, tenant?.companyName, tenant?.legalName, tenant?.taxNumber, tenant?.phone, tenant?.email, tenant?.contactName, tenant?.address, tenant?.notes, tenant?.adminEmail]);
   async function submitAction(body: Record<string, unknown>) {
     setLocalError('');
     await onAction(body);
@@ -1448,68 +1496,185 @@ function DrawerTenantManagement({ tenantId, tenant, loading, message, onAction }
     }
     await submitAction({ action: 'update_subscription', endsAt: manualEndsAt, unlimitedLicense: false });
   }
-  return <div className="grid gap-5 md:grid-cols-2">
-    <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5 md:col-span-2">
-      <h3 className="text-lg font-semibold">Abonelik Yönetimi</h3>
+  const activityHint = `${presence.length} aktif kullanıcı / ${devices.length} cihaz / ${events.length} olay / ${state.tenants.length} tenant`;
+  const summaryRows = [
+    ['Abone Kodu', tenant?.tenantId ?? tenantId],
+    ['Firma Adı', tenant?.companyName ?? '-'],
+    ['Durum', tenant?.deletedAt ? 'Silinmiş' : tenantStatusLabel(tenant?.status)],
+    ['Abonelik Durumu', tenant?.subscriptionStatus ?? '-'],
+    ['Bitiş Tarihi', formatDate(tenant?.expiresAt)],
+    ['Kalan Gün', tenant?.unlimitedLicense ? 'limitsiz' : String(daysRemaining(tenant?.expiresAt) ?? '-')],
+    ['Limitsiz Lisans', tenant?.unlimitedLicense ? 'Evet' : 'Hayır'],
+    ['Son Giriş', formatDate(tenant?.lastLogin)],
+  ];
+  return <div className="grid gap-5">
+    <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
+      <div className="grid gap-3 md:grid-cols-4">{summaryRows.map(([label, value]) => <MiniMetric key={label} label={label} value={value} />)}</div>
+      <p className="mt-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-400">{activityHint}</p>
+      {message ? <p className="mt-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200">{message}</p> : null}
+      {localError ? <p className="mt-3 rounded-xl border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-sm text-rose-100">{localError}</p> : null}
+    </article>
+
+    {activeTab === 'profile' ? <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
+      <h3 className="text-lg font-semibold">Genel Bilgiler</h3>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <input value={profileDraft.companyName} onChange={(e) => setProfileDraft((c) => ({ ...c, companyName: e.target.value }))} placeholder="Firma Adı" className="input-dark" />
+        <input value={tenantId} disabled className="input-dark opacity-70" aria-label="Abone Kodu" />
+        <input value={profileDraft.taxNumber} onChange={(e) => setProfileDraft((c) => ({ ...c, taxNumber: e.target.value }))} placeholder="Vergi No" className="input-dark" />
+        <input value={profileDraft.phone} onChange={(e) => setProfileDraft((c) => ({ ...c, phone: e.target.value }))} placeholder="Telefon" className="input-dark" />
+        <input value={profileDraft.email} onChange={(e) => setProfileDraft((c) => ({ ...c, email: e.target.value }))} placeholder="E-posta" className="input-dark" />
+        <input value={profileDraft.contactName} onChange={(e) => setProfileDraft((c) => ({ ...c, contactName: e.target.value }))} placeholder="Yetkili Kişi" className="input-dark" />
+        <input value={profileDraft.legalName} onChange={(e) => setProfileDraft((c) => ({ ...c, legalName: e.target.value }))} placeholder="Ticari Ünvan" className="input-dark" />
+        <input value={profileDraft.address} onChange={(e) => setProfileDraft((c) => ({ ...c, address: e.target.value }))} placeholder="Adres" className="input-dark" />
+        <textarea value={profileDraft.notes} onChange={(e) => setProfileDraft((c) => ({ ...c, notes: e.target.value }))} placeholder="Notlar" className="input-dark min-h-24 py-3 md:col-span-2" />
+      </div>
+      <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_tenant_info', ...profileDraft })} className="btn-blue mt-4">Genel Bilgileri Kaydet</button>
+    </article> : null}
+
+    {activeTab === 'subscription' ? <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
+      <h3 className="text-lg font-semibold">Abonelik</h3>
       <div className="mt-4 grid gap-3 md:grid-cols-3">
-        <MiniMetric label="Abone Kodu" value={tenant?.tenantId ?? tenantId} />
-        <MiniMetric label="Firma Adı" value={tenant?.companyName ?? '-'} />
-        <MiniMetric label="Durum" value={tenant?.status ?? '-'} />
-        <MiniMetric label="Abonelik Durumu" value={tenant?.subscriptionStatus ?? '-'} />
         <MiniMetric label="Başlangıç Tarihi" value={formatDate(tenant?.startsAt)} />
         <MiniMetric label="Bitiş Tarihi" value={formatDate(tenant?.expiresAt)} />
-        <MiniMetric label="Kalan Gün" value={tenant?.unlimitedLicense ? 'limitsiz' : String(daysRemaining(tenant?.expiresAt) ?? '-')} />
-        <MiniMetric label="Limitsiz Lisans" value={tenant?.unlimitedLicense ? 'Evet' : 'Hayır'} />
         <MiniMetric label="Son Güncelleme" value={formatDate(tenant?.subscriptionUpdatedAt)} />
-        <MiniMetric label="E-posta" value={tenant?.adminEmail ?? '-'} />
-        <MiniMetric label="Son Giriş" value={formatDate(tenant?.lastLogin)} />
-        <MiniMetric label="Politika" value={subscriptionAccessLabel(tenant)} />
       </div>
-    </article>
-    <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
-      <h3 className="text-lg font-semibold">Kullanım Tarihi</h3>
       <div className="mt-4 grid gap-3">
         <div className="grid gap-2 md:grid-cols-[1fr_auto]">
           <input type="date" value={manualEndsAt} onChange={(event) => setManualEndsAt(event.target.value)} className="input-dark" />
-          <button disabled={loading || !manualEndsAt} type="button" onClick={() => void applyManualDate()} className="btn-blue">Kullanım Tarihini Değiştir</button>
+          <button disabled={loading || !manualEndsAt} type="button" onClick={() => void applyManualDate()} className="btn-blue">Kullanım Tarihini Manuel Değiştir</button>
         </div>
-        <div className="grid grid-cols-3 gap-2">
-          <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_subscription', addDays: 30, unlimitedLicense: false })} className="btn-blue">{loading ? '...' : '+30 Gün Ekle'}</button>
-          <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_subscription', addMonths: 1, unlimitedLicense: false })} className="btn-blue">{loading ? '...' : '+1 Ay Ekle'}</button>
-          <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_subscription', addYears: 1, unlimitedLicense: false })} className="btn-blue">{loading ? '...' : '+1 Yıl Ekle'}</button>
+        <div className="grid gap-2 md:grid-cols-3">
+          <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_subscription', addDays: 30, unlimitedLicense: false })} className="btn-blue">+30 Gün Ekle</button>
+          <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_subscription', addMonths: 1, unlimitedLicense: false })} className="btn-blue">+1 Ay Ekle</button>
+          <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_subscription', addYears: 1, unlimitedLicense: false })} className="btn-blue">+1 Yıl Ekle</button>
         </div>
-        <button disabled={loading || tenant?.unlimitedLicense === true} type="button" onClick={() => submitAction({ action: 'update_subscription', unlimitedLicense: true })} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-100 disabled:opacity-60">Limitsiz Lisans Yap</button>
-        <button disabled={loading || tenant?.unlimitedLicense !== true} type="button" onClick={() => submitAction({ action: 'update_subscription', unlimitedLicense: false, subscriptionStatus: 'active' })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold disabled:opacity-60">Limitsiz Lisansı Kaldır</button>
-        {localError ? <p className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-sm text-rose-100">{localError}</p> : null}
+        <div className="flex flex-wrap gap-2">
+          <button disabled={loading || tenant?.unlimitedLicense === true} type="button" onClick={() => submitAction({ action: 'update_subscription', unlimitedLicense: true })} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-100 disabled:opacity-60">Limitsiz Lisans Yap</button>
+          <button disabled={loading || tenant?.unlimitedLicense !== true} type="button" onClick={() => submitAction({ action: 'update_subscription', unlimitedLicense: false, subscriptionStatus: 'active' })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold disabled:opacity-60">Limitsiz Lisansı Kaldır</button>
+        </div>
       </div>
-    </article>
-    <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
-      <h3 className="text-lg font-semibold">Tenant Durumu</h3>
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'active' })} className="btn-blue">Aktif Yap</button>
-        <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'suspended' })} className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100">Askıya Al</button>
-        <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'expired' })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold">Süresi Doldu Yap</button>
-        <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'blocked' })} className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm font-semibold text-rose-100">Bloke</button>
-        <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'disabled' })} className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm font-semibold text-rose-100">Devre Dışı Bırak</button>
+    </article> : null}
+
+    {activeTab === 'password' ? <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
+      <h3 className="text-lg font-semibold">Kullanıcı & Şifre</h3>
+      <div className="mt-4 grid gap-3 md:grid-cols-4">
+        <MiniMetric label="Admin Kullanıcı" value={tenant?.adminUsername ?? 'admin'} />
+        <MiniMetric label="Admin E-posta" value={tenant?.adminEmail ?? '-'} />
+        <MiniMetric label="Son Giriş" value={formatDate(tenant?.lastLogin)} />
+        <MiniMetric label="Kullanıcı Aktif mi?" value={tenant?.adminActive ? 'Evet' : 'Hayır'} />
+        <MiniMetric label="Şifre Değişimi Zorunlu mu?" value={tenant?.adminPasswordResetRequired ? 'Evet' : 'Hayır'} />
       </div>
-    </article>
-    <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5 md:col-span-2">
-      <h3 className="text-lg font-semibold">Şifre Yönetimi</h3>
       <div className="mt-4 grid gap-2 md:grid-cols-[1fr_auto]">
         <input type="text" value={tempPassword} onChange={(event) => setTempPassword(event.target.value)} placeholder={`${tenantId}-geçici-şifre`} className="input-dark" />
         <button disabled={loading || !tempPassword.trim()} type="button" onClick={() => submitAction({ action: 'update_password', username: 'admin', temporaryPassword: tempPassword.trim(), forcePasswordChange: false })} className="btn-blue">Admin Şifresini Sıfırla</button>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
-        <button disabled={loading || !tempPassword.trim()} type="button" onClick={() => submitAction({ action: 'update_password', username: 'admin', temporaryPassword: tempPassword.trim(), forcePasswordChange: true })} className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100">Geçici Şifre + Zorunlu Değişim</button>
+        <button disabled={loading || !tempPassword.trim()} type="button" onClick={() => submitAction({ action: 'update_password', username: 'admin', temporaryPassword: tempPassword.trim(), forcePasswordChange: true })} className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100">Geçici Şifre Oluştur</button>
         <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_password', username: 'admin', forcePasswordChange: true })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold">Sonraki Girişte Şifre Değiştir</button>
+        <button disabled={loading || tenant?.adminActive === false} type="button" onClick={() => submitAction({ action: 'update_user_status', username: 'admin', active: false })} className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm font-semibold text-rose-100">Kullanıcıyı Kilitle</button>
+        <button disabled={loading || tenant?.adminActive === true} type="button" onClick={() => submitAction({ action: 'update_user_status', username: 'admin', active: true })} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-100">Kullanıcı Kilidini Aç</button>
       </div>
-      {message ? <p className="mt-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200">{message}</p> : null}
-    </article>
-    <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5 md:col-span-2">
-      <h3 className="text-lg font-semibold">Tenant Export</h3>
-      <button disabled={loading} type="button" onClick={() => window.open(`/api/system-admin/tenants?exportTenantId=${encodeURIComponent(tenantId)}`, '_blank', 'noopener,noreferrer')} className="btn-blue">Export JSON</button>
-    </article>
+    </article> : null}
+
+    {activeTab === 'license' ? <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
+      <h3 className="text-lg font-semibold">Lisans / Durum</h3>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <MiniMetric label="Mevcut Durum" value={tenant?.deletedAt ? 'Silinmiş' : tenantStatusLabel(tenant?.status)} />
+        <MiniMetric label="Erişim Politikası" value={subscriptionAccessLabel(tenant)} />
+        <MiniMetric label="Limitsiz Lisans" value={tenant?.unlimitedLicense ? 'Evet' : 'Hayır'} />
+      </div>
+      <div className="mt-4 grid gap-2 md:grid-cols-3">
+        <button disabled={loading || Boolean(tenant?.deletedAt)} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'active' })} className="btn-blue">Aktif Yap</button>
+        <button disabled={loading || Boolean(tenant?.deletedAt)} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'suspended' })} className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100">Askıya Al</button>
+        <button disabled={loading || Boolean(tenant?.deletedAt)} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'expired' })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold">Süresi Doldu Yap</button>
+        <button disabled={loading || Boolean(tenant?.deletedAt)} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'blocked' })} className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm font-semibold text-rose-100">Devre Dışı Bırak</button>
+        <button disabled={loading || Boolean(tenant?.deletedAt)} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'active' })} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-100">Tekrar Aktifleştir</button>
+      </div>
+    </article> : null}
+
+    {activeTab === 'data' ? <TenantDataSummary tenant={tenant} /> : null}
+    {activeTab === 'integrations' ? <TenantIntegrationSummary tenant={tenant} devices={devices} loading={loading} onAction={submitAction} /> : null}
+    {activeTab === 'export' ? <TenantExportPanel tenantId={tenantId} loading={loading} /> : null}
+    {activeTab === 'danger' ? <article className="rounded-[1.35rem] border border-rose-400/30 bg-rose-950/30 p-5">
+      <h3 className="text-lg font-semibold text-rose-100">Tehlikeli İşlemler</h3>
+      {tenant?.deletedAt ? <div className="mt-4 grid gap-3">
+        <p className="text-sm text-slate-300">Bu abone pasif listede. Geri alma işlemi verileri silmez veya demo veri oluşturmaz.</p>
+        <button disabled={loading} type="button" onClick={() => submitAction({ action: 'restore_tenant', tenantStatus: 'suspended' })} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-100">Aboneyi Geri Al</button>
+      </div> : <div className="mt-4 grid gap-3">
+        <p className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">Bu işlem aboneyi pasife alır ve erişimini kapatır. Veriler korunur. Devam etmek için abone kodunu yazın.</p>
+        <input value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} placeholder={tenantId} className="input-dark" />
+        <button disabled={loading || deleteConfirmation.trim().toUpperCase() !== tenantId.toUpperCase()} type="button" onClick={() => submitAction({ action: 'soft_delete_tenant', confirmationTenantId: deleteConfirmation.trim() })} className="rounded-xl bg-rose-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">Aboneyi Sil</button>
+        <button disabled className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-slate-400">Kalıcı Silme Talebi Oluştur</button>
+      </div>}
+    </article> : null}
   </div>;
+}
+
+function TenantDataSummary({ tenant }: { tenant: SaasTenantRow | null }) {
+  const warningBadges = [
+    tenant && (tenant.productCount ?? 0) === 0 ? 'veri yok' : null,
+    tenant && (tenant.salesTotal ?? 0) === 0 ? 'satış yok' : null,
+    tenant && (tenant.status === 'expired' || tenant.subscriptionStatus === 'expired') ? 'süresi dolmuş' : null,
+    tenant && (tenant.runtimeSnapshotCount ?? 0) > 250 ? 'yüksek snapshot' : null,
+    tenant && (tenant.printerCount ?? 0) === 0 ? 'yazıcı tanımsız' : null,
+  ].filter(Boolean) as string[];
+  const rows: Array<[string, string]> = [
+    ['Ürün Sayısı', String(tenant?.productCount ?? 0)],
+    ['Kategori Sayısı', String(tenant?.categoryCount ?? 0)],
+    ['Hammadde Sayısı', String(tenant?.stockCount ?? 0)],
+    ['Reçete Sayısı', String(tenant?.recipeCount ?? 0)],
+    ['Stok Kaydı', String(tenant?.stockCount ?? 0)],
+    ['Cari Hesap Sayısı', String(tenant?.currentAccountCount ?? 0)],
+    ['Kasa Hareketi Sayısı', String(tenant?.cashRecordCount ?? 0)],
+    ['Sipariş Sayısı', String(tenant?.orderCount ?? 0)],
+    ['Ödeme Sayısı', String(tenant?.paymentCount ?? 0)],
+    ['Günlük Rapor Sayısı', String(tenant?.reportCount ?? 0)],
+    ['Yazıcı Eşleşmesi', String(tenant?.printerCount ?? 0)],
+    ['Runtime Snapshot Sayısı', String(tenant?.runtimeSnapshotCount ?? 0)],
+    ['Toplam Satış', formatAdminMoney(tenant?.salesTotal ?? 0)],
+    ['Son Sipariş Tarihi', formatDate(tenant?.lastOrderAt)],
+    ['Son Giriş Tarihi', formatDate(tenant?.lastLogin)],
+  ];
+  return <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <h3 className="text-lg font-semibold">Veri Özeti / Tenant Health</h3>
+      <div className="flex flex-wrap gap-2">{warningBadges.map((badge) => <span key={badge} className="rounded-full bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-100">{badge}</span>)}</div>
+    </div>
+    <div className="mt-4 grid gap-3 md:grid-cols-3">{rows.map(([label, value]) => <MiniMetric key={label} label={label} value={value} />)}</div>
+  </article>;
+}
+
+function TenantIntegrationSummary({ tenant, devices, loading, onAction }: { tenant: SaasTenantRow | null; devices: LiveDeviceRow[]; loading: boolean; onAction: (body: Record<string, unknown>) => Promise<void> }) {
+  const bridge = devices.find((device) => device.deviceType?.includes('bridge') || device.deviceType?.includes('printer')) ?? devices[0];
+  const lastPrintResult = bridge?.metadata && typeof bridge.metadata.lastPrintResult === 'string' ? bridge.metadata.lastPrintResult : '-';
+  return <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
+    <h3 className="text-lg font-semibold">Yazıcı / Entegrasyon</h3>
+    <div className="mt-4 grid gap-3 md:grid-cols-3">
+      <MiniMetric label="Kayıtlı Yazıcılar" value={String(tenant?.printerCount ?? 0)} />
+      <MiniMetric label="Bridge Durumu" value={bridge?.status ?? 'bilinmiyor'} />
+      <MiniMetric label="Son Bağlantı" value={bridge?.lastHeartbeatAt ? formatDate(bridge.lastHeartbeatAt) : '-'} />
+      <MiniMetric label="Son Test Print Sonucu" value={lastPrintResult} />
+      <MiniMetric label="Local Agent Durumu" value={bridge ? 'kayıtlı' : 'tanımsız'} />
+    </div>
+    <div className="mt-4 grid gap-2 md:grid-cols-3">
+      <button disabled={loading || Boolean(tenant?.deletedAt)} type="button" onClick={() => onAction({ action: 'integration_action', operation: 'clear_printer_mappings' })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold disabled:opacity-50">Yazıcı Eşleşmelerini Temizle</button>
+      <button disabled={loading || Boolean(tenant?.deletedAt)} type="button" onClick={() => onAction({ action: 'integration_action', operation: 'refresh_bridge_registration' })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold disabled:opacity-50">Bridge Kaydını Yenile</button>
+      <button disabled={loading || Boolean(tenant?.deletedAt)} type="button" onClick={() => onAction({ action: 'integration_action', operation: 'send_test_print' })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold disabled:opacity-50">Test Print Gönder</button>
+    </div>
+  </article>;
+}
+
+function TenantExportPanel({ tenantId, loading }: { tenantId: string; loading: boolean }) {
+  const exportUrl = `/api/system-admin/tenants?exportTenantId=${encodeURIComponent(tenantId)}`;
+  const openExport = () => window.open(exportUrl, '_blank', 'noopener,noreferrer');
+  return <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
+    <h3 className="text-lg font-semibold">Dışa Aktar</h3>
+    <div className="mt-4 grid gap-2 md:grid-cols-3">
+      {['Ürünleri dışa aktar', 'Cari hesapları dışa aktar', 'Stokları dışa aktar', 'Reçeteleri dışa aktar', 'Ayarları dışa aktar', 'Tüm tenant verisini JSON olarak dışa aktar'].map((label) => (
+        <button key={label} disabled={loading} type="button" onClick={openExport} className="btn-blue">{label}</button>
+      ))}
+    </div>
+  </article>;
 }
 function DrawerLiveOps({ presence, events }: { presence: LivePresenceRow[]; events: LiveEventRow[] }) { return <div className="grid gap-5"><DrawerSimple title="Aktif kullanıcılar" rows={presence.map((row) => `${row.username} / ${row.role} / ${row.currentRoute ?? '-'}`)} /><DrawerActivity events={events} /></div>; }
 function DrawerFinance({ tenantId, state }: { tenantId: string; state: SystemAdminState }) { return <DrawerSimple title="Finance" rows={state.payments.filter((p) => p.tenant_id === tenantId).map((p) => `${p.date} / ${formatAdminMoney(p.amount)} / ${p.status}`)} />; }

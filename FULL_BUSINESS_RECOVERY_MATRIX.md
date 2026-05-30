@@ -153,3 +153,18 @@ Scope: Adisyum POS/ERP business recovery only. No architecture expansion, no new
 | Products module | Pass | Critical create/category/recipe no-op exits now show safe feedback. |
 | Finance module | Pass | Critical create/ledger no-op exits now show safe feedback. |
 | Floor module | Pass | Critical move/merge/selected-transfer missing state now logs and shows feedback. |
+
+## Advanced System Admin Subscriber Management Findings
+
+| Finding | Status | Files changed | Fix applied |
+| --- | --- | --- | --- |
+| Abone Yönet basit kart görünümünde kalıyordu | WORKING | `app/system-admin/page.tsx` | Ana alan profesyonel abone listesi, arama, durum filtreleri, kalan gün, limitsiz lisans ve doğrudan `Yönet` aksiyonuyla genişletildi. |
+| Detaylı abone profil ekranı yoktu | WORKING | `app/system-admin/page.tsx`, `lib/system-admin/provisioning.ts`, `app/api/system-admin/tenants/route.ts` | Detay çekmecesine Genel Bilgiler, Abonelik, Kullanıcı & Şifre, Lisans / Durum, Veri Özeti, Yazıcı / Entegrasyon, Dışa Aktar ve Tehlikeli İşlemler sekmeleri eklendi. |
+| Firma profili güncellenemiyordu | WORKING | `lib/system-admin/provisioning.ts`, `app/api/system-admin/tenants/route.ts`, `app/system-admin/page.tsx` | Firma adı, ticari ünvan, vergi no, telefon, e-posta, yetkili kişi, adres ve notlar System Admin API üzerinden audit log ile güncelleniyor. |
+| Abone silme güvenli değildi veya görünür değildi | WORKING | `lib/system-admin/provisioning.ts`, `app/api/system-admin/tenants/route.ts`, `app/system-admin/page.tsx` | `Aboneyi Sil` soft delete yapıyor: `deletedAt` set ediliyor, status `blocked` oluyor, oturumlar iptal ediliyor, veri korunuyor ve abone kodu onayı isteniyor. |
+| Silinen aboneyi geri alma yoktu | WORKING | `lib/system-admin/provisioning.ts`, `app/api/system-admin/tenants/route.ts`, `app/system-admin/page.tsx` | `Aboneyi Geri Al` deletedAt alanını temizliyor, tenantı güvenli şekilde askıya alınmış durumda geri getiriyor ve demo veri oluşturmuyor. |
+| Kullanıcı kilitleme ve açma aksiyonları eksikti | WORKING | `lib/system-admin/provisioning.ts`, `app/api/system-admin/tenants/route.ts`, `app/system-admin/page.tsx` | Admin kullanıcı aktifliği System Admin üzerinden değiştiriliyor, işlem audit log ile izleniyor. |
+| Yazıcı entegrasyon aksiyonları ölü butondu | WORKING | `lib/system-admin/provisioning.ts`, `app/api/system-admin/tenants/route.ts`, `app/system-admin/page.tsx` | Yazıcı eşleşmesi temizleme, bridge yenileme ve test print isteği tenant-scoped API aksiyonu olarak loglanıyor. |
+| Tenant export görünürlüğü eksikti | WORKING | `app/system-admin/page.tsx`, `app/api/system-admin/tenants/route.ts`, `lib/system-admin/provisioning.ts` | Ürün, cari, stok, reçete, ayar ve tüm tenant JSON dışa aktarım butonları tenant-scoped export endpointine bağlandı. |
+| Tenant health eksikti | WORKING | `app/system-admin/page.tsx`, `lib/system-admin/provisioning.ts` | Ürün, kategori, hammadde, reçete, stok, cari, kasa, sipariş, ödeme, rapor, yazıcı, runtime snapshot ve satış sayaçları görünür hale getirildi. |
+| Kalan risk | PARTIAL | Production/live QA | Bridge yenileme ve test print aksiyonları mevcut mimari içinde talep/audit işareti üretir; fiziksel cihaz komutunun sahada doğrulanması gerekir. |

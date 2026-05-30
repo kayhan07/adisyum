@@ -7,9 +7,14 @@ import {
   listProvisioningJobs,
   listSaasTenants,
   recordProvisioningEvent,
+  restoreTenant,
+  runTenantIntegrationAction,
+  softDeleteTenant,
+  updateTenantInfo,
   updateTenantPassword,
   updateTenantStatus,
   updateTenantSubscription,
+  updateTenantUserStatus,
 } from '@/lib/system-admin/provisioning';
 import { enqueueProvisioningRun } from '@/lib/queue/orchestration';
 
@@ -120,7 +125,7 @@ export async function PATCH(request: Request) {
   try {
     const admin = await requireSystemAdmin(request);
     const body = await request.json().catch(() => ({})) as {
-      action?: 'retry' | 'rollback' | 'update_subscription' | 'update_password' | 'update_status';
+      action?: 'retry' | 'rollback' | 'update_subscription' | 'update_password' | 'update_status' | 'update_tenant_info' | 'update_user_status' | 'soft_delete_tenant' | 'restore_tenant' | 'integration_action';
       jobId?: string;
       tenantId?: string;
       startsAt?: string;
@@ -137,6 +142,17 @@ export async function PATCH(request: Request) {
       password?: string;
       temporaryPassword?: string;
       forcePasswordChange?: boolean;
+      companyName?: string;
+      legalName?: string;
+      taxNumber?: string;
+      phone?: string;
+      email?: string;
+      contactName?: string;
+      address?: string;
+      notes?: string;
+      active?: boolean;
+      confirmationTenantId?: string;
+      operation?: 'clear_printer_mappings' | 'refresh_bridge_registration' | 'send_test_print';
     };
 
     if (body.action === 'update_subscription') {
@@ -173,6 +189,38 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ ok: true, user });
     }
 
+    if (body.action === 'update_tenant_info') {
+      if (!body.tenantId) return NextResponse.json({ ok: false, error: 'tenantId zorunludur.' }, { status: 400 });
+      const tenant = await updateTenantInfo({
+        action: 'update_tenant_info',
+        tenantId: body.tenantId,
+        companyName: body.companyName,
+        legalName: body.legalName,
+        taxNumber: body.taxNumber,
+        phone: body.phone,
+        email: body.email,
+        contactName: body.contactName,
+        address: body.address,
+        notes: body.notes,
+        requestedBy: admin.userId,
+      });
+      const [tenants, jobs, provisioningMetrics] = await Promise.all([listSaasTenants(), listProvisioningJobs(), getProvisioningMetrics()]);
+      return NextResponse.json({ ok: true, tenant, tenants, jobs, provisioningMetrics });
+    }
+
+    if (body.action === 'update_user_status') {
+      if (!body.tenantId || typeof body.active !== 'boolean') return NextResponse.json({ ok: false, error: 'tenantId ve active zorunludur.' }, { status: 400 });
+      const user = await updateTenantUserStatus({
+        action: 'update_user_status',
+        tenantId: body.tenantId,
+        username: body.username,
+        active: body.active,
+        requestedBy: admin.userId,
+      });
+      const [tenants, jobs, provisioningMetrics] = await Promise.all([listSaasTenants(), listProvisioningJobs(), getProvisioningMetrics()]);
+      return NextResponse.json({ ok: true, user, tenants, jobs, provisioningMetrics });
+    }
+
     if (body.action === 'update_status') {
       if (!body.tenantId || !body.tenantStatus) return NextResponse.json({ ok: false, error: 'tenantId ve tenantStatus zorunludur.' }, { status: 400 });
       const tenant = await updateTenantStatus({
@@ -183,6 +231,42 @@ export async function PATCH(request: Request) {
       });
       const [tenants, jobs, provisioningMetrics] = await Promise.all([listSaasTenants(), listProvisioningJobs(), getProvisioningMetrics()]);
       return NextResponse.json({ ok: true, tenant, tenants, jobs, provisioningMetrics });
+    }
+
+    if (body.action === 'soft_delete_tenant') {
+      if (!body.tenantId || !body.confirmationTenantId) return NextResponse.json({ ok: false, error: 'Abone kodu doğrulaması zorunludur.' }, { status: 400 });
+      const tenant = await softDeleteTenant({
+        action: 'soft_delete_tenant',
+        tenantId: body.tenantId,
+        confirmationTenantId: body.confirmationTenantId,
+        requestedBy: admin.userId,
+      });
+      const [tenants, jobs, provisioningMetrics] = await Promise.all([listSaasTenants(), listProvisioningJobs(), getProvisioningMetrics()]);
+      return NextResponse.json({ ok: true, tenant, tenants, jobs, provisioningMetrics });
+    }
+
+    if (body.action === 'restore_tenant') {
+      if (!body.tenantId) return NextResponse.json({ ok: false, error: 'tenantId zorunludur.' }, { status: 400 });
+      const tenant = await restoreTenant({
+        action: 'restore_tenant',
+        tenantId: body.tenantId,
+        status: body.tenantStatus,
+        requestedBy: admin.userId,
+      });
+      const [tenants, jobs, provisioningMetrics] = await Promise.all([listSaasTenants(), listProvisioningJobs(), getProvisioningMetrics()]);
+      return NextResponse.json({ ok: true, tenant, tenants, jobs, provisioningMetrics });
+    }
+
+    if (body.action === 'integration_action') {
+      if (!body.tenantId || !body.operation) return NextResponse.json({ ok: false, error: 'tenantId ve operation zorunludur.' }, { status: 400 });
+      const integration = await runTenantIntegrationAction({
+        action: 'integration_action',
+        tenantId: body.tenantId,
+        operation: body.operation,
+        requestedBy: admin.userId,
+      });
+      const [tenants, jobs, provisioningMetrics] = await Promise.all([listSaasTenants(), listProvisioningJobs(), getProvisioningMetrics()]);
+      return NextResponse.json({ ok: true, integration, tenants, jobs, provisioningMetrics });
     }
 
     if (!body.jobId || !body.action) {
