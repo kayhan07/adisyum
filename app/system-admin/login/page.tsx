@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -35,7 +35,7 @@ export default function SystemAdminLoginPage() {
       const payload = (await response.json().catch(() => null)) as LoginResponse | null;
 
       if (!response.ok || !payload?.ok) {
-        setError(payload?.error ?? 'System-admin girisi basarisiz.');
+        setError(payload?.error ?? 'System-admin girişi başarısız.');
         return;
       }
 
@@ -43,7 +43,7 @@ export default function SystemAdminLoginPage() {
       router.replace('/system-admin');
       window.location.assign('/system-admin');
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'System-admin girisi sirasinda hata olustu.');
+      setError(requestError instanceof Error ? requestError.message : 'System-admin girişi sırasında hata oluştu.');
     } finally {
       setLoading(false);
     }
@@ -56,7 +56,7 @@ export default function SystemAdminLoginPage() {
           <ShieldCheck className="h-7 w-7 text-blue-300" />
           <div>
             <h1 className="text-2xl font-semibold">System Admin</h1>
-            <p className="mt-1 text-sm text-slate-300">Platform yonetim oturumu acin.</p>
+            <p className="mt-1 text-sm text-slate-300">Platform yönetim oturumu açın.</p>
           </div>
         </div>
 
@@ -85,7 +85,7 @@ export default function SystemAdminLoginPage() {
             className="h-12 w-full rounded-2xl bg-blue-600 text-sm font-semibold text-white disabled:opacity-60"
             disabled={loading}
           >
-            {loading ? 'Giris yapiliyor...' : 'Giris yap'}
+            {loading ? 'Giriş yapılıyor...' : 'Giriş yap'}
           </button>
         </form>
       </section>

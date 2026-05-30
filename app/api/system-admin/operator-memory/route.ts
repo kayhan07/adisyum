@@ -12,7 +12,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, items: await listOperatorMemory(session.userId, url.searchParams.get('kind') ?? undefined) });
   } catch (error) {
     if (isRouteResponse(error)) return error;
-    return NextResponse.json({ ok: false, error: 'Operator hafizasi alinamadi.' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: 'Operatör hafızası alınamadı.' }, { status: 500 });
   }
 }
 
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, item: await upsertOperatorMemory({ operatorId: session.userId, kind: body.kind, key: body.key, label: body.label, payload: body.payload }) });
   } catch (error) {
     if (isRouteResponse(error)) return error;
-    return NextResponse.json({ ok: false, error: 'Operator hafizasi kaydedilemedi.' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: 'Operatör hafızası kaydedilemedi.' }, { status: 500 });
   }
 }
 
@@ -37,6 +37,6 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (isRouteResponse(error)) return error;
-    return NextResponse.json({ ok: false, error: 'Operator hafizasi silinemedi.' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: 'Operatör hafızası silinemedi.' }, { status: 500 });
   }
 }

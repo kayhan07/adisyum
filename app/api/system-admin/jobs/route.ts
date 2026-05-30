@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { isRouteResponse, requireSystemAdmin } from '@/lib/system-admin/auth';
 import {
   clearFailedOrchestrationJobs,
@@ -24,7 +24,7 @@ export async function GET(request: Request) {
   } catch (error) {
     if (isRouteResponse(error)) return error;
     console.error('[system-admin/jobs] list failed', error);
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Job merkezi verisi alinamadi.' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Job merkezi verisi alınamadı.' }, { status: 500 });
   }
 }
 
@@ -33,7 +33,7 @@ export async function PATCH(request: Request) {
     await requireSystemAdmin(request);
     const body = await request.json().catch(() => ({})) as { action?: 'retry' | 'clear_failed'; queue?: string; jobId?: string };
     if (!body.queue || !isQueueName(body.queue)) {
-      return NextResponse.json({ ok: false, error: 'Gecerli queue zorunludur.' }, { status: 400 });
+      return NextResponse.json({ ok: false, error: 'Geçerli queue zorunludur.' }, { status: 400 });
     }
     if (body.action === 'retry') {
       if (!body.jobId) return NextResponse.json({ ok: false, error: 'jobId zorunludur.' }, { status: 400 });
@@ -48,6 +48,6 @@ export async function PATCH(request: Request) {
   } catch (error) {
     if (isRouteResponse(error)) return error;
     console.error('[system-admin/jobs] action failed', error);
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Job aksiyonu basarisiz.' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Job aksiyonu başarısız.' }, { status: 500 });
   }
 }

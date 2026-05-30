@@ -11,6 +11,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, ...(await getLiveOperationsSnapshot()), generatedAt: new Date().toISOString() });
   } catch (error) {
     if (isRouteResponse(error)) return error;
-    return NextResponse.json({ ok: false, error: 'Canli operasyon verisi alinamadi.' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: 'Canlı operasyon verisi alınamadı.' }, { status: 500 });
   }
 }

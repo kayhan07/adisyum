@@ -49,8 +49,15 @@ expect(provisioning, /!password && input\.forcePasswordChange === undefined/, 's
 expect(tenantsRoute, /exportTenantId/, 'system-admin tenants API exposes guarded tenant export');
 
 expect(systemAdminPage, /subscriptionAccessLabel/, 'system-admin UI surfaces access policy state');
-expect(systemAdminPage, /Limitsiz lisansi kaldir/, 'system-admin UI exposes remove unlimited license action');
-expect(systemAdminPage, /Gecici sifre \+ zorunlu degisim/, 'system-admin UI exposes reset password with force-change action');
+expect(systemAdminPage, /Abonelik Yönetimi/, 'system-admin UI exposes subscription management panel');
+expect(systemAdminPage, /Kullanım Tarihini Değiştir/, 'system-admin UI exposes manual subscription end-date action');
+expect(systemAdminPage, /\+30 Gün Ekle/, 'system-admin UI exposes 30-day subscription extension');
+expect(systemAdminPage, /\+1 Ay Ekle/, 'system-admin UI exposes monthly subscription extension');
+expect(systemAdminPage, /\+1 Yıl Ekle/, 'system-admin UI exposes yearly subscription extension');
+expect(systemAdminPage, /Limitsiz Lisans Yap/, 'system-admin UI exposes unlimited license enable action');
+expect(systemAdminPage, /Limitsiz Lisansı Kaldır/, 'system-admin UI exposes unlimited license removal action');
+expect(systemAdminPage, /Sonraki Girişte Şifre Değiştir/, 'system-admin UI exposes force password-change action');
+expect(systemAdminPage, /Geçici Şifre \+ Zorunlu Değişim/, 'system-admin UI exposes reset password with force-change action');
 expect(systemAdminPage, /console\.error\('\[system-admin\] subscription action failed'/, 'system-admin UI logs failed subscription actions with context');
 expect(systemAdminPage, /await onRefresh\(\)/, 'system-admin UI refreshes tenant data after management actions');
 

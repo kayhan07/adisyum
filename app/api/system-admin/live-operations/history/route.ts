@@ -13,6 +13,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, metrics: await getHistoricalOperationalMetrics(days), days });
   } catch (error) {
     if (isRouteResponse(error)) return error;
-    return NextResponse.json({ ok: false, error: 'Operasyon gecmisi alinamadi.' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: 'Operasyon geçmişi alınamadı.' }, { status: 500 });
   }
 }

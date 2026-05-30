@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { isRouteResponse, requireSystemAdmin } from '@/lib/system-admin/auth';
 import {
   buildRecoveryDecisions,
@@ -31,7 +31,7 @@ export async function GET(request: Request) {
   } catch (error) {
     if (isRouteResponse(error)) return error;
     console.error('[system-admin/disaster-recovery] list failed', error);
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Disaster recovery verisi alinamadi.' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Disaster recovery verisi alınamadı.' }, { status: 500 });
   }
 }
 
@@ -52,6 +52,6 @@ export async function POST(request: Request) {
   } catch (error) {
     if (isRouteResponse(error)) return error;
     console.error('[system-admin/disaster-recovery] action failed', error);
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Disaster recovery aksiyonu basarisiz.' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Disaster recovery aksiyonu başarısız.' }, { status: 500 });
   }
 }

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { isRouteResponse, requireSystemAdmin } from '@/lib/system-admin/auth';
 import {
   buildDiagnosticSnapshot,
@@ -69,7 +69,7 @@ export async function GET(request: Request) {
   } catch (error) {
     if (isRouteResponse(error)) return error;
     console.error('[system-admin/release-operations] list failed', error);
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Release operasyon verisi alinamadi.' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Release operasyon verisi alınamadı.' }, { status: 500 });
   }
 }
 
@@ -119,6 +119,6 @@ export async function POST(request: Request) {
   } catch (error) {
     if (isRouteResponse(error)) return error;
     console.error('[system-admin/release-operations] action failed', error);
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Release operasyon aksiyonu basarisiz.' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Release operasyon aksiyonu başarısız.' }, { status: 500 });
   }
 }

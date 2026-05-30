@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma';
 import { requireSystemAdmin, isRouteResponse } from '@/lib/system-admin/auth';
 
@@ -31,6 +31,6 @@ export async function GET(request: Request) {
   } catch (error) {
     if (isRouteResponse(error)) return error;
     console.error('[system-admin/audit] failed', error);
-    return NextResponse.json({ ok: false, error: 'Audit kayitlari alinamadi.' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: 'Audit kayıtları alınamadı.' }, { status: 500 });
   }
 }

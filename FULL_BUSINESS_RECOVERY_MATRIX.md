@@ -52,11 +52,20 @@ Scope: Adisyum POS/ERP business recovery only. No architecture expansion, no new
 
 | Flow | Code status | Risk class | Notes |
 | --- | --- | --- | --- |
-| Yeni tenant olusturma | WORKING, guarded | Tenant lifecycle | Missing company/admin/password now shows provisioning feedback. |
-| Temiz tenant baslangici | WORKING, guarded; live QA required | Tenant isolation | Provisioning creates only tenant, subscription, branch, roles and admin user. It no longer creates runtime snapshots, products, categories, stock, cash, current accounts, reports, printer mappings, KDS or demo orders. |
-| Sifre degistirme / sure uzatma | WORKING, guarded; live QA required | Subscription ownership | System Admin PATCH actions now support subscription date edit, add days/months/years, unlimited license, admin password reset and force-password-change metadata. |
+| Yeni tenant oluşturma | WORKING, guarded | Tenant lifecycle | Missing company/admin/password now shows provisioning feedback. |
+| Temiz tenant başlangıcı | WORKING, guarded; live QA required | Tenant isolation | Provisioning creates only tenant, subscription, branch, roles and admin user. It no longer creates runtime snapshots, products, categories, stock, cash, current accounts, reports, printer mappings, KDS or demo orders. |
+| Şifre değiştirme / süre uzatma | WORKING, guarded; live QA required | Subscription ownership | System Admin PATCH actions now support subscription date edit, add days/months/years, unlimited license, admin password reset and force-password-change metadata. |
 | Tenant status management | WORKING, guarded; live QA required | Access control | System Admin can set active, suspended, expired or disabled/blocked and synchronizes subscription status. |
 | Tenant forensics visibility | WORKING | Isolation visibility | Tenant drawer now exposes product, stock, current account, report, printer and runtime snapshot counts for clean-tenant verification. |
+
+## System Admin Subscription UI + Turkish Fix Findings
+
+| Finding | Status | Files | Fix |
+| --- | --- | --- | --- |
+| Abonelik aksiyonları çekmecede görünmüyordu | WORKING | `app/system-admin/page.tsx` | Tenant detay çekmecesi artık doğrudan `Abonelik Yönetimi` sekmesiyle açılıyor; manuel tarih, +30 gün, +1 ay, +1 yıl, limitsiz lisans, durum ve şifre aksiyonları görünür hale getirildi. |
+| Abonelik aksiyonları stale UI bırakabiliyordu | WORKING | `app/system-admin/page.tsx`, `app/api/system-admin/tenants/route.ts`, `lib/system-admin/provisioning.ts` | Başarılı işlemden sonra tenant listesi yenileniyor, seçili tenant verisi güncelleniyor ve görünür başarı/hata mesajı basılıyor. |
+| Türkçe metinlerde mojibake vardı | WORKING | `app/system-admin/page.tsx`, `app/system-admin/login/page.tsx`, `app/api/system-admin/*`, `lib/system-admin/provisioning.ts`, `lib/db/tenant-repository.ts` | System Admin ve ilgili API mesajlarında bozuk Türkçe karakterler temizlendi. |
+| Şifre ve lisans doğrulama scripti eski metin arıyordu | WORKING | `scripts/verify-tenant-access-policy.mjs` | Script yeni Türkçe abonelik yönetimi düğmelerini ve zorunlu şifre değişimi aksiyonunu doğrulayacak şekilde güncellendi. |
 
 ## Persistence / Authoritative State
 

@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db/prisma';
+﻿import { prisma } from '@/lib/db/prisma';
 import { Prisma } from '@prisma/client';
 import type { TenantContext } from '@/lib/tenant';
 import { isSellableProductType, resolvePosFacingProductDomainType } from '@/lib/product-domain';
@@ -43,7 +43,7 @@ export async function assertTenantCanAccess(tenantId: string, options: { readOnl
   const expiredReadAllowed = options.readOnly === true
     && (tenant.status === 'expired' || subscription.endsAt < new Date() || ['expired', 'canceled'].includes(subscription.status));
 
-  if (!activeSubscription && !expiredReadAllowed) throw new Error('Aktif abonelik bulunamadÄ±.');
+  if (!activeSubscription && !expiredReadAllowed) throw new Error('Aktif abonelik bulunamadı.');
   return tenant;
 }
 

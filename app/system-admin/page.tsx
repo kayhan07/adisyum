@@ -324,11 +324,11 @@ function daysRemaining(value?: string | null) {
 }
 
 function subscriptionAccessLabel(tenant?: SaasTenantRow | null) {
-  if (!tenant) return 'Tenant secilmedi';
-  if (tenant.unlimitedLicense) return 'Limitsiz lisans: okuma/yazma acik';
-  if (tenant.status === 'expired' || tenant.subscriptionStatus === 'expired') return 'Suresi doldu: okuma acik, yazma kapali';
-  if (tenant.status === 'suspended' || tenant.status === 'blocked' || tenant.status === 'disabled') return 'Erisim kapali';
-  return 'Okuma/yazma acik';
+  if (!tenant) return 'Tenant seçilmedi';
+  if (tenant.unlimitedLicense) return 'Limitsiz lisans: okuma/yazma açık';
+  if (tenant.status === 'expired' || tenant.subscriptionStatus === 'expired') return 'Süresi doldu: okuma açık, yazma kapalı';
+  if (tenant.status === 'suspended' || tenant.status === 'blocked' || tenant.status === 'disabled') return 'Erişim kapalı';
+  return 'Okuma/yazma açık';
 }
 
 function createPackageDraft(packageType: PackageType = 'mini'): AdminPackage {
@@ -611,7 +611,7 @@ export default function SystemAdminPage() {
   async function saveTenant() {
     const pkg = selectedPackage(tenantDraft.package_id);
     if (!tenantDraft.company_name.trim() || !tenantDraft.admin_username.trim() || !tenantDraft.admin_password.trim()) {
-      setProvisioningMessage('Tenant olusturmak icin firma adi, admin kullanici adi ve sifre zorunlu.');
+      setProvisioningMessage('Tenant oluşturmak için firma adı, admin kullanıcı adı ve şifre zorunlu.');
       return;
     }
     setProvisioningLoading(true);
@@ -662,7 +662,7 @@ export default function SystemAdminPage() {
       body: JSON.stringify({ jobId, action }),
     });
     const payload = await response.json().catch(() => null) as { jobs?: ProvisioningJobRow[]; provisioningMetrics?: ProvisioningMetrics; error?: string } | null;
-    setProvisioningMessage(response.ok ? `Provisioning ${action} tamamlandi.` : payload?.error ?? 'Provisioning aksiyonu basarisiz.');
+    setProvisioningMessage(response.ok ? `Provisioning ${action} tamamlandı.` : payload?.error ?? 'Provisioning aksiyonu başarısız.');
     if (payload?.jobs) setProvisioningJobs(payload.jobs);
     if (payload?.provisioningMetrics) setProvisioningMetrics(payload.provisioningMetrics);
     if (response.ok) await loadSaasTenants();
@@ -747,7 +747,7 @@ export default function SystemAdminPage() {
       nextState = {
         ...nextState,
         invoices: [invoice, ...state.invoices.map((item) => item.id === payment.invoice_id ? { ...item, status: 'paid' as const } : item)],
-        finance: [{ id: `fin-${Date.now()}`, type: 'income', source: 'Online ?deme', tenant_id: payment.tenant_id, amount: payment.amount, date: today(), note: payment.transaction_id }, ...state.finance],
+        finance: [{ id: `fin-${Date.now()}`, type: 'income', source: 'Online ödeme', tenant_id: payment.tenant_id, amount: payment.amount, date: today(), note: payment.transaction_id }, ...state.finance],
         renewals: tenant ? [{ id: `ren-${Date.now()}`, tenant_id: tenant.tenant_id, old_end_date: oldEndDate, new_end_date: newEndDate, payment_id: payment.id, status: 'completed', completed_at: today() }, ...state.renewals] : state.renewals,
         tenants: tenant ? state.tenants.map((item) => item.tenant_id === tenant.tenant_id ? { ...item, end_date: newEndDate, status: item.demo_enabled ? 'demo' : 'active' } : item) : state.tenants,
       };
@@ -873,10 +873,10 @@ function CommandBar({ dashboard, saasSummary, provisioningMetrics, liveOps, stat
   }).length;
   const metrics = [
     ['Aktif tenant', String(saasSummary?.activeTenants ?? dashboard.activeSubscriptions)],
-    ['Online kullan?c?', String(liveOps?.summary.onlineUsers ?? 0)],
+    ['Online kullanıcı', String(liveOps?.summary.onlineUsers ?? 0)],
     ['MRR', formatAdminMoney(state.packages.reduce((sum, pkg) => sum + pkg.price, 0))],
-    ['Bug?n ciro', formatAdminMoney(saasSummary?.liveRevenue ?? dashboard.revenue)],
-    ['Yak?n yenileme', String(expiring)],
+    ['Bugün ciro', formatAdminMoney(saasSummary?.liveRevenue ?? dashboard.revenue)],
+    ['Yakın yenileme', String(expiring)],
     ['Failed payment', String(state.payments.filter((payment) => payment.status === 'failed').length)],
     ['Aktif onboarding', String(provisioningMetrics?.activeJobs ?? 0)],
     ['Aktif masa', String(liveOps?.summary.activeTables ?? 0)],
@@ -902,8 +902,8 @@ function CommandCenter({ dashboard, state, saasSummary, liveOps, provisioningJob
     <div className="mt-6 grid gap-5">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Metric label="Toplam tenant" value={String(saasSummary?.totalTenants ?? state.tenants.length)} />
-        <Metric label="Canl? ciro" value={formatAdminMoney(saasSummary?.liveRevenue ?? dashboard.revenue)} />
-        <Metric label="Aktif sipariÅŸ" value={String(liveOps?.summary.activeOrders ?? 0)} />
+        <Metric label="Canlı ciro" value={formatAdminMoney(saasSummary?.liveRevenue ?? dashboard.revenue)} />
+        <Metric label="Aktif sipariş" value={String(liveOps?.summary.activeOrders ?? 0)} />
         <Metric label="Failed onboarding" value={String(provisioningJobs.filter((job) => job.status === 'failed').length)} />
       </div>
       <div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
@@ -919,7 +919,7 @@ function CommandCenter({ dashboard, state, saasSummary, liveOps, provisioningJob
                   <p className="mt-1 text-xs text-slate-400">{event.type} / {event.tenantId ?? 'global'} / {new Date(event.createdAt).toLocaleTimeString('tr-TR')}</p>
                 </div>
               </div>
-            )) : <p className="text-sm text-slate-400">Hen?z canl? operasyon olay? yok.</p>}
+            )) : <p className="text-sm text-slate-400">Henüz canlı operasyon olayı yok.</p>}
           </div>
         </article>
         <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
@@ -929,7 +929,7 @@ function CommandCenter({ dashboard, state, saasSummary, liveOps, provisioningJob
             {[
               ['Online tenant', liveOps?.summary.onlineTenants ?? 0],
               ['Aktif cihaz', liveOps?.summary.activeDevices ?? 0],
-              ['Online ÅŸube', liveOps?.summary.onlineBranches ?? 0],
+              ['Online şube', liveOps?.summary.onlineBranches ?? 0],
               ['Başarısız giriş / 24s', liveOps?.summary.failedLogins24h ?? 0],
             ].map(([label, value]) => (
               <div key={String(label)} className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
@@ -949,16 +949,16 @@ function Dashboard({ dashboard, state, saasSummary }: { dashboard: any; state: S
     ? [
       ['Toplam tenant', saasSummary.totalTenants],
       ['Aktif tenant', saasSummary.activeTenants],
-      ['Aktif kullan?c?', saasSummary.activeUsers],
+      ['Aktif kullanıcı', saasSummary.activeUsers],
       ['Günlük sipariş', saasSummary.dailyOrders],
-      ['Canl? ciro', formatAdminMoney(saasSummary.liveRevenue)],
+      ['Canlı ciro', formatAdminMoney(saasSummary.liveRevenue)],
     ]
     : [
       ['Toplam gelir', formatAdminMoney(dashboard.revenue)],
       ['Aktif abonelik', dashboard.activeSubscriptions],
       ['Komisyon', formatAdminMoney(dashboard.commissions)],
-      ['Bekleyen ?deme', formatAdminMoney(dashboard.pendingPayments)],
-      ['Bekleyen hak ediÅŸ', formatAdminMoney(dashboard.pendingCommissions)],
+      ['Bekleyen ödeme', formatAdminMoney(dashboard.pendingPayments)],
+      ['Bekleyen hak ediş', formatAdminMoney(dashboard.pendingCommissions)],
     ];
 
   return (
@@ -1066,7 +1066,7 @@ function TenantsModule({ saasTenants, liveOps, onOpenTenant }: any) {
             formatDate(tenant.expiresAt),
             onlineUsers,
             `${health}%`,
-            <button key={`${tenant.tenantId}-manage`} type="button" onClick={() => onOpenTenant?.(tenant.tenantId)} className="rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-100">Yonet</button>,
+            <button key={`${tenant.tenantId}-manage`} type="button" onClick={() => onOpenTenant?.(tenant.tenantId)} className="rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-100">Yönet</button>,
           ];
         })}
       />
@@ -1085,7 +1085,7 @@ function JobsCenterModule() {
     const response = await fetch('/api/system-admin/jobs', { credentials: 'include', cache: 'no-store' }).catch(() => null);
     const payload = response && response.ok ? await response.json().catch(() => null) as { metrics?: JobsCenterMetric[]; jobs?: JobsCenterRow[] } | null : null;
     if (!response?.ok || !payload) {
-      setError('Jobs Center verisi alinamadi.');
+      setError('Jobs Center verisi alınamadı.');
       setLoading(false);
       return;
     }
@@ -1116,7 +1116,7 @@ function JobsCenterModule() {
       setLoading(false);
     });
     stream.addEventListener('error', () => {
-      setError('Canli job stream baglantisi kesildi; manuel yenileme kullanilabilir.');
+      setError('Canlı job stream bağlantısı kesildi; manuel yenileme kullanılabilir.');
     });
     return () => stream.close();
   }, []);
@@ -1264,8 +1264,8 @@ function AiInsightsCenter({ state, saasTenants, liveOps }: { state: SystemAdminS
     <div className="mt-6 grid gap-5">
       <div className="grid gap-4 md:grid-cols-3">
         <Metric label="Churn risk" value={String(expired.length)} />
-        <Metric label="Upgrade f?rsat?" value={String(state.tenants.filter((tenant) => tenant.package_type === 'mini').length)} />
-        <Metric label="Operasyon alarm?" value={String(liveOps?.summary.failedLogins24h ?? 0)} />
+        <Metric label="Upgrade fırsatı" value={String(state.tenants.filter((tenant) => tenant.package_type === 'mini').length)} />
+        <Metric label="Operasyon alarmı" value={String(liveOps?.summary.failedLogins24h ?? 0)} />
       </div>
       <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
         <h3 className="text-xl font-semibold">AI öneri kuyruğu</h3>
@@ -1291,7 +1291,7 @@ function ResellerCenter(props: any) {
 }
 
 function TenantOperationsDrawer({ tenantId, tenant, liveOps, provisioningJobs, state, onRefresh, onClose }: { tenantId: string; tenant: SaasTenantRow | null; liveOps: LiveOperationsPayload | null; provisioningJobs: ProvisioningJobRow[]; state: SystemAdminState; onRefresh: () => Promise<void>; onClose: () => void }) {
-  const [activeTab, setActiveTab] = useState<TenantDrawerTab>('overview');
+  const [activeTab, setActiveTab] = useState<TenantDrawerTab>('settings');
   const [managementMessage, setManagementMessage] = useState('');
   const [managementLoading, setManagementLoading] = useState(false);
   const presence = liveOps?.presence.filter((row) => row.tenantId === tenantId) ?? [];
@@ -1300,20 +1300,20 @@ function TenantOperationsDrawer({ tenantId, tenant, liveOps, provisioningJobs, s
   const jobs = provisioningJobs.filter((job) => job.targetTenantId === tenantId);
   const tenantState = state.tenants.find((row) => row.tenant_id === tenantId);
   const tabs: Array<{ id: TenantDrawerTab; label: string }> = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'live', label: 'Live Operations' },
-    { id: 'finance', label: 'Finance' },
-    { id: 'branches', label: 'Branches' },
-    { id: 'users', label: 'Users' },
-    { id: 'devices', label: 'Devices' },
-    { id: 'printers', label: 'Printers' },
-    { id: 'queues', label: 'Queues' },
-    { id: 'audit', label: 'Audit Logs' },
-    { id: 'activity', label: 'Activity Stream' },
-    { id: 'billing', label: 'Billing' },
-    { id: 'ai', label: 'AI Insights' },
-    { id: 'security', label: 'Security' },
-    { id: 'settings', label: 'Settings' },
+    { id: 'settings', label: 'Abonelik Yönetimi' },
+    { id: 'overview', label: 'Genel Bakış' },
+    { id: 'live', label: 'Canlı Operasyon' },
+    { id: 'finance', label: 'Finans' },
+    { id: 'branches', label: 'Şubeler' },
+    { id: 'users', label: 'Kullanıcılar' },
+    { id: 'devices', label: 'Cihazlar' },
+    { id: 'printers', label: 'Yazıcılar' },
+    { id: 'queues', label: 'Kuyruklar' },
+    { id: 'audit', label: 'Denetim Kayıtları' },
+    { id: 'activity', label: 'Aktivite Akışı' },
+    { id: 'billing', label: 'Faturalama' },
+    { id: 'ai', label: 'AI Analiz' },
+    { id: 'security', label: 'Güvenlik' },
   ];
   const health = tenant?.status === 'active' ? 92 : tenant?.status === 'trial' ? 81 : 54;
   useEffect(() => {
@@ -1339,7 +1339,7 @@ function TenantOperationsDrawer({ tenantId, tenant, liveOps, provisioningJobs, s
                   <h2 className="text-2xl font-semibold">{tenant?.companyName ?? tenantId}</h2>
                   <span className="h-2.5 w-2.5 rounded-full bg-emerald-300 shadow-[0_0_16px_rgba(110,231,183,0.8)]" />
                 </div>
-                <p className="mt-1 text-sm text-slate-400">{tenantId} / {tenant?.plan ?? '-'} / health {health}%</p>
+                <p className="mt-1 text-sm text-slate-400">{tenantId} / {tenant?.plan ?? '-'} / sağlık {health}%</p>
               </div>
             </div>
             <div className="flex items-center gap-2"><StatusPill status={tenant?.status ?? 'unknown'} /><button type="button" onClick={onClose} className="rounded-xl border border-white/10 px-3 py-2 text-sm">Kapat</button></div>
@@ -1352,15 +1352,15 @@ function TenantOperationsDrawer({ tenantId, tenant, liveOps, provisioningJobs, s
           {activeTab === 'overview' ? <DrawerOverview tenant={tenant} tenantState={tenantState} presence={presence} devices={devices} jobs={jobs} events={events} /> : null}
           {activeTab === 'live' ? <DrawerLiveOps presence={presence} events={events} /> : null}
           {activeTab === 'finance' ? <DrawerFinance tenantId={tenantId} state={state} /> : null}
-          {activeTab === 'branches' ? <DrawerSimple title="Branches" rows={[`${tenant?.activeBranchCount ?? 0}/${tenant?.branchCount ?? 0} aktif ÅŸube`, `Ana ÅŸube: ${tenant?.mainBranchId ?? '-'}`]} /> : null}
-          {activeTab === 'users' ? <DrawerSimple title="Users" rows={[`${tenant?.activeUsers ?? 0} aktif kullan?c?`, `${presence.length} canl? session`]} /> : null}
-          {activeTab === 'devices' || activeTab === 'printers' ? <DrawerDevices devices={devices} title={activeTab === 'printers' ? 'Printers' : 'Devices'} /> : null}
+          {activeTab === 'branches' ? <DrawerSimple title="Şubeler" rows={[`${tenant?.activeBranchCount ?? 0}/${tenant?.branchCount ?? 0} aktif şube`, `Ana şube: ${tenant?.mainBranchId ?? '-'}`]} /> : null}
+          {activeTab === 'users' ? <DrawerSimple title="Kullanıcılar" rows={[`${tenant?.activeUsers ?? 0} aktif kullanıcı`, `${presence.length} canlı oturum`]} /> : null}
+          {activeTab === 'devices' || activeTab === 'printers' ? <DrawerDevices devices={devices} title={activeTab === 'printers' ? 'Yazıcılar' : 'Cihazlar'} /> : null}
           {activeTab === 'queues' ? <DrawerQueues jobs={jobs} /> : null}
           {activeTab === 'audit' ? <DrawerAudit events={events} /> : null}
           {activeTab === 'activity' ? <DrawerActivity events={events} /> : null}
-          {activeTab === 'billing' ? <DrawerSimple title="Billing" rows={[`Plan: ${tenant?.plan ?? '-'}`, `BitiÅŸ: ${tenant?.expiresAt?.slice(0, 10) ?? '-'}`, `Bakiye: ${tenant?.balance ?? 0}`]} /> : null}
+          {activeTab === 'billing' ? <DrawerSimple title="Faturalama" rows={[`Plan: ${tenant?.plan ?? '-'}`, `Bitiş: ${tenant?.expiresAt?.slice(0, 10) ?? '-'}`, `Bakiye: ${tenant?.balance ?? 0}`]} /> : null}
           {activeTab === 'ai' ? <DrawerAi tenant={tenant} events={events} /> : null}
-          {activeTab === 'security' ? <DrawerSimple title="Security" rows={[`${events.filter((event) => event.type === 'auth.login_failed').length} baÅŸar?s?z giriÅŸ`, `${presence.length} aktif oturum`]} /> : null}
+          {activeTab === 'security' ? <DrawerSimple title="Güvenlik" rows={[`${events.filter((event) => event.type === 'auth.login_failed').length} başarısız giriş`, `${presence.length} aktif oturum`]} /> : null}
           {activeTab === 'settings' ? <DrawerTenantManagement tenantId={tenantId} tenant={tenant} loading={managementLoading} message={managementMessage} onAction={async (body) => {
             if (managementLoading) return;
             setManagementLoading(true);
@@ -1376,14 +1376,14 @@ function TenantOperationsDrawer({ tenantId, tenant, liveOps, provisioningJobs, s
               const payload = await response.json().catch(() => null) as { error?: string } | null;
               if (!response.ok) {
                 console.error('[system-admin] subscription action failed', { ...context, status: response.status, error: payload?.error });
-                setManagementMessage(payload?.error ?? 'Tenant aksiyonu uygulanamadi.');
+                setManagementMessage(payload?.error ?? 'İşlem başarısız.');
                 return;
               }
-              setManagementMessage('Tenant aksiyonu uygulandi.');
+              setManagementMessage('İşlem başarılı.');
               await onRefresh();
             } catch (error) {
               console.error('[system-admin] subscription action failed', { ...context, error: error instanceof Error ? error.message : String(error) });
-              setManagementMessage('Tenant aksiyonu uygulanamadi.');
+              setManagementMessage('İşlem başarısız.');
             } finally {
               setManagementLoading(false);
             }
@@ -1397,10 +1397,10 @@ function TenantOperationsDrawer({ tenantId, tenant, liveOps, provisioningJobs, s
 function DrawerOverview({ tenant, tenantState, presence, devices, jobs, events }: { tenant: SaasTenantRow | null; tenantState?: AdminTenant; presence: LivePresenceRow[]; devices: LiveDeviceRow[]; jobs: ProvisioningJobRow[]; events: LiveEventRow[] }) {
   const remaining = daysRemaining(tenant?.expiresAt);
   return <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-    <Metric label="Bug?n ciro" value={formatAdminMoney(tenant?.dailyRevenue ?? 0)} />
-    <Metric label="Aktif kullan?c?" value={String(presence.length)} />
+    <Metric label="Bugün ciro" value={formatAdminMoney(tenant?.dailyRevenue ?? 0)} />
+    <Metric label="Aktif kullanıcı" value={String(presence.length)} />
     <Metric label="Aktif cihaz" value={String(devices.length)} />
-    <Metric label="Aktif ÅŸube" value={String(tenant?.activeBranchCount ?? 0)} />
+    <Metric label="Aktif şube" value={String(tenant?.activeBranchCount ?? 0)} />
     <Metric label="Failed ops" value={String(events.filter((event) => event.severity === 'error' || event.severity === 'critical').length)} />
     <Metric label="Onboarding jobs" value={String(jobs.length)} />
     <Metric label="Products" value={String(tenant?.productCount ?? 0)} />
@@ -1412,20 +1412,20 @@ function DrawerOverview({ tenant, tenantState, presence, devices, jobs, events }
     <Metric label="Reports" value={String(tenant?.reportCount ?? 0)} />
     <Metric label="Printers" value={String(tenant?.printerCount ?? 0)} />
     <Metric label="Runtime snapshots" value={String(tenant?.runtimeSnapshotCount ?? 0)} />
-    <Metric label="Last login" value={formatDate(tenant?.lastLogin)} />
+    <Metric label="Son giriş" value={formatDate(tenant?.lastLogin)} />
     <Metric label="DB footprint" value={String(tenant?.databaseFootprint ?? 0)} />
-    <div className="md:col-span-2 xl:col-span-3"><DrawerSimple title="Subscription" rows={[
+    <div className="md:col-span-2 xl:col-span-3"><DrawerSimple title="Abonelik Özeti" rows={[
       `Tenant status: ${tenant?.status ?? '-'}`,
       `Subscription status: ${tenant?.subscriptionStatus ?? '-'}`,
-      `Baslangic: ${formatDate(tenant?.startsAt)}`,
-      `Bitis: ${formatDate(tenant?.expiresAt)}`,
-      `Kalan gun: ${tenant?.unlimitedLicense ? 'limitsiz' : remaining ?? '-'}`,
-      `Limitsiz lisans: ${tenant?.unlimitedLicense ? 'evet' : 'hayir'}`,
-      `Son guncelleme: ${formatDate(tenant?.subscriptionUpdatedAt)}`,
+      `Başlangıç: ${formatDate(tenant?.startsAt)}`,
+      `Bitiş: ${formatDate(tenant?.expiresAt)}`,
+      `Kalan gün: ${tenant?.unlimitedLicense ? 'limitsiz' : remaining ?? '-'}`,
+      `Limitsiz lisans: ${tenant?.unlimitedLicense ? 'evet' : 'hayır'}`,
+      `Son güncelleme: ${formatDate(tenant?.subscriptionUpdatedAt)}`,
       `Admin e-posta: ${tenant?.adminEmail ?? '-'}`,
-      `Admin kullanici: ${tenant?.adminUsername ?? 'admin'}`,
+      `Admin kullanıcı: ${tenant?.adminUsername ?? 'admin'}`,
       `Tenant kodu: ${tenant?.tenantId ?? '-'}`,
-      `Erisim politikasi: ${subscriptionAccessLabel(tenant)}`,
+      `Erişim politikası: ${subscriptionAccessLabel(tenant)}`,
       `Yenileme notu: ${tenantState ? createRenewalNotice(tenantState) : '-'}`,
     ]} /></div>
   </div>;
@@ -1443,79 +1443,82 @@ function DrawerTenantManagement({ tenantId, tenant, loading, message, onAction }
   }
   async function applyManualDate() {
     if (!manualEndsAt || Number.isNaN(new Date(manualEndsAt).getTime())) {
-      setLocalError('Gecerli bir bitis tarihi secin.');
+      setLocalError('Geçerli bir bitiş tarihi seçin.');
       return;
     }
     await submitAction({ action: 'update_subscription', endsAt: manualEndsAt, unlimitedLicense: false });
   }
   return <div className="grid gap-5 md:grid-cols-2">
     <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5 md:col-span-2">
-      <h3 className="text-lg font-semibold">Abonelik durumu</h3>
+      <h3 className="text-lg font-semibold">Abonelik Yönetimi</h3>
       <div className="mt-4 grid gap-3 md:grid-cols-3">
-        <MiniMetric label="Tenant" value={tenant?.status ?? '-'} />
-        <MiniMetric label="Abonelik" value={tenant?.subscriptionStatus ?? '-'} />
-        <MiniMetric label="Kalan gun" value={tenant?.unlimitedLicense ? 'limitsiz' : String(daysRemaining(tenant?.expiresAt) ?? '-')} />
-        <MiniMetric label="Baslangic" value={formatDate(tenant?.startsAt)} />
-        <MiniMetric label="Bitis" value={formatDate(tenant?.expiresAt)} />
-        <MiniMetric label="Guncelleme" value={formatDate(tenant?.subscriptionUpdatedAt)} />
-        <MiniMetric label="Admin" value={tenant?.adminUsername ?? 'admin'} />
+        <MiniMetric label="Abone Kodu" value={tenant?.tenantId ?? tenantId} />
+        <MiniMetric label="Firma Adı" value={tenant?.companyName ?? '-'} />
+        <MiniMetric label="Durum" value={tenant?.status ?? '-'} />
+        <MiniMetric label="Abonelik Durumu" value={tenant?.subscriptionStatus ?? '-'} />
+        <MiniMetric label="Başlangıç Tarihi" value={formatDate(tenant?.startsAt)} />
+        <MiniMetric label="Bitiş Tarihi" value={formatDate(tenant?.expiresAt)} />
+        <MiniMetric label="Kalan Gün" value={tenant?.unlimitedLicense ? 'limitsiz' : String(daysRemaining(tenant?.expiresAt) ?? '-')} />
+        <MiniMetric label="Limitsiz Lisans" value={tenant?.unlimitedLicense ? 'Evet' : 'Hayır'} />
+        <MiniMetric label="Son Güncelleme" value={formatDate(tenant?.subscriptionUpdatedAt)} />
         <MiniMetric label="E-posta" value={tenant?.adminEmail ?? '-'} />
+        <MiniMetric label="Son Giriş" value={formatDate(tenant?.lastLogin)} />
         <MiniMetric label="Politika" value={subscriptionAccessLabel(tenant)} />
       </div>
     </article>
     <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
-      <h3 className="text-lg font-semibold">Subscription</h3>
+      <h3 className="text-lg font-semibold">Kullanım Tarihi</h3>
       <div className="mt-4 grid gap-3">
-        <div className="grid grid-cols-3 gap-2">
-          <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_subscription', addDays: 30, unlimitedLicense: false })} className="btn-blue">{loading ? '...' : '+30 gun'}</button>
-          <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_subscription', addMonths: 1, unlimitedLicense: false })} className="btn-blue">{loading ? '...' : '+1 ay'}</button>
-          <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_subscription', addYears: 1, unlimitedLicense: false })} className="btn-blue">{loading ? '...' : '+1 yil'}</button>
-        </div>
-        <button disabled={loading || tenant?.unlimitedLicense === true} type="button" onClick={() => submitAction({ action: 'update_subscription', unlimitedLicense: true })} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-100 disabled:opacity-60">Limitsiz lisans yap</button>
-        <button disabled={loading || tenant?.unlimitedLicense !== true} type="button" onClick={() => submitAction({ action: 'update_subscription', unlimitedLicense: false, subscriptionStatus: 'active' })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold disabled:opacity-60">Limitsiz lisansi kaldir</button>
         <div className="grid gap-2 md:grid-cols-[1fr_auto]">
           <input type="date" value={manualEndsAt} onChange={(event) => setManualEndsAt(event.target.value)} className="input-dark" />
-          <button disabled={loading || !manualEndsAt} type="button" onClick={() => void applyManualDate()} className="btn-blue">Tarih uygula</button>
+          <button disabled={loading || !manualEndsAt} type="button" onClick={() => void applyManualDate()} className="btn-blue">Kullanım Tarihini Değiştir</button>
         </div>
+        <div className="grid grid-cols-3 gap-2">
+          <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_subscription', addDays: 30, unlimitedLicense: false })} className="btn-blue">{loading ? '...' : '+30 Gün Ekle'}</button>
+          <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_subscription', addMonths: 1, unlimitedLicense: false })} className="btn-blue">{loading ? '...' : '+1 Ay Ekle'}</button>
+          <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_subscription', addYears: 1, unlimitedLicense: false })} className="btn-blue">{loading ? '...' : '+1 Yıl Ekle'}</button>
+        </div>
+        <button disabled={loading || tenant?.unlimitedLicense === true} type="button" onClick={() => submitAction({ action: 'update_subscription', unlimitedLicense: true })} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-100 disabled:opacity-60">Limitsiz Lisans Yap</button>
+        <button disabled={loading || tenant?.unlimitedLicense !== true} type="button" onClick={() => submitAction({ action: 'update_subscription', unlimitedLicense: false, subscriptionStatus: 'active' })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold disabled:opacity-60">Limitsiz Lisansı Kaldır</button>
         {localError ? <p className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-sm text-rose-100">{localError}</p> : null}
       </div>
     </article>
     <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
-      <h3 className="text-lg font-semibold">Tenant status</h3>
+      <h3 className="text-lg font-semibold">Tenant Durumu</h3>
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'active' })} className="btn-blue">Aktif</button>
-        <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'suspended' })} className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100">Askida</button>
-        <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'expired' })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold">Suresi doldu</button>
+        <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'active' })} className="btn-blue">Aktif Yap</button>
+        <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'suspended' })} className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100">Askıya Al</button>
+        <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'expired' })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold">Süresi Doldu Yap</button>
         <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'blocked' })} className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm font-semibold text-rose-100">Bloke</button>
-        <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'disabled' })} className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm font-semibold text-rose-100">Devre disi</button>
+        <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'disabled' })} className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm font-semibold text-rose-100">Devre Dışı Bırak</button>
       </div>
     </article>
     <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5 md:col-span-2">
-      <h3 className="text-lg font-semibold">Password</h3>
+      <h3 className="text-lg font-semibold">Şifre Yönetimi</h3>
       <div className="mt-4 grid gap-2 md:grid-cols-[1fr_auto]">
-        <input type="text" value={tempPassword} onChange={(event) => setTempPassword(event.target.value)} placeholder={`${tenantId}-gecici-sifre`} className="input-dark" />
-        <button disabled={loading || !tempPassword.trim()} type="button" onClick={() => submitAction({ action: 'update_password', username: 'admin', temporaryPassword: tempPassword.trim(), forcePasswordChange: false })} className="btn-blue">Admin sifresini sifirla</button>
+        <input type="text" value={tempPassword} onChange={(event) => setTempPassword(event.target.value)} placeholder={`${tenantId}-geçici-şifre`} className="input-dark" />
+        <button disabled={loading || !tempPassword.trim()} type="button" onClick={() => submitAction({ action: 'update_password', username: 'admin', temporaryPassword: tempPassword.trim(), forcePasswordChange: false })} className="btn-blue">Admin Şifresini Sıfırla</button>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
-        <button disabled={loading || !tempPassword.trim()} type="button" onClick={() => submitAction({ action: 'update_password', username: 'admin', temporaryPassword: tempPassword.trim(), forcePasswordChange: true })} className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100">Gecici sifre + zorunlu degisim</button>
-        <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_password', username: 'admin', forcePasswordChange: true })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold">Zorunlu degisim isaretle</button>
+        <button disabled={loading || !tempPassword.trim()} type="button" onClick={() => submitAction({ action: 'update_password', username: 'admin', temporaryPassword: tempPassword.trim(), forcePasswordChange: true })} className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100">Geçici Şifre + Zorunlu Değişim</button>
+        <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_password', username: 'admin', forcePasswordChange: true })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold">Sonraki Girişte Şifre Değiştir</button>
       </div>
       {message ? <p className="mt-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200">{message}</p> : null}
     </article>
     <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5 md:col-span-2">
-      <h3 className="text-lg font-semibold">Tenant export</h3>
+      <h3 className="text-lg font-semibold">Tenant Export</h3>
       <button disabled={loading} type="button" onClick={() => window.open(`/api/system-admin/tenants?exportTenantId=${encodeURIComponent(tenantId)}`, '_blank', 'noopener,noreferrer')} className="btn-blue">Export JSON</button>
     </article>
   </div>;
 }
-function DrawerLiveOps({ presence, events }: { presence: LivePresenceRow[]; events: LiveEventRow[] }) { return <div className="grid gap-5"><DrawerSimple title="Aktif kullan?c?lar" rows={presence.map((row) => `${row.username} / ${row.role} / ${row.currentRoute ?? '-'}`)} /><DrawerActivity events={events} /></div>; }
+function DrawerLiveOps({ presence, events }: { presence: LivePresenceRow[]; events: LiveEventRow[] }) { return <div className="grid gap-5"><DrawerSimple title="Aktif kullanıcılar" rows={presence.map((row) => `${row.username} / ${row.role} / ${row.currentRoute ?? '-'}`)} /><DrawerActivity events={events} /></div>; }
 function DrawerFinance({ tenantId, state }: { tenantId: string; state: SystemAdminState }) { return <DrawerSimple title="Finance" rows={state.payments.filter((p) => p.tenant_id === tenantId).map((p) => `${p.date} / ${formatAdminMoney(p.amount)} / ${p.status}`)} />; }
 function DrawerDevices({ devices, title }: { devices: LiveDeviceRow[]; title: string }) { return <DrawerSimple title={title} rows={devices.map((device) => `${device.deviceId} / ${device.status} / ${device.latencyMs ?? '-'} ms`)} />; }
 function DrawerQueues({ jobs }: { jobs: ProvisioningJobRow[] }) { return <DrawerSimple title="Queues" rows={jobs.map((job) => `${job.id.slice(0, 8)} / ${job.status} / ${job.currentStep}`)} />; }
 function DrawerAudit({ events }: { events: LiveEventRow[] }) { return <DrawerSimple title="Audit Logs" rows={events.map((event) => `${event.type} / ${event.message}`)} />; }
 function DrawerActivity({ events }: { events: LiveEventRow[] }) { return <DrawerSimple title="Activity Stream" rows={events.map((event) => `${new Date(event.createdAt).toLocaleTimeString('tr-TR')} / ${event.message}`)} />; }
 function DrawerAi({ tenant, events }: { tenant: SaasTenantRow | null; events: LiveEventRow[] }) { return <DrawerSimple title="AI Insights" rows={[`Churn risk: ${tenant?.status === 'active' ? 'low' : 'elevated'}`, `Evidence: ${events.length} recent operational events`, `Upgrade opportunity: ${tenant?.plan === 'mini' ? 'present' : 'watch'}`]} />; }
-function DrawerSimple({ title, rows }: { title: string; rows: string[] }) { return <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5"><h3 className="text-lg font-semibold">{title}</h3><div className="mt-4 grid gap-2">{rows.length ? rows.map((row, index) => <p key={`${title}-${index}`} className="rounded-xl bg-white/[0.035] px-3 py-2 text-sm text-slate-300">{row}</p>) : <p className="text-sm text-slate-400">Kay?t yok.</p>}</div></article>; }
+function DrawerSimple({ title, rows }: { title: string; rows: string[] }) { return <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5"><h3 className="text-lg font-semibold">{title}</h3><div className="mt-4 grid gap-2">{rows.length ? rows.map((row, index) => <p key={`${title}-${index}`} className="rounded-xl bg-white/[0.035] px-3 py-2 text-sm text-slate-300">{row}</p>) : <p className="text-sm text-slate-400">Kayıt yok.</p>}</div></article>; }
 
 function CommandPalette({ tenants, onClose, onSelectTenant }: { tenants: SaasTenantRow[]; onClose: () => void; onSelectTenant: (tenantId: string) => void }) {
   const [query, setQuery] = useState('');
@@ -1554,17 +1557,17 @@ function IncidentCenter({ incidents, summary, refresh, onOpenTenant }: { inciden
   return <section className="grid gap-5">
     <div className="grid gap-4 md:grid-cols-4">
       <Metric label="Toplam incident" value={String(summary?.total ?? 0)} />
-      <Metric label="A??k" value={String(summary?.open ?? 0)} />
+      <Metric label="Açık" value={String(summary?.open ?? 0)} />
       <Metric label="Kritik" value={String(summary?.critical ?? 0)} />
       <Metric label="Outage" value={String(summary?.outage ?? 0)} />
     </div>
     <DomainTabs value={activeTab} onChange={setActiveTab} tabs={[
       ['active', 'Aktif Olaylar'],
       ['critical', 'Kritik Olaylar'],
-      ['history', 'Ge?miÅŸ'],
+      ['history', 'Geçmiş'],
       ['root', 'Root Cause'],
       ['escalation', 'Eskalasyon'],
-      ['resolved', 'Ã‡?z?lm?ÅŸ Olaylar'],
+      ['resolved', 'Çözülmüş Olaylar'],
     ]} />
     <div className="grid gap-5 xl:grid-cols-[minmax(320px,0.8fr)_minmax(420px,1.2fr)]">
       <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-4">
@@ -1591,13 +1594,13 @@ function IncidentCenter({ incidents, summary, refresh, onOpenTenant }: { inciden
             <div className="flex gap-2">
               {selected.tenantId ? <button type="button" onClick={() => onOpenTenant(selected.tenantId!)} className="rounded-xl border border-white/10 px-3 py-2 text-xs">Tenant a?</button> : null}
               {selected.status === 'open' ? <button type="button" onClick={() => void act('acknowledge', selected.id)} className="rounded-xl bg-amber-400/15 px-3 py-2 text-xs text-amber-100">Onayla</button> : null}
-              {selected.status !== 'resolved' ? <button type="button" onClick={() => void act('resolve', selected.id)} className="rounded-xl bg-emerald-400/15 px-3 py-2 text-xs text-emerald-100">Ã‡?z</button> : null}
+              {selected.status !== 'resolved' ? <button type="button" onClick={() => void act('resolve', selected.id)} className="rounded-xl bg-emerald-400/15 px-3 py-2 text-xs text-emerald-100">Çöz</button> : null}
             </div>
           </div>
           <div className="mt-5 grid gap-3 md:grid-cols-3">
             <MiniMetric label="Tenant" value={selected.tenantId ?? 'platform'} />
             <MiniMetric label="Correlation" value={selected.correlationId ?? '-'} />
-            <MiniMetric label="A??l?ÅŸ" value={new Date(selected.openedAt).toLocaleString('tr-TR')} />
+            <MiniMetric label="Açılış" value={new Date(selected.openedAt).toLocaleString('tr-TR')} />
           </div>
           <div className="mt-5">
             <h4 className="font-semibold">Root timeline</h4>
@@ -1608,7 +1611,7 @@ function IncidentCenter({ incidents, summary, refresh, onOpenTenant }: { inciden
               </div>)}
             </div>
           </div>
-        </> : <p className="text-sm text-slate-400">?ncelemek i?in incident se?in.</p>}
+        </> : <p className="text-sm text-slate-400">İncelemek için incident seçin.</p>}
       </article>
     </div>
   </section>;
@@ -1659,7 +1662,7 @@ function AuditExplorer() {
             <AuditJson title="Before" value={selected.before} />
             <AuditJson title="After" value={selected.after} />
           </div>
-        </> : <p className="text-sm text-slate-400">Audit kayd? se?in.</p>}
+        </> : <p className="text-sm text-slate-400">Audit kaydı seçin.</p>}
       </article>
     </div>
   </section>;
@@ -1681,7 +1684,7 @@ function LiveOperationsModule() {
     const response = await fetch('/api/system-admin/live-operations', { credentials: 'include', cache: 'no-store' }).catch(() => null);
     const payload = response && response.ok ? await response.json().catch(() => null) as LiveOperationsPayload | null : null;
     if (!response?.ok || !payload) {
-      setError('Canli operasyon verisi alinamadi.');
+      setError('Canlı operasyon verisi alınamadı.');
       return;
     }
     setData(payload);
@@ -1703,7 +1706,7 @@ function LiveOperationsModule() {
       setError('');
     });
     stream.addEventListener('error', () => {
-      setError('Canli operasyon stream baglantisi kesildi; veri son gorulen snapshot uzerinden gosteriliyor.');
+      setError('Canlı operasyon stream bağlantısı kesildi; veri son görülen snapshot üzerinden gösteriliyor.');
     });
     return () => stream.close();
   }, []);
@@ -1714,29 +1717,29 @@ function LiveOperationsModule() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Realtime SaaS Operations</p>
-          <h2 className="mt-2 text-2xl font-semibold">Canli Operasyon Merkezi</h2>
+          <h2 className="mt-2 text-2xl font-semibold">Canlı Operasyon Merkezi</h2>
         </div>
         <button type="button" onClick={() => void refresh()} className="rounded-xl bg-blue-600/20 px-4 py-2 text-xs font-semibold text-blue-200 hover:bg-blue-600/35">Yenile</button>
       </div>
       {error ? <p className="rounded-2xl bg-amber-500/15 px-4 py-3 text-sm text-amber-100">{error}</p> : null}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <Metric label="Online tenant" value={String(summary?.onlineTenants ?? 0)} />
-        <Metric label="Online kullanici" value={String(summary?.onlineUsers ?? 0)} />
+        <Metric label="Online kullanıcı" value={String(summary?.onlineUsers ?? 0)} />
         <Metric label="Aktif cihaz" value={String(summary?.activeDevices ?? 0)} />
         <Metric label="Aktif masa" value={String(summary?.activeTables ?? 0)} />
-        <Metric label="Aktif siparis" value={String(summary?.activeOrders ?? 0)} />
-        <Metric label="Online sube" value={String(summary?.onlineBranches ?? 0)} />
-        <Metric label="24s basarisiz login" value={String(summary?.failedLogins24h ?? 0)} />
+        <Metric label="Aktif sipariş" value={String(summary?.activeOrders ?? 0)} />
+        <Metric label="Online şube" value={String(summary?.onlineBranches ?? 0)} />
+        <Metric label="24s başarısız login" value={String(summary?.failedLogins24h ?? 0)} />
         <Metric label="Son snapshot" value={data?.generatedAt ? new Date(data.generatedAt).toLocaleTimeString('tr-TR') : '-'} />
       </div>
       <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
         <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Presence</p>
-          <h3 className="mt-2 text-xl font-semibold">Canli oturumlar</h3>
+          <h3 className="mt-2 text-xl font-semibold">Canlı oturumlar</h3>
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead className="text-xs uppercase tracking-[0.16em] text-slate-400">
-                <tr><th className="pb-3">Tenant</th><th className="pb-3">Kullanici</th><th className="pb-3">Rol</th><th className="pb-3">Cihaz</th><th className="pb-3">Rota</th><th className="pb-3">Durum</th></tr>
+                <tr><th className="pb-3">Tenant</th><th className="pb-3">Kullanıcı</th><th className="pb-3">Rol</th><th className="pb-3">Cihaz</th><th className="pb-3">Rota</th><th className="pb-3">Durum</th></tr>
               </thead>
               <tbody className="divide-y divide-white/5">
                 {(data?.presence ?? []).slice(0, 18).map((row) => (
@@ -1797,7 +1800,7 @@ function LiveOperationsModule() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Cold telemetry</p>
-            <h3 className="mt-2 text-xl font-semibold">7 gunluk ozet metrikler</h3>
+            <h3 className="mt-2 text-xl font-semibold">7 günlük özet metrikler</h3>
           </div>
           <button type="button" onClick={() => void refreshHistory()} className="rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/5">Ozetleri yenile</button>
         </div>
@@ -1854,13 +1857,13 @@ function TemplatesModule({ templates, packs, recipes, recipeItems, stocks, categ
   async function save(kind: string, payload: Record<string, unknown>) {
     const response = await fetch('/api/system-admin/templates', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind, ...payload }) });
     const body = await response.json().catch(() => null) as { error?: string } | null;
-    setMessage(response.ok ? 'Kaydedildi.' : body?.error ?? 'Kaydetme basarisiz.');
+    setMessage(response.ok ? 'Kaydedildi.' : body?.error ?? 'Kaydetme başarısız.');
     if (response.ok) await reload();
   }
 
   async function removeProduct(id: string) {
     const response = await fetch(`/api/system-admin/templates?kind=product&id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' });
-    setMessage(response.ok ? 'Sablon silindi veya deprecated yapildi.' : 'Silme basarisiz.');
+    setMessage(response.ok ? 'Şablon silindi veya deprecated yapıldı.' : 'Silme başarısız.');
     if (response.ok) await reload();
   }
   return (
@@ -1875,18 +1878,18 @@ function TemplatesModule({ templates, packs, recipes, recipeItems, stocks, categ
         <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
           <h3 className="text-xl font-semibold">Kategori</h3>
           <div className="mt-4 grid gap-3">
-            <input value={categoryDraft.key} onChange={(e) => setCategoryDraft((c) => ({ ...c, key: e.target.value }))} placeholder="kategori anahtari" className="input-dark" />
-            <input value={categoryDraft.name} onChange={(e) => setCategoryDraft((c) => ({ ...c, name: e.target.value }))} placeholder="kategori adi" className="input-dark" />
+            <input value={categoryDraft.key} onChange={(e) => setCategoryDraft((c) => ({ ...c, key: e.target.value }))} placeholder="kategori anahtarı" className="input-dark" />
+            <input value={categoryDraft.name} onChange={(e) => setCategoryDraft((c) => ({ ...c, name: e.target.value }))} placeholder="kategori adı" className="input-dark" />
           </div>
           <button type="button" onClick={() => void save('category', categoryDraft)} className="btn-blue">Kategoriyi kaydet</button>
         </article>
         <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
           <h3 className="text-xl font-semibold">Ham madde</h3>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <input value={stockDraft.key} onChange={(e) => setStockDraft((c) => ({ ...c, key: e.target.value }))} placeholder="stok anahtari" className="input-dark" />
-            <input value={stockDraft.name} onChange={(e) => setStockDraft((c) => ({ ...c, name: e.target.value }))} placeholder="stok adi" className="input-dark" />
+            <input value={stockDraft.key} onChange={(e) => setStockDraft((c) => ({ ...c, key: e.target.value }))} placeholder="stok anahtarı" className="input-dark" />
+            <input value={stockDraft.name} onChange={(e) => setStockDraft((c) => ({ ...c, name: e.target.value }))} placeholder="stok adı" className="input-dark" />
             <input value={stockDraft.stockUnit} onChange={(e) => setStockDraft((c) => ({ ...c, stockUnit: e.target.value }))} placeholder="stok birimi" className="input-dark" />
-            <input value={stockDraft.recipeUnit} onChange={(e) => setStockDraft((c) => ({ ...c, recipeUnit: e.target.value }))} placeholder="recete birimi" className="input-dark" />
+            <input value={stockDraft.recipeUnit} onChange={(e) => setStockDraft((c) => ({ ...c, recipeUnit: e.target.value }))} placeholder="reçete birimi" className="input-dark" />
           </div>
           <button type="button" onClick={() => void save('stock', stockDraft)} className="btn-blue">Ham maddeyi kaydet</button>
         </article>
@@ -1894,7 +1897,7 @@ function TemplatesModule({ templates, packs, recipes, recipeItems, stocks, categ
           <h3 className="text-xl font-semibold">Recete</h3>
           <div className="mt-4 grid gap-3">
             <select value={recipeDraft.productTemplateId} onChange={(e) => setRecipeDraft((c) => ({ ...c, productTemplateId: e.target.value }))} className="input-dark"><option value="">Urun sec</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select>
-            <input value={recipeDraft.name} onChange={(e) => setRecipeDraft((c) => ({ ...c, name: e.target.value }))} placeholder="recete adi" className="input-dark" />
+            <input value={recipeDraft.name} onChange={(e) => setRecipeDraft((c) => ({ ...c, name: e.target.value }))} placeholder="reçete adı" className="input-dark" />
           </div>
           <div className="mt-3 flex flex-wrap gap-2">{stocks.map((stock) => <button key={stock.id} type="button" onClick={() => setRecipeDraft((c) => ({ ...c, items: [...c.items, { stockTemplateId: stock.id, name: stock.name, quantity: 1, unit: stock.recipeUnit }] }))} className="rounded-full bg-white/10 px-3 py-1 text-xs">{stock.name}</button>)}</div>
           <button type="button" onClick={() => void save('recipe', recipeDraft)} className="btn-blue">Receteyi kaydet</button>
@@ -1906,7 +1909,7 @@ function TemplatesModule({ templates, packs, recipes, recipeItems, stocks, categ
           <h3 className="text-xl font-semibold">Urun sablonu</h3>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <input value={productDraft.key} onChange={(e) => setProductDraft((c) => ({ ...c, key: e.target.value }))} placeholder="anahtar" className="input-dark" />
-            <input value={productDraft.name} onChange={(e) => setProductDraft((c) => ({ ...c, name: e.target.value }))} placeholder="urun adi" className="input-dark" />
+            <input value={productDraft.name} onChange={(e) => setProductDraft((c) => ({ ...c, name: e.target.value }))} placeholder="ürün adı" className="input-dark" />
             <input value={productDraft.restaurantType} onChange={(e) => setProductDraft((c) => ({ ...c, restaurantType: e.target.value }))} placeholder="restoran tipi" className="input-dark" />
             <select value={productDraft.categoryTemplateId} onChange={(e) => setProductDraft((c) => ({ ...c, categoryTemplateId: e.target.value }))} className="input-dark"><option value="">Kategori yok</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
             <input type="number" value={productDraft.defaultPrice} onChange={(e) => setProductDraft((c) => ({ ...c, defaultPrice: Number(e.target.value) }))} placeholder="fiyat" className="input-dark" />
@@ -1915,10 +1918,10 @@ function TemplatesModule({ templates, packs, recipes, recipeItems, stocks, categ
           <button type="button" onClick={() => void save('product', productDraft)} className="btn-blue">Urun sablonunu kaydet</button>
         </article>
         <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
-          <h3 className="text-xl font-semibold">Paket olusturucu</h3>
+          <h3 className="text-xl font-semibold">Paket oluşturucu</h3>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <input value={packDraft.key} onChange={(e) => setPackDraft((c) => ({ ...c, key: e.target.value }))} placeholder="paket anahtari" className="input-dark" />
-            <input value={packDraft.name} onChange={(e) => setPackDraft((c) => ({ ...c, name: e.target.value }))} placeholder="paket adi" className="input-dark" />
+            <input value={packDraft.key} onChange={(e) => setPackDraft((c) => ({ ...c, key: e.target.value }))} placeholder="paket anahtarı" className="input-dark" />
+            <input value={packDraft.name} onChange={(e) => setPackDraft((c) => ({ ...c, name: e.target.value }))} placeholder="paket adı" className="input-dark" />
             <input value={packDraft.restaurantType} onChange={(e) => setPackDraft((c) => ({ ...c, restaurantType: e.target.value }))} placeholder="restoran tipi" className="input-dark" />
             <select value={packDraft.scale} onChange={(e) => setPackDraft((c) => ({ ...c, scale: e.target.value }))} className="input-dark"><option value="small">small</option><option value="medium">medium</option><option value="large">large</option></select>
           </div>
@@ -1933,7 +1936,7 @@ function TemplatesModule({ templates, packs, recipes, recipeItems, stocks, categ
         <Metric label="Recete satiri" value={String(recipeItems.length)} />
       </div>
       <DataTable
-        headers={['Paket', 'Tip', 'Ã–l?ek', 'Versiyon', 'Durum']}
+        headers={['Paket', 'Tip', 'Ölçek', 'Versiyon', 'Durum']}
         rows={packs.map((pack) => [
           pack.name,
           pack.restaurantType,
@@ -1975,14 +1978,14 @@ function PackagesModule({ state, packageDraft, setPackageDraft, savePackage, edi
     <div className="mt-6 grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
       <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-xl font-semibold">{isEditing ? 'Paket d?zenle' : 'Paket oluÅŸtur'}</h3>
+          <h3 className="text-xl font-semibold">{isEditing ? 'Paket düzenle' : 'Paket oluştur'}</h3>
           {isEditing ? <button type="button" onClick={resetPackageDraft} className="rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold text-slate-100">Yeni paket</button> : null}
         </div>
         <div className="mt-5 grid gap-3">
           <input value={packageDraft.name} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, name: e.target.value }))} placeholder="Paket ad?" className="input-dark" />
           <select value={packageDraft.package_type} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, package_type: e.target.value as PackageType, modules: getDefaultModulesForPackageType(e.target.value as PackageType) }))} className="input-dark"><option value="mini">Mini</option><option value="gold">Gold</option><option value="premium">Premium</option></select>
           <input type="number" value={packageDraft.price} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, price: Number(e.target.value) }))} placeholder="Ayl?k fiyat" className="input-dark" />
-          <input type="number" value={packageDraft.duration_days} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, duration_days: Number(e.target.value) }))} placeholder="S?re / g?n" className="input-dark" />
+          <input type="number" value={packageDraft.duration_days} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, duration_days: Number(e.target.value) }))} placeholder="Süre / gün" className="input-dark" />
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Pakete dahil mod?ller</p>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -1997,13 +2000,13 @@ function PackagesModule({ state, packageDraft, setPackageDraft, savePackage, edi
               ))}
             </div>
           </div>
-          <textarea value={packageDraft.features.join('\n')} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, features: e.target.value.split(/\r?\n/).filter(Boolean) }))} placeholder="Ã–zellikler" className="input-dark min-h-28 py-3" />
+          <textarea value={packageDraft.features.join('\n')} onChange={(e) => setPackageDraft((c: AdminPackage) => ({ ...c, features: e.target.value.split(/\r?\n/).filter(Boolean) }))} placeholder="Özellikler" className="input-dark min-h-28 py-3" />
         </div>
-        <button type="button" onClick={savePackage} className="btn-blue">{isEditing ? 'DeÄŸiÅŸiklikleri kaydet' : 'Paketi kaydet'}</button>
+        <button type="button" onClick={savePackage} className="btn-blue">{isEditing ? 'Değişiklikleri kaydet' : 'Paketi kaydet'}</button>
       </article>
       <div className="grid gap-4 md:grid-cols-3">{state.packages.map((pkg: AdminPackage) => {
         const usageCount = state.tenants.filter((tenant: AdminTenant) => tenant.package_id === pkg.id).length;
-        return <article key={pkg.id} className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5"><p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-200">{pkg.package_type}</p><h3 className="mt-2 text-2xl font-semibold">{pkg.name}</h3><p className="mt-2 text-sm text-slate-400">Paket fiyat?</p><p className="mt-1 text-3xl font-semibold">{formatAdminMoney(pkg.price)}</p><p className="mt-1 text-sm text-slate-400">{pkg.duration_days} g?n</p><div className="mt-3 text-xs font-semibold text-slate-400">BaÄŸl? abone: {usageCount}</div><div className="mt-4 flex flex-wrap gap-2">{pkg.modules.map((module) => <span key={module} className="rounded-full bg-blue-500/15 px-3 py-1 text-xs font-semibold text-blue-100">{PACKAGE_MODULE_OPTIONS.find((item) => item.key === module)?.label ?? module}</span>)}</div><div className="mt-4 space-y-2">{pkg.features.map((f) => <p key={f} className="rounded-xl bg-white/5 px-3 py-2 text-sm text-slate-300">{f}</p>)}</div><div className="mt-4 grid grid-cols-2 gap-2"><button type="button" onClick={() => editPackage(pkg)} className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white">D?zenle</button><button type="button" onClick={() => deletePackage(pkg.id)} disabled={usageCount > 0} className={`rounded-xl px-3 py-2 text-xs font-semibold text-white ${usageCount > 0 ? 'bg-slate-700/60 cursor-not-allowed' : 'bg-rose-600'}`}>Sil</button></div>{usageCount > 0 ? <p className="mt-2 text-xs text-amber-200">Bu paket kullan?mda olduÄŸu i?in silinemez.</p> : null}</article>;
+        return <article key={pkg.id} className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5"><p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-200">{pkg.package_type}</p><h3 className="mt-2 text-2xl font-semibold">{pkg.name}</h3><p className="mt-2 text-sm text-slate-400">Paket fiyatı</p><p className="mt-1 text-3xl font-semibold">{formatAdminMoney(pkg.price)}</p><p className="mt-1 text-sm text-slate-400">{pkg.duration_days} gün</p><div className="mt-3 text-xs font-semibold text-slate-400">Bağlı abone: {usageCount}</div><div className="mt-4 flex flex-wrap gap-2">{pkg.modules.map((module) => <span key={module} className="rounded-full bg-blue-500/15 px-3 py-1 text-xs font-semibold text-blue-100">{PACKAGE_MODULE_OPTIONS.find((item) => item.key === module)?.label ?? module}</span>)}</div><div className="mt-4 space-y-2">{pkg.features.map((f) => <p key={f} className="rounded-xl bg-white/5 px-3 py-2 text-sm text-slate-300">{f}</p>)}</div><div className="mt-4 grid grid-cols-2 gap-2"><button type="button" onClick={() => editPackage(pkg)} className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white">Düzenle</button><button type="button" onClick={() => deletePackage(pkg.id)} disabled={usageCount > 0} className={`rounded-xl px-3 py-2 text-xs font-semibold text-white ${usageCount > 0 ? 'bg-slate-700/60 cursor-not-allowed' : 'bg-rose-600'}`}>Sil</button></div>{usageCount > 0 ? <p className="mt-2 text-xs text-amber-200">Bu paket kullanımda olduğu için silinemez.</p> : null}</article>;
       })}</div>
     </div>
   );
@@ -2013,26 +2016,26 @@ function DealersModule({ state, dealerDraft, setDealerDraft, saveDealer, commit 
   return (
     <div className="mt-6 grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
       <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
-        <h3 className="text-xl font-semibold">Bayi / temsilci oluÅŸtur</h3>
+        <h3 className="text-xl font-semibold">Bayi / temsilci oluştur</h3>
         <div className="mt-5 grid gap-3">
           <input value={dealerDraft.name} onChange={(e) => setDealerDraft((c: any) => ({ ...c, name: e.target.value }))} placeholder="Ad / firma" className="input-dark" />
-          <select value={dealerDraft.type} onChange={(e) => setDealerDraft((c: any) => ({ ...c, type: e.target.value }))} className="input-dark"><option value="dealer">Bayi</option><option value="representative">Sat?ÅŸ temsilcisi</option></select>
+          <select value={dealerDraft.type} onChange={(e) => setDealerDraft((c: any) => ({ ...c, type: e.target.value }))} className="input-dark"><option value="dealer">Bayi</option><option value="representative">Satış temsilcisi</option></select>
           <input type="number" value={dealerDraft.commission_rate} onChange={(e) => setDealerDraft((c: any) => ({ ...c, commission_rate: Number(e.target.value) }))} placeholder="Komisyon %" className="input-dark" />
           <input value={dealerDraft.phone} onChange={(e) => setDealerDraft((c: any) => ({ ...c, phone: e.target.value }))} placeholder="Telefon" className="input-dark" />
           <input value={dealerDraft.email} onChange={(e) => setDealerDraft((c: any) => ({ ...c, email: e.target.value }))} placeholder="E-posta" className="input-dark" />
         </div>
         <button type="button" onClick={saveDealer} className="btn-blue">Kaydet</button>
       </article>
-      <DataTable headers={['Ad', 'Tip', 'Komisyon', 'Bekleyen hak ediÅŸ', 'Durum']} rows={state.dealers.map((dealer: AdminDealer) => {
+      <DataTable headers={['Ad', 'Tip', 'Komisyon', 'Bekleyen hak ediş', 'Durum']} rows={state.dealers.map((dealer: AdminDealer) => {
         const pending = state.commissions.filter((item: any) => item.dealer_id === dealer.id && item.status === 'pending').reduce((sum: number, item: any) => sum + item.amount, 0);
         return [dealer.name, dealer.type === 'dealer' ? 'Bayi' : 'Temsilci', `%${dealer.commission_rate}`, formatAdminMoney(pending), dealer.active ? 'Aktif' : 'Pasif'];
       })} />
-      <DataTable headers={['Sat?ÅŸ', 'Bayi', 'Abone', 'Hak ediÅŸ', 'Durum']} rows={state.commissions.map((item: any) => [
+      <DataTable headers={['Satış', 'Bayi', 'Abone', 'Hak ediş', 'Durum']} rows={state.commissions.map((item: any) => [
         item.sale_id,
         state.dealers.find((dealer: AdminDealer) => dealer.id === item.dealer_id)?.name ?? '-',
         item.tenant_id,
         formatAdminMoney(item.amount),
-        <button key={item.id} type="button" onClick={() => commit({ ...state, commissions: state.commissions.map((com: any) => com.id === item.id ? { ...com, status: 'paid', paid_at: today() } : com), sales: state.sales.map((sale: AdminSale) => sale.id === item.sale_id ? { ...sale, commission_status: 'paid' } : sale) })} className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold">{item.status === 'paid' ? 'Ã–dendi' : 'Ã–de'}</button>,
+        <button key={item.id} type="button" onClick={() => commit({ ...state, commissions: state.commissions.map((com: any) => com.id === item.id ? { ...com, status: 'paid', paid_at: today() } : com), sales: state.sales.map((sale: AdminSale) => sale.id === item.sale_id ? { ...sale, commission_status: 'paid' } : sale) })} className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold">{item.status === 'paid' ? 'Ödendi' : 'Öde'}</button>,
       ])} />
     </div>
   );
@@ -2042,7 +2045,7 @@ function SalesModule({ state, saleDraft, setSaleDraft, addSale }: any) {
   return (
     <div className="mt-6 grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
       <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
-        <h3 className="text-xl font-semibold">Sat?ÅŸ kayd?</h3>
+        <h3 className="text-xl font-semibold">Satış kaydı</h3>
         <div className="mt-5 grid gap-3">
           <SelectTenant state={state} value={saleDraft.tenant_id} onChange={(value) => setSaleDraft((c: any) => ({ ...c, tenant_id: value }))} />
           <select value={saleDraft.package_id} onChange={(e) => setSaleDraft((c: any) => ({ ...c, package_id: e.target.value, amount: state.packages.find((pkg: AdminPackage) => pkg.id === e.target.value)?.price ?? c.amount }))} className="input-dark">{state.packages.map((pkg: AdminPackage) => <option key={pkg.id} value={pkg.id}>{pkg.name}</option>)}</select>
@@ -2051,9 +2054,9 @@ function SalesModule({ state, saleDraft, setSaleDraft, addSale }: any) {
           <input type="number" value={saleDraft.commission_rate} onChange={(e) => setSaleDraft((c: any) => ({ ...c, commission_rate: Number(e.target.value) }))} placeholder="Komisyon %" className="input-dark" />
           <input type="date" value={saleDraft.date} onChange={(e) => setSaleDraft((c: any) => ({ ...c, date: e.target.value }))} className="input-dark" />
         </div>
-        <button type="button" onClick={addSale} className="btn-violet">Sat?ÅŸ ekle ve komisyon oluÅŸtur</button>
+        <button type="button" onClick={addSale} className="btn-violet">Satış ekle ve komisyon oluştur</button>
       </article>
-      <DataTable headers={['Abone', 'Paket', 'Sat?ÅŸ??', 'Tutar', 'Komisyon', 'Durum']} rows={state.sales.map((item: AdminSale) => [item.tenant_id, item.package_id, item.seller, formatAdminMoney(item.amount), formatAdminMoney(item.commission_amount), item.commission_status])} />
+      <DataTable headers={['Abone', 'Paket', 'Satışçı', 'Tutar', 'Komisyon', 'Durum']} rows={state.sales.map((item: AdminSale) => [item.tenant_id, item.package_id, item.seller, formatAdminMoney(item.amount), formatAdminMoney(item.commission_amount), item.commission_status])} />
     </div>
   );
 }
@@ -2062,25 +2065,25 @@ function PaymentsModule({ state, paymentDraft, setPaymentDraft, processPayment }
   return (
     <div className="mt-6 grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
       <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
-        <h3 className="text-xl font-semibold">Ã–deme ve yenileme</h3>
+        <h3 className="text-xl font-semibold">Ödeme ve yenileme</h3>
         <div className="mt-5 grid gap-3">
           <SelectTenant state={state} value={paymentDraft.tenant_id} onChange={(value) => {
             const tenant = state.tenants.find((item: AdminTenant) => item.tenant_id === value);
             const pkg = state.packages.find((item: AdminPackage) => item.id === tenant?.package_id);
             setPaymentDraft((c: any) => ({ ...c, tenant_id: value, amount: pkg?.price ?? c.amount }));
           }} />
-          <select value={paymentDraft.invoice_id ?? ''} onChange={(e) => setPaymentDraft((c: any) => ({ ...c, invoice_id: e.target.value }))} className="input-dark"><option value="">Fatura se?me</option>{state.invoices.map((inv: AdminInvoice) => <option key={inv.id} value={inv.id}>{inv.invoice_no} - {formatAdminMoney(inv.amount)}</option>)}</select>
+          <select value={paymentDraft.invoice_id ?? ''} onChange={(e) => setPaymentDraft((c: any) => ({ ...c, invoice_id: e.target.value }))} className="input-dark"><option value="">Fatura seçme</option>{state.invoices.map((inv: AdminInvoice) => <option key={inv.id} value={inv.id}>{inv.invoice_no} - {formatAdminMoney(inv.amount)}</option>)}</select>
           <select value={paymentDraft.provider} onChange={(e) => setPaymentDraft((c: any) => ({ ...c, provider: e.target.value }))} className="input-dark"><option value="manual">Manuel</option><option value="iyzico">Iyzico</option><option value="paytr">PayTR</option></select>
           <input type="number" value={paymentDraft.amount} onChange={(e) => setPaymentDraft((c: any) => ({ ...c, amount: Number(e.target.value) }))} placeholder="Tutar" className="input-dark" />
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <button type="button" onClick={() => processPayment(true)} className="btn-green">BaÅŸar?l? ?deme</button>
-          <button type="button" onClick={() => processPayment(false)} className="h-12 rounded-2xl bg-rose-600 text-sm font-semibold">BaÅŸar?s?z ?deme</button>
+          <button type="button" onClick={() => processPayment(true)} className="btn-green">Başarılı ödeme</button>
+          <button type="button" onClick={() => processPayment(false)} className="h-12 rounded-2xl bg-rose-600 text-sm font-semibold">Başarısız ödeme</button>
         </div>
-        <p className="mt-3 text-xs text-slate-400">BaÅŸar?l? ?deme aboneliÄŸi otomatik uzat?r, fatura ve gelir kayd? oluÅŸturur.</p>
+        <p className="mt-3 text-xs text-slate-400">Başarılı ödeme aboneliği otomatik uzatır, fatura ve gelir kaydı oluşturur.</p>
       </article>
-      <DataTable headers={['Abone', 'SaÄŸlay?c?', 'Tutar', 'Durum', '?ÅŸlem No']} rows={state.payments.map((item: AdminPayment) => [item.tenant_id, item.provider, formatAdminMoney(item.amount), item.status, item.transaction_id])} />
-      <DataTable headers={['Abone', 'Eski bitiÅŸ', 'Yeni bitiÅŸ', 'Durum']} rows={state.renewals.map((item: any) => [item.tenant_id, item.old_end_date, item.new_end_date, item.status])} />
+      <DataTable headers={['Abone', 'Sağlayıcı', 'Tutar', 'Durum', 'İşlem No']} rows={state.payments.map((item: AdminPayment) => [item.tenant_id, item.provider, formatAdminMoney(item.amount), item.status, item.transaction_id])} />
+      <DataTable headers={['Abone', 'Eski bitiş', 'Yeni bitiş', 'Durum']} rows={state.renewals.map((item: any) => [item.tenant_id, item.old_end_date, item.new_end_date, item.status])} />
     </div>
   );
 }
@@ -2097,7 +2100,7 @@ function FinanceModule({ state, financeDraft, setFinanceDraft, addFinanceTransac
 function InvoiceModule({ state, invoiceDraft, setInvoiceDraft, addInvoice }: any) {
   return (
     <div className="mt-6 grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
-      <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5"><h3 className="text-xl font-semibold">Fatura oluÅŸtur</h3><div className="mt-5 grid gap-3"><SelectTenant state={state} value={invoiceDraft.tenant_id} onChange={(value) => setInvoiceDraft((c: any) => ({ ...c, tenant_id: value }))} /><select value={invoiceDraft.type} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, type: e.target.value }))} className="input-dark"><option value="subscription">Abonelik</option><option value="payment">Tahsilat</option></select><input type="number" value={invoiceDraft.amount} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, amount: Number(e.target.value) }))} placeholder="Tutar" className="input-dark" /><select value={invoiceDraft.status} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, status: e.target.value }))} className="input-dark"><option value="draft">Taslak</option><option value="issued">Kesildi</option><option value="paid">Ã–dendi</option><option value="cancelled">?ptal</option></select><input type="date" value={invoiceDraft.issue_date} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, issue_date: e.target.value }))} className="input-dark" /><input type="date" value={invoiceDraft.due_date} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, due_date: e.target.value }))} className="input-dark" /></div><button type="button" onClick={addInvoice} className="btn-blue">Fatura ekle</button></article>
+      <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5"><h3 className="text-xl font-semibold">Fatura oluştur</h3><div className="mt-5 grid gap-3"><SelectTenant state={state} value={invoiceDraft.tenant_id} onChange={(value) => setInvoiceDraft((c: any) => ({ ...c, tenant_id: value }))} /><select value={invoiceDraft.type} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, type: e.target.value }))} className="input-dark"><option value="subscription">Abonelik</option><option value="payment">Tahsilat</option></select><input type="number" value={invoiceDraft.amount} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, amount: Number(e.target.value) }))} placeholder="Tutar" className="input-dark" /><select value={invoiceDraft.status} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, status: e.target.value }))} className="input-dark"><option value="draft">Taslak</option><option value="issued">Kesildi</option><option value="paid">Ödendi</option><option value="cancelled">İptal</option></select><input type="date" value={invoiceDraft.issue_date} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, issue_date: e.target.value }))} className="input-dark" /><input type="date" value={invoiceDraft.due_date} onChange={(e) => setInvoiceDraft((c: any) => ({ ...c, due_date: e.target.value }))} className="input-dark" /></div><button type="button" onClick={addInvoice} className="btn-blue">Fatura ekle</button></article>
       <DataTable headers={['No', 'Tenant', 'Tip', 'Tutar', 'Durum']} rows={state.invoices.map((item: AdminInvoice) => [item.invoice_no, item.tenant_id, item.type, formatAdminMoney(item.amount), item.status])} />
     </div>
   );
@@ -2112,14 +2115,14 @@ function ReportsModule({ state, dashboard }: { state: SystemAdminState; dashboar
   });
   return (
     <div className="mt-6 grid gap-5">
-      <div className="grid gap-4 md:grid-cols-3"><Metric label="Net kÃ¢r" value={formatAdminMoney(dashboard.net)} /><Metric label="A??k fatura" value={formatAdminMoney(dashboard.unpaidInvoices)} /><Metric label="Bekleyen hak ediÅŸ" value={formatAdminMoney(dashboard.pendingCommissions)} /></div>
-      <DataTable headers={['Bayi / temsilci', 'Tip', 'Sat?ÅŸ adedi', 'Sat?ÅŸ tutar?', 'Hak ediÅŸ']} rows={dealerRows} />
+      <div className="grid gap-4 md:grid-cols-3"><Metric label="Net kâr" value={formatAdminMoney(dashboard.net)} /><Metric label="Açık fatura" value={formatAdminMoney(dashboard.unpaidInvoices)} /><Metric label="Bekleyen hak ediş" value={formatAdminMoney(dashboard.pendingCommissions)} /></div>
+      <DataTable headers={['Bayi / temsilci', 'Tip', 'Satış adedi', 'Satış tutarı', 'Hak ediş']} rows={dealerRows} />
     </div>
   );
 }
 
 function SelectTenant({ state, value, onChange, allowEmpty = false }: { state: SystemAdminState; value: string; onChange: (value: string) => void; allowEmpty?: boolean }) {
-  return <select value={value} onChange={(e) => onChange(e.target.value)} className="input-dark">{allowEmpty ? <option value="">Tenant yok / genel</option> : <option value="">Abone se?</option>}{state.tenants.map((tenant) => <option key={tenant.tenant_id} value={tenant.tenant_id}>{tenant.company_name}</option>)}</select>;
+  return <select value={value} onChange={(e) => onChange(e.target.value)} className="input-dark">{allowEmpty ? <option value="">Tenant yok / genel</option> : <option value="">Abone seç</option>}{state.tenants.map((tenant) => <option key={tenant.tenant_id} value={tenant.tenant_id}>{tenant.company_name}</option>)}</select>;
 }
 
 // Monitoring Module
@@ -2324,7 +2327,7 @@ function MonitoringModule() {
     { id: 'incidents', label: 'Incidents', badge: openIncidents.length },
     { id: 'health', label: 'Health Score' },
     { id: 'anomalies', label: 'Anomaliler', badge: unresolvedAnomalies.filter((a) => a.severity === 'high').length || undefined },
-    { id: 'security', label: 'Guvenlik', badge: (data.securityStats?.bySeverity.critical ?? 0) + (data.securityStats?.bySeverity.high ?? 0) || undefined },
+    { id: 'security', label: 'Güvenlik', badge: (data.securityStats?.bySeverity.critical ?? 0) + (data.securityStats?.bySeverity.high ?? 0) || undefined },
     { id: 'queues', label: 'Kuyruklar' },
     { id: 'advisor', label: 'Performans' },
     { id: 'healing', label: 'Self-Healing' },
@@ -2350,7 +2353,7 @@ function MonitoringModule() {
         <StatCard label="Incidents" value={openIncidents.length} sub={openIncidents.filter((i) => i.status === 'escalated').length + ' escalated'} />
         <StatCard label="Anomali" value={unresolvedAnomalies.length} sub={unresolvedAnomalies.filter((a) => a.severity === 'high').length + ' yuksek'} />
         <StatCard label="Uyarilar (24h)" value={data.alertStats?.last24h ?? 0} sub={(data.alertStats?.bySeverity.critical ?? 0) + ' kritik'} />
-        <StatCard label="Guvenlik (24h)" value={data.securityStats?.last24h ?? 0} sub={(data.securityStats?.blockedIps ?? 0) + ' IP blok'} />
+        <StatCard label="Güvenlik (24h)" value={data.securityStats?.last24h ?? 0} sub={(data.securityStats?.blockedIps ?? 0) + ' IP blok'} />
         <StatCard label="Health Avg" value={(data.healthSummary?.avgScore ?? 0) + '/100'} sub={(data.healthSummary?.unhealthyCount ?? 0) + ' sagliksiz tenant'} />
       </div>
 
@@ -2706,7 +2709,7 @@ function MonitoringModule() {
 
       {activeTab === 'security' && (
         <div className="grid gap-4">
-          <SectionTitle>Guvenlik Olaylari</SectionTitle>
+          <SectionTitle>Güvenlik Olayları</SectionTitle>
           {data.securityStats && (
             <div className="grid gap-3 sm:grid-cols-4">
               <StatCard label="Toplam (24h)" value={data.securityStats.last24h} />
@@ -2715,7 +2718,7 @@ function MonitoringModule() {
               <StatCard label="Blok IP" value={data.securityStats.blockedIps} />
             </div>
           )}
-          {(data.securityEvents ?? []).length === 0 ? <p className="text-sm text-slate-400">Guvenlik olayi yok.</p> : (
+          {(data.securityEvents ?? []).length === 0 ? <p className="text-sm text-slate-400">Güvenlik olayı yok.</p> : (
             <div className="overflow-x-auto rounded-2xl border border-white/8">
               <table className="w-full text-xs">
                 <thead className="border-b border-white/8 bg-white/4"><tr>{['Tip','IP','Tenant','Aciklama','Onem','Blok','Zaman'].map((h) => <th key={h} className="px-4 py-3 text-left font-semibold text-slate-400">{h}</th>)}</tr></thead>
@@ -2776,16 +2779,16 @@ function MonitoringModule() {
 
       {activeTab === 'healing' && (
         <div className="grid gap-4">
-          <SectionTitle>Self-Healing Olaylari</SectionTitle>
+          <SectionTitle>Self-Healing Olayları</SectionTitle>
           {data.healingStats && (
             <div className="grid gap-3 sm:grid-cols-4">
               <StatCard label="Toplam" value={data.healingStats.totalEvents} />
-              <StatCard label="Cozuldu" value={data.healingStats.resolved} />
+              <StatCard label="Çözüldü" value={data.healingStats.resolved} />
               <StatCard label="Devam" value={data.healingStats.inProgress} />
-              <StatCard label="Dongu" value={data.healingStats.runCount} sub="engine cycle" />
+              <StatCard label="Döngü" value={data.healingStats.runCount} sub="engine cycle" />
             </div>
           )}
-          {(data.healingEvents ?? []).length === 0 ? <p className="text-sm text-slate-400">Self-healing olayi yok.</p> : (
+          {(data.healingEvents ?? []).length === 0 ? <p className="text-sm text-slate-400">Self-healing olayı yok.</p> : (
             <div className="overflow-x-auto rounded-2xl border border-white/8">
               <table className="w-full text-xs">
                 <thead className="border-b border-white/8 bg-white/4"><tr>{['Aksiyon','Tenant','Detay','Durum','Zaman'].map((h) => <th key={h} className="px-4 py-3 text-left font-semibold text-slate-400">{h}</th>)}</tr></thead>
@@ -2897,7 +2900,7 @@ function MonitoringModule() {
               <SectionTitle>Son Backup Calismalari</SectionTitle>
               <div className="overflow-x-auto rounded-2xl border border-white/8">
                 <table className="w-full text-xs">
-                  <thead className="border-b border-white/8 bg-white/4"><tr>{['Kategori','Mod','Durum','Boyut','Sifreli','Zaman'].map((h) => <th key={h} className="px-4 py-3 text-left font-semibold text-slate-400">{h}</th>)}</tr></thead>
+                  <thead className="border-b border-white/8 bg-white/4"><tr>{['Kategori','Mod','Durum','Boyut','Şifreli','Zaman'].map((h) => <th key={h} className="px-4 py-3 text-left font-semibold text-slate-400">{h}</th>)}</tr></thead>
                   <tbody>{(data.backupRuns ?? []).slice(0,20).map((r) => (
                     <tr key={r.id} className="border-b border-white/5">
                       <td className="px-4 py-3 text-slate-300">{r.category}</td>

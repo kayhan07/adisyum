@@ -1,4 +1,4 @@
-import { Prisma, type TenantStatus, type SubscriptionStatus } from '@prisma/client';
+﻿import { Prisma, type TenantStatus, type SubscriptionStatus } from '@prisma/client';
 import { hashPassword } from '@/lib/auth/password';
 import { prisma } from '@/lib/db/prisma';
 import { writeAuditLog } from '@/lib/db/audit';
@@ -451,7 +451,7 @@ export async function provisionTenant(input: ProvisionTenantInput) {
       data: {
         tenantId,
         branchId,
-        name: input.branchName?.trim() || 'Merkez Sube',
+        name: input.branchName?.trim() || 'Merkez Şube',
         code: branchId,
         active: true,
         metadata: compactJson({
@@ -473,7 +473,7 @@ export async function provisionTenant(input: ProvisionTenantInput) {
       select: { tenantId: true, branchId: true },
     });
     if (!createdBranch) {
-      throw new Error(`Ana sube olusturulamadi: ${tenantId}/${branch.branchId}`);
+      throw new Error(`Ana şube oluşturulamadı: ${tenantId}/${branch.branchId}`);
     }
 
     const tenantWithMainBranch = await tx.tenant.update({
@@ -627,7 +627,7 @@ export async function provisionTenant(input: ProvisionTenantInput) {
 
 export async function runProvisioningJob(jobId: string) {
   const job = await prisma.provisioningJob.findUnique({ where: { id: jobId } });
-  if (!job) throw new Error('Provisioning job bulunamadi.');
+  if (!job) throw new Error('Provisioning job bulunamadı.');
   if (job.status === 'completed') return job;
   const input = job.input as unknown as ProvisionTenantInput;
   if (job.attemptCount > 0) {
@@ -683,7 +683,7 @@ export async function runProvisioningJob(jobId: string) {
 
 export async function rollbackProvisioningJob(jobId: string) {
   const job = await prisma.provisioningJob.findUnique({ where: { id: jobId } });
-  if (!job) throw new Error('Provisioning job bulunamadi.');
+  if (!job) throw new Error('Provisioning job bulunamadı.');
   const startedAt = Date.now();
   await recordProvisioningEvent(jobId, {
     type: 'rollback_started',
@@ -913,7 +913,7 @@ export async function exportTenantData(tenantIdInput: string) {
     where: { tenantId },
     select: { tenantId: true, name: true, legalName: true, taxNumber: true, packageType: true, status: true, settings: true, metadata: true },
   });
-  if (!tenant) throw new Error('Tenant bulunamadi.');
+  if (!tenant) throw new Error('Tenant bulunamadı.');
   const [products, categories, recipes, recipeItems, stock, stockMovements, customers, suppliers, printers, printerGroups] = await Promise.all([
     prisma.product.findMany({ where: { tenantId, deletedAt: null }, orderBy: { createdAt: 'asc' } }),
     prisma.productCategory.findMany({ where: { tenantId, deletedAt: null }, orderBy: { createdAt: 'asc' } }),
@@ -946,13 +946,13 @@ export async function updateTenantSubscription(input: Extract<TenantManagementIn
   const tenantId = input.tenantId.trim().toUpperCase();
   if (!tenantId) throw new Error('tenantId zorunludur.');
   const tenant = await prisma.tenant.findUnique({ where: { tenantId }, select: { tenantId: true, packageType: true } });
-  if (!tenant) throw new Error('Tenant bulunamadi.');
+  if (!tenant) throw new Error('Tenant bulunamadı.');
 
   const current = await prisma.subscription.findFirst({
     where: { tenantId, deletedAt: null },
     orderBy: { endsAt: 'desc' },
   });
-  if (!current) throw new Error('Tenant subscription bulunamadi.');
+  if (!current) throw new Error('Tenant subscription bulunamadı.');
 
   let nextEndsAt = current.endsAt;
   if (input.endsAt) {
@@ -1021,7 +1021,7 @@ export async function updateTenantPassword(input: Extract<TenantManagementInput,
   const password = input.temporaryPassword?.trim() || input.password?.trim();
   if (!tenantId || !username || (!password && input.forcePasswordChange === undefined)) throw new Error('tenantId, username ve password zorunludur.');
   const user = await prisma.user.findUnique({ where: userTenantUsernameKey(tenantId, username) });
-  if (!user || user.deletedAt) throw new Error('Kullanici bulunamadi.');
+  if (!user || user.deletedAt) throw new Error('Kullanıcı bulunamadı.');
   const passwordHash = password ? await hashPassword(password) : user.passwordHash;
   return prisma.$transaction(async (tx) => {
     const updated = await tx.user.update({

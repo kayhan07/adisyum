@@ -23,6 +23,6 @@ export async function GET(request: Request) {
   } catch (error) {
     if (isRouteResponse(error)) return error;
     console.error('[system-admin/incidents] failed', error);
-    return NextResponse.json({ ok: false, error: 'Incident verisi alinamadi.' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: 'Incident verisi alınamadı.' }, { status: 500 });
   }
 }

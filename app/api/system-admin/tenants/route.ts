@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { isRouteResponse, requireSystemAdmin } from '@/lib/system-admin/auth';
 import {
   createProvisioningJob,
@@ -45,7 +45,7 @@ export async function GET(request: Request) {
   } catch (error) {
     if (isRouteResponse(error)) return error;
     console.error('[system-admin/tenants] list failed', error);
-    return NextResponse.json({ ok: false, error: 'Tenant listesi alinamadi.' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: 'Tenant listesi alınamadı.' }, { status: 500 });
   }
 }
 
@@ -193,7 +193,7 @@ export async function PATCH(request: Request) {
     }
     const existing = await listProvisioningJobs();
     const current = existing.find((item) => item.id === body.jobId);
-    if (!current) return NextResponse.json({ ok: false, error: 'Provisioning job bulunamadi.' }, { status: 404 });
+    if (!current) return NextResponse.json({ ok: false, error: 'Provisioning job bulunamadı.' }, { status: 404 });
     if (body.action === 'rollback') {
       await enqueueProvisioningRun({
         action: 'rollback',
@@ -221,6 +221,6 @@ export async function PATCH(request: Request) {
   } catch (error) {
     if (isRouteResponse(error)) return error;
     console.error('[system-admin/tenants] provisioning action failed', error);
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Provisioning aksiyonu basarisiz.' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Provisioning aksiyonu başarısız.' }, { status: 500 });
   }
 }
