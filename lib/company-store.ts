@@ -18,6 +18,9 @@ export type CompanyState = {
   receiptShowDate: boolean;
   receiptShowTable: boolean;
   receiptShowItemHeader: boolean;
+  receiptHeaderScale: 1 | 2;
+  receiptItemScale: 1 | 2;
+  receiptTotalScale: 1 | 2;
   receiptFooter: string;
 };
 
@@ -51,6 +54,9 @@ export function getDefaultCompanyState(): CompanyState {
     receiptShowDate: true,
     receiptShowTable: true,
     receiptShowItemHeader: true,
+    receiptHeaderScale: 2,
+    receiptItemScale: 2,
+    receiptTotalScale: 2,
     receiptFooter: 'Afiyet olsun.',
   };
 }

@@ -107,6 +107,9 @@ export interface ReceiptSettings {
   showDate?: boolean;
   showTable?: boolean;
   showItemHeader?: boolean;
+  headerScale?: 1 | 2;
+  itemScale?: 1 | 2;
+  totalScale?: 1 | 2;
 }
 
 export interface PrintRequest {
@@ -316,6 +319,8 @@ function itemColumns(width: number) {
 }
 
 function getReceiptTemplate(settings: ReceiptSettings) {
+  const normalizeScale = (value: unknown, fallback: 1 | 2): 1 | 2 => value === 1 || value === 2 ? value : fallback;
+
   return {
     receiptTitle: settings.receiptTitle?.trim() || 'ADİSYON',
     showLogo: settings.showLogo !== false,
@@ -323,6 +328,9 @@ function getReceiptTemplate(settings: ReceiptSettings) {
     showDate: settings.showDate !== false,
     showTable: settings.showTable !== false,
     showItemHeader: settings.showItemHeader !== false,
+    headerScale: normalizeScale(settings.headerScale, 2),
+    itemScale: normalizeScale(settings.itemScale, 2),
+    totalScale: normalizeScale(settings.totalScale, 2),
   };
 }
 
@@ -520,8 +528,8 @@ async function buildReceiptBytes(order: ReceiptOrder, settings: ReceiptSettings 
     }
   }
 
-  builder.bold(true).setTextSize(2, 2);
-  const headerWidth = getLineWidth(paperWidth, 'A', 2);
+  builder.bold(true).setTextSize(template.headerScale, template.headerScale);
+  const headerWidth = getLineWidth(paperWidth, 'A', template.headerScale);
   wrapText(restaurantName, headerWidth).forEach((lineText) => builder.line(padCenter(lineText, headerWidth).trimEnd()));
   builder.setTextSize(1, 1).bold(false);
 
@@ -555,7 +563,7 @@ async function buildReceiptBytes(order: ReceiptOrder, settings: ReceiptSettings 
     const name = String(item?.name ?? '').toUpperCase();
     const wrapped = wrapText(name, cols.left);
 
-    builder.bold(true).setTextSize(1, 2);
+    builder.bold(true).setTextSize(1, template.itemScale);
     builder.line(columnText(wrapped[0] ?? '', String(qty), formatAmount(amount), cols));
     for (let i = 1; i < wrapped.length; i += 1) {
       builder.line(columnText(wrapped[i], '', '', cols));
@@ -568,7 +576,7 @@ async function buildReceiptBytes(order: ReceiptOrder, settings: ReceiptSettings 
   builder.line(columnText('Indirim', '', formatAmount(discount), { left: Math.floor(width * 0.72), middle: 0, right: width - Math.floor(width * 0.72) }));
   builder.line(separator(width));
 
-  builder.align('CT').bold(true).setTextSize(2, 2);
+  builder.align('CT').bold(true).setTextSize(template.totalScale, template.totalScale);
   builder.line('TOPLAM');
   builder.line(formatAmount(netTotal));
   builder.setTextSize(1, 1).bold(false).align('LT');
@@ -586,13 +594,13 @@ async function buildReceiptBytes(order: ReceiptOrder, settings: ReceiptSettings 
 export function formatReceiptPreviewText(order: ReceiptOrder, settings: ReceiptSettings = {}) {
   const paperWidth = settings.paperWidth ?? '80mm';
   const width = getLineWidth(paperWidth, 'A', 1);
-  const headerWidth = getLineWidth(paperWidth, 'A', 2);
   const restaurantName = settings.restaurantName || 'ADISYUM RESTAURANT';
   const branchName = settings.branchName || '';
   const footerText = settings.footerText || 'Afiyet olsun';
   const table = String(order.table ?? '-');
   const date = order.createdAt ?? new Date();
   const template = getReceiptTemplate(settings);
+  const headerWidth = getLineWidth(paperWidth, 'A', template.headerScale);
 
   const subtotal = roundReceiptAmount(order.items.reduce((sum, item) => sum + ((item.qty || 0) * (item.price || 0)), 0));
   const discount = Number(order.discount ?? 0);

@@ -296,6 +296,9 @@ export default function SettingsPage() {
       showDate: company.receiptShowDate,
       showTable: company.receiptShowTable,
       showItemHeader: company.receiptShowItemHeader,
+      headerScale: company.receiptHeaderScale,
+      itemScale: company.receiptItemScale,
+      totalScale: company.receiptTotalScale,
     }),
     [company, receiptPreviewOrder],
   );
@@ -976,6 +979,24 @@ export default function SettingsPage() {
                   </select>
                 </label>
 
+                {[
+                  ['receiptHeaderScale', 'Başlık fontu'],
+                  ['receiptItemScale', 'Ürün fontu'],
+                  ['receiptTotalScale', 'Toplam fontu'],
+                ].map(([key, label]) => (
+                  <label key={key} className="block">
+                    <span className="text-sm font-medium text-muted">{label}</span>
+                    <select
+                      value={String(company[key as keyof CompanyState] ?? 2)}
+                      onChange={(event) => setCompany((current) => ({ ...current, [key]: event.target.value === '1' ? 1 : 2 }))}
+                      className="mt-2 h-12 w-full rounded-2xl border border-line bg-canvas px-4 font-semibold text-ink outline-none"
+                    >
+                      <option value="1">Normal</option>
+                      <option value="2">Büyük</option>
+                    </select>
+                  </label>
+                ))}
+
                 <label className="block">
                   <span className="text-sm font-medium text-muted">Alt yazı</span>
                   <input
@@ -1021,7 +1042,7 @@ export default function SettingsPage() {
               </div>
               <div className="mt-4 flex justify-center overflow-auto rounded-2xl bg-slate-200 px-4 py-5">
                 <pre
-                  className={`min-h-[520px] whitespace-pre-wrap rounded-sm bg-white px-5 py-6 font-mono text-[12px] leading-5 text-slate-950 shadow-[0_18px_45px_rgba(15,23,42,0.18)] ${
+                  className={`min-h-[520px] whitespace-pre-wrap rounded-sm bg-white px-5 py-6 font-mono leading-5 text-slate-950 shadow-[0_18px_45px_rgba(15,23,42,0.18)] ${company.receiptItemScale === 2 ? 'text-[13px]' : 'text-[11px]'} ${
                     company.receiptPaperWidth === '58mm' ? 'w-[280px]' : 'w-[390px]'
                   }`}
                 >

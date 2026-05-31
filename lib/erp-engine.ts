@@ -518,11 +518,16 @@ export const treasuryAccounts: TreasuryAccount[] = [
 
 export function buildTreasuryMovementsFromAccountTransactions(transactions: AccountTransaction[], accounts: Account[]): TreasuryMovement[] {
   const accountMap = new Map(accounts.map((account) => [account.id, account]));
-  const movements: TreasuryMovement[] = [
-    { id: 'SALE-CASH-1', date: '2026-04-15', accountId: 'cash-main', direction: 'in', amount: 6200, description: 'Günlük nakit satış', source: 'sale' },
-    { id: 'SALE-POS-1', date: '2026-04-15', accountId: 'pos-main', direction: 'in', amount: 18400, description: 'Günlük kart/POS satışları', source: 'sale' },
-    { id: 'EXP-CASH-1', date: '2026-04-15', accountId: 'cash-main', direction: 'out', amount: 780, description: 'Günlük mutfak gideri', source: 'manual' },
-  ];
+  const movements: TreasuryMovement[] = [];
+  const hasSeedTransactions = transactions.some((transaction) => ['PAY-CUS-1', 'PAY-CUS-2', 'PAY-SUP-1'].includes(transaction.id));
+
+  if (hasSeedTransactions) {
+    movements.push(
+      { id: 'SALE-CASH-1', date: '2026-04-15', accountId: 'cash-main', direction: 'in', amount: 6200, description: 'Günlük nakit satış', source: 'sale' },
+      { id: 'SALE-POS-1', date: '2026-04-15', accountId: 'pos-main', direction: 'in', amount: 18400, description: 'Günlük kart/POS satışları', source: 'sale' },
+      { id: 'EXP-CASH-1', date: '2026-04-15', accountId: 'cash-main', direction: 'out', amount: 780, description: 'Günlük mutfak gideri', source: 'manual' },
+    );
+  }
 
   for (const transaction of transactions) {
     const account = accountMap.get(transaction.accountId);

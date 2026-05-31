@@ -2797,6 +2797,9 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           showDate: runtimeCompanyState.receiptShowDate,
           showTable: runtimeCompanyState.receiptShowTable,
           showItemHeader: runtimeCompanyState.receiptShowItemHeader,
+          headerScale: runtimeCompanyState.receiptHeaderScale,
+          itemScale: runtimeCompanyState.receiptItemScale,
+          totalScale: runtimeCompanyState.receiptTotalScale,
         },
         order: {
           table: tableNumber,
@@ -2825,6 +2828,9 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
               showDate: runtimeCompanyState.receiptShowDate,
               showTable: runtimeCompanyState.receiptShowTable,
               showItemHeader: runtimeCompanyState.receiptShowItemHeader,
+              headerScale: runtimeCompanyState.receiptHeaderScale,
+              itemScale: runtimeCompanyState.receiptItemScale,
+              totalScale: runtimeCompanyState.receiptTotalScale,
             },
             order: {
               table: tableNumber,
