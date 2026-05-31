@@ -11,6 +11,13 @@ export type CompanyState = {
   phone: string;
   email: string;
   address: string;
+  receiptTitle: string;
+  receiptPaperWidth: '58mm' | '80mm';
+  receiptShowLogo: boolean;
+  receiptShowBranch: boolean;
+  receiptShowDate: boolean;
+  receiptShowTable: boolean;
+  receiptShowItemHeader: boolean;
   receiptFooter: string;
 };
 
@@ -37,6 +44,13 @@ export function getDefaultCompanyState(): CompanyState {
     phone: '',
     email: '',
     address: '',
+    receiptTitle: 'ADİSYON',
+    receiptPaperWidth: '80mm',
+    receiptShowLogo: true,
+    receiptShowBranch: true,
+    receiptShowDate: true,
+    receiptShowTable: true,
+    receiptShowItemHeader: true,
     receiptFooter: 'Afiyet olsun.',
   };
 }

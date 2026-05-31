@@ -101,6 +101,12 @@ export interface ReceiptSettings {
   logoUrl?: string;
   footerText?: string;
   paperWidth?: PaperWidth;
+  receiptTitle?: string;
+  showLogo?: boolean;
+  showBranch?: boolean;
+  showDate?: boolean;
+  showTable?: boolean;
+  showItemHeader?: boolean;
 }
 
 export interface PrintRequest {
@@ -309,6 +315,29 @@ function itemColumns(width: number) {
   return { left: 19, middle: 4, right: 9 };
 }
 
+function getReceiptTemplate(settings: ReceiptSettings) {
+  return {
+    receiptTitle: settings.receiptTitle?.trim() || 'ADİSYON',
+    showLogo: settings.showLogo !== false,
+    showBranch: settings.showBranch !== false,
+    showDate: settings.showDate !== false,
+    showTable: settings.showTable !== false,
+    showItemHeader: settings.showItemHeader !== false,
+  };
+}
+
+function buildReceiptInfoLine(width: number, date: Date, table: string, template: ReturnType<typeof getReceiptTemplate>) {
+  const infoLeft = template.showDate ? `${toDatePart(date)}  ${toTimePart(date)}` : '';
+  const infoRight = template.showTable ? `MASA: ${table}` : '';
+
+  if (infoLeft && infoRight) {
+    const infoGap = Math.max(2, width - infoLeft.length - infoRight.length);
+    return infoLeft + ' '.repeat(infoGap) + infoRight;
+  }
+
+  return infoLeft || infoRight;
+}
+
 function encodeCp857(text: string) {
   const out: number[] = [];
   const value = String(text ?? '');
@@ -469,6 +498,7 @@ async function buildReceiptBytes(order: ReceiptOrder, settings: ReceiptSettings 
   const footerText = settings.footerText || 'Afiyet olsun';
   const table = String(order.table ?? '-');
   const date = order.createdAt ?? new Date();
+  const template = getReceiptTemplate(settings);
 
   const displaySubtotal = roundReceiptAmount(order.items.reduce((sum, item) => sum + ((item.qty || 0) * (item.price || 0)), 0));
   const subtotal = displaySubtotal;
@@ -478,7 +508,7 @@ async function buildReceiptBytes(order: ReceiptOrder, settings: ReceiptSettings 
   const builder = new EscPosBuilder().init();
 
   builder.align('CT');
-  if (settings.logoUrl) {
+  if (template.showLogo && settings.logoUrl) {
     try {
       const raster = await logoToRasterCommand(settings.logoUrl, paperWidth);
       if (raster) {
@@ -495,23 +525,28 @@ async function buildReceiptBytes(order: ReceiptOrder, settings: ReceiptSettings 
   wrapText(restaurantName, headerWidth).forEach((lineText) => builder.line(padCenter(lineText, headerWidth).trimEnd()));
   builder.setTextSize(1, 1).bold(false);
 
-  if (branchName) {
+  if (template.showBranch && branchName) {
     builder.setFont('B').align('CT').line(branchName).setFont('A');
+  }
+  if (template.receiptTitle) {
+    builder.bold(true).align('CT').line(template.receiptTitle).bold(false);
   }
   builder.resetSection();
 
   builder.line(separator(width)).newLine(1);
 
-  const infoLeft = `${toDatePart(date)}  ${toTimePart(date)}`;
-  const infoRight = `MASA: ${table}`;
-  const infoGap = Math.max(2, width - infoLeft.length - infoRight.length);
-  builder.line(infoLeft + ' '.repeat(infoGap) + infoRight);
+  const infoLine = buildReceiptInfoLine(width, date, table, template);
+  if (infoLine) {
+    builder.line(infoLine);
+  }
 
   builder.line(separator(width)).newLine(1);
 
   const cols = itemColumns(width);
-  builder.bold(true).line(columnText('URUN', 'ADET', 'TUTAR', cols)).bold(false);
-  builder.line(separator(width));
+  if (template.showItemHeader) {
+    builder.bold(true).line(columnText('URUN', 'ADET', 'TUTAR', cols)).bold(false);
+    builder.line(separator(width));
+  }
 
   for (const item of order.items) {
     const qty = Number(item?.qty ?? 0);
@@ -546,6 +581,69 @@ async function buildReceiptBytes(order: ReceiptOrder, settings: ReceiptSettings 
   builder.cut();
 
   return builder.toBytes();
+}
+
+export function formatReceiptPreviewText(order: ReceiptOrder, settings: ReceiptSettings = {}) {
+  const paperWidth = settings.paperWidth ?? '80mm';
+  const width = getLineWidth(paperWidth, 'A', 1);
+  const headerWidth = getLineWidth(paperWidth, 'A', 2);
+  const restaurantName = settings.restaurantName || 'ADISYUM RESTAURANT';
+  const branchName = settings.branchName || '';
+  const footerText = settings.footerText || 'Afiyet olsun';
+  const table = String(order.table ?? '-');
+  const date = order.createdAt ?? new Date();
+  const template = getReceiptTemplate(settings);
+
+  const subtotal = roundReceiptAmount(order.items.reduce((sum, item) => sum + ((item.qty || 0) * (item.price || 0)), 0));
+  const discount = Number(order.discount ?? 0);
+  const netTotal = roundReceiptAmount(Math.max(0, subtotal - discount));
+  const cols = itemColumns(width);
+  const lines: string[] = [];
+
+  if (template.showLogo && settings.logoUrl) {
+    lines.push(padCenter('[LOGO]', width).trimEnd());
+    lines.push('');
+  }
+
+  wrapText(restaurantName, headerWidth).forEach((lineText) => lines.push(padCenter(lineText, width).trimEnd()));
+  if (template.showBranch && branchName) {
+    lines.push(padCenter(branchName, width).trimEnd());
+  }
+  if (template.receiptTitle) {
+    lines.push(padCenter(template.receiptTitle, width).trimEnd());
+  }
+
+  lines.push(separator(width));
+  const infoLine = buildReceiptInfoLine(width, date, table, template);
+  if (infoLine) lines.push(infoLine);
+  lines.push(separator(width));
+
+  if (template.showItemHeader) {
+    lines.push(columnText('URUN', 'ADET', 'TUTAR', cols));
+    lines.push(separator(width));
+  }
+
+  for (const item of order.items) {
+    const qty = Number(item?.qty ?? 0);
+    const price = Number(item?.price ?? 0);
+    const amount = qty * price;
+    const wrapped = wrapText(String(item?.name ?? '').toUpperCase(), cols.left);
+    lines.push(columnText(wrapped[0] ?? '', String(qty), formatAmount(amount), cols));
+    for (let i = 1; i < wrapped.length; i += 1) {
+      lines.push(columnText(wrapped[i], '', '', cols));
+    }
+  }
+
+  lines.push(separator(width));
+  lines.push(columnText('Adisyon Toplam', '', formatAmount(subtotal), { left: Math.floor(width * 0.72), middle: 0, right: width - Math.floor(width * 0.72) }));
+  lines.push(columnText('İndirim', '', formatAmount(discount), { left: Math.floor(width * 0.72), middle: 0, right: width - Math.floor(width * 0.72) }));
+  lines.push(separator(width));
+  lines.push(padCenter('TOPLAM', width).trimEnd());
+  lines.push(padCenter(formatAmount(netTotal), width).trimEnd());
+  lines.push(separator(width));
+  lines.push(padCenter(footerText, width).trimEnd());
+
+  return lines.join('\n');
 }
 
 async function buildCustomerBytes(order: ReceiptOrder, settings: ReceiptSettings = {}) {

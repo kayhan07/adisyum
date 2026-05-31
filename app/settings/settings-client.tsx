@@ -7,6 +7,7 @@ import { Building2, CheckCircle2, Code2, KeyRound, PlugZap, Printer, RefreshCw, 
 import { AppShell } from '@/components/app-shell';
 import { fetchLocalAgentJson, getLocalAgentBaseHint } from '@/lib/local-agent';
 import { getDefaultCompanyState, loadCompanyState, saveCompanyState, subscribeToCompanyChanges, type CompanyState } from '@/lib/company-store';
+import { formatReceiptPreviewText } from '@/lib/receipt-formatter';
 import { getDefaultAccessState, loadAccessState, saveAccessState, subscribeToAccessChanges, type AccessUser } from '@/lib/access-store';
 import {
   getDefaultIntegrationState,
@@ -266,6 +267,37 @@ export default function SettingsPage() {
   const selectedSystemPrinter = useMemo(
     () => systemPrinters.find((printer) => printer.name === selectedSystemPrinterName) ?? null,
     [selectedSystemPrinterName, systemPrinters],
+  );
+
+  const receiptPreviewOrder = useMemo(
+    () => ({
+      table: 'Salon 4',
+      createdAt: new Date('2026-05-31T20:45:00'),
+      discount: 15,
+      items: [
+        { id: 'preview-1', name: 'Izgara köfte porsiyon', qty: 2, price: 285 },
+        { id: 'preview-2', name: 'Çoban salata', qty: 1, price: 95 },
+        { id: 'preview-3', name: 'Türk kahvesi', qty: 2, price: 65 },
+      ],
+    }),
+    [],
+  );
+
+  const receiptPreviewText = useMemo(
+    () => formatReceiptPreviewText(receiptPreviewOrder, {
+      restaurantName: company.tradeName || 'Adisyum',
+      branchName: company.branchName || '',
+      logoUrl: company.logoUrl || '',
+      footerText: company.receiptFooter || 'Afiyet olsun',
+      paperWidth: company.receiptPaperWidth || '80mm',
+      receiptTitle: company.receiptTitle || 'ADİSYON',
+      showLogo: company.receiptShowLogo,
+      showBranch: company.receiptShowBranch,
+      showDate: company.receiptShowDate,
+      showTable: company.receiptShowTable,
+      showItemHeader: company.receiptShowItemHeader,
+    }),
+    [company, receiptPreviewOrder],
   );
 
   function changeTab(tab: SettingsTab) {
@@ -860,6 +892,7 @@ export default function SettingsPage() {
         ) : null}
 
         {activeTab === 'company' ? (
+          <>
           <section className="rounded-[1.5rem] border border-line bg-panel p-5 shadow-soft">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -882,7 +915,7 @@ export default function SettingsPage() {
                 <label key={key} className="block">
                   <span className="text-sm font-medium text-muted">{label}</span>
                   <input
-                    value={company[key as keyof CompanyState]}
+                    value={String(company[key as keyof CompanyState] ?? '')}
                     onChange={(event) => setCompany((current) => ({ ...current, [key]: event.target.value }))}
                     className="mt-2 h-12 w-full rounded-2xl border border-line bg-canvas px-4 font-semibold text-ink outline-none"
                   />
@@ -909,6 +942,95 @@ export default function SettingsPage() {
               </label>
             </div>
           </section>
+
+          <section className="grid gap-5 rounded-[1.5rem] border border-line bg-panel p-5 shadow-soft xl:grid-cols-[0.95fr_1.05fr]">
+            <div>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted">Adisyon şablonu</p>
+                  <h2 className="mt-2 text-2xl font-semibold text-ink">Yazıcı çıktısı ön izleme</h2>
+                  <p className="mt-1 text-sm text-muted">Müşteriye verilecek adisyonun başlık, kağıt genişliği ve görünür alanlarını buradan düzenleyin.</p>
+                </div>
+                <Printer className="h-6 w-6 text-accent" />
+              </div>
+
+              <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                <label className="block sm:col-span-2">
+                  <span className="text-sm font-medium text-muted">Adisyon başlığı</span>
+                  <input
+                    value={company.receiptTitle}
+                    onChange={(event) => setCompany((current) => ({ ...current, receiptTitle: event.target.value }))}
+                    className="mt-2 h-12 w-full rounded-2xl border border-line bg-canvas px-4 font-semibold text-ink outline-none"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-sm font-medium text-muted">Kağıt genişliği</span>
+                  <select
+                    value={company.receiptPaperWidth}
+                    onChange={(event) => setCompany((current) => ({ ...current, receiptPaperWidth: event.target.value === '58mm' ? '58mm' : '80mm' }))}
+                    className="mt-2 h-12 w-full rounded-2xl border border-line bg-canvas px-4 font-semibold text-ink outline-none"
+                  >
+                    <option value="80mm">80 mm</option>
+                    <option value="58mm">58 mm</option>
+                  </select>
+                </label>
+
+                <label className="block">
+                  <span className="text-sm font-medium text-muted">Alt yazı</span>
+                  <input
+                    value={company.receiptFooter}
+                    onChange={(event) => setCompany((current) => ({ ...current, receiptFooter: event.target.value }))}
+                    className="mt-2 h-12 w-full rounded-2xl border border-line bg-canvas px-4 font-semibold text-ink outline-none"
+                  />
+                </label>
+
+                {[
+                  ['receiptShowLogo', 'Logo göster'],
+                  ['receiptShowBranch', 'Şube göster'],
+                  ['receiptShowDate', 'Tarih/saat göster'],
+                  ['receiptShowTable', 'Masa bilgisi göster'],
+                  ['receiptShowItemHeader', 'Ürün başlığı göster'],
+                ].map(([key, label]) => (
+                  <label key={key} className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-canvas px-4 py-3">
+                    <span className="text-sm font-semibold text-ink">{label}</span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(company[key as keyof CompanyState])}
+                      onChange={(event) => setCompany((current) => ({ ...current, [key]: event.target.checked }))}
+                      className="h-5 w-5 accent-blue-600"
+                    />
+                  </label>
+                ))}
+              </div>
+
+              <div className="mt-5 flex flex-wrap gap-3">
+                <button type="button" onClick={saveCompany} className="inline-flex h-11 items-center gap-2 rounded-2xl bg-accent px-4 text-sm font-semibold text-white">
+                  <Save className="h-4 w-4" /> Şablonu kaydet
+                </button>
+                <span className="inline-flex h-11 items-center rounded-2xl border border-line bg-canvas px-4 text-sm font-semibold text-muted">
+                  Ön izleme anlık güncellenir
+                </span>
+              </div>
+            </div>
+
+            <div className="rounded-[1.25rem] border border-line bg-canvas p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-semibold text-ink">Baskı ön izlemesi</p>
+                <span className="rounded-full bg-accentSoft px-3 py-1 text-xs font-semibold text-accent">{company.receiptPaperWidth}</span>
+              </div>
+              <div className="mt-4 flex justify-center overflow-auto rounded-2xl bg-slate-200 px-4 py-5">
+                <pre
+                  className={`min-h-[520px] whitespace-pre-wrap rounded-sm bg-white px-5 py-6 font-mono text-[12px] leading-5 text-slate-950 shadow-[0_18px_45px_rgba(15,23,42,0.18)] ${
+                    company.receiptPaperWidth === '58mm' ? 'w-[280px]' : 'w-[390px]'
+                  }`}
+                >
+                  {receiptPreviewText}
+                </pre>
+              </div>
+            </div>
+          </section>
+          </>
         ) : null}
 
         {activeTab === 'integrations' ? (
