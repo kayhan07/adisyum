@@ -45,6 +45,7 @@ import {
   saveStoredSaleProducts,
   type StoredSaleProduct,
 } from '@/lib/sale-product-catalog';
+import { useSeedBusinessDataEnabled } from '@/lib/tenant-clean-start';
 import {
   loadStoredRawIngredients,
   saveStoredRawIngredients,
@@ -232,10 +233,13 @@ function InvoiceWindow() {
   const [newStockSalePrice, setNewStockSalePrice] = useState('0');
   const [newStockVatRate, setNewStockVatRate] = useState<1 | 10 | 20>(20);
   const fieldRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({});
-  const sourceAccounts = useMemo(() => [...erpAccounts, ...storedAccounts], [storedAccounts]);
+  const includeSeedData = useSeedBusinessDataEnabled();
+  const seedAccounts = useMemo(() => includeSeedData ? erpAccounts : [], [includeSeedData]);
+  const seedTransactions = useMemo(() => includeSeedData ? erpAccountTransactions : [], [includeSeedData]);
+  const sourceAccounts = useMemo(() => [...seedAccounts, ...storedAccounts], [seedAccounts, storedAccounts]);
   const sourceTransactions = useMemo(
-    () => [...erpAccountTransactions, ...storedRuntimeTransactions],
-    [storedRuntimeTransactions],
+    () => [...seedTransactions, ...storedRuntimeTransactions],
+    [seedTransactions, storedRuntimeTransactions],
   );
   const accounts = useMemo(
     () => calculateAccountBalances(sourceAccounts, sourceTransactions),
@@ -1323,10 +1327,13 @@ function CollectionWindow() {
   const [saved, setSaved] = useState<Array<{ text: string; direction: 'in' | 'out' }>>([]);
   const [storedAccounts, setStoredAccounts] = useState<Account[]>([]);
   const [storedTransactions, setStoredTransactions] = useState<StoredFinanceAccountTransaction[]>([]);
-  const sourceAccounts = useMemo(() => [...erpAccounts, ...storedAccounts], [storedAccounts]);
+  const includeSeedData = useSeedBusinessDataEnabled();
+  const seedAccounts = useMemo(() => includeSeedData ? erpAccounts : [], [includeSeedData]);
+  const seedTransactions = useMemo(() => includeSeedData ? erpAccountTransactions : [], [includeSeedData]);
+  const sourceAccounts = useMemo(() => [...seedAccounts, ...storedAccounts], [seedAccounts, storedAccounts]);
   const sourceTransactions = useMemo(
-    () => [...erpAccountTransactions, ...storedTransactions],
-    [storedTransactions],
+    () => [...seedTransactions, ...storedTransactions],
+    [seedTransactions, storedTransactions],
   );
   const balances = useMemo(
     () => calculateAccountBalances(sourceAccounts, sourceTransactions),
@@ -1418,10 +1425,13 @@ function ProfitLossWindow() {
   const [storedAccounts, setStoredAccounts] = useState<Account[]>([]);
   const [storedTransactions, setStoredTransactions] = useState<StoredFinanceAccountTransaction[]>([]);
   const [storedTreasuryMovements, setStoredTreasuryMovements] = useState<TreasuryMovement[]>([]);
-  const sourceAccounts = useMemo(() => [...erpAccounts, ...storedAccounts], [storedAccounts]);
+  const includeSeedData = useSeedBusinessDataEnabled();
+  const seedAccounts = useMemo(() => includeSeedData ? erpAccounts : [], [includeSeedData]);
+  const seedTransactions = useMemo(() => includeSeedData ? erpAccountTransactions : [], [includeSeedData]);
+  const sourceAccounts = useMemo(() => [...seedAccounts, ...storedAccounts], [seedAccounts, storedAccounts]);
   const sourceTransactions = useMemo(
-    () => [...erpAccountTransactions, ...storedTransactions],
-    [storedTransactions],
+    () => [...seedTransactions, ...storedTransactions],
+    [seedTransactions, storedTransactions],
   );
   const movements = useMemo(() => {
     const baseMovements = buildTreasuryMovementsFromAccountTransactions(sourceTransactions, sourceAccounts);

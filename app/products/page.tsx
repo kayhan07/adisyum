@@ -101,6 +101,7 @@ import {
 } from '@/lib/pos-mapping-store';
 import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
 import { loadSessionState } from '@/lib/session-store';
+import { useSeedBusinessDataEnabled } from '@/lib/tenant-clean-start';
 
 const branchId = 'mrk';
 const DEFAULT_PRODUCT_CATEGORIES = ['Satış Ürünleri', 'İçecekler', 'Combo', 'Hammaddeler', 'Yarı Mamüller', 'Modifier', 'Varyant', 'Kahve', 'Soğuk İçecek', 'Alkol', 'Burger', 'Et', 'Balık', 'Tavuk', 'Tatlı', 'Salata', 'Diğer'] as const;
@@ -786,13 +787,14 @@ function getCompatibleUnits(unit: Ingredient['unit']) {
   return ['adet'] as const;
 }
 
-function buildInitialSaleProducts(storedProducts: StoredSaleProduct[] | null) {
+function buildInitialSaleProducts(storedProducts: StoredSaleProduct[] | null, includeSeedData = true) {
   const sellableStoredProducts = (storedProducts ?? []).filter((product) => isSellableProductType(product.productType));
   const storedByName = new Map(sellableStoredProducts.map((product) => [product.name, product]));
-  const baseByName = new Map(DEFAULT_SALE_PRODUCT_BASE.map((product) => [product.name, product]));
-  const recipeProductNames = new Set(productRecipes.map((recipe) => recipe.productName));
+  const baseByName = new Map(includeSeedData ? DEFAULT_SALE_PRODUCT_BASE.map((product) => [product.name, product]) : []);
+  const seedRecipes = includeSeedData ? productRecipes : [];
+  const recipeProductNames = new Set(seedRecipes.map((recipe) => recipe.productName));
 
-  const recipeBasedProducts = productRecipes.map((recipe) => {
+  const recipeBasedProducts = seedRecipes.map((recipe) => {
     const estimatedCost = recipe.ingredients.reduce((sum, line) => {
       const stock = erpSnapshot.invoiceStockResult.stocks.find((item) => item.branchId === branchId && item.ingredientId === line.ingredientId);
       return sum + (stock?.averageCost ?? 0) * line.quantity;
@@ -959,7 +961,7 @@ function createInitialRecipePoolState(
   return mergeRecipePoolStates(defaultPool, { recipes, versions }, storedPool ?? null);
 }
 
-const SERVER_INITIAL_SALE_PRODUCTS = buildInitialSaleProducts(null).map((product, index) => ({
+const SERVER_INITIAL_SALE_PRODUCTS = buildInitialSaleProducts(null, false).map((product, index) => ({
   ...product,
   recipeId: product.recipeId ?? (product.recipeLines.length > 0 ? `recipe-${product.id}-${index + 1}` : undefined),
 }));
@@ -1045,6 +1047,7 @@ function findExactPrinterMapping(category: string, mappings: PrinterMappingRecor
 
 function ProductsPageContent() {
   const searchParams = useSearchParams();
+  const includeSeedData = useSeedBusinessDataEnabled();
   const quickCreateFileInputRef = useRef<HTMLInputElement | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
@@ -1079,7 +1082,7 @@ function ProductsPageContent() {
   const [mappingDraft, setMappingDraft] = useState({ pos_plu_code: '', vat_rate: '10', unit_type: 'porsiyon' as PosUnitType });
   const [bulkMappingDraft, setBulkMappingDraft] = useState('');
   const [mappingMessage, setMappingMessage] = useState('');
-  const [selectedRawId, setSelectedRawId] = useState<string>(erpIngredients[0].id ?? '');
+  const [selectedRawId, setSelectedRawId] = useState<string>('');
   const [rawSearch, setRawSearch] = useState('');
   const [saleProductSearch, setSaleProductSearch] = useState('');
   const [quickPriceSearch, setQuickPriceSearch] = useState('');
@@ -1170,18 +1173,18 @@ function ProductsPageContent() {
   }, [searchParams]);
 
   const saleStocks = useMemo(
-    () => erpSnapshot.saleStockResult.stocks.filter((stock) => stock.branchId === branchId),
-    [],
+    () => includeSeedData ? erpSnapshot.saleStockResult.stocks.filter((stock) => stock.branchId === branchId) : [],
+    [includeSeedData],
   );
   const invoiceStocks = useMemo(
-    () => erpSnapshot.invoiceStockResult.stocks.filter((stock) => stock.branchId === branchId),
-    [],
+    () => includeSeedData ? erpSnapshot.invoiceStockResult.stocks.filter((stock) => stock.branchId === branchId) : [],
+    [includeSeedData],
   );
   const invoiceStockById = useMemo(
     () => new Map(invoiceStocks.map((stock) => [stock.ingredientId, stock])),
     [invoiceStocks],
   );
-  const invoiceMovements = erpSnapshot.invoiceStockResult.movements;
+  const invoiceMovements = includeSeedData ? erpSnapshot.invoiceStockResult.movements : [];
   const selectedProduct = useMemo(
     () => saleProducts.find((product) => product.id === selectedProductId) ?? saleProducts[0] ?? null,
     [saleProducts, selectedProductId],
@@ -1348,10 +1351,10 @@ function ProductsPageContent() {
 
   const ingredientOptions = useMemo(() => {
     return [
-      ...erpIngredients.map((ingredient) => ({ id: ingredient.id, name: ingredient.name, unit: ingredient.unit })),
+      ...(includeSeedData ? erpIngredients.map((ingredient) => ({ id: ingredient.id, name: ingredient.name, unit: ingredient.unit })) : []),
       ...createdRawIngredients.map((ingredient) => ({ id: ingredient.id, name: ingredient.name, unit: ingredient.unit })),
     ];
-  }, [createdRawIngredients]);
+  }, [createdRawIngredients, includeSeedData]);
   const ingredientOptionById = useMemo(
     () => new Map(ingredientOptions.map((ingredient) => [ingredient.id, ingredient])),
     [ingredientOptions],
@@ -1982,7 +1985,7 @@ function ProductsPageContent() {
 
   useEffect(() => {
     const storedProducts = loadStoredSaleProducts();
-    const hydratedProducts = buildInitialSaleProducts(storedProducts).map((product, index) => ({
+    const hydratedProducts = buildInitialSaleProducts(storedProducts, includeSeedData).map((product, index) => ({
       ...product,
       recipeId: product.recipeId ?? (product.recipeLines.length > 0 ? `recipe-${product.id}-${index + 1}` : undefined),
     }));
@@ -1993,7 +1996,7 @@ function ProductsPageContent() {
       vatRate: ingredient.vatRate ?? 20,
     }));
     const hydratedCategories = mergeProductCategories(
-      DEFAULT_PRODUCT_CATEGORIES,
+      includeSeedData ? DEFAULT_PRODUCT_CATEGORIES : [],
       loadStoredProductCategories(),
       hydratedProducts.map((product) => product.category),
       hydratedRecipePool.recipes.map((recipe) => recipe.category || inferCategory(recipe.name)),
@@ -2009,9 +2012,14 @@ function ProductsPageContent() {
       hydratedProducts.some((product) => product.id === current) ? current : hydratedProducts[0]?.id ?? '',
     );
     setSelectedRawId((current) =>
-      [...erpIngredients.map((ingredient) => ingredient.id), ...hydratedRawIngredients.map((ingredient) => ingredient.id)].includes(current)
+      [
+        ...(includeSeedData ? erpIngredients.map((ingredient) => ingredient.id) : []),
+        ...hydratedRawIngredients.map((ingredient) => ingredient.id),
+      ].includes(current)
         ? current
-        : erpIngredients[0]?.id ?? hydratedRawIngredients[0]?.id ?? '',
+        : includeSeedData
+          ? erpIngredients[0]?.id ?? hydratedRawIngredients[0]?.id ?? ''
+          : hydratedRawIngredients[0]?.id ?? '',
     );
     setSelectedPoolRecipeId((current) =>
       hydratedRecipePool.recipes.some((recipe) => recipe.id === current) ? current : hydratedRecipePool.recipes[0]?.id ?? '',
@@ -2089,7 +2097,7 @@ function ProductsPageContent() {
     }
 
     setHydrated(true);
-  }, []);
+  }, [includeSeedData, saleStocks]);
 
   useEffect(() => {
     setPoolDraftLines(

@@ -22,6 +22,7 @@ import {
   type AccountTransaction,
   type AccountType,
 } from '@/lib/erp-engine';
+import { useSeedBusinessDataEnabled } from '@/lib/tenant-clean-start';
 
 type AccountWithBalance = Account & { balance: number };
 type ViewMode = 'list' | 'detail' | 'new';
@@ -116,8 +117,11 @@ export function AccountWorkspace() {
   const [accountDiscountInput, setAccountDiscountInput] = useState('');
   const [accountActionMessage, setAccountActionMessage] = useState('');
 
-  const sourceAccounts = useMemo(() => [...erpAccounts, ...localAccounts], [localAccounts]);
-  const sourceTransactions = useMemo(() => [...erpAccountTransactions, ...storedTransactions], [storedTransactions]);
+  const includeSeedData = useSeedBusinessDataEnabled();
+  const seedAccounts = useMemo(() => includeSeedData ? erpAccounts : [], [includeSeedData]);
+  const seedTransactions = useMemo(() => includeSeedData ? erpAccountTransactions : [], [includeSeedData]);
+  const sourceAccounts = useMemo(() => [...seedAccounts, ...localAccounts], [seedAccounts, localAccounts]);
+  const sourceTransactions = useMemo(() => [...seedTransactions, ...storedTransactions], [seedTransactions, storedTransactions]);
   const balances = useMemo(() => calculateAccountBalances(sourceAccounts, sourceTransactions), [sourceAccounts, sourceTransactions]);
   const selectedAccount = selectedAccountId ? balances.find((account) => account.id === selectedAccountId) ?? null : null;
 

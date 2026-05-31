@@ -51,6 +51,7 @@ import {
 } from '@/lib/finance-runtime-store';
 import { appendStoredAccount, loadStoredAccounts, subscribeToStoredAccountChanges } from '@/lib/account-store';
 import { erpAccounts, type Account, type TreasuryMovement } from '@/lib/erp-engine';
+import { useSeedBusinessDataEnabled } from '@/lib/tenant-clean-start';
 import { getDefaultDeliveryState, loadDeliveryState, subscribeToDeliveryChanges } from '@/lib/delivery-store';
 import { loadPaymentJournal, subscribeToPaymentJournalChanges, type PaymentJournalEntry } from '@/lib/payment-journal-store';
 import {
@@ -331,6 +332,8 @@ export function FloorWorkspace() {
   const [quickAccountName, setQuickAccountName] = useState('');
   const [quickAccountPhone, setQuickAccountPhone] = useState('');
   const [quickAccountType, setQuickAccountType] = useState<'customer' | 'supplier' | 'partner' | 'staff'>('customer');
+  const includeSeedData = useSeedBusinessDataEnabled();
+  const seedAccounts = useMemo(() => includeSeedData ? erpAccounts : [], [includeSeedData]);
 
   const searchParams = useSearchParams();
   const currentTab = searchParams.get('tab');
@@ -362,10 +365,10 @@ export function FloorWorkspace() {
     return next;
   }, [reservationsForWorkingDate]);
   const reservationChargeAccounts = useMemo(
-    () => [...erpAccounts, ...storedAccounts].filter((account) => account.type === 'customer' || account.type === 'partner'),
-    [storedAccounts],
+    () => [...seedAccounts, ...storedAccounts].filter((account) => account.type === 'customer' || account.type === 'partner'),
+    [seedAccounts, storedAccounts],
   );
-  const reportAccounts = useMemo(() => [...erpAccounts, ...storedAccounts], [storedAccounts]);
+  const reportAccounts = useMemo(() => [...seedAccounts, ...storedAccounts], [seedAccounts, storedAccounts]);
   const filteredReportAccounts = useMemo(() => {
     const query = reportAccountSearch.trim().toLocaleLowerCase('tr-TR');
     if (query.length < 1) return reportAccounts;
@@ -373,11 +376,11 @@ export function FloorWorkspace() {
   }, [reportAccountSearch, reportAccounts]);
   const reportAccountMap = useMemo(
     () =>
-      [...erpAccounts, ...storedAccounts].reduce<Record<string, Account>>((acc, account) => {
+      [...seedAccounts, ...storedAccounts].reduce<Record<string, Account>>((acc, account) => {
         acc[account.id] = account;
         return acc;
       }, {}),
-    [storedAccounts],
+    [seedAccounts, storedAccounts],
   );
   const selectedReportAccount = useMemo(
     () => reportAccounts.find((account) => account.id === reportAccountId) ?? filteredReportAccounts[0] ?? null,
@@ -1000,7 +1003,7 @@ export function FloorWorkspace() {
         : quickAccountType === 'staff'
           ? 'PER'
           : 'CR';
-    const existingCount = [...erpAccounts, ...storedAccounts].filter((account) => account.type === quickAccountType).length;
+    const existingCount = [...seedAccounts, ...storedAccounts].filter((account) => account.type === quickAccountType).length;
     const code = `${prefix}-${String(existingCount + 1).padStart(3, '0')}`;
     const createdAccount: Account = {
       id: `local-${quickAccountType}-${Date.now()}`,

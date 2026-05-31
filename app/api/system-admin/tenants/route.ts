@@ -133,7 +133,25 @@ export async function POST(request: Request) {
       });
     }
 
-    const [tenants, jobs, provisioningMetrics] = await Promise.all([listSaasTenants(), listProvisioningJobs(), getProvisioningMetrics()]);
+    let tenants: Awaited<ReturnType<typeof listSaasTenants>> = [];
+    let jobs: Awaited<ReturnType<typeof listProvisioningJobs>> = [];
+    let provisioningMetrics: Awaited<ReturnType<typeof getProvisioningMetrics>> | null = null;
+    try {
+      [tenants, jobs, provisioningMetrics] = await withTimeout(
+        Promise.all([listSaasTenants(), listProvisioningJobs(), getProvisioningMetrics()]),
+        5000,
+        'Tenant oluşturma sonrası liste yenileme',
+      );
+    } catch (listError) {
+      queueWarning = queueWarning
+        ? `${queueWarning} Liste yenileme zamanında tamamlanmadı.`
+        : 'Liste yenileme zamanında tamamlanmadı.';
+      console.error('[system-admin/tenants] post-create refresh failed', {
+        tenantId: job.targetTenantId,
+        jobId: job.id,
+        error: listError instanceof Error ? listError.message : String(listError),
+      });
+    }
     return NextResponse.json({
       ok: true,
       queued: queueScheduled,

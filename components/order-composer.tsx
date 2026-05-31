@@ -40,6 +40,7 @@ import {
 import { isSellableProductType, type ProductDomainType } from '@/lib/product-domain';
 import { appendStoredFinanceAccountTransaction, buildFinanceTransaction } from '@/lib/finance-runtime-store';
 import { erpAccounts, type Account } from '@/lib/erp-engine';
+import { useSeedBusinessDataEnabled } from '@/lib/tenant-clean-start';
 import { appendPaymentJournalEntries, buildPaymentJournalEntry } from '@/lib/payment-journal-store';
 import { getDefaultTableLayoutState, loadTableLayoutState, subscribeToTableLayoutChanges } from '@/lib/table-layout-store';
 import { createAutoProductMapping, getProductMapping, upsertProductMapping, validateProductMapping } from '@/lib/pos-mapping-store';
@@ -615,6 +616,8 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const [activePadTarget, setActivePadTarget] = useState<ActivePadTarget>('cash');
   const [selectedAccountId, setSelectedAccountId] = useState('');
   const [storedAccounts, setStoredAccounts] = useState<Account[]>([]);
+  const includeSeedData = useSeedBusinessDataEnabled();
+  const seedAccounts = useMemo(() => includeSeedData ? erpAccounts : [], [includeSeedData]);
   const [accountSearch, setAccountSearch] = useState('');
   const [accountChargeFilter, setAccountChargeFilter] = useState<AccountChargeFilter>('all');
   const [quickAccountName, setQuickAccountName] = useState('');
@@ -700,8 +703,8 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   };
   const paymentRequestedSet = useMemo(() => new Set(paymentRequestedTables), [paymentRequestedTables]);
   const chargeAccounts = useMemo(
-    () => [...erpAccounts, ...storedAccounts].filter((account) => account.type === 'customer' || account.type === 'partner'),
-    [storedAccounts],
+    () => [...seedAccounts, ...storedAccounts].filter((account) => account.type === 'customer' || account.type === 'partner'),
+    [seedAccounts, storedAccounts],
   );
   const filteredChargeAccounts = useMemo(() => {
     const needle = deferredAccountSearch.trim().toLocaleLowerCase('tr-TR');

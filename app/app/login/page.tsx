@@ -9,6 +9,7 @@ import { authQueryKeys } from '@/lib/query/keys';
 import { resetRuntimeAuthFailureLock, runtimeFetch } from '@/lib/runtime/runtime-api';
 import { hydrateSessionStateFromAuth } from '@/lib/session-store';
 import { setAuthSnapshotFromSession } from '@/lib/saas-store';
+import { resetTenantBusinessCachesForLogin } from '@/lib/tenant-clean-start';
 
 type LoginResponse = {
   ok?: boolean;
@@ -72,6 +73,7 @@ export default function AppLoginPage() {
         return;
       }
 
+      resetTenantBusinessCachesForLogin(sessionPayload.session.tenantId);
       hydrateSessionStateFromAuth(sessionPayload.session);
       setAuthSnapshotFromSession(sessionPayload.session);
       queryClient.setQueryData(authQueryKeys.session(), sessionPayload);

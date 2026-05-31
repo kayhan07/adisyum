@@ -26,6 +26,7 @@ import {
   loadStoredTreasuryMovements,
   subscribeToStoredTreasuryChanges,
 } from '@/lib/treasury-runtime-store';
+import { useSeedBusinessDataEnabled } from '@/lib/tenant-clean-start';
 import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
 
 function accountIcon(type: TreasuryAccountType) {
@@ -75,8 +76,11 @@ export function CashRegisterPanel() {
   const [newPosName, setNewPosName] = useState('');
   const [message, setMessage] = useState('');
 
-  const sourceAccounts = useMemo(() => [...erpAccounts, ...storedAccounts], [storedAccounts]);
-  const sourceTransactions = useMemo(() => [...erpAccountTransactions, ...storedTransactions], [storedTransactions]);
+  const includeSeedData = useSeedBusinessDataEnabled();
+  const seedAccounts = useMemo(() => includeSeedData ? erpAccounts : [], [includeSeedData]);
+  const seedTransactions = useMemo(() => includeSeedData ? erpAccountTransactions : [], [includeSeedData]);
+  const sourceAccounts = useMemo(() => [...seedAccounts, ...storedAccounts], [seedAccounts, storedAccounts]);
+  const sourceTransactions = useMemo(() => [...seedTransactions, ...storedTransactions], [seedTransactions, storedTransactions]);
   const baseMovements = useMemo(
     () => buildTreasuryMovementsFromAccountTransactions(sourceTransactions, sourceAccounts),
     [sourceAccounts, sourceTransactions],
