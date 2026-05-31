@@ -109,6 +109,7 @@ export default function SettingsPage() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<SettingsTab>('company');
   const [company, setCompany] = useState<CompanyState>(() => getDefaultCompanyState());
+  const [companySaving, setCompanySaving] = useState(false);
   const [accessState, setAccessState] = useState(() => getDefaultAccessState());
   const [integrationState, setIntegrationState] = useState(() => getDefaultIntegrationState());
   const [roleName, setRoleName] = useState('');
@@ -207,6 +208,29 @@ export default function SettingsPage() {
     setPrinterAutoScanned(true);
     void scanSystemPrinters();
   }, [activeTab, printerAutoScanned]);
+
+  useEffect(() => {
+    if (activeTab !== 'company') return;
+    let cancelled = false;
+
+    fetch('/api/settings/company', { cache: 'no-store' })
+      .then((response) => response.json().then((payload) => ({ response, payload })))
+      .then(({ response, payload }) => {
+        if (cancelled || !response.ok || payload?.ok === false || !payload?.company) return;
+        const nextCompany = { ...loadCompanyState(), ...payload.company };
+        setCompany(nextCompany);
+        saveCompanyState(nextCompany);
+      })
+      .catch((error) => {
+        console.error('[settings] company profile load failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab]);
 
   useEffect(() => {
     if (activeTab !== 'integrations') return;
@@ -309,9 +333,33 @@ export default function SettingsPage() {
     router.replace(`/settings?tab=${tab}`);
   }
 
-  function saveCompany() {
-    saveCompanyState(company);
-    setMessage('Firma bilgileri kaydedildi.');
+  async function saveCompany() {
+    if (companySaving) return;
+    setCompanySaving(true);
+    try {
+      const response = await fetch('/api/settings/company', {
+        method: 'PUT',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(company),
+      });
+      const payload = await response.json().catch(() => null) as { ok?: boolean; error?: string; company?: Partial<CompanyState> } | null;
+      if (!response.ok || payload?.ok === false) {
+        throw new Error(payload?.error || `Firma bilgileri kaydedilemedi (${response.status}).`);
+      }
+
+      const nextCompany = payload?.company ? { ...company, ...payload.company } : company;
+      setCompany(nextCompany);
+      saveCompanyState(nextCompany);
+      setMessage('Firma bilgileri kaydedildi.');
+    } catch (error) {
+      console.error('[settings] company save failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      setMessage(error instanceof Error ? error.message : 'Firma bilgileri kaydedilemedi.');
+    } finally {
+      setCompanySaving(false);
+    }
   }
 
   function handleLogoUpload(event: React.ChangeEvent<HTMLInputElement>) {
@@ -538,7 +586,7 @@ export default function SettingsPage() {
     };
 
     const samePrinterRegistration = (printer: typeof nextPrinter) => {
-      if (printer.deviceType !== nextPrinter.deviceType || printer.connectionType !== nextPrinter.connectionType) {
+      if (printer.connectionType !== nextPrinter.connectionType) {
         return false;
       }
 
@@ -918,8 +966,8 @@ export default function SettingsPage() {
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted">Firma kartı</p>
                 <h2 className="mt-2 text-2xl font-semibold text-ink">İşletme bilgileri</h2>
               </div>
-              <button type="button" onClick={saveCompany} className="inline-flex h-11 items-center gap-2 rounded-2xl bg-accent px-4 text-sm font-semibold text-white">
-                <Save className="h-4 w-4" /> Kaydet
+              <button type="button" onClick={() => void saveCompany()} disabled={companySaving} className="inline-flex h-11 items-center gap-2 rounded-2xl bg-accent px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">
+                <Save className="h-4 w-4" /> {companySaving ? 'Kaydediliyor' : 'Kaydet'}
               </button>
             </div>
             <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -1042,8 +1090,8 @@ export default function SettingsPage() {
               </div>
 
               <div className="mt-5 flex flex-wrap gap-3">
-                <button type="button" onClick={saveCompany} className="inline-flex h-11 items-center gap-2 rounded-2xl bg-accent px-4 text-sm font-semibold text-white">
-                  <Save className="h-4 w-4" /> Şablonu kaydet
+                <button type="button" onClick={() => void saveCompany()} disabled={companySaving} className="inline-flex h-11 items-center gap-2 rounded-2xl bg-accent px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">
+                  <Save className="h-4 w-4" /> {companySaving ? 'Kaydediliyor' : 'Şablonu kaydet'}
                 </button>
                 <span className="inline-flex h-11 items-center rounded-2xl border border-line bg-canvas px-4 text-sm font-semibold text-muted">
                   Ön izleme anlık güncellenir

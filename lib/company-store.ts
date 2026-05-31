@@ -27,6 +27,7 @@ export type CompanyState = {
 export type TenantCompanyProfile = {
   tradeName?: string | null;
   branchName?: string | null;
+  logoUrl?: string | null;
   taxOffice?: string | null;
   taxNumber?: string | null;
   phone?: string | null;
@@ -99,6 +100,7 @@ export function hydrateCompanyStateFromTenantProfile(profile: TenantCompanyProfi
     ...current,
     tradeName: profile.tradeName?.trim() || defaults.tradeName,
     branchName: profile.branchName?.trim() || defaults.branchName,
+    logoUrl: profile.logoUrl?.trim() || '',
     taxOffice: profile.taxOffice?.trim() || '',
     taxNumber: profile.taxNumber?.trim() || '',
     phone: profile.phone?.trim() || '',

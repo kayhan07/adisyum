@@ -1371,6 +1371,7 @@ function ProductsPageContent() {
         id: stock.ingredientId,
         name: ingredient?.name ?? stock.ingredientId,
         unit: ingredient?.unit ?? 'adet',
+        source: 'seeded' as const,
         saleQuantity: stock.quantity,
         invoiceQuantity: effectiveInvoiceQuantity,
         minimumQuantity: stock.minimumQuantity,
@@ -1386,6 +1387,7 @@ function ProductsPageContent() {
         id: ingredient.id,
         name: ingredient.name,
         unit: ingredient.unit,
+        source: 'created' as const,
         purchasePrice: ingredient.purchasePrice,
         saleQuantity: effectiveQuantity,
         invoiceQuantity: effectiveQuantity,
@@ -2496,6 +2498,37 @@ function ProductsPageContent() {
     ]);
   }
 
+  function deleteSelectedRawIngredient() {
+    if (!selectedRawRow) return;
+    if (selectedRawRow.source !== 'created') {
+      setSavedNotes((current) => ['Sistem başlangıç hammaddesi silinemez. Yeni abonelerde demo hammadde yüklenmez.', ...current]);
+      return;
+    }
+
+    const usedByProduct = saleProducts.some((product) =>
+      getProductEffectiveRecipeLines(product, recipeVersions).some((line) => line.ingredientId === selectedRawRow.id),
+    );
+    const usedByRecipe = recipeVersions.some((version) =>
+      version.ingredients.some((line) => line.ingredientId === selectedRawRow.id),
+    );
+
+    if (usedByProduct || usedByRecipe) {
+      setSavedNotes((current) => [`${selectedRawRow.name} reçetede kullanıldığı için silinemedi. Önce reçete bağını kaldırın.`, ...current]);
+      return;
+    }
+
+    if (!window.confirm(`${selectedRawRow.name} hammaddesini silmek istiyor musunuz?`)) return;
+
+    setCreatedRawIngredients((current) => current.filter((ingredient) => ingredient.id !== selectedRawRow.id));
+    setRawCountOverrides((current) => {
+      const next = { ...current };
+      delete next[selectedRawRow.id];
+      return next;
+    });
+    setSelectedRawId('');
+    setSavedNotes((current) => [`${selectedRawRow.name} hammaddesi silindi.`, ...current]);
+  }
+
   function applySaleStockCount() {
     if (!selectedProduct) return;
 
@@ -2889,6 +2922,25 @@ function ProductsPageContent() {
     setNewCategoryName('');
   }
 
+  function deleteCategory(categoryName = selectedProduct?.category ?? '') {
+    const trimmed = categoryName.trim();
+    if (!trimmed) {
+      setSavedNotes((current) => ['Silinecek kategori seçin.', ...current]);
+      return;
+    }
+
+    const usedByProduct = saleProducts.some((product) => product.category === trimmed);
+    const usedByRecipe = recipePool.some((recipe) => (recipe.category || inferCategory(recipe.name)) === trimmed);
+    if (usedByProduct || usedByRecipe) {
+      setSavedNotes((current) => [`${trimmed} kategorisi ürün veya reçete kullandığı için silinemez. Önce bağlı kayıtları taşıyın.`, ...current]);
+      return;
+    }
+
+    if (!window.confirm(`${trimmed} kategorisini silmek istiyor musunuz?`)) return;
+    setCategories((current) => current.filter((category) => category !== trimmed));
+    setSavedNotes((current) => [`${trimmed} kategorisi silindi.`, ...current]);
+  }
+
   function updateSelectedPoolRecipe(patch: Partial<RecipePoolRecipe>) {
     if (!selectedPoolRecipe) return;
     setRecipePool((current) =>
@@ -3038,6 +3090,28 @@ function ProductsPageContent() {
     setSelectedPoolRecipeIds((current) =>
       current.includes(recipeId) ? current.filter((id) => id !== recipeId) : [...current, recipeId],
     );
+  }
+
+  function deleteSelectedPoolRecipe() {
+    if (!selectedPoolRecipe) return;
+    if (!window.confirm(`${selectedPoolRecipe.name} reçetesini silmek istiyor musunuz? Bağlı satış ürünlerinden reçete bağlantısı kaldırılır.`)) return;
+
+    setRecipePool((current) => current.filter((recipe) => recipe.id !== selectedPoolRecipe.id));
+    setRecipeVersions((current) => current.filter((version) => version.recipeId !== selectedPoolRecipe.id));
+    setSaleProducts((current) => current.map((product) =>
+      product.recipeId === selectedPoolRecipe.id
+        ? {
+            ...product,
+            recipeId: undefined,
+            recipeLines: [],
+            recipeOverrides: [],
+            recipeOverride: false,
+          }
+        : product,
+    ));
+    setSelectedPoolRecipeIds((current) => current.filter((id) => id !== selectedPoolRecipe.id));
+    setSelectedPoolRecipeId('');
+    setSavedNotes((current) => [`${selectedPoolRecipe.name} reçetesi silindi.`, ...current]);
   }
 
   function updateBulkDraft(value: string) {
@@ -4310,8 +4384,9 @@ function ProductsPageContent() {
                           <span className="text-sm text-slate-400">Sayım sonucu ({selectedRawRow.unit})</span>
                           <input value={rawCountInput} onChange={(event) => setRawCountInput(event.target.value)} className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-[#111827] px-4 font-semibold text-white outline-none" />
                         </label>
-                        <div className="flex items-end">
+                        <div className="flex items-end gap-2">
                           <button type="button" onClick={applyRawStockCount} className="h-12 rounded-2xl bg-emerald-600 px-4 text-sm font-semibold text-white transition hover:bg-emerald-500 active:scale-[0.98]">Sayımı uygula</button>
+                          <button type="button" onClick={deleteSelectedRawIngredient} className="h-12 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/20 active:scale-[0.98]">Hammaddeyi Sil</button>
                         </div>
                       </div>
                     </div>
@@ -4664,7 +4739,7 @@ function ProductsPageContent() {
                           : { salesUnit: nextSalesUnit });
                       }} className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-[#0B1220] px-4 font-semibold text-white outline-none"><option value="portion">Porsiyon bazlı</option><option value="kg">Kilogram bazlı</option><option value="bottle">Şişe bazlı</option><option value="glass">Kadeh bazlı</option></select></label>
                       <label className="block"><span className="text-sm text-slate-400">Yeni kategori</span><input value={newCategoryName} onChange={(event) => setNewCategoryName(event.target.value)} placeholder="Yeni kategori adı" className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-[#0B1220] px-4 font-semibold text-white outline-none" /></label>
-                      <div className="flex items-end"><button type="button" onClick={addCategory} className="h-12 w-full rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/20 active:scale-[0.98]">Kategori oluştur</button></div>
+                      <div className="flex items-end gap-2"><button type="button" onClick={addCategory} className="h-12 flex-1 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/20 active:scale-[0.98]">Kategori oluştur</button><button type="button" onClick={() => deleteCategory(selectedProduct.category)} className="h-12 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/20 active:scale-[0.98]">Sil</button></div>
                     </div>
 
                     <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-3">
@@ -5615,6 +5690,13 @@ function ProductsPageContent() {
                         className="inline-flex h-11 items-center gap-2 rounded-2xl bg-violet-600 px-4 text-sm font-semibold text-white transition hover:bg-violet-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         <Save className="h-4 w-4" /> Yeni sürüm yayınla
+                      </button>
+                      <button
+                        type="button"
+                        onClick={deleteSelectedPoolRecipe}
+                        className="inline-flex h-11 items-center gap-2 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/20 active:scale-[0.98]"
+                      >
+                        <Trash2 className="h-4 w-4" /> Reçeteyi Sil
                       </button>
                     </div>
                   </div>

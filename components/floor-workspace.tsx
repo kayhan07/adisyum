@@ -12,7 +12,8 @@ import {
   getStoredOrdersByTable,
   getStoredTableMeta,
   getTableLiveTotals,
-  setStoredTableMeta,
+  replaceStoredTableMeta,
+  replaceTableLiveTotals,
   setTableLiveTotals,
   setTablePaymentRequested,
   subscribeToPaymentRequestedChanges,
@@ -602,6 +603,11 @@ export function FloorWorkspace() {
     [selectedGroup, sortedTableRows],
   );
 
+  const selectedGroupTables = useMemo(
+    () => sortedTableRows.filter((table) => normalizeGroupName(table.group) === selectedGroup),
+    [selectedGroup, sortedTableRows],
+  );
+
   const filteredTables = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('tr-TR');
 
@@ -1148,7 +1154,7 @@ export function FloorWorkspace() {
 
     persistOrders(resetOrders);
     persistRows(resetRows);
-    setTableLiveTotals(resetTotals);
+    replaceTableLiveTotals(resetTotals);
     setLiveTotals(resetTotals);
     setPaymentRequestedIds([]);
     setDailyAdvanceInput('');
@@ -1214,7 +1220,7 @@ export function FloorWorkspace() {
         },
       ]),
     );
-    setStoredTableMeta(nextMeta);
+    replaceStoredTableMeta(nextMeta);
   }
 
   function openQuickNote(tableId: string) {
@@ -1822,6 +1828,36 @@ export function FloorWorkspace() {
     setSearch('');
   }
 
+  function removeSelectedTable(tableId: string) {
+    const target = tableRows.find((table) => table.id === tableId);
+    if (!target) {
+      console.error('[business-flow] table delete failed', { tableId, reason: 'table-not-found' });
+      setActionMessage('Masa silinemedi: masa bulunamadı');
+      return;
+    }
+
+    const activeOrders = ordersByTable[tableId] ?? [];
+    if (activeOrders.length > 0 || target.total > 0 || target.status === 'occupied') {
+      setActionMessage('Aktif adisyonu olan masa silinemez. Önce masayı kapatın veya temizleyin.');
+      return;
+    }
+
+    if (!window.confirm(`${target.name} masasını silmek istiyor musunuz?`)) {
+      return;
+    }
+
+    const nextOrders = { ...ordersByTable };
+    delete nextOrders[tableId];
+    persistOrders(nextOrders);
+
+    const nextTotals = { ...getTableLiveTotals() };
+    delete nextTotals[tableId];
+    replaceTableLiveTotals(nextTotals);
+    setTablePaymentRequested(tableId, false);
+    persistRows(tableRows.filter((table) => table.id !== tableId));
+    setActionMessage(`${target.name} silindi.`);
+  }
+
   return (
     <div className="space-y-3">
 
@@ -1829,6 +1865,7 @@ export function FloorWorkspace() {
         <TableSetupPanel
           groups={FIXED_GROUPS}
           selectedGroup={selectedGroup}
+          selectedTables={selectedGroupTables}
           onSelectGroup={(value) => setSelectedGroup(value as (typeof FIXED_GROUPS)[number])}
           startNo={startNo}
           endNo={endNo}
@@ -1836,6 +1873,7 @@ export function FloorWorkspace() {
           onEndNoChange={setEndNo}
           onCreate={createTablesInRange}
           onDeleteGroup={removeSelectedGroup}
+          onDeleteTable={removeSelectedTable}
           selectedGroupCount={selectedGroupCount}
         />
       ) : null}

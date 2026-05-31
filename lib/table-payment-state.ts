@@ -262,6 +262,17 @@ export function setTableLiveTotals(totals: Record<string, number>) {
   publishTableState();
 }
 
+export function replaceTableLiveTotals(totals: Record<string, number>) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  if (!writeRuntimeJsonIfChanged(TOTALS_STORAGE_KEY, totals, { persist: false })) return;
+  writeTableStateSyncMeta('totals', getStoredOrdersByTable(), Object.keys(totals)[0]);
+  emitChange();
+  publishTableState();
+}
+
 export function getStoredOrdersByTable<T>() {
   return getAuthoritativeOrdersByTable<T>();
 }
@@ -322,6 +333,16 @@ export function setStoredTableMeta(meta: Record<string, StoredTableMeta>) {
   }
 
   writeRuntimeItem('tenant', META_STORAGE_KEY, JSON.stringify({ ...getStoredTableMeta(), ...meta }), { persist: false });
+  emitChange();
+  publishTableState();
+}
+
+export function replaceStoredTableMeta(meta: Record<string, StoredTableMeta>) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  writeRuntimeItem('tenant', META_STORAGE_KEY, JSON.stringify(meta), { persist: false });
   emitChange();
   publishTableState();
 }
