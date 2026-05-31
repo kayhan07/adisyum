@@ -82,6 +82,7 @@ export async function GET(request: Request) {
       companyProfile: tenant ? {
         tradeName: tenant.legalName || tenant.name,
         branchName: branch?.name || 'Merkez Şube',
+        taxOffice: metadataString(tenant.metadata, 'taxOffice'),
         taxNumber: tenant.taxNumber,
         phone: metadataString(tenant.metadata, 'phone'),
         email: metadataString(tenant.metadata, 'email'),

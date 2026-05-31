@@ -1,6 +1,7 @@
 'use client';
 
 import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
+import { shouldUseSeedBusinessData } from '@/lib/tenant-clean-start';
 
 export type StoredFloorTableStatus = 'available' | 'occupied' | 'reserved';
 
@@ -52,13 +53,17 @@ const DEFAULT_TABLE_LAYOUT_STATE: TableLayoutState = {
   tables: buildDefaultTables(),
 };
 
+const EMPTY_TABLE_LAYOUT_STATE: TableLayoutState = {
+  tables: [],
+};
+
 function emitChange() {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent(EVENT_NAME));
 }
 
 export function getDefaultTableLayoutState(): TableLayoutState {
-  return DEFAULT_TABLE_LAYOUT_STATE;
+  return shouldUseSeedBusinessData() ? DEFAULT_TABLE_LAYOUT_STATE : EMPTY_TABLE_LAYOUT_STATE;
 }
 
 export function loadTableLayoutState() {

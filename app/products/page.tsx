@@ -1237,6 +1237,7 @@ function ProductsPageContent() {
       return searchable.includes(query);
     });
   }, [quickPriceSearch, saleProducts]);
+  const quickRecentProducts = useMemo(() => saleProducts.slice(0, 12), [saleProducts]);
   const quickPriceChangedCount = useMemo(
     () => quickPriceProducts.reduce((count, product) => {
       const currentPrice = product.salePrice1 || product.salePrice;
@@ -2354,6 +2355,24 @@ function ProductsPageContent() {
       next.category = coerceCategoryForProductType(next.category, next.productType, categories);
       return next;
     }));
+  }
+
+  function deleteSelectedProduct() {
+    if (!selectedProduct) return;
+    const confirmed = window.confirm(`${selectedProduct.name} ürününü silmek istiyor musunuz? Bu ürün masalarda yeni satış için görünmez.`);
+    if (!confirmed) return;
+
+    setSaleProducts((current) => {
+      const nextProducts = current.filter((product) => product.id !== selectedProduct.id);
+      setSelectedProductId(nextProducts[0]?.id ?? '');
+      return nextProducts;
+    });
+    setQuickPriceDrafts((current) => {
+      const next = { ...current };
+      delete next[selectedProduct.id];
+      return next;
+    });
+    setSavedNotes((current) => [`${selectedProduct.name} satış ürünü silindi.`, ...current]);
   }
 
   function refreshProductMappings() {
@@ -4070,6 +4089,34 @@ function ProductsPageContent() {
                     </button>
                   </div>
 
+                  <div className="mt-4 max-h-72 space-y-2 overflow-y-auto rounded-2xl border border-white/10 bg-[#111827]/70 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Son eklenen ürünler</p>
+                      <span className="rounded-full bg-blue-500/10 px-2.5 py-1 text-[11px] font-semibold text-blue-200">{saleProducts.length} ürün</span>
+                    </div>
+                    {quickRecentProducts.length === 0 ? (
+                      <p className="rounded-xl border border-dashed border-white/10 px-3 py-3 text-xs text-slate-400">Henüz ürün yok. Ekledikçe bu listede alt alta görünecek.</p>
+                    ) : null}
+                    {quickRecentProducts.map((product) => (
+                      <button
+                        key={`quick-recent-${product.id}`}
+                        type="button"
+                        onClick={() => {
+                          setSelectedProductId(product.id);
+                          changeActiveWindow('sale');
+                        }}
+                        className="grid w-full grid-cols-[minmax(0,1fr)_110px_auto] items-center gap-3 rounded-xl border border-white/10 bg-[#0B1220] px-3 py-2 text-left transition hover:border-blue-400/40 hover:bg-blue-500/10"
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-semibold text-white">{product.name}</span>
+                          <span className="mt-0.5 block truncate text-[11px] text-slate-500">{product.category} · {formatSaleUnitLabel(product.salesUnit)}</span>
+                        </span>
+                        <span className="text-right text-sm font-semibold text-white">{formatTRY(parseAmount(product.salePrice1 || product.salePrice))}</span>
+                        <span className="rounded-full bg-slate-500/15 px-2.5 py-1 text-[11px] font-semibold text-slate-200">Düzenle</span>
+                      </button>
+                    ))}
+                  </div>
+
                   <div className="mt-4 border-t border-white/10 pt-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Çoğalt</p>
                     <div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_220px_auto]">
@@ -4604,7 +4651,7 @@ function ProductsPageContent() {
             <article className="rounded-[1.75rem] border border-white/10 bg-[#111827] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_18px_42px_rgba(2,6,23,0.28)]">
               {selectedProduct ? (
                 <>
-                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.24em] text-blue-300">Ürün kartı ve reçete</p><h2 className="mt-2 text-2xl font-semibold text-white">{selectedProduct.name}</h2><p className="mt-2 text-sm leading-6 text-slate-400">Satış ürünü bilgileri ile reçete yönetimi tek yerde. Reçete kalemleri sadece hammadde stokundan seçilir.</p></div><button type="button" onClick={() => setSavedNotes((current) => [`${selectedProduct.name} kartı güncellendi.`, ...current])} className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-500 active:scale-[0.98]"><Save className="h-4 w-4" /> Kaydet</button></div>
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.24em] text-blue-300">Ürün kartı ve reçete</p><h2 className="mt-2 text-2xl font-semibold text-white">{selectedProduct.name}</h2><p className="mt-2 text-sm leading-6 text-slate-400">Satış ürünü bilgileri ile reçete yönetimi tek yerde. Reçete kalemleri sadece hammadde stokundan seçilir.</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setSavedNotes((current) => [`${selectedProduct.name} kartı güncellendi.`, ...current])} className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-500 active:scale-[0.98]"><Save className="h-4 w-4" /> Kaydet</button><button type="button" onClick={deleteSelectedProduct} className="inline-flex items-center gap-2 rounded-2xl border border-rose-400/30 bg-rose-500/15 px-4 py-3 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/25 active:scale-[0.98]"><Trash2 className="h-4 w-4" /> Ürünü Sil</button></div></div>
 
                   <div className="mt-5 space-y-4">
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1.1fr)_220px_minmax(0,1fr)_220px]">

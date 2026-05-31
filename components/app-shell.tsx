@@ -81,6 +81,7 @@ export function AppShell({ title, subtitle, actions, children, immersiveMode = f
   const activeBranch = session.branches.find((branch) => branch.id === session.activeBranchId) ?? session.branches[0];
   const currentUser = session.currentUser;
   const showExpiryNotice = typeof daysLeft === 'number' && daysLeft >= 0 && daysLeft <= 5;
+  const tenantLabel = session.tenantId ? `Abone: ${session.tenantId}` : 'Abone seçilmedi';
 
   if (blockedByPackage) {
     return (
@@ -128,14 +129,6 @@ export function AppShell({ title, subtitle, actions, children, immersiveMode = f
                         <div className="mt-3 flex flex-wrap items-center gap-2">
                           <button
                             type="button"
-                            onClick={() => void handleLogout('shift_end')}
-                            disabled={loggingOut}
-                            className="inline-flex h-9 items-center rounded-xl border border-amber-300/35 bg-amber-500/15 px-3 text-xs font-bold text-amber-100 hover:bg-amber-500/25 disabled:opacity-60"
-                          >
-                            Vardiya Kapat
-                          </button>
-                          <button
-                            type="button"
                             onClick={() => void handleLogout('manual')}
                             disabled={loggingOut}
                             className="inline-flex h-9 items-center rounded-xl border border-rose-300/40 bg-rose-500 px-3 text-xs font-bold text-white shadow-[0_8px_20px_rgba(244,63,94,0.3)] hover:bg-rose-400 disabled:opacity-60"
@@ -146,6 +139,7 @@ export function AppShell({ title, subtitle, actions, children, immersiveMode = f
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
+                      <span className="app-chip">{tenantLabel}</span>
                       <span className="app-chip">{activeBranch.label}</span>
                       <span className="app-chip">{currentUser.role}</span>
                       <OfflinePosToolbar />
@@ -179,14 +173,6 @@ export function AppShell({ title, subtitle, actions, children, immersiveMode = f
                       <div className="mt-3 flex flex-wrap items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => void handleLogout('shift_end')}
-                          disabled={loggingOut}
-                          className="inline-flex h-9 items-center rounded-xl border border-amber-300/35 bg-amber-500/15 px-3 text-xs font-bold text-amber-100 hover:bg-amber-500/25 disabled:opacity-60"
-                        >
-                          Vardiya Kapat
-                        </button>
-                        <button
-                          type="button"
                           onClick={() => void handleLogout('manual')}
                           disabled={loggingOut}
                           className="inline-flex h-9 items-center rounded-xl border border-rose-300/40 bg-rose-500 px-3 text-xs font-bold text-white shadow-[0_8px_20px_rgba(244,63,94,0.3)] hover:bg-rose-400 disabled:opacity-60"
@@ -197,6 +183,7 @@ export function AppShell({ title, subtitle, actions, children, immersiveMode = f
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
+                    <span className="app-chip">{tenantLabel}</span>
                     <span className="app-chip">{activeBranch.label}</span>
                     <span className="app-chip">{currentUser.role}</span>
                     <div className="app-shell-userpill inline-flex h-10 items-center gap-2 rounded-full px-4 text-sm">

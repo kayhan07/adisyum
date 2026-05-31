@@ -2,6 +2,7 @@
 
 import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
 import { loadSessionState } from '@/lib/session-store';
+import { shouldUseSeedBusinessData } from '@/lib/tenant-clean-start';
 
 export type ApiKeyRecord = {
   id: string;
@@ -151,6 +152,22 @@ const DEFAULT_STATE: IntegrationState = {
   ],
 };
 
+const EMPTY_STATE: IntegrationState = {
+  apiKeys: [],
+  apiUsageLogs: [],
+  webhookEvents: [],
+  partnerIntegrations: [],
+  printerDevices: [],
+  printerSettings: {
+    defaultPrinter: '',
+    kitchenPrinter: '',
+    barPrinter: '',
+    deviceType: 'receipt_printer',
+  },
+  printerMappings: [],
+  printLogs: [],
+};
+
 function normalizePrinterDevices(devices: PrinterDeviceRecord[]) {
   const seen = new Map<string, number>();
 
@@ -239,6 +256,13 @@ function normalizePartnerIntegrations(partnerIntegrations: PartnerIntegrationRec
 }
 
 export function getDefaultIntegrationState() {
+  if (!shouldUseSeedBusinessData()) {
+    return {
+      ...EMPTY_STATE,
+      partnerIntegrations: normalizePartnerIntegrations(EMPTY_STATE.partnerIntegrations),
+    };
+  }
+
   return {
     ...DEFAULT_STATE,
     partnerIntegrations: normalizePartnerIntegrations(DEFAULT_STATE.partnerIntegrations),
@@ -350,19 +374,20 @@ export function loadIntegrationState() {
     const raw = readLocalIntegrationState() ?? readRuntimeItem('tenant', STORAGE_KEY);
     if (!raw) return getDefaultIntegrationState();
     const parsed = JSON.parse(raw) as Partial<IntegrationState>;
-    const printerDevices = normalizePrinterDevices(Array.isArray(parsed.printerDevices) ? parsed.printerDevices : DEFAULT_STATE.printerDevices);
+    const fallbackState = getDefaultIntegrationState();
+    const printerDevices = normalizePrinterDevices(Array.isArray(parsed.printerDevices) ? parsed.printerDevices : fallbackState.printerDevices);
 
     return {
-      apiKeys: Array.isArray(parsed.apiKeys) ? parsed.apiKeys : DEFAULT_STATE.apiKeys,
-      apiUsageLogs: Array.isArray(parsed.apiUsageLogs) ? parsed.apiUsageLogs : DEFAULT_STATE.apiUsageLogs,
-      webhookEvents: Array.isArray(parsed.webhookEvents) ? parsed.webhookEvents : DEFAULT_STATE.webhookEvents,
+      apiKeys: Array.isArray(parsed.apiKeys) ? parsed.apiKeys : fallbackState.apiKeys,
+      apiUsageLogs: Array.isArray(parsed.apiUsageLogs) ? parsed.apiUsageLogs : fallbackState.apiUsageLogs,
+      webhookEvents: Array.isArray(parsed.webhookEvents) ? parsed.webhookEvents : fallbackState.webhookEvents,
       partnerIntegrations: normalizePartnerIntegrations(
-        Array.isArray(parsed.partnerIntegrations) ? parsed.partnerIntegrations : DEFAULT_STATE.partnerIntegrations,
+        Array.isArray(parsed.partnerIntegrations) ? parsed.partnerIntegrations : fallbackState.partnerIntegrations,
       ),
       printerDevices,
       printerSettings: normalizePrinterSettings(parsed.printerSettings, printerDevices),
-      printerMappings: Array.isArray(parsed.printerMappings) ? parsed.printerMappings : DEFAULT_STATE.printerMappings,
-      printLogs: Array.isArray(parsed.printLogs) ? parsed.printLogs : DEFAULT_STATE.printLogs,
+      printerMappings: Array.isArray(parsed.printerMappings) ? parsed.printerMappings : fallbackState.printerMappings,
+      printLogs: Array.isArray(parsed.printLogs) ? parsed.printLogs : fallbackState.printLogs,
     } satisfies IntegrationState;
   } catch (error) {
     console.error('[business-flow] integration state load failed', error);

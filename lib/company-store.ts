@@ -93,15 +93,17 @@ export function saveCompanyState(state: CompanyState) {
 export function hydrateCompanyStateFromTenantProfile(profile: TenantCompanyProfile | null | undefined) {
   if (typeof window === 'undefined' || !profile) return;
   const current = loadCompanyState();
+  const defaults = getDefaultCompanyState();
+
   saveCompanyState({
     ...current,
-    tradeName: profile.tradeName?.trim() || current.tradeName,
-    branchName: profile.branchName?.trim() || current.branchName,
-    taxOffice: profile.taxOffice?.trim() || current.taxOffice,
-    taxNumber: profile.taxNumber?.trim() || current.taxNumber,
-    phone: profile.phone?.trim() || current.phone,
-    email: profile.email?.trim() || current.email,
-    address: profile.address?.trim() || current.address,
+    tradeName: profile.tradeName?.trim() || defaults.tradeName,
+    branchName: profile.branchName?.trim() || defaults.branchName,
+    taxOffice: profile.taxOffice?.trim() || '',
+    taxNumber: profile.taxNumber?.trim() || '',
+    phone: profile.phone?.trim() || '',
+    email: profile.email?.trim() || '',
+    address: profile.address?.trim() || '',
   });
 }
 

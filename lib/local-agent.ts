@@ -2,7 +2,14 @@
 
 import { runtimeFetch } from '@/lib/runtime/runtime-api';
 
-const HTTP_BASES = ['http://localhost:4891', 'http://127.0.0.1:4891'];
+const HTTP_BASES = [
+  'http://localhost:4891',
+  'http://127.0.0.1:4891',
+  'http://localhost:3001',
+  'http://127.0.0.1:3001',
+  'https://localhost:3443',
+  'https://127.0.0.1:3443',
+];
 
 type LocalAgentRequestOptions = {
   method?: 'GET' | 'POST';

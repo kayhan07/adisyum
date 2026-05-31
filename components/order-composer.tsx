@@ -207,7 +207,7 @@ function formatForeignMoney(value: number, currency: 'EUR' | 'USD') {
 }
 
 function formatGrossMoney(value: number) {
-  return formatMoney(value * (1 + VAT_RATE));
+  return formatMoney(value);
 }
 
 function parseAmountInput(value: string) {
@@ -344,7 +344,7 @@ function getOrderLineUnitAmount(line: OrderLine) {
 }
 
 function getOrderLineGrossUnitAmount(line: OrderLine) {
-  return roundCurrency(getOrderLineUnitAmount(line) * (1 + VAT_RATE));
+  return roundCurrency(getOrderLineUnitAmount(line));
 }
 
 function resolveInitialStatus(status: string): TableStatus {
@@ -396,7 +396,7 @@ function sortTablesByGroupAndNumber<T extends { group: string; name: string }>(r
 
 function getOrderGross(lines: OrderLine[]) {
   const subtotal = lines.reduce((sum, item) => sum + getOrderLineSubtotal(item), 0);
-  return Number((subtotal * (1 + VAT_RATE)).toFixed(2));
+  return Number(subtotal.toFixed(2));
 }
 
 function formatReceiptDate(date: Date) {
@@ -498,7 +498,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const [tableLayoutState, setTableLayoutState] = useState(() => getDefaultTableLayoutState());
   const [integrationState, setIntegrationState] = useState(() => getDefaultIntegrationState());
   const sourceCategories = categories;
-  const [storedCatalogProducts, setStoredCatalogProducts] = useState<ProductCard[]>(() => getDefaultPosCatalog());
+  const [storedCatalogProducts, setStoredCatalogProducts] = useState<ProductCard[]>([]);
   const [storedSaleProducts, setStoredSaleProducts] = useState<StoredSaleProduct[]>([]);
   const [eventPricingEnabled, setEventPricingEnabled] = useState(false);
   const sourceProducts = storedCatalogProducts;
@@ -766,16 +766,20 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     if (stored?.length) {
       setStoredSaleProducts(stored);
       setStoredCatalogProducts(buildPosCatalogFromStored(stored, { eventMode: eventPricingEnabled }));
+      return;
     }
-  }, [eventPricingEnabled]);
+
+    setStoredSaleProducts([]);
+    setStoredCatalogProducts(includeSeedData ? getDefaultPosCatalog() : []);
+  }, [eventPricingEnabled, includeSeedData]);
 
   useEffect(() => {
     if (!storedSaleProducts.length) {
-      setStoredCatalogProducts(getDefaultPosCatalog());
+      setStoredCatalogProducts(includeSeedData ? getDefaultPosCatalog() : []);
       return;
     }
     setStoredCatalogProducts(buildPosCatalogFromStored(storedSaleProducts, { eventMode: eventPricingEnabled }));
-  }, [eventPricingEnabled, storedSaleProducts]);
+  }, [eventPricingEnabled, includeSeedData, storedSaleProducts]);
 
   useEffect(() => {
     let cancelled = false;
@@ -998,7 +1002,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const subtotal = useMemo(() => lines.reduce((sum, item) => sum + getOrderLineSubtotal(item), 0), [lines]);
   const vat = subtotal * VAT_RATE;
   
-  const total = subtotal + vat;
+  const total = subtotal;
 
   const selectedSplitItemCount = useMemo(() => lines.reduce((sum, item) => sum + (splitSelection[item.id] ?? 0), 0), [lines, splitSelection]);
   const settlementSubtotal = subtotal;
@@ -1049,7 +1053,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       }, 0),
     [lines, splitSelection],
   );
-  const splitSelectedTotal = roundCurrency(splitSelectedSubtotal * (1 + VAT_RATE));
+  const splitSelectedTotal = roundCurrency(splitSelectedSubtotal);
   const splitAmountValue = roundCurrency(parseAmountInput(splitAmountInput));
   const splitTargetTotal = paymentScope === 'split'
     ? splitMode === 'person'
@@ -1252,7 +1256,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       baseTables.map((table) => {
         const lineItems = ordersByTable[table.id] ?? [];
         const subtotalValue = lineItems.reduce((sum, item) => sum + getOrderLineSubtotal(item), 0);
-        const grossTotal = Number((subtotalValue * (1 + VAT_RATE)).toFixed(2));
+        const grossTotal = Number(subtotalValue.toFixed(2));
         return [table.id, grossTotal];
       }),
     );

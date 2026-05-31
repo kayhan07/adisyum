@@ -537,15 +537,27 @@ export default function SettingsPage() {
       group: device.group.trim() || 'POS hattı',
     };
 
+    const samePrinterRegistration = (printer: typeof nextPrinter) => {
+      if (printer.deviceType !== nextPrinter.deviceType || printer.connectionType !== nextPrinter.connectionType) {
+        return false;
+      }
+
+      if (nextPrinter.connectionType === 'network') {
+        return Boolean(nextPrinter.ip)
+          && printer.ip === nextPrinter.ip
+          && Number(printer.port || 9100) === Number(nextPrinter.port || 9100);
+      }
+
+      const currentSystemName = (printer.systemName || printer.name || '').trim();
+      const nextSystemName = (nextPrinter.systemName || nextPrinter.name || '').trim();
+      return Boolean(nextSystemName) && currentSystemName === nextSystemName;
+    };
+
     persistIntegration({
       ...integrationState,
       printerDevices: [
         nextPrinter,
-        ...integrationState.printerDevices.filter((printer) =>
-          printer.name !== nextPrinter.name
-          && printer.systemName !== nextPrinter.systemName
-          && printer.ip !== nextPrinter.ip,
-        ),
+        ...integrationState.printerDevices.filter((printer) => !samePrinterRegistration(printer as typeof nextPrinter)),
       ],
     });
     setSelectedPrinterId(nextPrinter.id);
@@ -564,12 +576,16 @@ export default function SettingsPage() {
 
     addPrinterDevice({
       name: selectedSystemPrinter.name,
-      role: selectedSystemPrinter.connectionType === 'network' ? 'Ağ POS Yazıcısı' : 'USB POS Yazıcısı',
+      role: inferredType === 'kitchen_printer' ? 'Mutfak'
+        : inferredType === 'bar_printer' ? 'Bar'
+          : 'Kasa',
       connectionType: selectedSystemPrinter.connectionType,
       deviceType: inferredType,
       ip: selectedSystemPrinter.ip,
       port: 9100,
-      group: selectedSystemPrinter.connectionType === 'network' ? 'Ağ hattı' : 'USB POS hattı',
+      group: inferredType === 'kitchen_printer' ? 'Mutfak hattı'
+        : inferredType === 'bar_printer' ? 'Bar hattı'
+          : 'Kasa hattı',
       systemName: selectedSystemPrinter.name,
       driverName: selectedSystemPrinter.driverName,
       portName: selectedSystemPrinter.portName,
