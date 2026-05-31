@@ -8,6 +8,12 @@ import { assertTenantCanAccess } from '@/lib/db/tenant-repository';
 
 export const dynamic = 'force-dynamic';
 
+function metadataString(metadata: unknown, key: string) {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return undefined;
+  const value = (metadata as Record<string, unknown>)[key];
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
 export async function GET(request: Request) {
   const session = await getSessionFromRequest(request);
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
@@ -36,8 +42,8 @@ export async function GET(request: Request) {
     }
   }
 
-  const [user, tenant, subscription] = session.role === 'super_admin'
-    ? [null, null, null]
+  const [user, tenant, subscription, branch] = session.role === 'super_admin'
+    ? [null, null, null, null]
     : await Promise.all([
         prisma.user.findUnique({
           where: userTenantIdKey(session.tenantId, session.userId),
@@ -45,7 +51,7 @@ export async function GET(request: Request) {
         }).catch(() => null),
         prisma.tenant.findUnique({
           where: { tenantId: session.tenantId },
-          select: { name: true },
+          select: { name: true, legalName: true, taxNumber: true, metadata: true },
         }).catch(() => null),
         prisma.subscription.findFirst({
           where: {
@@ -54,6 +60,10 @@ export async function GET(request: Request) {
           },
           orderBy: { endsAt: 'desc' },
           select: { endsAt: true },
+        }).catch(() => null),
+        prisma.branch.findUnique({
+          where: { tenantId_branchId: { tenantId: session.tenantId, branchId: session.branchId || 'mrk' } },
+          select: { name: true },
         }).catch(() => null),
       ]);
 
@@ -69,6 +79,14 @@ export async function GET(request: Request) {
       username: user?.username,
       name: user?.name,
       tenantName: tenant?.name,
+      companyProfile: tenant ? {
+        tradeName: tenant.legalName || tenant.name,
+        branchName: branch?.name || 'Merkez Şube',
+        taxNumber: tenant.taxNumber,
+        phone: metadataString(tenant.metadata, 'phone'),
+        email: metadataString(tenant.metadata, 'email'),
+        address: metadataString(tenant.metadata, 'address'),
+      } : undefined,
       subscriptionEndDate: subscription?.endsAt?.toISOString(),
     },
   });

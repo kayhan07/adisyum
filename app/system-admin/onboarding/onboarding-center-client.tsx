@@ -117,14 +117,29 @@ export default function OnboardingCenterClient() {
         headers: { 'content-type': 'application/json' },
         signal: controller.signal,
         body: JSON.stringify({
-          companyName: draft.companyName,
-          adminUsername: draft.adminUsername,
+          companyName: draft.companyName.trim(),
+          legalName: draft.companyName.trim(),
+          taxNumber: draft.taxInfo.trim() || undefined,
+          phone: draft.phone.trim() || undefined,
+          email: draft.email.trim() || undefined,
+          contactName: draft.contactName.trim() || undefined,
+          address: draft.address.trim() || undefined,
+          notes: draft.notes.trim() || undefined,
+          adminEmail: draft.email.trim() || undefined,
+          adminName: draft.contactName.trim() || 'Tenant Admin',
+          adminUsername: draft.adminUsername.trim(),
           adminPassword: draft.adminPassword,
           packageType: draft.packageType,
+          billingPeriod: draft.paymentType,
+          startsAt: draft.startDate || undefined,
+          branchId: 'mrk',
+          branchName: draft.branchCount > 1 ? 'Merkez Şube' : 'Merkez Şube',
+          initialBalance: 0,
+          kontorBalance: 0,
         }),
       });
-      const payload = await response.json().catch(() => null) as { error?: string; warning?: string | null; queued?: boolean } | null;
-      if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { ok?: boolean; error?: string; warning?: string | null; queued?: boolean } | null;
+      if (!response.ok || !payload?.ok) {
         setMessage(payload?.error ?? 'Abonelik oluşturulamadı. Lütfen bilgileri kontrol edip tekrar deneyin.');
         return;
       }

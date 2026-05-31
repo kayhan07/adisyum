@@ -10,6 +10,7 @@ import { resetRuntimeAuthFailureLock, runtimeFetch } from '@/lib/runtime/runtime
 import { hydrateSessionStateFromAuth } from '@/lib/session-store';
 import { setAuthSnapshotFromSession } from '@/lib/saas-store';
 import { resetTenantBusinessCachesForLogin } from '@/lib/tenant-clean-start';
+import { hydrateCompanyStateFromTenantProfile, type TenantCompanyProfile } from '@/lib/company-store';
 
 type LoginResponse = {
   ok?: boolean;
@@ -26,6 +27,7 @@ type AuthMeResponse = {
     subscriptionEndDate?: string;
     username?: string;
     name?: string;
+    companyProfile?: TenantCompanyProfile;
   };
 } | {
   ok: false;
@@ -74,6 +76,7 @@ export default function AppLoginPage() {
       }
 
       resetTenantBusinessCachesForLogin(sessionPayload.session.tenantId);
+      hydrateCompanyStateFromTenantProfile(sessionPayload.session.companyProfile);
       hydrateSessionStateFromAuth(sessionPayload.session);
       setAuthSnapshotFromSession(sessionPayload.session);
       queryClient.setQueryData(authQueryKeys.session(), sessionPayload);

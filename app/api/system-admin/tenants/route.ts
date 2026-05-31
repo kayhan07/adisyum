@@ -75,6 +75,11 @@ export async function POST(request: Request) {
       companyName?: string;
       legalName?: string;
       taxNumber?: string;
+      phone?: string;
+      email?: string;
+      contactName?: string;
+      address?: string;
+      notes?: string;
       packageType?: 'mini' | 'gold' | 'premium';
       billingPeriod?: 'monthly' | 'quarterly' | 'yearly';
       status?: 'trial' | 'active' | 'suspended' | 'cancelled';

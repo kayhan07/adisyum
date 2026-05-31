@@ -79,6 +79,7 @@ export function CashRegisterPanel() {
   const includeSeedData = useSeedBusinessDataEnabled();
   const seedAccounts = useMemo(() => includeSeedData ? erpAccounts : [], [includeSeedData]);
   const seedTransactions = useMemo(() => includeSeedData ? erpAccountTransactions : [], [includeSeedData]);
+  const seedTreasuryAccounts = useMemo(() => includeSeedData ? treasuryAccounts : [], [includeSeedData]);
   const sourceAccounts = useMemo(() => [...seedAccounts, ...storedAccounts], [seedAccounts, storedAccounts]);
   const sourceTransactions = useMemo(() => [...seedTransactions, ...storedTransactions], [seedTransactions, storedTransactions]);
   const baseMovements = useMemo(
@@ -86,7 +87,7 @@ export function CashRegisterPanel() {
     [sourceAccounts, sourceTransactions],
   );
   const movements = useMemo(() => [...baseMovements, ...storedTreasuryMovements], [baseMovements, storedTreasuryMovements]);
-  const allTreasuryAccounts = useMemo(() => [...treasuryAccounts, ...customTreasuryAccounts], [customTreasuryAccounts]);
+  const allTreasuryAccounts = useMemo(() => [...seedTreasuryAccounts, ...customTreasuryAccounts], [seedTreasuryAccounts, customTreasuryAccounts]);
   const balances = useMemo(() => calculateTreasuryBalances(allTreasuryAccounts, movements), [allTreasuryAccounts, movements]);
   const posBalance = balances.find((account) => account.type === 'pos')?.balance ?? 0;
   const rate = parseRate(commissionRate);

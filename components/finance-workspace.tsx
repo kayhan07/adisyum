@@ -68,8 +68,6 @@ const windows = [
   { id: 'profit' as const, label: 'Kar / Zarar', description: 'Gelir gider özeti', icon: LineChart },
 ];
 
-const saleProductOptions = DEFAULT_SALE_PRODUCT_BASE.map((product) => product.name);
-
 function normalizeLookupName(value: string) {
   return value.trim().toLocaleLowerCase('tr');
 }
@@ -97,10 +95,11 @@ function calculateInvoiceTotals(lines: InvoiceLine[]) {
   return { grossSubtotal, discountTotal, subtotal, vatTotal, total: subtotal + vatTotal };
 }
 
-function createLine(mode: InvoiceMode, index = 1): InvoiceLine {
+function createLine(mode: InvoiceMode, index = 1, options: string[] = []): InvoiceLine {
+  const fallbackName = options[index % options.length] ?? '';
   return {
     id: `${mode}-${Date.now()}-${index}`,
-    name: mode === 'purchase' ? (erpIngredients[index % erpIngredients.length]?.name ?? 'Stok kalemi') : (saleProductOptions[index % saleProductOptions.length] ?? 'Ürün'),
+    name: fallbackName,
     quantity: mode === 'purchase' ? '5' : '1',
     unitPrice: mode === 'purchase' ? '520' : '420',
     discountRate: '0',
@@ -250,15 +249,16 @@ function InvoiceWindow() {
   const selectedPartnerLabel = selectedPartner ? `${selectedPartner.code} - ${selectedPartner.name}` : '';
   const totals = calculateInvoiceTotals(lines);
   const productLookupOptions = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          mode === 'purchase'
-            ? [...erpIngredients.map((ingredient) => ingredient.name), ...storedRawIngredients.map((ingredient) => ingredient.name)]
-            : [...DEFAULT_SALE_PRODUCT_BASE.map((product) => product.name), ...storedSaleProducts.map((product) => product.name)],
-        ),
-      ),
-    [mode, storedRawIngredients, storedSaleProducts],
+    () => {
+      const seedRawNames = includeSeedData ? erpIngredients.map((ingredient) => ingredient.name) : [];
+      const seedSaleNames = includeSeedData ? DEFAULT_SALE_PRODUCT_BASE.map((product) => product.name) : [];
+      return Array.from(new Set(
+        mode === 'purchase'
+          ? [...seedRawNames, ...storedRawIngredients.map((ingredient) => ingredient.name)]
+          : [...seedSaleNames, ...storedSaleProducts.map((product) => product.name)],
+      ));
+    },
+    [includeSeedData, mode, storedRawIngredients, storedSaleProducts],
   );
   const partnerMatches = useMemo(() => {
     const query = partnerQuery.trim().toLocaleLowerCase('tr');
@@ -425,7 +425,7 @@ function InvoiceWindow() {
   }
 
   function appendLineAndFocus() {
-    const nextLine = createLine(mode, lines.length + 1);
+    const nextLine = createLine(mode, lines.length + 1, productLookupOptions);
     setLines((current) => [...current, nextLine]);
     setTimeout(() => focusField(nextLine.id, 'name'), 0);
   }
@@ -987,6 +987,9 @@ function StockProductsWindow() {
   const [showStockCardToast, setShowStockCardToast] = useState(false);
   const [activeRawIngredientId, setActiveRawIngredientId] = useState<string | null>(null);
   const [activeSaleProductName, setActiveSaleProductName] = useState<string | null>(null);
+  const includeSeedData = useSeedBusinessDataEnabled();
+  const seedIngredients = useMemo(() => includeSeedData ? erpIngredients : [], [includeSeedData]);
+  const seedProductRecipes = useMemo(() => includeSeedData ? productRecipes : [], [includeSeedData]);
 
   useEffect(() => {
     setStoredRawItems(loadStoredRawIngredients().map((item) => ({ ...item, vatRate: item.vatRate ?? 20 })));
@@ -1015,7 +1018,7 @@ function StockProductsWindow() {
     };
   }, [stockCardSavedMessage]);
 
-  const rows = useMemo(() => erpIngredients.map((ingredient, index) => {
+  const rows = useMemo(() => seedIngredients.map((ingredient, index) => {
     const stored = storedRawItems.find((item) => item.id === ingredient.id || normalizeLookupName(item.name) === normalizeLookupName(ingredient.name));
     const displayUnit = (stored?.unit ?? ingredient.unit) as RawUnit | 'gr' | 'ml';
     const quantity = stored ? parseAmount(stored.currentQuantity) : 0;
@@ -1033,9 +1036,9 @@ function StockProductsWindow() {
       vatRate: stored?.vatRate ?? 20,
       _rowIndex: index,
     };
-  }), [storedRawItems]);
+  }), [seedIngredients, storedRawItems]);
 
-  const saleProducts = useMemo(() => productRecipes.map((recipe) => {
+  const saleProducts = useMemo(() => seedProductRecipes.map((recipe) => {
     const cost = recipe.ingredients.reduce((sum, line) => {
       const stock = rows.find((item) => item.ingredientId === line.ingredientId);
       return sum + ((stock?.averageCost ?? 0) * line.quantity);
@@ -1059,7 +1062,7 @@ function StockProductsWindow() {
         };
       }),
     };
-  }), [rows, storedSaleItems]);
+  }), [rows, seedProductRecipes, storedSaleItems]);
 
   function closeStockCardForm() {
     setShowStockCardForm(false);
@@ -1437,7 +1440,8 @@ function ProfitLossWindow() {
     const baseMovements = buildTreasuryMovementsFromAccountTransactions(sourceTransactions, sourceAccounts);
     return [...baseMovements, ...storedTreasuryMovements];
   }, [sourceAccounts, sourceTransactions, storedTreasuryMovements]);
-  const balances = calculateTreasuryBalances(treasuryAccounts, movements);
+  const seedTreasuryAccounts = useMemo(() => includeSeedData ? treasuryAccounts : [], [includeSeedData]);
+  const balances = calculateTreasuryBalances(seedTreasuryAccounts, movements);
   const income = movements.filter((movement) => movement.direction === 'in').reduce((sum, movement) => sum + movement.amount, 0);
   const treasuryExpense = movements.filter((movement) => movement.direction === 'out').reduce((sum, movement) => sum + movement.amount, 0);
   const stockCost = sourceTransactions

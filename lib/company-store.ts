@@ -14,6 +14,16 @@ export type CompanyState = {
   receiptFooter: string;
 };
 
+export type TenantCompanyProfile = {
+  tradeName?: string | null;
+  branchName?: string | null;
+  taxOffice?: string | null;
+  taxNumber?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+};
+
 const STORAGE_KEY = 'adisyon-company-state';
 const EVENT_NAME = 'adisyon-company-state:changed';
 
@@ -58,6 +68,21 @@ export function saveCompanyState(state: CompanyState) {
   if (typeof window === 'undefined') return;
   writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(state));
   emitChange();
+}
+
+export function hydrateCompanyStateFromTenantProfile(profile: TenantCompanyProfile | null | undefined) {
+  if (typeof window === 'undefined' || !profile) return;
+  const current = loadCompanyState();
+  saveCompanyState({
+    ...current,
+    tradeName: profile.tradeName?.trim() || current.tradeName,
+    branchName: profile.branchName?.trim() || current.branchName,
+    taxOffice: profile.taxOffice?.trim() || current.taxOffice,
+    taxNumber: profile.taxNumber?.trim() || current.taxNumber,
+    phone: profile.phone?.trim() || current.phone,
+    email: profile.email?.trim() || current.email,
+    address: profile.address?.trim() || current.address,
+  });
 }
 
 export function subscribeToCompanyChanges(callback: () => void) {

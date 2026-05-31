@@ -41,6 +41,11 @@ export type ProvisionTenantInput = {
   adminPassword?: string;
   adminName?: string;
   adminEmail?: string;
+  phone?: string;
+  email?: string;
+  contactName?: string;
+  address?: string;
+  notes?: string;
   initialBalance?: number;
   kontorBalance?: number;
   moduleOverrides?: PackageModuleKey[];
@@ -472,6 +477,11 @@ export async function provisionTenant(input: ProvisionTenantInput) {
           provisionedBy: input.createdBy,
           provisionedAt: new Date().toISOString(),
           billingPeriod: input.billingPeriod ?? 'monthly',
+          phone: input.phone?.trim() || undefined,
+          email: input.email?.trim() || input.adminEmail?.trim() || undefined,
+          contactName: input.contactName?.trim() || input.adminName?.trim() || undefined,
+          address: input.address?.trim() || undefined,
+          notes: input.notes?.trim() || undefined,
           initialBalance: input.initialBalance ?? 0,
           kontorBalance: input.kontorBalance ?? 0,
           source: 'system-admin-control-center',

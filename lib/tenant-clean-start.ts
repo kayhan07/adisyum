@@ -11,6 +11,11 @@ const TENANT_LOCAL_CACHE_PREFIXES = [
   'adisyum-local-created-raw-ingredients',
   'adisyum-local-recipe-pool',
   'adisyum-local-integrations-state',
+  'adisyon-local-accounts',
+  'adisyon-finance-invoices',
+  'adisyon-finance-account-transactions',
+  'adisyon-treasury-runtime-movements',
+  'adisyon-custom-treasury-accounts',
 ] as const;
 
 export function shouldUseSeedBusinessData() {

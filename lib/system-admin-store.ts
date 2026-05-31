@@ -262,6 +262,13 @@ export function createAdminTenantDraft() {
   return {
     tenant_id: createTenantId(),
     company_name: '',
+    legal_name: '',
+    tax_number: '',
+    phone: '',
+    email: '',
+    contact_name: '',
+    address: '',
+    notes: '',
     package_id: 'pkg-mini',
     start_date: today(),
     end_date: addDays(30),
