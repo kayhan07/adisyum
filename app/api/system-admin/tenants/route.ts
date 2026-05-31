@@ -102,9 +102,51 @@ export async function POST(request: Request) {
       companyName: body.companyName,
       createdBy: admin.userId,
     });
-    let queueScheduled = true;
+    let queueScheduled = false;
     let inlineProvisioned = false;
     let queueWarning: string | null = null;
+
+    try {
+      await withTimeout(runProvisioningJob(job.id), 30000, 'Tenant provisioning');
+      inlineProvisioned = true;
+    } catch (inlineError) {
+      const inlineMessage = inlineError instanceof Error ? inlineError.message : 'Tenant provisioning tamamlanamadı.';
+      console.error('[system-admin/tenants] inline provisioning failed', {
+        tenantId: job.targetTenantId,
+        jobId: job.id,
+        error: inlineMessage,
+      });
+      await recordProvisioningEvent(job.id, {
+        type: 'inline_provisioning_failed',
+        severity: 'error',
+        message: 'System admin request could not complete tenant provisioning inline.',
+        metadata: { tenantId: job.targetTenantId, error: inlineMessage },
+        source: 'system-admin-api',
+      });
+
+      try {
+        await withTimeout(enqueueProvisioningRun({
+          action: 'run',
+          provisioningJobId: job.id,
+          tenantId: job.targetTenantId,
+          requestedBy: admin.userId,
+        }), 5000, 'Provisioning kuyruğu');
+        queueScheduled = true;
+      } catch (queueError) {
+        queueWarning = queueError instanceof Error ? queueError.message : 'Provisioning kuyruğuna yazılamadı.';
+      }
+
+      return NextResponse.json({
+        ok: false,
+        queued: queueScheduled,
+        warning: queueWarning,
+        job,
+        error: queueScheduled
+          ? `Tenant oluşturma tamamlanmadı; job kuyruğa alındı: ${job.targetTenantId}.`
+          : `Tenant oluşturulamadı: ${inlineMessage}`,
+      }, { status: queueScheduled ? 202 : 500 });
+    }
+
     try {
       await withTimeout(enqueueProvisioningRun({
         action: 'run',
@@ -112,6 +154,7 @@ export async function POST(request: Request) {
         tenantId: job.targetTenantId,
         requestedBy: admin.userId,
       }), 5000, 'Provisioning kuyruğu');
+      queueScheduled = true;
       await recordProvisioningEvent(job.id, {
         type: 'queue_scheduled',
         message: 'Provisioning queued for background worker execution.',
@@ -119,7 +162,6 @@ export async function POST(request: Request) {
         source: 'system-admin-api',
       });
     } catch (queueError) {
-      queueScheduled = false;
       queueWarning = queueError instanceof Error ? queueError.message : 'Provisioning kuyruğuna yazılamadı.';
       console.error('[system-admin/tenants] provisioning queue failed', {
         tenantId: job.targetTenantId,
@@ -134,19 +176,6 @@ export async function POST(request: Request) {
         source: 'system-admin-api',
       });
 
-      try {
-        await withTimeout(runProvisioningJob(job.id), 20000, 'Tenant provisioning yedek çalışma');
-        inlineProvisioned = true;
-        queueWarning = `${queueWarning} Yedek provisioning tamamlandı.`;
-      } catch (inlineError) {
-        const inlineMessage = inlineError instanceof Error ? inlineError.message : 'Yedek provisioning tamamlanamadı.';
-        queueWarning = `${queueWarning} ${inlineMessage}`;
-        console.error('[system-admin/tenants] inline provisioning fallback failed', {
-          tenantId: job.targetTenantId,
-          jobId: job.id,
-          error: inlineMessage,
-        });
-      }
     }
 
     let tenants: Awaited<ReturnType<typeof listSaasTenants>> = [];
