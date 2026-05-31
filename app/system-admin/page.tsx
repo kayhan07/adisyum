@@ -648,42 +648,63 @@ export default function SystemAdminPage() {
     }
     setProvisioningLoading(true);
     setProvisioningMessage('');
-    const response = await fetch('/api/system-admin/tenants', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000);
+    try {
+      const response = await fetch('/api/system-admin/tenants', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          tenantId: tenantDraft.tenant_id,
+          companyName: tenantDraft.company_name.trim(),
+          packageType: pkg.package_type,
+          billingPeriod: 'monthly',
+          status: tenantDraft.demo_enabled ? 'trial' : tenantDraft.status === 'expired' ? 'cancelled' : tenantDraft.status === 'blocked' ? 'suspended' : 'active',
+          startsAt: tenantDraft.start_date,
+          endsAt: tenantDraft.end_date || addDays(tenantDraft.start_date, pkg.duration_days),
+          branchId: 'mrk',
+          branchName: 'Merkez Şube',
+          adminUsername: tenantDraft.admin_username.trim(),
+          adminPassword: tenantDraft.admin_password.trim(),
+          adminName: 'Tenant Admin',
+          initialBalance: 0,
+          kontorBalance: 0,
+        }),
+      }).catch((error) => {
+        if (error instanceof Error && error.name === 'AbortError') {
+          throw new Error('Tenant oluşturma isteği zaman aşımına uğradı. Sayfa kilitlenmedi; lütfen job durumunu kontrol edin.');
+        }
+        throw error;
+      });
+      const payload = await response.json().catch(() => null) as { ok?: boolean; error?: string; warning?: string | null; queued?: boolean; job?: ProvisioningJobRow; tenants?: SaasTenantRow[]; jobs?: ProvisioningJobRow[]; provisioningMetrics?: ProvisioningMetrics } | null;
+      if (!response.ok || !payload?.ok) {
+        setProvisioningMessage(payload?.error ?? 'Tenant provision edilemedi.');
+        return;
+      }
+      if (payload.tenants) {
+        setSaasTenants(payload.tenants);
+        const dbTenants = payload.tenants.map(mapSaasTenant);
+        commit({ ...state, tenants: dbTenants });
+      }
+      setProvisioningJobs(payload.jobs ?? []);
+      setProvisioningMetrics(payload.provisioningMetrics ?? null);
+      const targetTenantId = payload.job?.targetTenantId ?? tenantDraft.tenant_id;
+      setProvisioningMessage(payload.queued === false
+        ? `Tenant job oluşturuldu fakat kuyruk beklemede: ${targetTenantId}. ${payload.warning ?? ''}`.trim()
+        : `Tenant provisioning kuyruğa alındı: ${targetTenantId}.`);
+      setTenantDraft(createAdminTenantDraft());
+    } catch (error) {
+      console.error('[system-admin] tenant creation failed', {
         tenantId: tenantDraft.tenant_id,
-        companyName: tenantDraft.company_name.trim(),
-        packageType: pkg.package_type,
-        billingPeriod: 'monthly',
-        status: tenantDraft.demo_enabled ? 'trial' : tenantDraft.status === 'expired' ? 'cancelled' : tenantDraft.status === 'blocked' ? 'suspended' : 'active',
-        startsAt: tenantDraft.start_date,
-        endsAt: tenantDraft.end_date || addDays(tenantDraft.start_date, pkg.duration_days),
-        branchId: 'mrk',
-        branchName: 'Merkez Şube',
-        adminUsername: tenantDraft.admin_username.trim(),
-        adminPassword: tenantDraft.admin_password.trim(),
-        adminName: 'Tenant Admin',
-        initialBalance: 0,
-        kontorBalance: 0,
-      }),
-    }).catch(() => null);
-    const payload = response ? await response.json().catch(() => null) as { ok?: boolean; error?: string; job?: ProvisioningJobRow; tenants?: SaasTenantRow[]; jobs?: ProvisioningJobRow[]; provisioningMetrics?: ProvisioningMetrics } | null : null;
-    setProvisioningLoading(false);
-    if (!response?.ok || !payload?.ok) {
-      setProvisioningMessage(payload?.error ?? 'Tenant provision edilemedi.');
-      return;
+        error: error instanceof Error ? error.message : String(error),
+      });
+      setProvisioningMessage(error instanceof Error ? error.message : 'Tenant oluşturma başarısız.');
+    } finally {
+      clearTimeout(timeout);
+      setProvisioningLoading(false);
     }
-    if (payload.tenants) {
-      setSaasTenants(payload.tenants);
-      const dbTenants = payload.tenants.map(mapSaasTenant);
-      commit({ ...state, tenants: dbTenants });
-    }
-    setProvisioningJobs(payload.jobs ?? []);
-    setProvisioningMetrics(payload.provisioningMetrics ?? null);
-    setProvisioningMessage(`Tenant provisioning tamamlandı: ${payload.job?.targetTenantId ?? tenantDraft.tenant_id}.`);
-    setTenantDraft(createAdminTenantDraft());
   }
 
   async function runProvisioningAction(jobId: string, action: 'retry' | 'rollback') {

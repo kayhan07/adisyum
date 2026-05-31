@@ -21,6 +21,18 @@ import { enqueueProvisioningRun } from '@/lib/queue/orchestration';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(`${label} zaman aşımına uğradı.`)), timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
 export async function GET(request: Request) {
   try {
     await requireSystemAdmin(request);
@@ -89,22 +101,43 @@ export async function POST(request: Request) {
       companyName: body.companyName,
       createdBy: admin.userId,
     });
-    await enqueueProvisioningRun({
-      action: 'run',
-      provisioningJobId: job.id,
-      tenantId: job.targetTenantId,
-      requestedBy: admin.userId,
-    });
-    await recordProvisioningEvent(job.id, {
-      type: 'queue_scheduled',
-      message: 'Provisioning queued for background worker execution.',
-      metadata: { queue: 'onboarding', action: 'run', tenantId: job.targetTenantId },
-      source: 'system-admin-api',
-    });
+    let queueScheduled = true;
+    let queueWarning: string | null = null;
+    try {
+      await withTimeout(enqueueProvisioningRun({
+        action: 'run',
+        provisioningJobId: job.id,
+        tenantId: job.targetTenantId,
+        requestedBy: admin.userId,
+      }), 5000, 'Provisioning kuyruğu');
+      await recordProvisioningEvent(job.id, {
+        type: 'queue_scheduled',
+        message: 'Provisioning queued for background worker execution.',
+        metadata: { queue: 'onboarding', action: 'run', tenantId: job.targetTenantId },
+        source: 'system-admin-api',
+      });
+    } catch (queueError) {
+      queueScheduled = false;
+      queueWarning = queueError instanceof Error ? queueError.message : 'Provisioning kuyruğuna yazılamadı.';
+      console.error('[system-admin/tenants] provisioning queue failed', {
+        tenantId: job.targetTenantId,
+        jobId: job.id,
+        error: queueWarning,
+      });
+      await recordProvisioningEvent(job.id, {
+        type: 'queue_schedule_failed',
+        severity: 'warning',
+        message: 'Provisioning job oluşturuldu fakat kuyruk zamanında cevap vermedi.',
+        metadata: { queue: 'onboarding', action: 'run', tenantId: job.targetTenantId, error: queueWarning },
+        source: 'system-admin-api',
+      });
+    }
 
     const [tenants, jobs, provisioningMetrics] = await Promise.all([listSaasTenants(), listProvisioningJobs(), getProvisioningMetrics()]);
     return NextResponse.json({
       ok: true,
+      queued: queueScheduled,
+      warning: queueWarning,
       job: jobs.find((item) => item.id === job.id) ?? job,
       tenants,
       jobs,
