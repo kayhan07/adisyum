@@ -75,10 +75,10 @@ export default function AppLoginPage() {
         return;
       }
 
-      resetTenantBusinessCachesForLogin(sessionPayload.session.tenantId);
-      hydrateCompanyStateFromTenantProfile(sessionPayload.session.companyProfile);
       hydrateSessionStateFromAuth(sessionPayload.session);
       setAuthSnapshotFromSession(sessionPayload.session);
+      resetTenantBusinessCachesForLogin(sessionPayload.session.tenantId);
+      hydrateCompanyStateFromTenantProfile(sessionPayload.session.companyProfile);
       queryClient.setQueryData(authQueryKeys.session(), sessionPayload);
       await queryClient.invalidateQueries({ queryKey: authQueryKeys.session() });
       router.replace('/app');

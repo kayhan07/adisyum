@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { removeRuntimeItem } from '@/lib/client/runtime-state';
 import { loadSessionState, subscribeToSessionChanges } from '@/lib/session-store';
 
 const DEFAULT_SEED_TENANT_ID = 'ABN-48291';
@@ -16,6 +17,7 @@ const TENANT_LOCAL_CACHE_PREFIXES = [
   'adisyon-finance-account-transactions',
   'adisyon-treasury-runtime-movements',
   'adisyon-custom-treasury-accounts',
+  'adisyon-daily-cash-movements',
 ] as const;
 
 export function shouldUseSeedBusinessData() {
@@ -49,6 +51,7 @@ export function resetTenantBusinessCachesForLogin(nextTenantId: string) {
 
     for (const key of keysToRemove) {
       window.localStorage.removeItem(key);
+      removeRuntimeItem('tenant', key, { persist: false });
     }
 
     console.info('[tenant-clean-start] tenant business caches reset for login', {
