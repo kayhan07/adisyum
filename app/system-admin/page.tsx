@@ -2846,7 +2846,7 @@ function MonitoringModule() {
                       </div>
                       <div className="rounded-xl bg-[#0B1220]/70 px-4 py-3">
                         <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Field Metrics</p>
-                        <p className="mt-1 text-xs text-slate-300">Print retry {restaurant.metrics.printRetries ?? 0} Â· WS reconnect {restaurant.metrics.websocketReconnects ?? 0} Â· Offline {restaurant.metrics.offlineDurationSec ?? 0}s</p>
+                        <p className="mt-1 text-xs text-slate-300">Print retry {restaurant.metrics.printRetries ?? 0} / WS reconnect {restaurant.metrics.websocketReconnects ?? 0} / Offline {restaurant.metrics.offlineDurationSec ?? 0}s</p>
                       </div>
                     </div>
                     {restaurant.deviceReliabilityMatrix.length > 0 ? (
@@ -3112,7 +3112,7 @@ function MonitoringModule() {
           {data.haReadiness && data.haReadiness.risks.length > 0 && (
             <div>
               <SectionTitle>HA Riskleri</SectionTitle>
-              <ul className="grid gap-1.5">{data.haReadiness.risks.map((r, i) => <li key={i} className="rounded-xl bg-amber-500/8 px-4 py-2 text-xs text-amber-200">âš  {r}</li>)}</ul>
+              <ul className="grid gap-1.5">{data.haReadiness.risks.map((r, i) => <li key={i} className="rounded-xl bg-amber-500/8 px-4 py-2 text-xs text-amber-200">Uyarı: {r}</li>)}</ul>
             </div>
           )}
           {(data.recentRestores ?? []).length > 0 && (

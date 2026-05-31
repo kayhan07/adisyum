@@ -40,6 +40,7 @@ export default function OnboardingCenterClient() {
   const [advancedTab, setAdvancedTab] = useState<AdvancedTab>('jobs');
   const [jobs, setJobs] = useState<ProvisioningJob[]>([]);
   const [message, setMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [draft, setDraft] = useState({
     companyName: '',
     contactName: '',
@@ -65,9 +66,13 @@ export default function OnboardingCenterClient() {
   });
 
   async function loadJobs() {
-    const response = await fetch('/api/system-admin/tenants', { credentials: 'include', cache: 'no-store' });
-    const payload = await response.json().catch(() => null) as { jobs?: ProvisioningJob[] } | null;
-    setJobs(payload?.jobs ?? []);
+    try {
+      const response = await fetch('/api/system-admin/tenants', { credentials: 'include', cache: 'no-store' });
+      const payload = await response.json().catch(() => null) as { jobs?: ProvisioningJob[] } | null;
+      setJobs(payload?.jobs ?? []);
+    } catch (error) {
+      console.error('[system-admin/onboarding] jobs load failed', { error: error instanceof Error ? error.message : String(error) });
+    }
   }
 
   useEffect(() => { void loadJobs(); }, []);
@@ -96,25 +101,50 @@ export default function OnboardingCenterClient() {
   }
 
   async function createSubscription() {
-    setMessage('');
-    const response = await fetch('/api/system-admin/tenants', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        companyName: draft.companyName,
-        adminUsername: draft.adminUsername,
-        adminPassword: draft.adminPassword,
-        packageType: draft.packageType,
-      }),
-    });
-    if (!response.ok) {
-      setMessage('Abonelik oluşturulamadı. Lütfen bilgileri kontrol edip tekrar deneyin.');
+    if (submitting) return;
+    if (!draft.companyName.trim() || !draft.adminUsername.trim() || !draft.adminPassword.trim()) {
+      setMessage('Firma adı, admin kullanıcı adı ve şifre zorunlu.');
       return;
     }
-    setMessage('Kurulum başlatıldı. Süreci aşağıdaki durum akışından izleyebilirsiniz.');
-    setActiveStep('provisioning');
-    await loadJobs();
+    setMessage('');
+    setSubmitting(true);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000);
+    try {
+      const response = await fetch('/api/system-admin/tenants', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          companyName: draft.companyName,
+          adminUsername: draft.adminUsername,
+          adminPassword: draft.adminPassword,
+          packageType: draft.packageType,
+        }),
+      });
+      const payload = await response.json().catch(() => null) as { error?: string; warning?: string | null; queued?: boolean } | null;
+      if (!response.ok) {
+        setMessage(payload?.error ?? 'Abonelik oluşturulamadı. Lütfen bilgileri kontrol edip tekrar deneyin.');
+        return;
+      }
+      setMessage(payload?.queued === false
+        ? `Kurulum işi oluşturuldu fakat kuyruk beklemede. ${payload.warning ?? ''}`.trim()
+        : 'Kurulum başlatıldı. Süreci aşağıdaki durum akışından izleyebilirsiniz.');
+      setActiveStep('provisioning');
+      await loadJobs();
+    } catch (error) {
+      console.error('[system-admin/onboarding] subscription creation failed', {
+        companyName: draft.companyName,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      setMessage(error instanceof Error && error.name === 'AbortError'
+        ? 'Abonelik oluşturma isteği zaman aşımına uğradı. Ekran kilitlenmedi; kurulum işlerini kontrol edin.'
+        : 'Abonelik oluşturulamadı. Lütfen tekrar deneyin.');
+    } finally {
+      clearTimeout(timeout);
+      setSubmitting(false);
+    }
   }
 
   async function runAction(jobId: string, action: 'retry' | 'rollback') {
@@ -148,7 +178,8 @@ export default function OnboardingCenterClient() {
               key={step.id}
               type="button"
               onClick={() => setActiveStep(step.id)}
-              className={`flex items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm ${activeStep === step.id ? 'bg-cyan-400/15 text-cyan-100' : 'text-slate-300 hover:bg-white/5'}`}
+              disabled={submitting}
+              className={`flex items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm disabled:opacity-60 ${activeStep === step.id ? 'bg-cyan-400/15 text-cyan-100' : 'text-slate-300 hover:bg-white/5'}`}
             >
               <span className="flex h-7 w-7 items-center justify-center rounded-full border border-white/10 text-xs">{index + 1}</span>
               {step.label}
@@ -167,12 +198,13 @@ export default function OnboardingCenterClient() {
           {activeStep === 'finance' ? <FinanceStep draft={draft} updateDraft={updateDraft} /> : null}
           {activeStep === 'preview' ? <PreviewStep rows={previewRows} /> : null}
           {activeStep === 'provisioning' ? <ProvisioningStep jobs={jobs} message={message} /> : null}
+          {message && activeStep !== 'provisioning' ? <p className="mt-5 rounded-2xl bg-amber-500/10 px-4 py-3 text-sm text-amber-100">{message}</p> : null}
           <div className="mt-6 flex flex-wrap justify-between gap-3 border-t border-white/10 pt-5">
-            <button type="button" onClick={goBack} disabled={currentStepIndex === 0} className="rounded-2xl border border-white/10 px-4 py-3 text-sm disabled:opacity-40">Geri</button>
+            <button type="button" onClick={goBack} disabled={submitting || currentStepIndex === 0} className="rounded-2xl border border-white/10 px-4 py-3 text-sm disabled:opacity-40">Geri</button>
             {activeStep === 'preview' ? (
-              <button type="button" onClick={() => void createSubscription()} className="rounded-2xl bg-emerald-500/20 px-4 py-3 text-sm font-semibold text-emerald-100">Kurulumu Başlat</button>
+              <button type="button" disabled={submitting} onClick={() => void createSubscription()} className="rounded-2xl bg-emerald-500/20 px-4 py-3 text-sm font-semibold text-emerald-100 disabled:opacity-60">{submitting ? 'Kurulum başlatılıyor…' : 'Kurulumu Başlat'}</button>
             ) : activeStep !== 'provisioning' ? (
-              <button type="button" onClick={goNext} className="rounded-2xl bg-cyan-400/15 px-4 py-3 text-sm font-semibold text-cyan-100">Devam Et</button>
+              <button type="button" disabled={submitting} onClick={goNext} className="rounded-2xl bg-cyan-400/15 px-4 py-3 text-sm font-semibold text-cyan-100 disabled:opacity-60">Devam Et</button>
             ) : null}
           </div>
         </article>
