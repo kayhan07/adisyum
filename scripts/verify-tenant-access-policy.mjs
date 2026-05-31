@@ -57,9 +57,12 @@ expect(tenantsRoute, /integration_action/, 'system-admin tenants API exposes int
 
 expect(systemAdminPage, /subscriptionAccessLabel/, 'system-admin UI surfaces access policy state');
 expect(systemAdminPage, /Abone Yönetim Merkezi/, 'system-admin UI exposes advanced subscriber management center');
+expect(systemAdminPage, /Toplam Abone/, 'system-admin UI exposes subscriber stat cards');
+expect(systemAdminPage, /Telefon/, 'system-admin UI exposes phone column');
+expect(systemAdminPage, /Vergi No/, 'system-admin UI exposes tax number column');
 expect(systemAdminPage, /Genel Bilgiler/, 'system-admin UI exposes tenant profile tab');
 expect(systemAdminPage, /Abonelik/, 'system-admin UI exposes subscription management tab');
-expect(systemAdminPage, /Kullanım Tarihini Manuel Değiştir/, 'system-admin UI exposes manual subscription end-date action');
+expect(systemAdminPage, /Kullanım Tarihini Değiştir/, 'system-admin UI exposes manual subscription end-date action');
 expect(systemAdminPage, /\+30 Gün Ekle/, 'system-admin UI exposes 30-day subscription extension');
 expect(systemAdminPage, /\+1 Ay Ekle/, 'system-admin UI exposes monthly subscription extension');
 expect(systemAdminPage, /\+1 Yıl Ekle/, 'system-admin UI exposes yearly subscription extension');
@@ -70,8 +73,8 @@ expect(systemAdminPage, /Geçici Şifre Oluştur/, 'system-admin UI exposes temp
 expect(systemAdminPage, /Tehlikeli İşlemler/, 'system-admin UI exposes dangerous operations tab');
 expect(systemAdminPage, /Aboneyi Sil/, 'system-admin UI exposes soft delete action');
 expect(systemAdminPage, /Aboneyi Geri Al/, 'system-admin UI exposes restore action');
-expect(systemAdminPage, /Yazıcı Eşleşmelerini Temizle/, 'system-admin UI exposes tenant-scoped printer cleanup action');
-expect(systemAdminPage, /console\.error\('\[system-admin\] subscription action failed'/, 'system-admin UI logs failed subscription actions with context');
+expect(systemAdminPage, /Silinmişten Geri Al/, 'system-admin UI exposes restore action inside status tab');
+expect(systemAdminPage, /console\.error\('\[system-admin\] tenant management action failed'/, 'system-admin UI logs failed tenant management actions with context');
 expect(systemAdminPage, /await onRefresh\(\)/, 'system-admin UI refreshes tenant data after management actions');
 
 const failures = checks.filter((check) => !check.ok);

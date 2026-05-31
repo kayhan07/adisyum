@@ -269,11 +269,11 @@ type DurableAuditRow = {
   after?: unknown;
   createdAt: string;
 };
-type TenantDrawerTab = 'profile' | 'subscription' | 'password' | 'license' | 'data' | 'integrations' | 'export' | 'danger';
+type TenantDrawerTab = 'profile' | 'subscription' | 'password' | 'license' | 'data' | 'export' | 'danger';
 
 const navGroups: Array<{ label: string; items: Array<{ id: AdminModule; label: string; icon: typeof LayoutDashboard }> }> = [
   {
-    label: 'Y?netim',
+    label: 'Yönetim',
     items: [
       { id: 'command-center', label: 'Kontrol Merkezi', icon: LayoutDashboard },
       { id: 'tenants', label: 'Abonelikler', icon: Building2 },
@@ -283,7 +283,7 @@ const navGroups: Array<{ label: string; items: Array<{ id: AdminModule; label: s
     label: 'Operasyon',
     items: [
       { id: 'operations', label: 'Operasyon Merkezi', icon: Activity },
-      { id: 'incidents', label: 'Olay Y?netimi', icon: BellRing },
+      { id: 'incidents', label: 'Olay Yönetimi', icon: BellRing },
       { id: 'jobs', label: 'Görev Kuyruğu', icon: Workflow },
       { id: 'devices', label: 'Cihazlar', icon: Printer },
     ],
@@ -306,10 +306,10 @@ const navGroups: Array<{ label: string; items: Array<{ id: AdminModule; label: s
   {
     label: 'Sistem',
     items: [
-      { id: 'observability', label: 'Sistem ?zleme', icon: Cpu },
-      { id: 'audit-explorer', label: 'Denetim Kay?tlar?', icon: FileText },
-      { id: 'security', label: 'G?venlik Merkezi', icon: ShieldCheck },
-      { id: 'templates', label: '?ablonlar', icon: Sparkles },
+      { id: 'observability', label: 'Sistem İzleme', icon: Cpu },
+      { id: 'audit-explorer', label: 'Denetim Kayıtları', icon: FileText },
+      { id: 'security', label: 'Güvenlik Merkezi', icon: ShieldCheck },
+      { id: 'templates', label: 'Şablonlar', icon: Sparkles },
     ],
   },
 ];
@@ -434,6 +434,8 @@ export default function SystemAdminPage() {
   const [provisioningMetrics, setProvisioningMetrics] = useState<ProvisioningMetrics | null>(null);
   const [provisioningMessage, setProvisioningMessage] = useState('');
   const [provisioningLoading, setProvisioningLoading] = useState(false);
+  const [tenantActionMessage, setTenantActionMessage] = useState('');
+  const [tenantActionLoading, setTenantActionLoading] = useState('');
   const [templatePool, setTemplatePool] = useState<TemplatePoolRow[]>([]);
   const [templatePacks, setTemplatePacks] = useState<TemplatePackRow[]>([]);
   const [recipeTemplates, setRecipeTemplates] = useState<RecipeTemplateRow[]>([]);
@@ -451,7 +453,7 @@ export default function SystemAdminPage() {
   const [tenantDraft, setTenantDraft] = useState<TenantDraft>(() => createAdminTenantDraft());
   const [dealerDraft, setDealerDraft] = useState<Omit<AdminDealer, 'id'>>({ name: '', type: 'dealer', commission_rate: 20, phone: '', email: '', active: true });
   const [packageDraft, setPackageDraft] = useState<AdminPackage>(() => createPackageDraft());
-  const [financeDraft, setFinanceDraft] = useState<Omit<AdminFinanceTransaction, 'id'>>({ type: 'income', source: 'Abonelik tahsilat?', tenant_id: '', amount: 0, date: today(), note: '' });
+  const [financeDraft, setFinanceDraft] = useState<Omit<AdminFinanceTransaction, 'id'>>({ type: 'income', source: 'Abonelik tahsilatı', tenant_id: '', amount: 0, date: today(), note: '' });
   const [invoiceDraft, setInvoiceDraft] = useState<Omit<AdminInvoice, 'id' | 'invoice_no'>>({ tenant_id: '', type: 'subscription', amount: 0, status: 'draft', issue_date: today(), due_date: today() });
   const [saleDraft, setSaleDraft] = useState<Omit<AdminSale, 'id' | 'commission_amount' | 'commission_status'>>({ tenant_id: '', package_id: 'pkg-mini', seller: 'Merkez Satış', dealer_id: 'dealer-center', amount: 0, commission_rate: 0, date: today() });
   const [paymentDraft, setPaymentDraft] = useState<Omit<AdminPayment, 'id' | 'status' | 'transaction_id' | 'date'>>({ tenant_id: '', invoice_id: '', amount: 0, provider: 'manual' });
@@ -659,7 +661,7 @@ export default function SystemAdminPage() {
         startsAt: tenantDraft.start_date,
         endsAt: tenantDraft.end_date || addDays(tenantDraft.start_date, pkg.duration_days),
         branchId: 'mrk',
-        branchName: 'Merkez ?ube',
+        branchName: 'Merkez Şube',
         adminUsername: tenantDraft.admin_username.trim(),
         adminPassword: tenantDraft.admin_password.trim(),
         adminName: 'Tenant Admin',
@@ -680,7 +682,7 @@ export default function SystemAdminPage() {
     }
     setProvisioningJobs(payload.jobs ?? []);
     setProvisioningMetrics(payload.provisioningMetrics ?? null);
-    setProvisioningMessage(`Tenant provisioning tamamlandi: ${payload.job?.targetTenantId ?? tenantDraft.tenant_id}.`);
+    setProvisioningMessage(`Tenant provisioning tamamlandı: ${payload.job?.targetTenantId ?? tenantDraft.tenant_id}.`);
     setTenantDraft(createAdminTenantDraft());
   }
 
@@ -696,6 +698,37 @@ export default function SystemAdminPage() {
     if (payload?.jobs) setProvisioningJobs(payload.jobs);
     if (payload?.provisioningMetrics) setProvisioningMetrics(payload.provisioningMetrics);
     if (response.ok) await loadSaasTenants();
+  }
+
+  async function runTenantManagementAction(tenantId: string, body: Record<string, unknown>, options?: { closeDrawer?: boolean }) {
+    const action = String(body.action ?? 'unknown');
+    const context = { tenantId, action, timestamp: new Date().toISOString() };
+    setTenantActionLoading(`${tenantId}:${action}`);
+    setTenantActionMessage('');
+    try {
+      const response = await fetch('/api/system-admin/tenants', {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ tenantId, ...body }),
+      });
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      if (!response.ok) {
+        console.error('[system-admin] tenant management action failed', { ...context, status: response.status, error: payload?.error });
+        setTenantActionMessage(payload?.error ?? 'İşlem başarısız.');
+        return false;
+      }
+      setTenantActionMessage('İşlem başarılı.');
+      await loadSaasTenants();
+      if (options?.closeDrawer) setSelectedTenantDrawerId('');
+      return true;
+    } catch (error) {
+      console.error('[system-admin] tenant management action failed', { ...context, error: error instanceof Error ? error.message : String(error) });
+      setTenantActionMessage('İşlem başarısız.');
+      return false;
+    } finally {
+      setTenantActionLoading('');
+    }
   }
 
   function saveDealer() {
@@ -790,7 +823,7 @@ export default function SystemAdminPage() {
   function addFinanceTransaction() {
     if (!financeDraft.source.trim() || financeDraft.amount <= 0) return;
     commit({ ...state, finance: [{ id: `fin-${Date.now()}`, ...financeDraft }, ...state.finance] });
-    setFinanceDraft({ type: 'income', source: 'Abonelik tahsilat?', tenant_id: '', amount: 0, date: today(), note: '' });
+    setFinanceDraft({ type: 'income', source: 'Abonelik tahsilatı', tenant_id: '', amount: 0, date: today(), note: '' });
   }
 
   function addInvoice() {
@@ -818,7 +851,7 @@ export default function SystemAdminPage() {
         <aside className="border-r border-white/10 bg-[#0d1626] p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-200">Adisyum Control Tower</p>
           <h1 className="mt-2 text-2xl font-semibold">System Admin</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-400">SaaS operasyon, gelir ve tenant zekas?.</p>
+          <p className="mt-2 text-sm leading-6 text-slate-400">SaaS operasyon, gelir ve tenant zekası.</p>
           <nav className="mt-8 grid gap-6">
             {navGroups.map((group, index) => (
               <details key={group.label} open={index < 3} className="group">
@@ -873,7 +906,7 @@ export default function SystemAdminPage() {
             </header>
 
           {activeModule === 'command-center' ? <CommandCenter dashboard={dashboard} state={state} saasSummary={saasSummary} liveOps={liveOps} provisioningJobs={provisioningJobs} /> : null}
-          {activeModule === 'tenants' ? <TenantsModule state={state} saasTenants={saasTenants} provisioningJobs={provisioningJobs} provisioningMetrics={provisioningMetrics} tenantDraft={tenantDraft} setTenantDraft={setTenantDraft} selectedPackage={selectedPackage} saveTenant={saveTenant} runProvisioningAction={runProvisioningAction} commit={commit} provisioningLoading={provisioningLoading} provisioningMessage={provisioningMessage} liveOps={liveOps} onOpenTenant={setSelectedTenantDrawerId} savedTenantIds={savedTenantIds} onToggleSavedTenant={toggleSavedTenant} /> : null}
+          {activeModule === 'tenants' ? <TenantsModule state={state} saasTenants={saasTenants} provisioningJobs={provisioningJobs} provisioningMetrics={provisioningMetrics} tenantDraft={tenantDraft} setTenantDraft={setTenantDraft} selectedPackage={selectedPackage} saveTenant={saveTenant} runProvisioningAction={runProvisioningAction} commit={commit} provisioningLoading={provisioningLoading} provisioningMessage={provisioningMessage} tenantActionLoading={tenantActionLoading} tenantActionMessage={tenantActionMessage} liveOps={liveOps} onOpenTenant={setSelectedTenantDrawerId} onTenantAction={runTenantManagementAction} savedTenantIds={savedTenantIds} onToggleSavedTenant={toggleSavedTenant} /> : null}
           {activeModule === 'incidents' ? <IncidentCenter incidents={incidentRows} summary={incidentSummary} refresh={loadIncidents} onOpenTenant={setSelectedTenantDrawerId} /> : null}
           {activeModule === 'audit-explorer' ? <AuditExplorer /> : null}
           {activeModule === 'jobs' ? <JobsCenterModule /> : null}
@@ -1028,11 +1061,12 @@ function DataTable({ headers, rows }: { headers: string[]; rows: Array<Array<Rea
   );
 }
 
-function TenantsModule({ saasTenants, liveOps, onOpenTenant }: any) {
+function TenantsModule({ saasTenants, liveOps, onOpenTenant, onTenantAction, tenantActionLoading, tenantActionMessage }: any) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [packageFilter, setPackageFilter] = useState('all');
   const [renewalFilter, setRenewalFilter] = useState('all');
+  const [localMessage, setLocalMessage] = useState('');
 
   const visibleSubscriptions = saasTenants.filter((tenant: SaasTenantRow) => {
     const haystack = `${tenant.companyName} ${tenant.tenantId} ${tenant.adminEmail ?? ''} ${tenant.email ?? ''} ${tenant.taxNumber ?? ''}`.toLowerCase();
@@ -1057,6 +1091,29 @@ function TenantsModule({ saasTenants, liveOps, onOpenTenant }: any) {
   });
 
   const packageOptions: string[] = Array.from(new Set<string>(saasTenants.map((tenant: SaasTenantRow) => String(tenant.plan))));
+  const tenantStats = [
+    ['Toplam Abone', String(saasTenants.filter((tenant: SaasTenantRow) => !tenant.deletedAt).length)],
+    ['Aktif Abone', String(saasTenants.filter((tenant: SaasTenantRow) => !tenant.deletedAt && tenant.status === 'active').length)],
+    ['Süresi Dolan', String(saasTenants.filter((tenant: SaasTenantRow) => !tenant.deletedAt && (tenant.status === 'expired' || tenant.subscriptionStatus === 'expired')).length)],
+    ['Askıya Alınan', String(saasTenants.filter((tenant: SaasTenantRow) => !tenant.deletedAt && tenant.status === 'suspended').length)],
+    ['Limitsiz Lisans', String(saasTenants.filter((tenant: SaasTenantRow) => !tenant.deletedAt && tenant.unlimitedLicense).length)],
+    ['Silinmiş Abone', String(saasTenants.filter((tenant: SaasTenantRow) => tenant.deletedAt).length)],
+  ];
+
+  async function quickAction(tenant: SaasTenantRow, actionBody: Record<string, unknown>, options?: { confirmDelete?: boolean }) {
+    setLocalMessage('');
+    if (options?.confirmDelete) {
+      const confirmation = window.prompt('Bu işlem abonenin erişimini kapatır. Veriler korunur. Devam etmek için abone kodunu yazın.');
+      if (confirmation === null) return;
+      if (confirmation.trim().toUpperCase() !== tenant.tenantId.toUpperCase()) {
+        setLocalMessage('Abone kodu doğrulanmadı. Silme yapılmadı.');
+        return;
+      }
+      await onTenantAction?.(tenant.tenantId, { ...actionBody, confirmationTenantId: confirmation.trim() });
+      return;
+    }
+    await onTenantAction?.(tenant.tenantId, actionBody);
+  }
 
   return (
     <div className="mt-6 grid gap-5">
@@ -1068,19 +1125,23 @@ function TenantsModule({ saasTenants, liveOps, onOpenTenant }: any) {
         <Link href="/system-admin/onboarding" className="rounded-2xl bg-cyan-400/15 px-4 py-3 text-sm font-semibold text-cyan-100">Yeni Abonelik Oluştur</Link>
       </div>
 
+      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+        {tenantStats.map(([label, value]) => <MiniMetric key={label} label={label} value={value} />)}
+      </div>
+
       <div className="grid gap-3 rounded-[1.5rem] border border-white/10 bg-slate-900 p-4 md:grid-cols-2 xl:grid-cols-5">
         <label className="relative xl:col-span-2">
           <Search className="pointer-events-none absolute left-4 top-3.5 h-4 w-4 text-slate-500" />
           <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Firma adı, abone kodu, e-posta veya vergi no ara..." className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 pl-11 pr-4 text-sm outline-none" />
         </label>
         <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="input-dark">
-          <option value="all">Aktif liste</option>
+          <option value="all">Tümü</option>
           <option value="active">Aktif</option>
           <option value="expired">Süresi Doldu</option>
           <option value="suspended">Askıya Alındı</option>
           <option value="disabled">Devre Dışı</option>
           <option value="unlimited">Limitsiz</option>
-          <option value="deleted">Silinmiş/Pasif</option>
+          <option value="deleted">Silinmiş</option>
         </select>
         <select value={packageFilter} onChange={(event) => setPackageFilter(event.target.value)} className="input-dark">
           <option value="all">Tüm paketler</option>
@@ -1093,10 +1154,14 @@ function TenantsModule({ saasTenants, liveOps, onOpenTenant }: any) {
         </select>
       </div>
 
+      {tenantActionMessage ? <p className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">{tenantActionMessage}</p> : null}
+      {localMessage ? <p className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">{localMessage}</p> : null}
+
       <DataTable
-        headers={['Abone Kodu', 'Firma Adı', 'Admin E-posta', 'Durum', 'Abonelik Durumu', 'Bitiş Tarihi', 'Kalan Gün', 'Limitsiz Lisans', 'Son Giriş', 'İşlem']}
+        headers={['Abone Kodu', 'Firma Adı', 'Admin E-posta', 'Telefon', 'Vergi No', 'Durum', 'Abonelik', 'Bitiş Tarihi', 'Kalan Gün', 'Limitsiz', 'Son Giriş', 'İşlemler']}
         rows={visibleSubscriptions.map((tenant: SaasTenantRow) => {
           const remaining = tenantRemainingDays(tenant);
+          const rowBusy = typeof tenantActionLoading === 'string' && tenantActionLoading.startsWith(`${tenant.tenantId}:`);
           return [
             <button key={`${tenant.tenantId}-code`} type="button" onClick={() => onOpenTenant?.(tenant.tenantId)} className="font-semibold text-cyan-100">{tenant.tenantId}</button>,
             <button key={`${tenant.tenantId}-company`} type="button" onClick={() => onOpenTenant?.(tenant.tenantId)} className="block rounded-xl px-3 py-2 text-left transition hover:bg-white/5">
@@ -1104,13 +1169,20 @@ function TenantsModule({ saasTenants, liveOps, onOpenTenant }: any) {
               <p className="text-xs text-slate-400">{tenant.taxNumber || tenant.plan}</p>
             </button>,
             tenant.adminEmail ?? tenant.email ?? '-',
+            tenant.phone ?? '-',
+            tenant.taxNumber ?? '-',
             <StatusPill key={`${tenant.tenantId}-status`} status={tenant.status} />,
             tenant.unlimitedLicense ? 'Limitsiz' : tenant.subscriptionStatus,
             formatDate(tenant.expiresAt),
             tenant.unlimitedLicense ? 'Limitsiz' : remaining ?? '-',
             tenant.unlimitedLicense ? 'Evet' : 'Hayır',
             formatDate(tenant.lastLogin),
-            <button key={`${tenant.tenantId}-manage`} type="button" onClick={() => onOpenTenant?.(tenant.tenantId)} className="rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-100">Yönet</button>,
+            <div key={`${tenant.tenantId}-actions`} className="flex min-w-[220px] flex-wrap gap-2">
+              <button type="button" onClick={() => onOpenTenant?.(tenant.tenantId)} className="rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-100">Yönet</button>
+              <button disabled={rowBusy || Boolean(tenant.deletedAt) || tenant.status === 'suspended'} type="button" onClick={() => void quickAction(tenant, { action: 'update_status', tenantStatus: 'suspended' })} className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs font-semibold text-amber-100 disabled:opacity-50">Askıya Al</button>
+              <button disabled={rowBusy || Boolean(tenant.deletedAt) || tenant.status === 'active'} type="button" onClick={() => void quickAction(tenant, { action: 'update_status', tenantStatus: 'active' })} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-xs font-semibold text-emerald-100 disabled:opacity-50">Aktif Yap</button>
+              <button disabled={rowBusy || Boolean(tenant.deletedAt)} type="button" onClick={() => void quickAction(tenant, { action: 'soft_delete_tenant' }, { confirmDelete: true })} className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-xs font-semibold text-rose-100 disabled:opacity-50">Sil</button>
+            </div>,
           ];
         })}
       />
@@ -1347,9 +1419,8 @@ function TenantOperationsDrawer({ tenantId, tenant, liveOps, provisioningJobs, s
     { id: 'profile', label: 'Genel Bilgiler' },
     { id: 'subscription', label: 'Abonelik' },
     { id: 'password', label: 'Kullanıcı & Şifre' },
-    { id: 'license', label: 'Lisans / Durum' },
+    { id: 'license', label: 'Durum' },
     { id: 'data', label: 'Veri Özeti' },
-    { id: 'integrations', label: 'Yazıcı / Entegrasyon' },
     { id: 'export', label: 'Dışa Aktar' },
     { id: 'danger', label: 'Tehlikeli İşlemler' },
   ];
@@ -1401,14 +1472,15 @@ function TenantOperationsDrawer({ tenantId, tenant, liveOps, provisioningJobs, s
               });
               const payload = await response.json().catch(() => null) as { error?: string } | null;
               if (!response.ok) {
-                console.error('[system-admin] subscription action failed', { ...context, status: response.status, error: payload?.error });
+                console.error('[system-admin] tenant management action failed', { ...context, status: response.status, error: payload?.error });
                 setManagementMessage(payload?.error ?? 'İşlem başarısız.');
                 return;
               }
-              setManagementMessage('İşlem başarılı.');
+              setManagementMessage(body.action === 'soft_delete_tenant' ? 'Abone silindi. Veriler korunuyor.' : 'İşlem başarılı.');
               await onRefresh();
+              if (body.action === 'soft_delete_tenant') onClose();
             } catch (error) {
-              console.error('[system-admin] subscription action failed', { ...context, error: error instanceof Error ? error.message : String(error) });
+              console.error('[system-admin] tenant management action failed', { ...context, error: error instanceof Error ? error.message : String(error) });
               setManagementMessage('İşlem başarısız.');
             } finally {
               setManagementLoading(false);
@@ -1459,6 +1531,7 @@ function DrawerOverview({ tenant, tenantState, presence, devices, jobs, events }
 function DrawerTenantManagement({ activeTab, tenantId, tenant, presence, devices, events, state, loading, message, onAction }: { activeTab: TenantDrawerTab; tenantId: string; tenant: SaasTenantRow | null; presence: LivePresenceRow[]; devices: LiveDeviceRow[]; events: LiveEventRow[]; state: SystemAdminState; loading: boolean; message: string; onAction: (body: Record<string, unknown>) => Promise<void> }) {
   const [manualEndsAt, setManualEndsAt] = useState(tenant?.expiresAt?.slice(0, 10) ?? '');
   const [tempPassword, setTempPassword] = useState('');
+  const [oneTimePassword, setOneTimePassword] = useState('');
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [profileDraft, setProfileDraft] = useState({
     companyName: tenant?.companyName ?? '',
@@ -1474,6 +1547,8 @@ function DrawerTenantManagement({ activeTab, tenantId, tenant, presence, devices
   useEffect(() => {
     setManualEndsAt(tenant?.expiresAt?.slice(0, 10) ?? '');
     setDeleteConfirmation('');
+    setTempPassword('');
+    setOneTimePassword('');
     setProfileDraft({
       companyName: tenant?.companyName ?? '',
       legalName: tenant?.legalName ?? '',
@@ -1495,6 +1570,12 @@ function DrawerTenantManagement({ activeTab, tenantId, tenant, presence, devices
       return;
     }
     await submitAction({ action: 'update_subscription', endsAt: manualEndsAt, unlimitedLicense: false });
+  }
+  async function createTemporaryPassword() {
+    const randomPart = Math.random().toString(36).slice(2, 8).toUpperCase();
+    const generated = `${tenantId}-${randomPart}!`;
+    setOneTimePassword(generated);
+    await submitAction({ action: 'update_password', username: 'admin', temporaryPassword: generated, forcePasswordChange: true });
   }
   const activityHint = `${presence.length} aktif kullanıcı / ${devices.length} cihaz / ${events.length} olay / ${state.tenants.length} tenant`;
   const summaryRows = [
@@ -1522,13 +1603,13 @@ function DrawerTenantManagement({ activeTab, tenantId, tenant, presence, devices
         <input value={tenantId} disabled className="input-dark opacity-70" aria-label="Abone Kodu" />
         <input value={profileDraft.taxNumber} onChange={(e) => setProfileDraft((c) => ({ ...c, taxNumber: e.target.value }))} placeholder="Vergi No" className="input-dark" />
         <input value={profileDraft.phone} onChange={(e) => setProfileDraft((c) => ({ ...c, phone: e.target.value }))} placeholder="Telefon" className="input-dark" />
-        <input value={profileDraft.email} onChange={(e) => setProfileDraft((c) => ({ ...c, email: e.target.value }))} placeholder="E-posta" className="input-dark" />
+        <input value={profileDraft.email} onChange={(e) => setProfileDraft((c) => ({ ...c, email: e.target.value }))} placeholder="Admin E-posta" className="input-dark" />
         <input value={profileDraft.contactName} onChange={(e) => setProfileDraft((c) => ({ ...c, contactName: e.target.value }))} placeholder="Yetkili Kişi" className="input-dark" />
         <input value={profileDraft.legalName} onChange={(e) => setProfileDraft((c) => ({ ...c, legalName: e.target.value }))} placeholder="Ticari Ünvan" className="input-dark" />
         <input value={profileDraft.address} onChange={(e) => setProfileDraft((c) => ({ ...c, address: e.target.value }))} placeholder="Adres" className="input-dark" />
         <textarea value={profileDraft.notes} onChange={(e) => setProfileDraft((c) => ({ ...c, notes: e.target.value }))} placeholder="Notlar" className="input-dark min-h-24 py-3 md:col-span-2" />
       </div>
-      <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_tenant_info', ...profileDraft })} className="btn-blue mt-4">Genel Bilgileri Kaydet</button>
+      <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_tenant_info', ...profileDraft })} className="btn-blue mt-4">Bilgileri Kaydet</button>
     </article> : null}
 
     {activeTab === 'subscription' ? <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
@@ -1541,7 +1622,7 @@ function DrawerTenantManagement({ activeTab, tenantId, tenant, presence, devices
       <div className="mt-4 grid gap-3">
         <div className="grid gap-2 md:grid-cols-[1fr_auto]">
           <input type="date" value={manualEndsAt} onChange={(event) => setManualEndsAt(event.target.value)} className="input-dark" />
-          <button disabled={loading || !manualEndsAt} type="button" onClick={() => void applyManualDate()} className="btn-blue">Kullanım Tarihini Manuel Değiştir</button>
+          <button disabled={loading || !manualEndsAt} type="button" onClick={() => void applyManualDate()} className="btn-blue">Kullanım Tarihini Değiştir</button>
         </div>
         <div className="grid gap-2 md:grid-cols-3">
           <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_subscription', addDays: 30, unlimitedLicense: false })} className="btn-blue">+30 Gün Ekle</button>
@@ -1569,15 +1650,16 @@ function DrawerTenantManagement({ activeTab, tenantId, tenant, presence, devices
         <button disabled={loading || !tempPassword.trim()} type="button" onClick={() => submitAction({ action: 'update_password', username: 'admin', temporaryPassword: tempPassword.trim(), forcePasswordChange: false })} className="btn-blue">Admin Şifresini Sıfırla</button>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
-        <button disabled={loading || !tempPassword.trim()} type="button" onClick={() => submitAction({ action: 'update_password', username: 'admin', temporaryPassword: tempPassword.trim(), forcePasswordChange: true })} className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100">Geçici Şifre Oluştur</button>
+        <button disabled={loading} type="button" onClick={() => void createTemporaryPassword()} className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100">Geçici Şifre Oluştur</button>
         <button disabled={loading} type="button" onClick={() => submitAction({ action: 'update_password', username: 'admin', forcePasswordChange: true })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold">Sonraki Girişte Şifre Değiştir</button>
         <button disabled={loading || tenant?.adminActive === false} type="button" onClick={() => submitAction({ action: 'update_user_status', username: 'admin', active: false })} className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm font-semibold text-rose-100">Kullanıcıyı Kilitle</button>
         <button disabled={loading || tenant?.adminActive === true} type="button" onClick={() => submitAction({ action: 'update_user_status', username: 'admin', active: true })} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-100">Kullanıcı Kilidini Aç</button>
       </div>
+      {oneTimePassword ? <p className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">Geçici şifre sadece bir kez gösterilir: <code className="font-semibold">{oneTimePassword}</code></p> : null}
     </article> : null}
 
     {activeTab === 'license' ? <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
-      <h3 className="text-lg font-semibold">Lisans / Durum</h3>
+      <h3 className="text-lg font-semibold">Durum</h3>
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <MiniMetric label="Mevcut Durum" value={tenant?.deletedAt ? 'Silinmiş' : tenantStatusLabel(tenant?.status)} />
         <MiniMetric label="Erişim Politikası" value={subscriptionAccessLabel(tenant)} />
@@ -1588,12 +1670,11 @@ function DrawerTenantManagement({ activeTab, tenantId, tenant, presence, devices
         <button disabled={loading || Boolean(tenant?.deletedAt)} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'suspended' })} className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100">Askıya Al</button>
         <button disabled={loading || Boolean(tenant?.deletedAt)} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'expired' })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold">Süresi Doldu Yap</button>
         <button disabled={loading || Boolean(tenant?.deletedAt)} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'blocked' })} className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm font-semibold text-rose-100">Devre Dışı Bırak</button>
-        <button disabled={loading || Boolean(tenant?.deletedAt)} type="button" onClick={() => submitAction({ action: 'update_status', tenantStatus: 'active' })} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-100">Tekrar Aktifleştir</button>
+        <button disabled={loading || !tenant?.deletedAt} type="button" onClick={() => submitAction({ action: 'restore_tenant', tenantStatus: 'suspended' })} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-100 disabled:opacity-50">Silinmişten Geri Al</button>
       </div>
     </article> : null}
 
     {activeTab === 'data' ? <TenantDataSummary tenant={tenant} /> : null}
-    {activeTab === 'integrations' ? <TenantIntegrationSummary tenant={tenant} devices={devices} loading={loading} onAction={submitAction} /> : null}
     {activeTab === 'export' ? <TenantExportPanel tenantId={tenantId} loading={loading} /> : null}
     {activeTab === 'danger' ? <article className="rounded-[1.35rem] border border-rose-400/30 bg-rose-950/30 p-5">
       <h3 className="text-lg font-semibold text-rose-100">Tehlikeli İşlemler</h3>
@@ -1644,33 +1725,13 @@ function TenantDataSummary({ tenant }: { tenant: SaasTenantRow | null }) {
   </article>;
 }
 
-function TenantIntegrationSummary({ tenant, devices, loading, onAction }: { tenant: SaasTenantRow | null; devices: LiveDeviceRow[]; loading: boolean; onAction: (body: Record<string, unknown>) => Promise<void> }) {
-  const bridge = devices.find((device) => device.deviceType?.includes('bridge') || device.deviceType?.includes('printer')) ?? devices[0];
-  const lastPrintResult = bridge?.metadata && typeof bridge.metadata.lastPrintResult === 'string' ? bridge.metadata.lastPrintResult : '-';
-  return <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
-    <h3 className="text-lg font-semibold">Yazıcı / Entegrasyon</h3>
-    <div className="mt-4 grid gap-3 md:grid-cols-3">
-      <MiniMetric label="Kayıtlı Yazıcılar" value={String(tenant?.printerCount ?? 0)} />
-      <MiniMetric label="Bridge Durumu" value={bridge?.status ?? 'bilinmiyor'} />
-      <MiniMetric label="Son Bağlantı" value={bridge?.lastHeartbeatAt ? formatDate(bridge.lastHeartbeatAt) : '-'} />
-      <MiniMetric label="Son Test Print Sonucu" value={lastPrintResult} />
-      <MiniMetric label="Local Agent Durumu" value={bridge ? 'kayıtlı' : 'tanımsız'} />
-    </div>
-    <div className="mt-4 grid gap-2 md:grid-cols-3">
-      <button disabled={loading || Boolean(tenant?.deletedAt)} type="button" onClick={() => onAction({ action: 'integration_action', operation: 'clear_printer_mappings' })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold disabled:opacity-50">Yazıcı Eşleşmelerini Temizle</button>
-      <button disabled={loading || Boolean(tenant?.deletedAt)} type="button" onClick={() => onAction({ action: 'integration_action', operation: 'refresh_bridge_registration' })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold disabled:opacity-50">Bridge Kaydını Yenile</button>
-      <button disabled={loading || Boolean(tenant?.deletedAt)} type="button" onClick={() => onAction({ action: 'integration_action', operation: 'send_test_print' })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold disabled:opacity-50">Test Print Gönder</button>
-    </div>
-  </article>;
-}
-
 function TenantExportPanel({ tenantId, loading }: { tenantId: string; loading: boolean }) {
   const exportUrl = `/api/system-admin/tenants?exportTenantId=${encodeURIComponent(tenantId)}`;
   const openExport = () => window.open(exportUrl, '_blank', 'noopener,noreferrer');
   return <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">
     <h3 className="text-lg font-semibold">Dışa Aktar</h3>
     <div className="mt-4 grid gap-2 md:grid-cols-3">
-      {['Ürünleri dışa aktar', 'Cari hesapları dışa aktar', 'Stokları dışa aktar', 'Reçeteleri dışa aktar', 'Ayarları dışa aktar', 'Tüm tenant verisini JSON olarak dışa aktar'].map((label) => (
+      {['Ürünleri Dışa Aktar', 'Cari Hesapları Dışa Aktar', 'Stokları Dışa Aktar', 'Reçeteleri Dışa Aktar', 'Tüm Abone Verisini JSON Dışa Aktar'].map((label) => (
         <button key={label} disabled={loading} type="button" onClick={openExport} className="btn-blue">{label}</button>
       ))}
     </div>
@@ -2034,8 +2095,8 @@ function TemplatesModule({ templates, packs, recipes, recipeItems, stocks, categ
   return (
     <div className="mt-6 grid gap-5">
       <div className="grid gap-4 md:grid-cols-4">
-        <Metric label="?ablon say?s?" value={String(templates.length)} />
-        <Metric label="Paket say?s?" value={String(packs.length)} />
+        <Metric label="Şablon sayısı" value={String(templates.length)} />
+        <Metric label="Paket sayısı" value={String(packs.length)} />
         <Metric label="Restoran tipi" value={String(new Set(templates.map((template) => template.restaurantType)).size)} />
         <Metric label="Toplam import" value={String(importStats.reduce((sum, item) => sum + item.importCount, 0))} />
       </div>
@@ -2059,28 +2120,28 @@ function TemplatesModule({ templates, packs, recipes, recipeItems, stocks, categ
           <button type="button" onClick={() => void save('stock', stockDraft)} className="btn-blue">Ham maddeyi kaydet</button>
         </article>
         <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
-          <h3 className="text-xl font-semibold">Recete</h3>
+          <h3 className="text-xl font-semibold">Reçete</h3>
           <div className="mt-4 grid gap-3">
-            <select value={recipeDraft.productTemplateId} onChange={(e) => setRecipeDraft((c) => ({ ...c, productTemplateId: e.target.value }))} className="input-dark"><option value="">Urun sec</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select>
+            <select value={recipeDraft.productTemplateId} onChange={(e) => setRecipeDraft((c) => ({ ...c, productTemplateId: e.target.value }))} className="input-dark"><option value="">Ürün seç</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select>
             <input value={recipeDraft.name} onChange={(e) => setRecipeDraft((c) => ({ ...c, name: e.target.value }))} placeholder="reçete adı" className="input-dark" />
           </div>
           <div className="mt-3 flex flex-wrap gap-2">{stocks.map((stock) => <button key={stock.id} type="button" onClick={() => setRecipeDraft((c) => ({ ...c, items: [...c.items, { stockTemplateId: stock.id, name: stock.name, quantity: 1, unit: stock.recipeUnit }] }))} className="rounded-full bg-white/10 px-3 py-1 text-xs">{stock.name}</button>)}</div>
-          <button type="button" onClick={() => void save('recipe', recipeDraft)} className="btn-blue">Receteyi kaydet</button>
+          <button type="button" onClick={() => void save('recipe', recipeDraft)} className="btn-blue">Reçeteyi kaydet</button>
         </article>
       </div>
       {message ? <p className="rounded-2xl border border-blue-400/20 bg-blue-500/10 px-4 py-3 text-sm font-semibold text-blue-100">{message}</p> : null}
       <div className="grid gap-5 xl:grid-cols-2">
         <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
-          <h3 className="text-xl font-semibold">Urun sablonu</h3>
+          <h3 className="text-xl font-semibold">Ürün şablonu</h3>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <input value={productDraft.key} onChange={(e) => setProductDraft((c) => ({ ...c, key: e.target.value }))} placeholder="anahtar" className="input-dark" />
             <input value={productDraft.name} onChange={(e) => setProductDraft((c) => ({ ...c, name: e.target.value }))} placeholder="ürün adı" className="input-dark" />
             <input value={productDraft.restaurantType} onChange={(e) => setProductDraft((c) => ({ ...c, restaurantType: e.target.value }))} placeholder="restoran tipi" className="input-dark" />
             <select value={productDraft.categoryTemplateId} onChange={(e) => setProductDraft((c) => ({ ...c, categoryTemplateId: e.target.value }))} className="input-dark"><option value="">Kategori yok</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
             <input type="number" value={productDraft.defaultPrice} onChange={(e) => setProductDraft((c) => ({ ...c, defaultPrice: Number(e.target.value) }))} placeholder="fiyat" className="input-dark" />
-            <input value={productDraft.printerGroupName} onChange={(e) => setProductDraft((c) => ({ ...c, printerGroupName: e.target.value }))} placeholder="yazici grubu" className="input-dark" />
+            <input value={productDraft.printerGroupName} onChange={(e) => setProductDraft((c) => ({ ...c, printerGroupName: e.target.value }))} placeholder="yazıcı grubu" className="input-dark" />
           </div>
-          <button type="button" onClick={() => void save('product', productDraft)} className="btn-blue">Urun sablonunu kaydet</button>
+          <button type="button" onClick={() => void save('product', productDraft)} className="btn-blue">Ürün şablonunu kaydet</button>
         </article>
         <article className="rounded-[1.5rem] border border-white/10 bg-slate-900 p-5">
           <h3 className="text-xl font-semibold">Paket oluşturucu</h3>
@@ -2095,10 +2156,10 @@ function TemplatesModule({ templates, packs, recipes, recipeItems, stocks, categ
         </article>
       </div>
       <div className="grid gap-4 md:grid-cols-4">
-        <Metric label="Recete" value={String(recipes.length)} />
+        <Metric label="Reçete" value={String(recipes.length)} />
         <Metric label="Ham madde" value={String(stocks.length)} />
-        <Metric label="Paket atamasi" value={String(packItems.length)} />
-        <Metric label="Recete satiri" value={String(recipeItems.length)} />
+        <Metric label="Paket ataması" value={String(packItems.length)} />
+        <Metric label="Reçete satırı" value={String(recipeItems.length)} />
       </div>
       <DataTable
         headers={['Paket', 'Tip', 'Ölçek', 'Versiyon', 'Durum']}
@@ -2111,7 +2172,7 @@ function TemplatesModule({ templates, packs, recipes, recipeItems, stocks, categ
         ])}
       />
       <DataTable
-        headers={['?ablon', 'Tip', 'Varsay?lan fiyat', 'Haz?rl?k', 'Yaz?c?', 'Versiyon', 'Import']}
+        headers={['Şablon', 'Tip', 'Varsayılan fiyat', 'Hazırlık', 'Yazıcı', 'Versiyon', 'Import']}
         rows={templates.map((template) => [
           template.name,
           template.restaurantType,

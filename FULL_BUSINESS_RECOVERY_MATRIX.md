@@ -154,6 +154,20 @@ Scope: Adisyum POS/ERP business recovery only. No architecture expansion, no new
 | Finance module | Pass | Critical create/ledger no-op exits now show safe feedback. |
 | Floor module | Pass | Critical move/merge/selected-transfer missing state now logs and shows feedback. |
 
+## Advanced Subscriber Management UI Findings
+
+| Finding | Status | Files changed | Fix applied |
+| --- | --- | --- | --- |
+| Abone Yönetimi ana ekranı yeterince kapsamlı değildi | WORKING | `app/system-admin/page.tsx` | Toplam Abone, Aktif Abone, Süresi Dolan, Askıya Alınan, Limitsiz Lisans ve Silinmiş Abone istatistik kartları eklendi. |
+| Abone tablosu profesyonel SaaS yönetim tablosu gibi değildi | WORKING | `app/system-admin/page.tsx` | Telefon, Vergi No, Abonelik, Bitiş Tarihi, Kalan Gün, Limitsiz, Son Giriş ve görünür İşlemler kolonları eklendi. |
+| Satır aksiyonları eksikti | WORKING | `app/system-admin/page.tsx` | Her satıra `Yönet`, `Askıya Al`, `Aktif Yap` ve görünür `Sil` butonları eklendi. |
+| Abone detay paneli tek form gibi kalıyordu | WORKING | `app/system-admin/page.tsx` | Detay çekmecesi Genel Bilgiler, Abonelik, Kullanıcı & Şifre, Durum, Veri Özeti, Dışa Aktar ve Tehlikeli İşlemler sekmeleriyle düzenlendi. |
+| Abonelik aksiyonları görünür değildi | WORKING | `app/system-admin/page.tsx` | Kullanım Tarihini Değiştir, +30 Gün, +1 Ay, +1 Yıl, Limitsiz Lisans Yap ve Limitsiz Lisansı Kaldır butonları görünür hale getirildi. |
+| Abone silme ana listeden erişilebilir değildi | WORKING | `app/system-admin/page.tsx`, `lib/system-admin/provisioning.ts`, `app/api/system-admin/tenants/route.ts` | Soft delete akışı hem satır aksiyonundan hem Tehlikeli İşlemler sekmesinden abone kodu onayıyla çalışır hale getirildi. |
+| Silinen abone geri alınamıyordu | WORKING | `app/system-admin/page.tsx`, `lib/system-admin/provisioning.ts`, `app/api/system-admin/tenants/route.ts` | `Aboneyi Geri Al` ve `Silinmişten Geri Al` aksiyonları deletedAt alanını temizleyip tenantı güvenli şekilde geri getiriyor. |
+| Hata görünürlüğü eski log anahtarına bağlıydı | WORKING | `app/system-admin/page.tsx` | Tüm tenant yönetim hataları `console.error('[system-admin] tenant management action failed', context)` ile loglanıyor ve UI'da Türkçe mesaj gösteriliyor. |
+| Türkçe metin bozulmaları vardı | WORKING | `app/system-admin/page.tsx`, `scripts/verify-tenant-access-policy.mjs`, `FULL_BUSINESS_RECOVERY_MATRIX.md` | System Admin UI metinleri ve doğrulama beklentileri düzgün Türkçe karakterlerle güncellendi. |
+
 ## Advanced System Admin Subscriber Management Findings
 
 | Finding | Status | Files changed | Fix applied |
