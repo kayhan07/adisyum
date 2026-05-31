@@ -8,6 +8,7 @@ import {
   listSaasTenants,
   recordProvisioningEvent,
   restoreTenant,
+  runProvisioningJob,
   runTenantIntegrationAction,
   softDeleteTenant,
   updateTenantInfo,
@@ -102,6 +103,7 @@ export async function POST(request: Request) {
       createdBy: admin.userId,
     });
     let queueScheduled = true;
+    let inlineProvisioned = false;
     let queueWarning: string | null = null;
     try {
       await withTimeout(enqueueProvisioningRun({
@@ -131,6 +133,20 @@ export async function POST(request: Request) {
         metadata: { queue: 'onboarding', action: 'run', tenantId: job.targetTenantId, error: queueWarning },
         source: 'system-admin-api',
       });
+
+      try {
+        await withTimeout(runProvisioningJob(job.id), 20000, 'Tenant provisioning yedek çalışma');
+        inlineProvisioned = true;
+        queueWarning = `${queueWarning} Yedek provisioning tamamlandı.`;
+      } catch (inlineError) {
+        const inlineMessage = inlineError instanceof Error ? inlineError.message : 'Yedek provisioning tamamlanamadı.';
+        queueWarning = `${queueWarning} ${inlineMessage}`;
+        console.error('[system-admin/tenants] inline provisioning fallback failed', {
+          tenantId: job.targetTenantId,
+          jobId: job.id,
+          error: inlineMessage,
+        });
+      }
     }
 
     let tenants: Awaited<ReturnType<typeof listSaasTenants>> = [];
@@ -155,6 +171,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       queued: queueScheduled,
+      provisioned: inlineProvisioned,
       warning: queueWarning,
       job: jobs.find((item) => item.id === job.id) ?? job,
       tenants,
