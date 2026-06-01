@@ -13,29 +13,84 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function printerName(value: unknown) {
+  if (typeof value === 'string') return value.trim();
+  const record = asRecord(value);
+  const name = typeof record.name === 'string'
+    ? record.name
+    : typeof record.Name === 'string'
+      ? record.Name
+      : '';
+  return name.trim();
+}
+
+function mergePrinters(installedPrinters: unknown[], registeredPrinters: Array<{ name: string; type: string; endpoint: string | null; metadata: unknown }>) {
+  const printers = new Map<string, unknown>();
+
+  for (const printer of installedPrinters) {
+    const name = printerName(printer);
+    if (name) printers.set(name.toLocaleLowerCase('tr-TR'), printer);
+  }
+
+  for (const printer of registeredPrinters) {
+    const key = printer.name.trim().toLocaleLowerCase('tr-TR');
+    if (!key || printers.has(key)) continue;
+    printers.set(key, {
+      name: printer.name,
+      type: printer.type,
+      endpoint: printer.endpoint,
+      registered: true,
+      ...asRecord(printer.metadata),
+    });
+  }
+
+  return Array.from(printers.values());
+}
+
 export async function GET(request: Request) {
   try {
     const tenant = await requireTenant(request);
-    const device = await prisma.tenantDeviceRegistry.findFirst({
-      where: {
-        tenantId: tenant.tenantId,
-        revokedAt: null,
-      },
-      orderBy: { lastHeartbeatAt: 'desc' },
-    });
+    const [device, registeredPrinters] = await Promise.all([
+      prisma.tenantDeviceRegistry.findFirst({
+        where: {
+          tenantId: tenant.tenantId,
+          revokedAt: null,
+        },
+        orderBy: { lastHeartbeatAt: 'desc' },
+      }),
+      prisma.printer.findMany({
+        where: {
+          tenantId: tenant.tenantId,
+          active: true,
+        },
+        orderBy: { name: 'asc' },
+        select: {
+          name: true,
+          type: true,
+          endpoint: true,
+          metadata: true,
+        },
+      }),
+    ]);
 
     if (!device) {
+      const printers = mergePrinters([], registeredPrinters);
       return NextResponse.json({
-        ok: false,
-        code: 'agent_not_found',
-        message: 'Bu aboneye bağlı Windows agent bulunamadı.',
+        ok: printers.length > 0,
+        code: printers.length > 0 ? 'registered_printers_only' : 'agent_not_found',
+        message: registeredPrinters.length > 0
+          ? 'Windows agent bağlı değil. Kayıtlı yazıcı eşleşmeleri gösteriliyor.'
+          : 'Bu aboneye bağlı Windows agent bulunamadı.',
         agent: { found: false, online: false },
-        printers: [],
+        printers,
       });
     }
 
     const metadata = asRecord(device.metadata);
-    const printers = Array.isArray(device.installedPrinters) ? device.installedPrinters : [];
+    const printers = mergePrinters(
+      Array.isArray(device.installedPrinters) ? device.installedPrinters : [],
+      registeredPrinters,
+    );
     const online = Date.now() - device.lastHeartbeatAt.getTime() <= AGENT_ONLINE_WINDOW_MS;
     const agent = {
       found: true,
@@ -52,9 +107,11 @@ export async function GET(request: Request) {
 
     if (!online) {
       return NextResponse.json({
-        ok: false,
-        code: 'agent_offline',
-        message: 'Windows agent çevrimdışı. Masaüstü uygulamasını ve Printer Bridge servisini kontrol edin.',
+        ok: printers.length > 0,
+        code: printers.length > 0 ? 'agent_offline_registered_printers' : 'agent_offline',
+        message: printers.length > 0
+          ? 'Windows agent çevrimdışı. Kayıtlı yazıcı eşleşmeleri gösteriliyor.'
+          : 'Windows agent çevrimdışı. Masaüstü uygulamasını ve Printer Bridge servisini kontrol edin.',
         agent,
         printers,
       });

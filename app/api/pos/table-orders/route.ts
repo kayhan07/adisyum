@@ -453,6 +453,8 @@ function orderItemBelongsToCurrentCatalog(
     metadata: Prisma.JsonValue;
   },
   catalogIndex: ReturnType<typeof buildCatalogIdentityIndex>,
+  tenantProductIds: Set<string>,
+  tenantId: string,
 ) {
   const metadata = normalizeMetadata(item.metadata);
   const posKey = typeof metadata.posKey === 'string'
@@ -463,9 +465,14 @@ function orderItemBelongsToCurrentCatalog(
   const snapshot = normalizeMetadata(metadata.productSnapshot as Prisma.JsonValue);
   const snapshotProductId = typeof snapshot.productId === 'string' ? snapshot.productId : undefined;
   const snapshotPosKey = typeof snapshot.posKey === 'string' ? snapshot.posKey : undefined;
+  const serverStampedTenantMatch = metadata.tenantId === tenantId
+    && metadata.runtimeIdentityMode === 'catalog'
+    && Boolean(snapshotPosKey);
 
   return Boolean(
-    (item.productId && catalogIndex.productIds.has(item.productId))
+    serverStampedTenantMatch
+      || (item.productId && tenantProductIds.has(item.productId))
+      || (item.productId && catalogIndex.productIds.has(item.productId))
       || (snapshotProductId && catalogIndex.productIds.has(snapshotProductId))
       || (posKey && catalogIndex.posKeys.has(posKey))
       || (snapshotPosKey && catalogIndex.posKeys.has(snapshotPosKey)),
@@ -475,9 +482,6 @@ function orderItemBelongsToCurrentCatalog(
 async function loadAuthoritativeOrdersByTable(tenantId: string, branchId?: string) {
   const catalog = await compileTenantPosCatalog(tenantId, branchId, 'pos');
   const catalogIndex = buildCatalogIdentityIndex(catalog);
-  if (catalog.items.length === 0) {
-    return {} as Record<string, OrderLinePayload[]>;
-  }
 
   const orders = await prisma.order.findMany({
     where: { tenantId, status: 'open', orderNo: { startsWith: 'TABLE-' } },
@@ -508,6 +512,23 @@ async function loadAuthoritativeOrdersByTable(tenantId: string, branchId?: strin
         },
       })
     : [];
+  const linkedProductIds = Array.from(new Set(
+    items
+      .map((item) => item.productId)
+      .filter((productId): productId is string => Boolean(productId)),
+  ));
+  const tenantProducts = linkedProductIds.length > 0
+    ? await prisma.product.findMany({
+        where: {
+          tenantId,
+          id: { in: linkedProductIds },
+          active: true,
+          deletedAt: null,
+        },
+        select: { id: true },
+      })
+    : [];
+  const tenantProductIds = new Set(tenantProducts.map((product) => product.id));
 
   const itemsByOrder = new Map<string, typeof items>();
   for (const item of items) {
@@ -528,7 +549,7 @@ async function loadAuthoritativeOrdersByTable(tenantId: string, branchId?: strin
       return [
         tableId,
         (itemsByOrder.get(order.id) ?? [])
-          .filter((item) => orderItemBelongsToCurrentCatalog(item, catalogIndex))
+          .filter((item) => orderItemBelongsToCurrentCatalog(item, catalogIndex, tenantProductIds, tenantId))
           .map(itemToLine),
       ] as const;
     })
@@ -567,6 +588,93 @@ export async function POST(request: Request) {
 
     traceId = mutationTraceId(normalizedBody.mutationId);
     tableId = normalizedBody.tableId;
+    if (normalizedBody.action === 'save_order' || normalizedBody.action === 'mark_order_sent') {
+      if (!tableId) {
+        return runtimeInsertionErrorResponse({
+          status: 400,
+          reason: 'missing_tableId',
+          traceId,
+          tenantId,
+          branchId: tenant.branchId,
+          tableId,
+        });
+      }
+
+      const orderNo = tableOrderNo(tableId);
+      const order = await prisma.order.findUnique({
+        where: { tenantId_orderNo: { tenantId, orderNo } },
+        select: { id: true, metadata: true },
+      });
+
+      if (!order) {
+        return runtimeInsertionErrorResponse({
+          status: 404,
+          reason: 'order_not_found',
+          traceId,
+          tenantId,
+          branchId: tenant.branchId,
+          tableId,
+        });
+      }
+
+      await prisma.$transaction(async (tx) => {
+        const items = await tx.orderItem.findMany({
+          where: { tenantId, orderId: order.id },
+          select: { id: true, quantity: true, metadata: true },
+        });
+
+        if (normalizedBody.action === 'mark_order_sent') {
+          await Promise.all(items.map((item) => {
+            const metadata = normalizeMetadata(item.metadata);
+            return tx.orderItem.update({
+              where: { id: item.id, tenantId },
+              data: {
+                metadata: compactJsonObject({
+                  ...metadata,
+                  sentQty: decimalToNumber(item.quantity),
+                  mutationId: normalizedBody.mutationId,
+                  sentAt: new Date().toISOString(),
+                  updatedAtMs: Date.now(),
+                }),
+              },
+            });
+          }));
+        }
+
+        await tx.order.update({
+          where: { id: order.id, tenantId },
+          data: {
+            status: 'open',
+            metadata: {
+              ...normalizeMetadata(order.metadata),
+              tableKey: tableId,
+              lastMutationId: normalizedBody.mutationId,
+              savedAt: new Date().toISOString(),
+              updatedAtMs: Date.now(),
+            },
+          },
+        });
+      });
+
+      await publishTenantEvent(tenantId, 'orders', {
+        type: normalizedBody.action === 'mark_order_sent' ? 'order.sent' : 'order.saved',
+        tableId,
+        mutationId: normalizedBody.mutationId,
+      }).catch((eventError) => {
+        console.warn('[pos-table-orders] tenant event publish failed', {
+          timestamp: new Date().toISOString(),
+          tenantId,
+          tableId,
+          mutationId: normalizedBody.mutationId,
+          eventType: normalizedBody.action === 'mark_order_sent' ? 'order.sent' : 'order.saved',
+          error: eventError instanceof Error ? eventError.message : String(eventError),
+        });
+      });
+
+      const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId, tenant.branchId ?? undefined);
+      return NextResponse.json({ ok: true, source: 'db', mutationId: normalizedBody.mutationId, ordersByTable });
+    }
+
     if (normalizedBody.action === 'update_line_quantity' || normalizedBody.action === 'remove_line') {
       const lineId = normalizedBody.lineId;
       const nextQuantity = normalizedBody.action === 'remove_line'
@@ -1376,6 +1484,7 @@ export async function POST(request: Request) {
             }),
             metadata: compactJsonObject({
               ...normalizeMetadata(matching.metadata),
+              tenantId,
               productId: productInput.id || undefined,
               productKey: productInput.posKey,
               posKey: productInput.posKey,
@@ -1442,6 +1551,7 @@ export async function POST(request: Request) {
             }),
             notes: productInput.note || null,
             metadata: compactJsonObject({
+              tenantId,
               productId: productInput.id || undefined,
               productKey: productInput.posKey,
               posKey: productInput.posKey,

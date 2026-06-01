@@ -95,7 +95,8 @@ assert(/!Array\.isArray\(catalog\?\.items\)/.test(orderComposer), 'OrderComposer
 assert(!/!catalog\?\.items\?\.length/.test(orderComposer), 'OrderComposer must not preserve stale product cards when authoritative POS catalog is empty');
 assert(/localCreatedProducts/.test(orderComposer), 'OrderComposer must preserve locally created tenant products when the DB catalog is still empty');
 assert(/orderItemBelongsToCurrentCatalog/.test(posTableOrdersRoute), 'POS table-orders must not hydrate order lines for products outside the current tenant catalog');
-assert(/catalog\.items\.length === 0/.test(posTableOrdersRoute), 'POS table-orders must return an empty authoritative order payload when the tenant POS catalog is empty');
+assert(/tenantProductIds/.test(posTableOrdersRoute), 'POS table-orders must preserve active tenant-linked open order lines while rejecting foreign catalog residue');
+assert(!/catalog\.items\.length === 0[\s\S]{0,120}return \{\}/.test(posTableOrdersRoute), 'POS table-orders must not hide active tenant-linked open orders while the runtime catalog is rebuilding');
 assert(!/line\.qty \* line\.price \* \(line\.isReturn \? -1 : 1\) \* 1\.1/.test(read('components/floor-workspace.tsx')), 'Floor authoritative totals must not add VAT on top of the entered sale price');
 assert(/shouldUseSeedBusinessData/.test(qrMenuState), 'QR menu default catalog must be restricted to the seed tenant');
 assert(!/sale-product-storage-save-existing/.test(saleProductCatalog), 'Sale product persistence must replace the stored snapshot so deleted products cannot return after refresh');

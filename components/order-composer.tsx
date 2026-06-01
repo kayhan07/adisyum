@@ -2460,6 +2460,43 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       return;
     }
 
+    const persistOrderState = async (action: 'save_order' | 'mark_order_sent') => {
+      const mutationId = `${currentTable.id}-${action}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const response = await runtimeFetch('/api/pos/table-orders', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          tableId: currentTable.id,
+          mutationId,
+        }),
+      });
+      const payload = await response.json().catch(() => null) as { ok?: boolean; ordersByTable?: Record<string, OrderLine[]>; error?: string; reason?: string } | null;
+      if (!response.ok || !payload?.ok || !payload.ordersByTable) {
+        throw new Error(payload?.reason ?? payload?.error ?? `${action} failed (${response.status})`);
+      }
+
+      const nextOrders = normalizeStoredOrders(payload.ordersByTable, sourceProducts);
+      replaceAuthoritativeOrdersByTable(nextOrders);
+      setOrdersByTable(nextOrders);
+      persistTableLiveTotals({ [currentTable.id]: getOrderGross(nextOrders[currentTable.id] ?? EMPTY_ORDER_LINES) });
+      return mutationId;
+    };
+
+    try {
+      await persistOrderState('save_order');
+      setPaymentOpen(false);
+    } catch (error) {
+      console.error('[business-flow] order save failed', {
+        tableId: currentTable.id,
+        tenantId: sessionState.tenantId,
+        timestamp: new Date().toISOString(),
+        error,
+      });
+      setFeedbackMessage('Adisyon sunucuya kaydedilemedi. Bağlantıyı kontrol edip tekrar deneyin.');
+      return;
+    }
+
     const ensureRuntimePrinters = async () => {
       const latest = loadIntegrationState();
       const activeNonFiscal = latest.printerDevices.filter((device) => device.status !== 'Pasif' && device.deviceType !== 'fiscal_pos');
@@ -2521,7 +2558,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       branch: runtimeSession.context.branch,
     });
     if (!runtimeTenantPrinters.defaultPrinter) {
-      setFeedbackMessage('Yazıcı bulunamadı. Local Agent açıkken Entegrasyonlar > Sistem yazıcılarını tara yapın.');
+      setFeedbackMessage('Adisyon kaydedildi. Yazıcı bulunamadı; Local Agent açıkken Entegrasyonlar > Sistem yazıcılarını tara yapın.');
       return;
     }
 
@@ -2709,18 +2746,27 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       }),
     );
 
-    setOrdersByTable((current) => {
-      rememberUndo(current, 'Adisyon kaydedildi');
-      const currentLines = current[currentTable.id] ?? [];
-      const nextLines = currentLines.map((line) => ({
-        ...line,
-        sentQty: line.qty,
-      }));
+    const successfulPrints = printResults.filter((result) => result.ok);
+    const failedPrints = printResults.filter((result) => !result.ok);
 
-      return { ...current, [currentTable.id]: nextLines };
-    });
+    if (failedPrints.length > 0) {
+      const failedPrinterNames = failedPrints.map((result) => result.printerName).join(', ');
+      setFeedbackMessage(`Adisyon kaydedildi fakat yazdırma hatası var: ${failedPrinterNames}. Local agent çalışmıyor olabilir.`);
+      return;
+    }
 
-    setPaymentOpen(false);
+    try {
+      await persistOrderState('mark_order_sent');
+    } catch (error) {
+      console.error('[business-flow] printed order sent-state save failed', {
+        tableId: currentTable.id,
+        tenantId: sessionState.tenantId,
+        timestamp: new Date().toISOString(),
+        error,
+      });
+      setFeedbackMessage('Adisyon yazdırıldı fakat gönderim durumu kaydedilemedi. Tekrar kontrol edin.');
+      return;
+    }
 
     const branchIdForStock = resolveStockRuntimeBranchId(activeBranchId) as BranchId;
     try {
@@ -2735,15 +2781,6 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       );
     } catch (stockRuntimeError) {
       console.error('[business-flow] smart stock record failed', stockRuntimeError);
-    }
-
-    const successfulPrints = printResults.filter((result) => result.ok);
-    const failedPrints = printResults.filter((result) => !result.ok);
-
-    if (failedPrints.length > 0) {
-      const failedPrinterNames = failedPrints.map((result) => result.printerName).join(', ');
-      setFeedbackMessage(`Adisyon kaydedildi fakat yazdırma hatası var: ${failedPrinterNames}. Local agent çalışmıyor olabilir.`);
-      return;
     }
 
     setFeedbackMessage(
