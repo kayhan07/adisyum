@@ -133,7 +133,7 @@ function emitSaleProductsChange() {
 function readLocalSaleProducts() {
   if (typeof window === 'undefined') return null;
   try {
-    const tenantId = loadSessionState().tenantId || 'ABN-48291';
+    const tenantId = loadSessionState().tenantId || 'anonymous';
     return window.localStorage.getItem(`${LOCAL_STORAGE_KEY}:${tenantId}`)
       ?? (tenantId === 'ABN-48291' ? window.localStorage.getItem(LOCAL_STORAGE_KEY) : null);
   } catch (error) {
@@ -145,7 +145,7 @@ function readLocalSaleProducts() {
 function writeLocalSaleProducts(value: string) {
   if (typeof window === 'undefined') return;
   try {
-    const tenantId = loadSessionState().tenantId || 'ABN-48291';
+    const tenantId = loadSessionState().tenantId || 'anonymous';
     window.localStorage.setItem(`${LOCAL_STORAGE_KEY}:${tenantId}`, value);
   } catch (error) {
     console.error('[business-flow] local sale products save failed', error);
@@ -367,7 +367,7 @@ export function subscribeToStoredSaleProductsChanges(callback: () => void) {
     callback();
   };
   const handleStorage = (event: StorageEvent) => {
-    const tenantId = loadSessionState().tenantId || 'ABN-48291';
+    const tenantId = loadSessionState().tenantId || 'anonymous';
     if (event.key === `${LOCAL_STORAGE_KEY}:${tenantId}`) callback();
   };
 

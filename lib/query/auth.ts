@@ -31,5 +31,7 @@ export function authSessionQueryOptions() {
   return queryOptions({
     queryKey: authQueryKeys.session(),
     queryFn: fetchAuthSession,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 }

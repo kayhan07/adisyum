@@ -25,7 +25,7 @@ function normalizeIngredientKey(value: string) {
 function readLocalRawIngredients() {
   if (typeof window === 'undefined') return null;
   try {
-    const tenantId = loadSessionState().tenantId || 'ABN-48291';
+    const tenantId = loadSessionState().tenantId || 'anonymous';
     return window.localStorage.getItem(`${LOCAL_STORAGE_KEY}:${tenantId}`)
       ?? (tenantId === 'ABN-48291' ? window.localStorage.getItem(LOCAL_STORAGE_KEY) : null);
   } catch (error) {
@@ -37,7 +37,7 @@ function readLocalRawIngredients() {
 function writeLocalRawIngredients(value: string) {
   if (typeof window === 'undefined') return;
   try {
-    const tenantId = loadSessionState().tenantId || 'ABN-48291';
+    const tenantId = loadSessionState().tenantId || 'anonymous';
     window.localStorage.setItem(`${LOCAL_STORAGE_KEY}:${tenantId}`, value);
   } catch (error) {
     console.error('[business-flow] local raw ingredients save failed', error);

@@ -19,6 +19,7 @@ const LOGOUT_EVENT = 'adisyum:secure-logout';
 const STORAGE_KEY = 'adisyum:logout-sync';
 let broadcastChannel: BroadcastChannel | null = null;
 let logoutInProgress = false;
+const LOGOUT_SERVER_WAIT_MS = 1500;
 
 function getChannel() {
   if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return null;
@@ -74,14 +75,21 @@ export async function secureLogout(options: {
 
   try {
     if (!options.skipServer) {
-      await runtimeFetch('/api/auth/session', {
+      const serverLogout = runtimeFetch('/api/auth/session', {
         method: 'DELETE',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ reason, scope }),
+        keepalive: true,
       }).catch(() => undefined);
+      await Promise.race([
+        serverLogout,
+        new Promise((resolve) => window.setTimeout(resolve, LOGOUT_SERVER_WAIT_MS)),
+      ]);
     }
 
-    await cleanupClientState();
+    void cleanupClientState().catch((error) => {
+      console.warn('[secure-logout] client cleanup failed', { reason, scope, error });
+    });
     emitLogoutEvent({ type: 'logout', at: Date.now(), reason, scope });
 
     if (options.redirect !== false) {

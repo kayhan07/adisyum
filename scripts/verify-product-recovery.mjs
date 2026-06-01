@@ -69,7 +69,10 @@ assert(/isAuthEntryRoute = pathname === '\/app\/login' \|\| pathname === '\/syst
 assert(/enabled: !isAuthEntryRoute/.test(provider), 'Auth entry routes must not run the global auth session query');
 assert(/if \(!isFetched \|\| !ready\) return <>\{children\}<\/>;/.test(provider), 'AppRuntimeProvider must render children immediately instead of blanking the UI');
 assert(!/if \(!isFetched \|\| !ready\) return null;/.test(provider), 'AppRuntimeProvider must not return null during bootstrap');
-assert((provider.match(/if \(PRODUCT_RECOVERY_MINIMAL_RUNTIME\) return;/g) ?? []).length >= 4, 'AppRuntimeProvider must disable non-essential runtime loops in product recovery mode');
+assert((provider.match(/if \(PRODUCT_RECOVERY_MINIMAL_RUNTIME\) return;/g) ?? []).length >= 3, 'AppRuntimeProvider must disable non-essential runtime loops in product recovery mode');
+assert(/const validateSession = async \(\) =>/.test(provider), 'AppRuntimeProvider must keep the lightweight auth revocation check enabled in product recovery mode');
+assert(/window\.addEventListener\('focus', onFocus\)/.test(provider), 'AppRuntimeProvider must revalidate auth when the protected app regains focus');
+assert(/document\.addEventListener\('visibilitychange', onVisibility\)/.test(provider), 'AppRuntimeProvider must revalidate auth when the protected app becomes visible');
 assert(/function ingestObservability[\s\S]*PRODUCT_RECOVERY_MINIMAL_RUNTIME/.test(provider), 'Non-essential observability must be disabled in product recovery mode');
 
 assert(!/startAuthoritativeRuntimeSync/.test(orderComposer), 'OrderComposer must not start aggressive authoritative background sync');

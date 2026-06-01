@@ -69,7 +69,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   const isAuthEntryRoute = pathname === '/app/login' || pathname === '/system-admin/login';
   const isProtectedRoute = isProtectedClientRoute(pathname);
   const loginRedirectRef = useRef(false);
-  const { data, isFetched } = useQuery({
+  const { data, isFetched, isFetching } = useQuery({
     ...authSessionQueryOptions(),
     enabled: !isAuthEntryRoute,
   });
@@ -353,18 +353,30 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   }, [data, isFetched]);
 
   useEffect(() => {
-    if (PRODUCT_RECOVERY_MINIMAL_RUNTIME) return;
     if (!isFetched || !data?.ok) return;
 
-    const interval = window.setInterval(async () => {
+    let cancelled = false;
+    const validateSession = async () => {
+      if (cancelled) return;
       if (isLogoutInProgress() || isRuntimeAuthRequired()) return;
       const response = await runtimeFetch('/api/auth/me', { cache: 'no-store' }).catch(() => null);
-      if (!response || response.status !== 401) return;
+      if (!response || (response.status !== 401 && response.status !== 403)) return;
       await secureLogout({ reason: 'token_revoked', scope: 'current', skipServer: true, redirect: true });
-    }, 90000);
+    };
+    const onFocus = () => { void validateSession(); };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void validateSession();
+    };
+
+    const interval = window.setInterval(() => { void validateSession(); }, 30000);
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
+      cancelled = true;
       window.clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [data, isFetched]);
 
@@ -447,7 +459,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     };
   }, [data, isFetched]);
 
-  if (!isAuthEntryRoute && isFetched && !data?.ok && isProtectedRoute) return null;
+  if (!isAuthEntryRoute && isProtectedRoute && (!isFetched || isFetching || !data?.ok || !ready)) return null;
 
   if (!isFetched || !ready) return <>{children}</>;
   return (

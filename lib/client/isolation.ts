@@ -10,22 +10,22 @@ import { clearOfflineOrderQueue } from '@/lib/offline-sync-store';
 export async function resetTenantIsolation() {
   const queryClient = getRegisteredQueryClient();
   queryClient?.clear();
+  clearSessionState();
+  clearAuthSnapshot();
   await Promise.allSettled([
     clearRuntimeScope('tenant'),
     clearOfflineOrderQueue(),
   ]);
   disconnectTenantRealtime();
-  clearSessionState();
-  clearAuthSnapshot();
 }
 
 export async function resetSystemAdminIsolation() {
   const queryClient = getRegisteredQueryClient();
   queryClient?.clear();
-  await clearRuntimeScope('system-admin');
-  disconnectTenantRealtime();
   clearSessionState();
   clearAuthSnapshot();
+  await clearRuntimeScope('system-admin');
+  disconnectTenantRealtime();
 }
 
 export function disposeIsolationRegistry() {

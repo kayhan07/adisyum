@@ -130,7 +130,7 @@ function mergeProductCategories(...categoryLists: Array<readonly string[]>) {
 
 function loadStoredProductCategories() {
   try {
-    const tenantId = loadSessionState().tenantId || 'ABN-48291';
+    const tenantId = loadSessionState().tenantId || 'anonymous';
     const localKey = `${LOCAL_PRODUCT_CATEGORY_STORAGE_KEY}:${tenantId}`;
     const raw = typeof window === 'undefined'
       ? readRuntimeItem('tenant', PRODUCT_CATEGORY_STORAGE_KEY)
@@ -152,7 +152,7 @@ function saveStoredProductCategories(categories: string[]) {
   try {
     const serialized = JSON.stringify(mergeProductCategories(categories));
     if (typeof window !== 'undefined') {
-      const tenantId = loadSessionState().tenantId || 'ABN-48291';
+      const tenantId = loadSessionState().tenantId || 'anonymous';
       window.localStorage.setItem(`${LOCAL_PRODUCT_CATEGORY_STORAGE_KEY}:${tenantId}`, serialized);
     }
     writeRuntimeItem('tenant', PRODUCT_CATEGORY_STORAGE_KEY, serialized);

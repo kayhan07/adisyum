@@ -22,7 +22,7 @@ const pendingFlushes = new Map<RuntimeScope, ReturnType<typeof globalThis.setTim
 const bootstrapPromises = new Map<RuntimeScope, Promise<Record<string, string>>>();
 const channels = new Map<string, BroadcastChannel>();
 const activeTenantIds: Record<RuntimeScope, string> = {
-	tenant: 'ABN-48291',
+	tenant: 'anonymous',
 	'system-admin': 'system-admin',
 };
 const LOCAL_WRITE_REFRESH_GRACE_MS = 8000;
@@ -101,7 +101,8 @@ function areSnapshotsEqual(first: RuntimeSnapshot, second: RuntimeSnapshot) {
 
 function currentScopeIdentity(scope: RuntimeScope) {
 	if (scope === 'system-admin') return 'system-admin';
-	return loadSessionState().tenantId || 'ABN-48291';
+	const session = loadSessionState();
+	return session.isAuthenticated && session.tenantId ? session.tenantId : 'anonymous';
 }
 
 function ensureScopeIdentity(scope: RuntimeScope) {

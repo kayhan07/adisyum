@@ -47,7 +47,7 @@ const STORAGE_KEY = 'adisyon-recipe-pool';
 const LOCAL_STORAGE_KEY = 'adisyum-local-recipe-pool';
 
 function localRecipePoolKey() {
-  const tenantId = loadSessionState().tenantId || 'ABN-48291';
+  const tenantId = loadSessionState().tenantId || 'anonymous';
   return `${LOCAL_STORAGE_KEY}:${tenantId}`;
 }
 
@@ -453,7 +453,7 @@ export function loadStoredRecipePool() {
   }
 
   try {
-    const tenantId = loadSessionState().tenantId || 'ABN-48291';
+    const tenantId = loadSessionState().tenantId || 'anonymous';
     const raw = window.localStorage.getItem(localRecipePoolKey())
       ?? (tenantId === 'ABN-48291' ? window.localStorage.getItem(LOCAL_STORAGE_KEY) : null)
       ?? readRuntimeItem('tenant', STORAGE_KEY);
