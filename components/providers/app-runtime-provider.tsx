@@ -166,12 +166,14 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
       if (data?.ok) resetRuntimeAuthFailureLock();
 
       if (data?.ok) {
-        if (!PRODUCT_RECOVERY_MINIMAL_RUNTIME) {
-          if (data.session.role === 'super_admin') {
-            await bootstrapRuntimeScope('system-admin');
+        if (data.session.role === 'super_admin') {
+          await bootstrapRuntimeScope('system-admin');
+          if (!PRODUCT_RECOVERY_MINIMAL_RUNTIME) {
             connectTenantRealtime(null);
-          } else {
-            await bootstrapRuntimeScope('tenant');
+          }
+        } else {
+          await bootstrapRuntimeScope('tenant');
+          if (!PRODUCT_RECOVERY_MINIMAL_RUNTIME) {
             reconnectTenantRealtime(data.session.tenantId);
           }
         }

@@ -803,9 +803,12 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           });
           return;
         }
-        setStoredCatalogProducts(catalog.items);
         if (catalog.items.length === 0) {
-          setStoredSaleProducts([]);
+          const localCreatedProducts = (loadStoredSaleProducts() ?? []).filter((product) => product.source === 'created');
+          setStoredSaleProducts(localCreatedProducts);
+          setStoredCatalogProducts(buildPosCatalogFromStored(localCreatedProducts, { eventMode: eventPricingEnabled }));
+        } else {
+          setStoredCatalogProducts(catalog.items);
         }
         logOrderFlow('runtime-catalog-hydrated', {
           branchId: activeBranchId,

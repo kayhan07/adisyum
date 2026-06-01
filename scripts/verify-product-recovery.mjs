@@ -45,6 +45,7 @@ function filesContaining(files, pattern) {
 const provider = read('components/providers/app-runtime-provider.tsx');
 const orderComposer = read('components/order-composer.tsx');
 const qrMenuState = read('lib/qr-menu-state.ts');
+const saleProductCatalog = read('lib/sale-product-catalog.ts');
 const runtimeApi = read('lib/runtime/runtime-api.ts');
 const authLock = read('lib/runtime/auth-failure-runtime-lock.ts');
 const appShell = read('components/app-shell.tsx');
@@ -82,7 +83,10 @@ assert(/offline-auto-sync-disabled/.test(orderComposer), 'OrderComposer must exp
 assert(/hydrateAuthoritativeRuntime/.test(orderComposer), 'OrderComposer must retain one bounded initial table hydration');
 assert(/!Array\.isArray\(catalog\?\.items\)/.test(orderComposer), 'OrderComposer must accept authoritative empty POS catalogs');
 assert(!/!catalog\?\.items\?\.length/.test(orderComposer), 'OrderComposer must not preserve stale product cards when authoritative POS catalog is empty');
+assert(/localCreatedProducts/.test(orderComposer), 'OrderComposer must preserve locally created tenant products when the DB catalog is still empty');
 assert(/shouldUseSeedBusinessData/.test(qrMenuState), 'QR menu default catalog must be restricted to the seed tenant');
+assert(!/sale-product-storage-save-existing/.test(saleProductCatalog), 'Sale product persistence must replace the stored snapshot so deleted products cannot return after refresh');
+assert(/await bootstrapRuntimeScope\('tenant'\)/.test(provider), 'Tenant runtime snapshot bootstrap must remain enabled in product recovery mode');
 
 assert(/POS_TABLE_ORDERS_API = '\/api\/pos\/table-orders'/.test(runtimeApi), 'POS table order mutations must use the root /api/pos/table-orders endpoint');
 assert(/RUNTIME_POS_CATALOG_API = '\/api\/runtime\/pos-catalog'/.test(runtimeApi), 'Runtime API must explicitly allow /api/runtime/pos-catalog');

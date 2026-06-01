@@ -240,6 +240,13 @@ Scope: Adisyum POS/ERP business recovery only. No architecture expansion, no new
 
 ## Auth Entry / Tenant Snapshot Isolation Findings
 
+### Refresh Persistence Follow-up
+
+| Finding | Status | Root cause | Files changed | Fix applied | Remaining QA |
+| --- | --- | --- | --- | --- | --- |
+| Masa tanımları refresh sonrası sıfırlanıyordu | WORKING | Product recovery modunda `AppRuntimeProvider`, tenant runtime snapshot bootstrap işlemini tamamen atlıyordu. Masa layout kaydı server runtime snapshot'a yazılsa bile yeni sayfa açılışında okunmuyordu. | `components/providers/app-runtime-provider.tsx`, `scripts/verify-product-recovery.mjs` | Tenant ve system-admin snapshot bootstrap işlemleri minimal recovery modunda da çalışır; yalnız ağır realtime döngüleri kapalı kalır. Masa layout refresh sonrası tenant-scoped snapshot'tan geri yüklenir. | VPS deploy sonrası yeni tenantta masa ekle, refresh, masa sil, refresh testi yapılmalı. |
+| Eklenen ürünler refresh sonrası kayboluyor, eski ürünler geri geliyordu | WORKING | Ürün store kayıt fonksiyonu tam listeyi replace etmek yerine eski kayıtları koruyarak merge ediyordu. Ayrıca masa adisyonu boş DB kataloğunda yerelde oluşturulmuş ürünleri de temizliyordu. | `lib/sale-product-catalog.ts`, `components/order-composer.tsx`, `app/products/page.tsx`, `scripts/verify-product-recovery.mjs` | Ürün store artık tam snapshot replace eder; silinen ürün geri dönmez. Boş DB kataloğu geldiğinde yalnız `source: created` tenant ürünleri korunur, demo kayıtlar temizlenir. Temiz tenant reçete havuzu demo şablonla başlamaz. | VPS deploy sonrası ürün ekle, refresh, masada kontrol et, ürün sil, refresh testi yapılmalı. |
+
 | Finding | Status | Root cause | Files changed | Fix applied | Remaining QA |
 | --- | --- | --- | --- | --- | --- |
 | Korumalı ekran login doğrulanmadan kısa süre görünebiliyordu | WORKING | Client provider, `/api/auth/me` tamamlanmadan children render ediyordu. React Query önbelleğinde eski başarılı sonuç varsa refetch sırasında da kısa görünüm oluşabiliyordu. | `components/providers/app-runtime-provider.tsx`, `lib/query/auth.ts` | Korumalı ekran auth doğrulaması, refetch ve runtime hazırlığı tamamlanana kadar kapalı tutulur. Auth sorgusu her mount sırasında yeniden doğrulanır. | VPS deploy sonrası cookie silinmiş ve süresi dolmuş cookie senaryoları tarayıcıda doğrulanmalı. |

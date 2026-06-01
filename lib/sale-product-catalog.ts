@@ -342,14 +342,7 @@ export function saveStoredSaleProducts(products: StoredSaleProduct[]) {
         salePrice: product.salePrice1 || product.salePrice,
       }),
     }));
-    const existing = filterSellableProducts(loadStoredSaleProducts() ?? [], 'sale-product-storage-save-existing');
-    const incomingKeys = new Set(
-      incoming.flatMap((item) => [item.id, normalizeProductKey(item.name)]),
-    );
-    const preserved = existing.filter(
-      (item) => !incomingKeys.has(item.id) && !incomingKeys.has(normalizeProductKey(item.name)),
-    );
-    const serialized = JSON.stringify([...incoming, ...preserved]);
+    const serialized = JSON.stringify(incoming);
     writeLocalSaleProducts(serialized);
     writeRuntimeItem('tenant', STORAGE_KEY, serialized);
     emitSaleProductsChange();

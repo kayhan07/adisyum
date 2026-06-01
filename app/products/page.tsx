@@ -929,8 +929,9 @@ function buildInitialSaleProducts(storedProducts: StoredSaleProduct[] | null, in
 function createInitialRecipePoolState(
   products: SaleProductCard[],
   storedPool?: { recipes: RecipePoolRecipe[]; versions: RecipePoolVersion[] } | null,
+  includeSeedData = true,
 ) {
-  const defaultPool = getDefaultRecipePoolState();
+  const defaultPool = includeSeedData ? getDefaultRecipePoolState() : { recipes: [], versions: [] };
 
   const recipes: RecipePoolRecipe[] = [];
   const versions: RecipePoolVersion[] = [];
@@ -966,7 +967,7 @@ const SERVER_INITIAL_SALE_PRODUCTS = buildInitialSaleProducts(null, false).map((
   recipeId: product.recipeId ?? (product.recipeLines.length > 0 ? `recipe-${product.id}-${index + 1}` : undefined),
 }));
 
-const SERVER_INITIAL_RECIPE_POOL = createInitialRecipePoolState(SERVER_INITIAL_SALE_PRODUCTS, null);
+const SERVER_INITIAL_RECIPE_POOL = createInitialRecipePoolState(SERVER_INITIAL_SALE_PRODUCTS, null, false);
 
 function getProductBaseRecipeLines(product: SaleProductCard, versions: RecipePoolVersion[]) {
   const publishedVersion = getLatestPublishedRecipeVersion(product.recipeId, versions);
@@ -1993,7 +1994,7 @@ function ProductsPageContent() {
       recipeId: product.recipeId ?? (product.recipeLines.length > 0 ? `recipe-${product.id}-${index + 1}` : undefined),
     }));
     const storedPool = loadStoredRecipePool();
-    const hydratedRecipePool = createInitialRecipePoolState(hydratedProducts, storedPool);
+    const hydratedRecipePool = createInitialRecipePoolState(hydratedProducts, storedPool, includeSeedData);
     const hydratedRawIngredients = loadStoredRawIngredients().map((ingredient) => ({
       ...ingredient,
       vatRate: ingredient.vatRate ?? 20,
