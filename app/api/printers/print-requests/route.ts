@@ -4,15 +4,22 @@ import { prisma } from '@/lib/db/prisma';
 import { requireTenant, tenantAuthErrorResponse } from '@/lib/requireTenant';
 import { validateCloudPrintRequest } from '@/lib/device-runtime';
 import { publishTenantEvent } from '@/lib/realtime/tenant-events';
+import { authenticateRegisteredDevice } from '@/lib/server/device-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+const AGENT_ONLINE_WINDOW_MS = 45_000;
 
 export async function GET(request: Request) {
   try {
-    const tenant = await requireTenant(request);
+    const registeredDevice = await authenticateRegisteredDevice(request);
+    const tenant = registeredDevice ?? await requireTenant(request);
     const url = new URL(request.url);
-    const deviceId = url.searchParams.get('deviceId') ?? undefined;
+    const requestedDeviceId = url.searchParams.get('deviceId') ?? undefined;
+    if (registeredDevice && requestedDeviceId && requestedDeviceId !== registeredDevice.deviceId) {
+      return NextResponse.json({ ok: false, error: 'Cihaz kimliği eşleşmiyor.' }, { status: 403 });
+    }
+    const deviceId = registeredDevice?.deviceId ?? requestedDeviceId;
     const jobs = await prisma.tenantPrintJob.findMany({
       where: {
         tenantId: tenant.tenantId,
@@ -53,9 +60,9 @@ export async function POST(request: Request) {
     }
 
     const activeDevice = validated.targetDeviceId
-      ? await prisma.tenantDeviceRegistry.findFirst({ where: { tenantId: tenant.tenantId, deviceId: validated.targetDeviceId, status: 'online', revokedAt: null } })
+      ? await prisma.tenantDeviceRegistry.findFirst({ where: { tenantId: tenant.tenantId, deviceId: validated.targetDeviceId, status: 'online', revokedAt: null, lastHeartbeatAt: { gte: new Date(Date.now() - AGENT_ONLINE_WINDOW_MS) } } })
       : await prisma.tenantDeviceRegistry.findFirst({
-          where: { tenantId: tenant.tenantId, branchId: tenant.branchId ?? undefined, status: 'online', revokedAt: null },
+          where: { tenantId: tenant.tenantId, branchId: tenant.branchId ?? undefined, status: 'online', revokedAt: null, lastHeartbeatAt: { gte: new Date(Date.now() - AGENT_ONLINE_WINDOW_MS) } },
           orderBy: { lastHeartbeatAt: 'desc' },
         });
 
@@ -110,7 +117,8 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const tenant = await requireTenant(request);
+    const registeredDevice = await authenticateRegisteredDevice(request);
+    const tenant = registeredDevice ?? await requireTenant(request);
     const body = await request.json().catch(() => null) as {
       jobId?: string;
       deviceId?: string;
@@ -119,6 +127,9 @@ export async function PATCH(request: Request) {
     } | null;
     if (!body?.jobId || !body?.deviceId || !body?.status) {
       return NextResponse.json({ ok: false, error: 'jobId, deviceId and status are required.' }, { status: 400 });
+    }
+    if (registeredDevice && body.deviceId !== registeredDevice.deviceId) {
+      return NextResponse.json({ ok: false, error: 'Cihaz kimliği eşleşmiyor.' }, { status: 403 });
     }
 
     const job = await prisma.tenantPrintJob.updateMany({

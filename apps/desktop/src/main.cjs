@@ -9,6 +9,7 @@ const ElectronStore = require('electron-store');
 const Store = ElectronStore.default || ElectronStore;
 const DEFAULT_CLOUD_URL = 'https://adisyum.com/floor';
 const DEFAULT_BRIDGE_URL = 'http://127.0.0.1:4891';
+const CLOUD_SYNC_INTERVAL_MS = 15000;
 
 const store = new Store({
   name: 'desktop-config',
@@ -34,6 +35,8 @@ const store = new Store({
 
 let mainWindow;
 let bridgeProcess;
+let cloudSyncTimer;
+let cloudSyncInFlight = false;
 
 function ensureDeviceId() {
   let deviceId = store.get('deviceId');
@@ -117,6 +120,7 @@ function createWindow() {
   maybeStartBridge();
 
   if (isActivated()) {
+    startCloudBridgeSync();
     applySessionCookie()
       .catch(() => false)
       .finally(() => mainWindow.loadURL(operationalUrl()));
@@ -129,6 +133,137 @@ async function bridgeJson(route, init) {
   const response = await fetch(`${store.get('bridgeUrl')}${route}`, init);
   if (!response.ok) throw new Error(`Bridge status ${response.status}`);
   return response.json();
+}
+
+function cloudDeviceHeaders() {
+  const sessionCookie = String(store.get('sessionCookie') || '').split(';')[0];
+  return {
+    'content-type': 'application/json',
+    cookie: sessionCookie,
+    'user-agent': `AdisyumDesktop/${app.getVersion()}`,
+    'x-adisyum-tenant-id': String(store.get('tenantId') || ''),
+    'x-adisyum-device-id': ensureDeviceId(),
+    'x-adisyum-device-token': String(store.get('localAuthToken') || ''),
+  };
+}
+
+async function cloudJson(route, init = {}) {
+  const response = await fetch(`${cloudOrigin()}${route}`, {
+    ...init,
+    headers: {
+      ...cloudDeviceHeaders(),
+      ...(init.headers || {}),
+    },
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.error || payload?.message || `Cloud status ${response.status}`);
+  }
+  return payload;
+}
+
+function stablePrinterId(printer) {
+  return `printer-${crypto.createHash('sha256')
+    .update([printer.name, printer.portName, printer.driverName].join('|').toLowerCase())
+    .digest('hex')
+    .slice(0, 20)}`;
+}
+
+function normalizeBridgePrinters(printers) {
+  if (!Array.isArray(printers)) return [];
+  return printers
+    .map((printer) => {
+      if (typeof printer === 'string') return { name: printer.trim() };
+      return {
+        name: String(printer?.name || printer?.Name || '').trim(),
+        driverName: String(printer?.driverName || printer?.DriverName || ''),
+        portName: String(printer?.portName || printer?.PortName || ''),
+        status: String(printer?.status || printer?.PrinterStatus || ''),
+        shared: Boolean(printer?.shared ?? printer?.Shared ?? false),
+        online: printer?.online !== false,
+        connectionType: printer?.connectionType || 'windows',
+        default: Boolean(printer?.default ?? printer?.Default ?? false),
+        escpos: printer?.escpos !== false,
+      };
+    })
+    .filter((printer) => printer.name)
+    .map((printer) => ({ ...printer, printerId: stablePrinterId(printer) }));
+}
+
+async function syncCloudPrinterRegistry() {
+  const health = await bridgeJson('/health');
+  const printers = normalizeBridgePrinters(health?.printers ?? await bridgeJson('/printers'));
+  await cloudJson('/api/devices/registry', {
+    method: 'POST',
+    body: JSON.stringify({
+      tenantId: store.get('tenantId'),
+      deviceId: ensureDeviceId(),
+      branchId: store.get('branchId'),
+      hostname: os.hostname(),
+      bridgeVersion: health?.version || app.getVersion(),
+      deviceToken: store.get('localAuthToken'),
+      printers,
+      queueDepth: Number(health?.queueCount || 0),
+      spoolerHealth: String(health?.spooler?.status || 'unknown'),
+      metadata: {
+        appVersion: app.getVersion(),
+        platform: process.platform,
+        arch: process.arch,
+        cachedPrinterInventory: Boolean(health?.cached),
+        lastError: health?.error || null,
+      },
+    }),
+  });
+}
+
+async function updateCloudPrintJob(jobId, status, error) {
+  await cloudJson('/api/printers/print-requests', {
+    method: 'PATCH',
+    body: JSON.stringify({ jobId, deviceId: ensureDeviceId(), status, error }),
+  });
+}
+
+async function processCloudPrintJobs() {
+  const payload = await cloudJson(`/api/printers/print-requests?deviceId=${encodeURIComponent(ensureDeviceId())}`);
+  for (const job of (payload?.jobs || []).slice(0, 10)) {
+    try {
+      await updateCloudPrintJob(job.id, 'printing');
+      await bridgeJson('/print', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          printerName: job.printerName,
+          bytesBase64: job.payload?.bytesBase64,
+          mode: 'raw',
+          source: `proxy:${job.source || 'cloud'}`,
+        }),
+      });
+      await updateCloudPrintJob(job.id, 'printed');
+    } catch (error) {
+      await updateCloudPrintJob(job.id, 'failed', error instanceof Error ? error.message : String(error)).catch(() => undefined);
+    }
+  }
+}
+
+async function runCloudBridgeCycle() {
+  if (!isActivated() || cloudSyncInFlight) return;
+  cloudSyncInFlight = true;
+  try {
+    await syncCloudPrinterRegistry();
+    await processCloudPrintJobs();
+  } catch (error) {
+    console.warn('[adisyum-desktop] CLOUD_BRIDGE_SYNC_FAILED', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  } finally {
+    cloudSyncInFlight = false;
+  }
+}
+
+function startCloudBridgeSync() {
+  if (cloudSyncTimer) clearInterval(cloudSyncTimer);
+  void runCloudBridgeCycle();
+  cloudSyncTimer = setInterval(() => void runCloudBridgeCycle(), CLOUD_SYNC_INTERVAL_MS);
 }
 
 function buildRawTestReceipt() {
@@ -221,6 +356,7 @@ async function activateDevice(input) {
   }).catch(() => undefined);
 
   maybeStartBridge();
+  startCloudBridgeSync();
   return {
     ok: true,
     deviceId,
@@ -247,6 +383,8 @@ ipcMain.handle('desktop:save-config', (_event, input) => {
 });
 ipcMain.handle('desktop:activate', (_event, input) => activateDevice(input));
 ipcMain.handle('desktop:reset-activation', async () => {
+  if (cloudSyncTimer) clearInterval(cloudSyncTimer);
+  cloudSyncTimer = undefined;
   store.set({
     setupCompleted: false,
     tenantId: '',

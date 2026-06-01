@@ -1,9 +1,12 @@
 import crypto from 'node:crypto';
 
 export type BridgePrinterInventory = {
+  printerId?: string;
   name: string;
   driver?: string;
+  portName?: string;
   status?: string;
+  shared?: boolean;
   online?: boolean;
   connectionType?: 'usb' | 'network' | 'serial' | 'windows' | 'unknown' | string;
   default?: boolean;
@@ -40,9 +43,12 @@ export function normalizePrinterInventory(printers: BridgePrinterInventory[] = [
   return printers
     .filter((printer) => printer?.name?.trim())
     .map((printer) => ({
+      printerId: printer.printerId?.trim().slice(0, 180),
       name: printer.name.trim().slice(0, 180),
       driver: printer.driver?.trim().slice(0, 180),
+      portName: printer.portName?.trim().slice(0, 180),
       status: printer.status ?? (printer.online === false ? 'offline' : 'online'),
+      shared: Boolean(printer.shared),
       online: printer.online !== false,
       connectionType: printer.connectionType ?? 'unknown',
       default: Boolean(printer.default),
@@ -53,7 +59,11 @@ export function normalizePrinterInventory(printers: BridgePrinterInventory[] = [
       drawerPulse: Boolean(printer.drawerPulse),
     }))
     .filter((printer) => {
-      const key = printer.name.toLocaleLowerCase('tr-TR');
+      const key = [
+        printer.name,
+        printer.portName ?? '',
+        printer.driver ?? '',
+      ].join('|').toLocaleLowerCase('tr-TR');
       if (seen.has(key)) return false;
       seen.add(key);
       return true;

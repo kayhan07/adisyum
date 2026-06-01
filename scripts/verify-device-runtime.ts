@@ -11,12 +11,13 @@ function assert(condition: unknown, message: string): asserts condition {
 }
 
 const printers = normalizePrinterInventory([
-  { name: 'Kitchen ESC/POS', driver: 'Generic', online: true, escpos: true, turkishCharset: true, cut: true },
-  { name: 'Kitchen ESC/POS', driver: 'Duplicate', online: false },
+  { name: 'Kitchen ESC/POS', driver: 'Generic', portName: 'USB001', online: true, escpos: true, turkishCharset: true, cut: true },
+  { name: 'Kitchen ESC/POS', driver: 'Generic', portName: 'USB001', online: false },
+  { name: 'Kitchen ESC/POS', driver: 'Generic', portName: 'USB002', online: true },
   { name: 'Cashier', online: true, drawerPulse: true, paperWidthMm: 80 },
 ]);
 
-assert(printers.length === 2, 'printer inventory must deduplicate by name');
+assert(printers.length === 3, 'printer inventory must deduplicate exact physical printers and preserve distinct ports');
 const summary = summarizeDeviceCapabilities(printers);
 assert(summary.escposCapable, 'ESC/POS capability must be detected');
 assert(summary.drawerPulseCapable, 'cash drawer capability must be detected');

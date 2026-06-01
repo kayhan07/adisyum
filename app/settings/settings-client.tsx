@@ -30,9 +30,20 @@ type SystemPrinter = {
   shared?: boolean;
   connectionType: PrinterConnectionType;
   ip: string;
+  default?: boolean;
+  online?: boolean;
 };
 
-type AgentStatus = 'checking' | 'online' | 'offline';
+type AgentStatus = 'checking' | 'online' | 'offline' | 'missing';
+type AgentDiagnostic = {
+  message?: string;
+  deviceName?: string | null;
+  agentVersion?: string | null;
+  lastSeenAt?: string | null;
+  printerCount?: number;
+  spoolerStatus?: string | null;
+  lastError?: string | null;
+};
 
 type PrintableDeviceType = Exclude<PrinterDeviceType, 'fiscal_pos'>;
 
@@ -128,6 +139,7 @@ export default function SettingsPage() {
   const [printerScanLoading, setPrinterScanLoading] = useState(false);
   const [printerAutoScanned, setPrinterAutoScanned] = useState(false);
   const [agentStatus, setAgentStatus] = useState<AgentStatus>('checking');
+  const [agentDiagnostic, setAgentDiagnostic] = useState<AgentDiagnostic>({});
   const [printerDraft, setPrinterDraft] = useState<PrinterDraft>({
     name: '',
     role: 'Kasa',
@@ -412,7 +424,7 @@ export default function SettingsPage() {
         if (!isOnline) {
           setSystemPrinters([]);
           setSelectedSystemPrinterName('');
-          setMessage('Agent bulunamadı. Yazıcılar sadece bu bilgisayardaki local agent üzerinden okunur.');
+          setMessage(agentDiagnostic.message || 'Windows agent bulunamadı. Masaüstü uygulamasını ve Printer Bridge servisini kontrol edin.');
           return;
         }
 
@@ -467,8 +479,9 @@ export default function SettingsPage() {
       for (let attempt = 1; attempt <= retries; attempt += 1) {
         const attemptStartedAt = Date.now();
         try {
-          await fetchLocalAgentJson<unknown>('/health');
+          const { data } = await fetchLocalAgentJson<{ message?: string; agent?: AgentDiagnostic }>('/health');
           setAgentStatus('online');
+          setAgentDiagnostic({ ...(data.agent ?? {}), message: data.message });
           if (!options.quiet) {
             console.info('[business-flow] local agent status check completed', {
               attempt,
@@ -479,6 +492,12 @@ export default function SettingsPage() {
           }
           return true;
         } catch (error) {
+          const diagnosticError = error as Error & { code?: string; payload?: { message?: string; agent?: AgentDiagnostic } };
+          setAgentDiagnostic({ ...(diagnosticError.payload?.agent ?? {}), message: diagnosticError.payload?.message ?? diagnosticError.message });
+          if (diagnosticError.code === 'agent_not_found') {
+            setAgentStatus('missing');
+            return false;
+          }
           console.warn('[business-flow] local agent status check failed', {
             attempt,
             retries,
@@ -510,9 +529,12 @@ export default function SettingsPage() {
     const scanStartedAt = Date.now();
     try {
       const { data } = await fetchLocalAgentJson<
-        Array<string | { Name?: string; name?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string }>
-        | { ok?: boolean; printers?: Array<string | { Name?: string; name?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string }>; error?: string }
+        Array<string | { Name?: string; name?: string; driver?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string; default?: boolean; online?: boolean }>
+        | { ok?: boolean; message?: string; agent?: AgentDiagnostic; printers?: Array<string | { Name?: string; name?: string; driver?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string; default?: boolean; online?: boolean }>; error?: string }
       >('/printers');
+      if (!Array.isArray(data)) {
+        setAgentDiagnostic({ ...(data.agent ?? {}), message: data.message });
+      }
       const rawPrinters = Array.isArray(data)
         ? data
         : Array.isArray(data.printers)
@@ -526,12 +548,14 @@ export default function SettingsPage() {
               const connectionType = typeof item === 'string' || item.connectionType !== 'network' ? 'usb' : 'network';
               return [{
                 name: name.trim(),
-                driverName: typeof item === 'string' ? '' : item.driverName ?? '',
+                driverName: typeof item === 'string' ? '' : item.driverName ?? item.driver ?? '',
                 portName: typeof item === 'string' ? '' : item.portName ?? '',
                 status: typeof item === 'string' ? '' : item.status ?? '',
                 shared: typeof item === 'string' ? false : Boolean(item.shared),
                 connectionType: connectionType as PrinterConnectionType,
                 ip: typeof item === 'string' ? '' : item.ip ?? '',
+                default: typeof item === 'string' ? false : Boolean(item.default),
+                online: typeof item === 'string' ? true : item.online !== false,
               }];
             })
         : [];
@@ -1153,7 +1177,15 @@ export default function SettingsPage() {
 
               <div className={`mt-4 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${agentStatus === 'online' ? 'bg-emerald-500/10 text-emerald-700' : 'bg-rose-500/10 text-rose-700'}`}>
                 {agentStatus === 'online' ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-                {agentStatus === 'online' ? 'Agent aktif' : 'Agent bulunamadı'}
+                {agentStatus === 'online' ? 'Agent aktif' : agentStatus === 'checking' ? 'Agent kontrol ediliyor' : agentStatus === 'missing' ? 'Agent eşleşmesi yok' : 'Agent çevrimdışı'}
+              </div>
+              <div className="mt-3 grid gap-2 rounded-2xl border border-line bg-canvas p-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                <p><span className="font-semibold text-ink">Cihaz:</span> <span className="text-muted">{agentDiagnostic.deviceName || '-'}</span></p>
+                <p><span className="font-semibold text-ink">Agent sürümü:</span> <span className="text-muted">{agentDiagnostic.agentVersion || '-'}</span></p>
+                <p><span className="font-semibold text-ink">Spooler:</span> <span className="text-muted">{agentDiagnostic.spoolerStatus || '-'}</span></p>
+                <p><span className="font-semibold text-ink">Son bağlantı:</span> <span className="text-muted">{agentDiagnostic.lastSeenAt ? new Date(agentDiagnostic.lastSeenAt).toLocaleString('tr-TR') : '-'}</span></p>
+                <p><span className="font-semibold text-ink">Bulunan yazıcı:</span> <span className="text-muted">{agentDiagnostic.printerCount ?? systemPrinters.length}</span></p>
+                <p className="sm:col-span-2 lg:col-span-3"><span className="font-semibold text-ink">Tanı:</span> <span className="text-muted">{agentDiagnostic.lastError || agentDiagnostic.message || 'Bağlantı bilgisi bekleniyor.'}</span></p>
               </div>
 
               <div className="mt-5 grid gap-4 lg:grid-cols-2">
@@ -1166,13 +1198,13 @@ export default function SettingsPage() {
                     <option value="">Yazıcı seç</option>
                     {systemPrinters.map((printer) => (
                       <option key={`${printer.name}-${printer.portName}`} value={printer.name}>
-                        {printer.name} · {printer.connectionType === 'network' ? 'Ağ' : 'USB'}
+                        {printer.name} · {printer.connectionType === 'network' ? 'Ağ' : 'USB'}{printer.default ? ' · Varsayılan' : ''}
                       </option>
                     ))}
                   </select>
                   {!printerScanLoading && systemPrinters.length === 0 ? (
                     <div className="mt-3 rounded-2xl border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-700">
-                      Sistem yazıcısı görünmüyor. Yazıcılar sadece bu bilgisayarın local agent servisinden okunur: {getLocalAgentBaseHint()}/printers
+                      {agentDiagnostic.message || `Sistem yazıcısı görünmüyor. Windows agent bağlantısını kontrol edin: ${getLocalAgentBaseHint()}`}
                     </div>
                   ) : null}
                   {selectedSystemPrinter ? (

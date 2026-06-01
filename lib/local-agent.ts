@@ -14,7 +14,7 @@ type LocalAgentFetchInit = RequestInit & {
 
 const PROXY_ROUTES: Record<string, string> = {
   '/health': '/api/printers/local-agent',
-  '/printers': '/api/printers/local-agent',
+  '/printers': '/api/printers/local-agent/printers',
   '/print': '/api/printers/local-agent/print',
 };
 
@@ -190,9 +190,11 @@ export async function fetchLocalAgentJson<T>(path: string, options: LocalAgentRe
   const data = await response.json() as T;
 
   if (typeof data === 'object' && data !== null && 'ok' in data) {
-    const result = data as { ok?: boolean; error?: string };
+    const result = data as { ok?: boolean; error?: string; message?: string; code?: string };
     if (result.ok === false) {
-      throw new Error(result.error || 'Local agent erişilemedi.');
+      const error = new Error(result.message || result.error || 'Local agent erişilemedi.');
+      Object.assign(error, { code: result.code, payload: data });
+      throw error;
     }
   }
 
