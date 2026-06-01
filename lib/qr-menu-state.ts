@@ -17,6 +17,7 @@ import {
   loadStoredSaleProducts,
   type PosCatalogProduct,
 } from '@/lib/sale-product-catalog';
+import { shouldUseSeedBusinessData } from '@/lib/tenant-clean-start';
 
 const PENDING_QR_ORDERS_STORAGE_KEY = 'aurelia-qr-pending-orders';
 const QR_EVENT_NAME = 'aurelia-qr-menu:changed';
@@ -117,7 +118,11 @@ export function subscribeToQrMenuChanges(callback: () => void) {
 
 export function getPosCatalogSnapshot() {
   const stored = loadStoredSaleProducts();
-  return stored?.length ? buildPosCatalogFromStored(stored) : getDefaultPosCatalog();
+  if (stored?.length) {
+    return buildPosCatalogFromStored(stored);
+  }
+
+  return shouldUseSeedBusinessData() ? getDefaultPosCatalog() : [];
 }
 
 export function getTableQrStatus(tableId: string) {

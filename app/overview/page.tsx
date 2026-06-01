@@ -16,6 +16,7 @@ import { AppShell } from '@/components/app-shell';
 import { erpIngredients, formatTRY } from '@/lib/erp-engine';
 import { getDailyPurchaseInvoiceCount, getDailyPurchaseInvoiceTotal, loadStoredPurchaseInvoices } from '@/lib/purchase-invoice-store';
 import { DEFAULT_SALE_PRODUCT_BASE, loadStoredSaleProducts } from '@/lib/sale-product-catalog';
+import { shouldUseSeedBusinessData } from '@/lib/tenant-clean-start';
 import { loadStoredRawIngredients } from '@/lib/raw-ingredient-store';
 import { loadAllWarehouseStocks, MAIN_WAREHOUSE_ID } from '@/lib/warehouse-store';
 
@@ -66,7 +67,7 @@ export default function OverviewPage() {
       };
     });
     return {
-      saleProductCount: storedProducts?.length ?? DEFAULT_SALE_PRODUCT_BASE.length,
+      saleProductCount: storedProducts?.length ?? (shouldUseSeedBusinessData() ? DEFAULT_SALE_PRODUCT_BASE.length : 0),
       dailyInvoiceTotal: getDailyPurchaseInvoiceTotal(today, invoices),
       dailyInvoiceCount: getDailyPurchaseInvoiceCount(today, invoices),
       criticalStocks: stockRows.filter((s) => s.minimumQuantity > 0 && s.quantity <= s.minimumQuantity),

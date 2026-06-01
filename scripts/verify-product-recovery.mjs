@@ -44,6 +44,7 @@ function filesContaining(files, pattern) {
 
 const provider = read('components/providers/app-runtime-provider.tsx');
 const orderComposer = read('components/order-composer.tsx');
+const qrMenuState = read('lib/qr-menu-state.ts');
 const runtimeApi = read('lib/runtime/runtime-api.ts');
 const authLock = read('lib/runtime/auth-failure-runtime-lock.ts');
 const appShell = read('components/app-shell.tsx');
@@ -79,6 +80,9 @@ assert(!/startAuthoritativeRuntimeSync/.test(orderComposer), 'OrderComposer must
 assert(/authoritative-orders-background-sync-disabled/.test(orderComposer), 'OrderComposer must explicitly keep background sync disabled during recovery');
 assert(/offline-auto-sync-disabled/.test(orderComposer), 'OrderComposer must explicitly keep offline auto-sync disabled during recovery');
 assert(/hydrateAuthoritativeRuntime/.test(orderComposer), 'OrderComposer must retain one bounded initial table hydration');
+assert(/!Array\.isArray\(catalog\?\.items\)/.test(orderComposer), 'OrderComposer must accept authoritative empty POS catalogs');
+assert(!/!catalog\?\.items\?\.length/.test(orderComposer), 'OrderComposer must not preserve stale product cards when authoritative POS catalog is empty');
+assert(/shouldUseSeedBusinessData/.test(qrMenuState), 'QR menu default catalog must be restricted to the seed tenant');
 
 assert(/POS_TABLE_ORDERS_API = '\/api\/pos\/table-orders'/.test(runtimeApi), 'POS table order mutations must use the root /api/pos/table-orders endpoint');
 assert(/RUNTIME_POS_CATALOG_API = '\/api\/runtime\/pos-catalog'/.test(runtimeApi), 'Runtime API must explicitly allow /api/runtime/pos-catalog');

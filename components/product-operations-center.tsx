@@ -31,6 +31,7 @@ import {
   subscribeToStoredSaleProductsChanges,
   type StoredSaleProduct,
 } from '@/lib/sale-product-catalog';
+import { shouldUseSeedBusinessData } from '@/lib/tenant-clean-start';
 import { loadStoredRawIngredients, type StoredRawIngredient } from '@/lib/raw-ingredient-store';
 import {
   PRODUCT_OPERATION_DOMAIN_LABELS,
@@ -174,7 +175,7 @@ export function ProductOperationsCenter() {
 
   useEffect(() => {
     const refresh = () => {
-      setSaleProducts(loadStoredSaleProducts() ?? buildDefaultSaleProducts());
+      setSaleProducts(loadStoredSaleProducts() ?? (shouldUseSeedBusinessData() ? buildDefaultSaleProducts() : []));
       setRawIngredients(loadStoredRawIngredients());
     };
     refresh();

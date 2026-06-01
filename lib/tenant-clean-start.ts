@@ -12,6 +12,7 @@ const TENANT_LOCAL_CACHE_PREFIXES = [
   'adisyum-local-created-raw-ingredients',
   'adisyum-local-recipe-pool',
   'adisyum-local-integrations-state',
+  'adisyon-sale-products',
   'adisyon-table-layout-state',
   'adisyon-company-state',
   'aurelia-table-payment-requested',
@@ -25,6 +26,7 @@ const TENANT_LOCAL_CACHE_PREFIXES = [
   'adisyon-treasury-runtime-movements',
   'adisyon-custom-treasury-accounts',
   'adisyon-daily-cash-movements',
+  'aurelia-qr-pending-orders',
 ] as const;
 
 export function shouldUseSeedBusinessData() {

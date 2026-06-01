@@ -232,6 +232,12 @@ Scope: Adisyum POS/ERP business recovery only. No architecture expansion, no new
 | Web test print targeted VPS localhost | WORKING | Test print proxy attempted to call a local bridge on the server. | `app/api/printers/local-agent/print/route.ts`, `app/api/printers/print-requests/route.ts`, `apps/desktop/src/main.cjs` | Test print creates a tenant-scoped cloud queue job. The registered Desktop polls its own jobs, posts to its local bridge and updates printed/failed status. | Send a physical test receipt from Settings. |
 | Printer setup errors were too quiet | WORKING | UI exposed only active/not-found state. | `app/settings/settings-client.tsx` | Settings now shows agent state, device name, agent version, spooler state, last heartbeat, printer count and diagnostic message. | Confirm offline and spooler-stopped messages on Windows. |
 
+## Clean Tenant POS Catalog Follow-up
+
+| Finding | Status | Root cause | Files changed | Fix applied | Remaining QA |
+| --- | --- | --- | --- | --- | --- |
+| Boş tenant kataloğu geldiğinde eski ürün kartları ekranda kalıyordu | WORKING | Masa adisyonu authoritative POS katalog cevabı boş olduğunda cevabı geçersiz sayıyor ve tarayıcıdaki eski kartları koruyordu. QR menü ve ürün operasyon merkezi de boş tenantta demo fallback kullanabiliyordu. | `components/order-composer.tsx`, `lib/qr-menu-state.ts`, `components/product-operations-center.tsx`, `app/overview/page.tsx`, `lib/tenant-clean-start.ts`, `scripts/verify-product-recovery.mjs` | Boş authoritative katalog geçerli cevap kabul edilip eski kartlar temizlenir. Demo fallback yalnızca seed tenantta çalışır; QR sipariş ve runtime ürün cache anahtarları login temizliğine eklendi. | Yeni tenant `TNT-*` ile masa adisyonu ve QR menü refresh testi canlıda tekrarlanmalı. |
+
 ## Auth Entry / Tenant Snapshot Isolation Findings
 
 | Finding | Status | Root cause | Files changed | Fix applied | Remaining QA |

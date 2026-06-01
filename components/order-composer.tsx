@@ -794,7 +794,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       .then(({ response, payload }) => {
         if (cancelled) return;
         const catalog = payload.catalog as { catalogRevision?: string; checksum?: string; items?: ProductCard[] } | undefined;
-        if (!response.ok || !catalog?.items?.length) {
+        if (!response.ok || !Array.isArray(catalog?.items)) {
           logOrderFlow('runtime-catalog-hydration-skipped', {
             status: response.status,
             itemCount: catalog?.items?.length ?? 0,
@@ -804,6 +804,9 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           return;
         }
         setStoredCatalogProducts(catalog.items);
+        if (catalog.items.length === 0) {
+          setStoredSaleProducts([]);
+        }
         logOrderFlow('runtime-catalog-hydrated', {
           branchId: activeBranchId,
           catalogRevision: catalog.catalogRevision,
