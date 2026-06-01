@@ -11,6 +11,7 @@
     "runtime:audit-production": "node scripts/audit-production-runtime.mjs",
     "auth:runtime-lock-test": "node scripts/verify-auth-failure-runtime-lock.mjs",
     "tenant:access-policy": "node scripts/verify-tenant-access-policy.mjs",
+    "tenant:identity-drift": "node scripts/verify-tenant-identity-drift.mjs",
     "product:recovery-validate": "node scripts/verify-product-recovery.mjs",
     "env:audit-production": "node scripts/audit-production-env.mjs",
     "deploy:verify-runtime": "node scripts/verify-deploy-runtime.mjs",

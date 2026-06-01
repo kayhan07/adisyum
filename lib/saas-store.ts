@@ -43,33 +43,9 @@ export type TenantAuthToken = {
 
 const EVENT_NAME = 'adisyon-saas-tenants:changed';
 
-const DEFAULT_TENANTS: TenantRecord[] = [
-  {
-    id: 'ten-demo',
-    tenant_id: 'ABN-48291',
-    name: 'Adisyon Demo Bistro',
-    package_id: 'pkg-premium',
-    package_type: 'premium',
-    start_date: '2026-01-01',
-    end_date: '2027-01-01',
-    demo_enabled: true,
-    status: 'demo',
-    main_branch_id: 'mrk',
-    created_at: '2026-01-01T00:00:00.000Z',
-  },
-];
+const DEFAULT_TENANTS: TenantRecord[] = [];
 
-const DEFAULT_TENANT_CREDENTIALS: TenantCredential[] = [
-  {
-    tenant_id: 'ABN-48291',
-    username: 'admin',
-    password: '1234',
-    role: 'Admin',
-    name: 'Demo Admin',
-    branch_id: 'mrk',
-    active: true,
-  },
-];
+const DEFAULT_TENANT_CREDENTIALS: TenantCredential[] = [];
 
 type StoredPackageDefinition = {
   id?: string;
@@ -232,5 +208,5 @@ export function subscribeToTenantChanges(callback: () => void) {
 
 export function createTenantId() {
   const random = Math.random().toString(36).slice(2, 7).toUpperCase();
-  return `ABN-${random}`;
+  return `TNT-${random}`;
 }

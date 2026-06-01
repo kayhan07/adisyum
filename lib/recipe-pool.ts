@@ -453,9 +453,7 @@ export function loadStoredRecipePool() {
   }
 
   try {
-    const tenantId = loadSessionState().tenantId || 'anonymous';
     const raw = window.localStorage.getItem(localRecipePoolKey())
-      ?? (tenantId === 'ABN-48291' ? window.localStorage.getItem(LOCAL_STORAGE_KEY) : null)
       ?? readRuntimeItem('tenant', STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredRecipePoolState;

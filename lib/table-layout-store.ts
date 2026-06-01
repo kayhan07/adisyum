@@ -72,9 +72,7 @@ function localTableLayoutKey() {
 function readLocalTableLayoutState() {
   if (typeof window === 'undefined') return null;
   try {
-    const tenantId = loadSessionState().tenantId || 'anonymous';
-    return window.localStorage.getItem(localTableLayoutKey())
-      ?? (tenantId === 'ABN-48291' ? window.localStorage.getItem(LOCAL_STORAGE_KEY) : null);
+    return window.localStorage.getItem(localTableLayoutKey());
   } catch (error) {
     console.error('[business-flow] local table layout read failed', error);
     return null;

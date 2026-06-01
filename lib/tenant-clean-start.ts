@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { loadSessionState, subscribeToSessionChanges } from '@/lib/session-store';
 
-const DEFAULT_SEED_TENANT_ID = 'ABN-48291';
+const SEED_BUSINESS_DATA_ENABLED = process.env.NEXT_PUBLIC_ENABLE_SEED_BUSINESS_DATA === '1';
+const SEED_TENANT_ID = process.env.NEXT_PUBLIC_SEED_TENANT_ID?.trim();
 
 const TENANT_LOCAL_CACHE_PREFIXES = [
   'adisyum-local-sale-products',
@@ -31,7 +32,7 @@ const TENANT_LOCAL_CACHE_PREFIXES = [
 
 export function shouldUseSeedBusinessData() {
   const session = loadSessionState();
-  return session.isAuthenticated && session.tenantId === DEFAULT_SEED_TENANT_ID;
+  return Boolean(SEED_BUSINESS_DATA_ENABLED && SEED_TENANT_ID && session.isAuthenticated && session.tenantId === SEED_TENANT_ID);
 }
 
 export function useSeedBusinessDataEnabled() {

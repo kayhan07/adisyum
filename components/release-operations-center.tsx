@@ -86,12 +86,12 @@ export function ReleaseOperationsCenter() {
   }
 
   async function requestSnapshot() {
-    const payload = await postAction({ action: 'diagnostic_snapshot', tenantId: 'ABN-48291', bridgeId: 'pilot-bridge-01' });
+    const payload = await postAction({ action: 'diagnostic_snapshot', tenantId: 'TNT-SAMPLE-0000', bridgeId: 'pilot-bridge-01' });
     setSnapshot(payload.snapshot);
   }
 
   async function requestRollbackPlan() {
-    const payload = await postAction({ action: 'rollback_plan', tenantId: 'ABN-48291', component: 'bridge' });
+    const payload = await postAction({ action: 'rollback_plan', tenantId: 'TNT-SAMPLE-0000', component: 'bridge' });
     setRollback(payload.rollback);
   }
 

@@ -216,7 +216,7 @@ export function buildAutonomousRiskSignals(decisions = evaluateOperationalPolici
 
 export function simulateChaosScenario(kind: 'reconnect_storm' | 'rollout_corruption' | 'printer_fleet_failure' | 'offline_replay_corruption' | 'bridge_crash_loop') {
   const base: OperationalSignal = {
-    tenantId: 'ABN-48291',
+    tenantId: 'TNT-SAMPLE-0000',
     branchId: 'main',
     deviceId: `chaos-${kind}`,
     incidentRate: 0.5,

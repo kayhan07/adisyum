@@ -101,9 +101,9 @@ export const FAILURE_DOMAINS: FailureDomain[] = [
     healthScore: 81,
   },
   {
-    id: 'tenant-abn-48291',
+    id: 'tenant-TNT-SAMPLE-0000',
     type: 'tenant',
-    name: 'ABN-48291 Tenant Domain',
+    name: 'TNT-SAMPLE-0000 Tenant Domain',
     region: 'eu-central',
     parentDomainId: 'region-eu-central',
     blastRadius: ['tenant-orders', 'tenant-devices', 'tenant-offline-queues'],
@@ -266,11 +266,11 @@ export function simulateRecoveryScenario(kind: 'redis_outage' | 'websocket_colla
     domains.find((domain) => domain.id === 'region-eu-central')!.recoveryMode = kind === 'region_isolation' ? 'readonly_emergency' : 'recovery';
   }
   if (kind === 'rollout_corruption') {
-    domains.find((domain) => domain.id === 'tenant-abn-48291')!.healthScore = 52;
-    domains.find((domain) => domain.id === 'tenant-abn-48291')!.recoveryMode = 'offline_safe';
+    domains.find((domain) => domain.id === 'tenant-TNT-SAMPLE-0000')!.healthScore = 52;
+    domains.find((domain) => domain.id === 'tenant-TNT-SAMPLE-0000')!.recoveryMode = 'offline_safe';
   }
   if (kind === 'replay_corruption') {
-    domains.find((domain) => domain.id === 'tenant-abn-48291')!.healthScore = 45;
+    domains.find((domain) => domain.id === 'tenant-TNT-SAMPLE-0000')!.healthScore = 45;
     domains.find((domain) => domain.id === 'workers-orchestration')!.healthScore = 50;
   }
   const decisions = buildRecoveryDecisions(domains);

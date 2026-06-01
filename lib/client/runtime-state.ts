@@ -34,6 +34,7 @@ const TABLE_RUNTIME_KEYS = [
 ] as const;
 const TABLE_STATE_META_KEY = 'aurelia-table-state-sync-meta';
 const LARGE_RUNTIME_SNAPSHOT_BYTES = 512_000;
+const TENANT_ID_JSON_FIELD_PATTERN = /"(?:tenantId|tenant_id)"\s*:\s*"([^"]+)"/g;
 const lastLocalWriteAt: Record<RuntimeScope, number> = {
 	tenant: 0,
 	'system-admin': 0,
@@ -156,6 +157,14 @@ function readTableSnapshotVersion(snapshot: RuntimeSnapshot) {
 
 function mergeIncomingSnapshot(scope: RuntimeScope, incoming: RuntimeSnapshot, source: string) {
 	if (scope !== 'tenant') return incoming;
+	const foreignTenantIds = findForeignTenantIds(incoming, activeTenantIds[scope]);
+	if (foreignTenantIds.length > 0) {
+		console.error('[tenant-drift] runtime snapshot rejected for tenant mismatch', runtimeDiagnostics(scope, {
+			source,
+			foreignTenantIds,
+		}));
+		return snapshots[scope];
+	}
 	const localMeta = readTableSnapshotVersion(snapshots[scope]);
 	const incomingMeta = readTableSnapshotVersion(incoming);
 	const localIsNewer =
@@ -179,6 +188,22 @@ function mergeIncomingSnapshot(scope: RuntimeScope, incoming: RuntimeSnapshot, s
 		preservedKeys: TABLE_RUNTIME_KEYS.filter((key) => snapshots[scope][key] !== undefined),
 	}));
 	return merged;
+}
+
+function findForeignTenantIds(snapshot: RuntimeSnapshot, currentTenantId: string) {
+	if (!currentTenantId || currentTenantId === 'anonymous') return [];
+	const foreign = new Set<string>();
+	for (const value of Object.values(snapshot)) {
+		TENANT_ID_JSON_FIELD_PATTERN.lastIndex = 0;
+		let match: RegExpExecArray | null;
+		while ((match = TENANT_ID_JSON_FIELD_PATTERN.exec(value)) !== null) {
+			const tenantId = match[1]?.trim();
+			if (tenantId && tenantId !== currentTenantId && tenantId !== 'anonymous') {
+				foreign.add(tenantId);
+			}
+		}
+	}
+	return Array.from(foreign);
 }
 
 function emit(scope: RuntimeScope) {

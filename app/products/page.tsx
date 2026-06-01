@@ -135,7 +135,6 @@ function loadStoredProductCategories() {
     const raw = typeof window === 'undefined'
       ? readRuntimeItem('tenant', PRODUCT_CATEGORY_STORAGE_KEY)
       : window.localStorage.getItem(localKey)
-        ?? (tenantId === 'ABN-48291' ? window.localStorage.getItem(LOCAL_PRODUCT_CATEGORY_STORAGE_KEY) : null)
         ?? readRuntimeItem('tenant', PRODUCT_CATEGORY_STORAGE_KEY);
     if (!raw) return [] as string[];
     const parsed = JSON.parse(raw);

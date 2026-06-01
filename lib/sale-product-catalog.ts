@@ -135,8 +135,7 @@ function readLocalSaleProducts() {
   if (typeof window === 'undefined') return null;
   try {
     const tenantId = loadSessionState().tenantId || 'anonymous';
-    return window.localStorage.getItem(`${LOCAL_STORAGE_KEY}:${tenantId}`)
-      ?? (tenantId === 'ABN-48291' ? window.localStorage.getItem(LOCAL_STORAGE_KEY) : null);
+    return window.localStorage.getItem(`${LOCAL_STORAGE_KEY}:${tenantId}`);
   } catch (error) {
     console.error('[business-flow] local sale products read failed', error);
     return null;

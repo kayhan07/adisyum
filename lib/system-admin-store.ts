@@ -144,44 +144,18 @@ export const defaultPackages: AdminPackage[] = [
 
 const defaultState: SystemAdminState = {
   packages: defaultPackages,
-  tenants: [
-    {
-      id: 'adm-ten-demo',
-      tenant_id: 'ABN-48291',
-      company_name: 'Adisyon Demo Bistro',
-      package_id: 'pkg-premium',
-      package_type: 'premium',
-      start_date: '2026-01-01',
-      end_date: '2027-01-01',
-      status: 'demo',
-      demo_enabled: true,
-      auto_renew: true,
-      admin_username: 'admin',
-      admin_password: '1234',
-      dealer_id: 'dealer-center',
-      created_at: '2026-01-01T00:00:00.000Z',
-    },
-  ],
+  tenants: [],
   dealers: [
     { id: 'dealer-center', name: 'Merkez Satış', type: 'representative', commission_rate: 0, phone: '', email: 'satis@adisyon.local', active: true },
     { id: 'dealer-istanbul', name: 'İstanbul Bayi Ltd.', type: 'dealer', commission_rate: 20, phone: '', email: 'bayi@adisyon.local', active: true },
   ],
   finance: [
-    { id: 'fin-1', type: 'income', source: 'Abonelik tahsilatı', tenant_id: 'ABN-48291', amount: 2999, date: today(), note: 'Demo premium tahsilat kaydı' },
     { id: 'fin-2', type: 'expense', source: 'Sunucu gideri', amount: 850, date: today(), note: 'Aylık altyapı gideri' },
   ],
-  invoices: [
-    { id: 'inv-1', invoice_no: 'SYS-2026-0001', tenant_id: 'ABN-48291', type: 'subscription', amount: 2999, status: 'paid', issue_date: today(), due_date: today() },
-  ],
-  sales: [
-    { id: 'sale-1', tenant_id: 'ABN-48291', package_id: 'pkg-premium', seller: 'Merkez Satış', dealer_id: 'dealer-center', amount: 2999, commission_rate: 0, commission_amount: 0, commission_status: 'paid', date: today() },
-  ],
-  commissions: [
-    { id: 'com-1', sale_id: 'sale-1', dealer_id: 'dealer-center', tenant_id: 'ABN-48291', amount: 0, rate: 0, status: 'paid', due_date: today(), paid_at: today() },
-  ],
-  payments: [
-    { id: 'pay-1', tenant_id: 'ABN-48291', invoice_id: 'inv-1', amount: 2999, provider: 'manual', status: 'success', transaction_id: 'MANUAL-0001', date: today() },
-  ],
+  invoices: [],
+  sales: [],
+  commissions: [],
+  payments: [],
   renewals: [],
 };
 
@@ -226,8 +200,7 @@ export function loadSystemAdminState(): SystemAdminState {
     const raw = readRuntimeItem('system-admin', STORAGE_KEY);
     if (!raw) return defaultState;
     const parsed = mergeDefaultState(JSON.parse(raw));
-    const hasDemo = parsed.tenants.some((tenant) => tenant.tenant_id === 'ABN-48291');
-    return hasDemo ? parsed : { ...parsed, tenants: [...defaultState.tenants, ...parsed.tenants] };
+    return parsed;
   } catch (error) {
     console.error('[business-flow] system-admin state load failed', error);
     return defaultState;
