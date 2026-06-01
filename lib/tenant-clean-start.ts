@@ -7,6 +7,7 @@ const DEFAULT_SEED_TENANT_ID = 'ABN-48291';
 
 const TENANT_LOCAL_CACHE_PREFIXES = [
   'adisyum-local-sale-products',
+  'adisyum-local-table-layout-state',
   'adisyum-local-product-categories',
   'adisyum-local-created-raw-ingredients',
   'adisyum-local-recipe-pool',

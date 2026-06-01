@@ -3,6 +3,7 @@ import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/
 import { loadSessionState } from '@/lib/session-store';
 import { compileCanonicalPosCatalog } from '@/lib/canonical-pos-catalog';
 import type { ProductLifecycleStatus, ProductPublishState } from '@/lib/product-lifecycle-governance';
+import { shouldUseSeedBusinessData } from '@/lib/tenant-clean-start';
 import {
   filterSellableProducts,
   inferProductDomainType,
@@ -306,7 +307,9 @@ export function loadStoredSaleProducts() {
           .map((item) => normalizeStoredSaleProduct(item))
       : null;
     return products
-      ? filterSellableProducts(products, 'sale-product-storage-load').map((product) => ({
+      ? filterSellableProducts(products, 'sale-product-storage-load')
+        .filter((product) => shouldUseSeedBusinessData() || product.source !== 'seeded')
+        .map((product) => ({
           ...product,
         productType: resolvePosFacingProductDomainType({
           id: product.id,

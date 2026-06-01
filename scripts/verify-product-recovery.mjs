@@ -46,6 +46,7 @@ const provider = read('components/providers/app-runtime-provider.tsx');
 const orderComposer = read('components/order-composer.tsx');
 const qrMenuState = read('lib/qr-menu-state.ts');
 const saleProductCatalog = read('lib/sale-product-catalog.ts');
+const tableLayoutStore = read('lib/table-layout-store.ts');
 const runtimeApi = read('lib/runtime/runtime-api.ts');
 const authLock = read('lib/runtime/auth-failure-runtime-lock.ts');
 const appShell = read('components/app-shell.tsx');
@@ -76,6 +77,7 @@ assert(/Oturum doğrulanıyor\.\.\./.test(provider), 'AppRuntimeProvider must sh
 assert(/clearSessionCookie\(response\);\s*response\.cookies\.set\(SESSION_COOKIE_NAME, token/.test(session), 'Session login must clear stale cookie variants before setting the active tenant cookie');
 assert(/keysToRemove\.add\(`\$\{prefix\}:anonymous`\)/.test(tenantCleanStart), 'Login cleanup must remove anonymous legacy tenant caches');
 assert(!/keysToRemove\.add\(`\$\{prefix\}:\$\{normalizedTenantId\}`\)/.test(tenantCleanStart), 'Login cleanup must preserve the authenticated tenant cache');
+assert(/'adisyum-local-table-layout-state'/.test(tenantCleanStart), 'Login cleanup must remove anonymous and legacy table layout caches');
 assert((provider.match(/if \(PRODUCT_RECOVERY_MINIMAL_RUNTIME\) return;/g) ?? []).length >= 3, 'AppRuntimeProvider must disable non-essential runtime loops in product recovery mode');
 assert(/const validateSession = async \(\) =>/.test(provider), 'AppRuntimeProvider must keep the lightweight auth revocation check enabled in product recovery mode');
 assert(/window\.addEventListener\('focus', onFocus\)/.test(provider), 'AppRuntimeProvider must revalidate auth when the protected app regains focus');
@@ -91,6 +93,9 @@ assert(!/!catalog\?\.items\?\.length/.test(orderComposer), 'OrderComposer must n
 assert(/localCreatedProducts/.test(orderComposer), 'OrderComposer must preserve locally created tenant products when the DB catalog is still empty');
 assert(/shouldUseSeedBusinessData/.test(qrMenuState), 'QR menu default catalog must be restricted to the seed tenant');
 assert(!/sale-product-storage-save-existing/.test(saleProductCatalog), 'Sale product persistence must replace the stored snapshot so deleted products cannot return after refresh');
+assert(/shouldUseSeedBusinessData\(\) \|\| product\.source !== 'seeded'/.test(saleProductCatalog), 'Non-seed tenants must reject contaminated demo sale product caches');
+assert(/LOCAL_STORAGE_KEY = 'adisyum-local-table-layout-state'/.test(tableLayoutStore), 'Table layout persistence must keep a tenant-scoped local fallback');
+assert(/writeLocalTableLayoutState\(serialized\);\s*writeRuntimeItem\('tenant', STORAGE_KEY, serialized\)/.test(tableLayoutStore), 'Table layout save must persist locally before the runtime snapshot request');
 assert(/await bootstrapRuntimeScope\('tenant'\)/.test(provider), 'Tenant runtime snapshot bootstrap must remain enabled in product recovery mode');
 
 assert(/POS_TABLE_ORDERS_API = '\/api\/pos\/table-orders'/.test(runtimeApi), 'POS table order mutations must use the root /api/pos/table-orders endpoint');
