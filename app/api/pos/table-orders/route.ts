@@ -9,7 +9,7 @@ import { validateProductDomainGraph } from '@/lib/product-domain-graph';
 import { isUuidIdentity, resolveProductIdentity } from '@/lib/product-identity';
 import { isRuntimeVisibleProduct } from '@/lib/product-lifecycle-governance';
 import { compileTenantPosCatalog } from '@/lib/server/runtime-pos-catalog';
-import type { CanonicalPosCatalogItem } from '@/lib/canonical-pos-catalog';
+import type { CanonicalPosCatalog, CanonicalPosCatalogItem } from '@/lib/canonical-pos-catalog';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -433,7 +433,52 @@ function itemToLine(item: {
   };
 }
 
-async function loadAuthoritativeOrdersByTable(tenantId: string) {
+function buildCatalogIdentityIndex(catalog: CanonicalPosCatalog) {
+  const productIds = new Set<string>();
+  const posKeys = new Set<string>();
+
+  for (const item of catalog.items) {
+    if (item.productId) productIds.add(item.productId);
+    if (item.posKey) posKeys.add(item.posKey);
+    if (item.productSnapshot.productId) productIds.add(item.productSnapshot.productId);
+    if (item.productSnapshot.posKey) posKeys.add(item.productSnapshot.posKey);
+  }
+
+  return { productIds, posKeys };
+}
+
+function orderItemBelongsToCurrentCatalog(
+  item: {
+    productId: string | null;
+    metadata: Prisma.JsonValue;
+  },
+  catalogIndex: ReturnType<typeof buildCatalogIdentityIndex>,
+) {
+  const metadata = normalizeMetadata(item.metadata);
+  const posKey = typeof metadata.posKey === 'string'
+    ? metadata.posKey
+    : typeof metadata.productKey === 'string'
+      ? metadata.productKey
+      : undefined;
+  const snapshot = normalizeMetadata(metadata.productSnapshot as Prisma.JsonValue);
+  const snapshotProductId = typeof snapshot.productId === 'string' ? snapshot.productId : undefined;
+  const snapshotPosKey = typeof snapshot.posKey === 'string' ? snapshot.posKey : undefined;
+
+  return Boolean(
+    (item.productId && catalogIndex.productIds.has(item.productId))
+      || (snapshotProductId && catalogIndex.productIds.has(snapshotProductId))
+      || (posKey && catalogIndex.posKeys.has(posKey))
+      || (snapshotPosKey && catalogIndex.posKeys.has(snapshotPosKey)),
+  );
+}
+
+async function loadAuthoritativeOrdersByTable(tenantId: string, branchId?: string) {
+  const catalog = await compileTenantPosCatalog(tenantId, branchId, 'pos');
+  const catalogIndex = buildCatalogIdentityIndex(catalog);
+  if (catalog.items.length === 0) {
+    return {} as Record<string, OrderLinePayload[]>;
+  }
+
   const orders = await prisma.order.findMany({
     where: { tenantId, status: 'open', orderNo: { startsWith: 'TABLE-' } },
     orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
@@ -472,22 +517,29 @@ async function loadAuthoritativeOrdersByTable(tenantId: string) {
   }
 
   return Object.fromEntries(
-    orders.map((order) => {
+    orders
+      .map((order) => {
       const metadata = normalizeMetadata(order.metadata);
       const tableId = typeof metadata.tableKey === 'string'
         ? metadata.tableKey
         : order.orderNo.startsWith('TABLE-')
           ? order.orderNo.slice('TABLE-'.length)
           : String(order.tableId ?? '');
-      return [tableId, (itemsByOrder.get(order.id) ?? []).map(itemToLine)];
-    }),
+      return [
+        tableId,
+        (itemsByOrder.get(order.id) ?? [])
+          .filter((item) => orderItemBelongsToCurrentCatalog(item, catalogIndex))
+          .map(itemToLine),
+      ] as const;
+    })
+      .filter(([, lines]) => lines.length > 0),
   ) as Record<string, OrderLinePayload[]>;
 }
 
 export async function GET(request: Request) {
   try {
     const tenant = await requireTenant(request);
-    const ordersByTable = await loadAuthoritativeOrdersByTable(tenant.tenantId);
+    const ordersByTable = await loadAuthoritativeOrdersByTable(tenant.tenantId, tenant.branchId ?? undefined);
     return NextResponse.json({ ok: true, ordersByTable, source: 'db' });
   } catch (error) {
     return tenantAuthErrorResponse(error);
@@ -651,7 +703,7 @@ export async function POST(request: Request) {
         });
       });
 
-      const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId);
+      const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId, tenant.branchId ?? undefined);
       return NextResponse.json({ ok: true, source: 'db', mutationId: normalizedBody.mutationId, ordersByTable });
     }
 
@@ -768,7 +820,7 @@ export async function POST(request: Request) {
         });
       });
 
-      const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId);
+      const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId, tenant.branchId ?? undefined);
       return NextResponse.json({ ok: true, source: 'db', mutationId: normalizedBody.mutationId, ordersByTable });
     }
 
@@ -1539,7 +1591,7 @@ export async function POST(request: Request) {
       });
     });
 
-    const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId);
+    const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId, tenant.branchId ?? undefined);
     logTableOrderEvent('response-ready', {
       traceId,
       tenantId,

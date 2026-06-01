@@ -477,7 +477,7 @@ export function FloorWorkspace() {
           Object.fromEntries(
             Object.entries(serverOrders).map(([tableId, lines]) => [
               tableId,
-              lines.reduce((sum, line) => sum + (line.complimentary ? 0 : line.qty * line.price * (line.isReturn ? -1 : 1) * 1.1), 0),
+              lines.reduce((sum, line) => sum + (line.complimentary ? 0 : line.qty * line.price * (line.isReturn ? -1 : 1)), 0),
             ]),
           ),
         );

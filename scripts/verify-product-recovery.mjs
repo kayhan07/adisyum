@@ -58,6 +58,7 @@ const appLogin = read('app/app/login/page.tsx');
 const systemAdminLogin = read('app/system-admin/login/page.tsx');
 const session = read('lib/session.ts');
 const tenantCleanStart = read('lib/tenant-clean-start.ts');
+const posTableOrdersRoute = read('app/api/pos/table-orders/route.ts');
 
 assert(exists('PRODUCT_RECOVERY_CHECKLIST.md'), 'PRODUCT_RECOVERY_CHECKLIST.md must exist');
 assert(exists('PRODUCT_RUNTIME_QA.md'), 'PRODUCT_RUNTIME_QA.md must exist');
@@ -93,6 +94,9 @@ assert(/hydrateAuthoritativeRuntime/.test(orderComposer), 'OrderComposer must re
 assert(/!Array\.isArray\(catalog\?\.items\)/.test(orderComposer), 'OrderComposer must accept authoritative empty POS catalogs');
 assert(!/!catalog\?\.items\?\.length/.test(orderComposer), 'OrderComposer must not preserve stale product cards when authoritative POS catalog is empty');
 assert(/localCreatedProducts/.test(orderComposer), 'OrderComposer must preserve locally created tenant products when the DB catalog is still empty');
+assert(/orderItemBelongsToCurrentCatalog/.test(posTableOrdersRoute), 'POS table-orders must not hydrate order lines for products outside the current tenant catalog');
+assert(/catalog\.items\.length === 0/.test(posTableOrdersRoute), 'POS table-orders must return an empty authoritative order payload when the tenant POS catalog is empty');
+assert(!/line\.qty \* line\.price \* \(line\.isReturn \? -1 : 1\) \* 1\.1/.test(read('components/floor-workspace.tsx')), 'Floor authoritative totals must not add VAT on top of the entered sale price');
 assert(/shouldUseSeedBusinessData/.test(qrMenuState), 'QR menu default catalog must be restricted to the seed tenant');
 assert(!/sale-product-storage-save-existing/.test(saleProductCatalog), 'Sale product persistence must replace the stored snapshot so deleted products cannot return after refresh');
 assert(/shouldUseSeedBusinessData\(\) \|\| product\.source !== 'seeded'/.test(saleProductCatalog), 'Non-seed tenants must reject contaminated demo sale product caches');
