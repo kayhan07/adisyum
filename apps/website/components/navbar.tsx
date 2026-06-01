@@ -32,7 +32,7 @@ export function Navbar() {
         {/* Logo */}
         <a href="/" className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand-500 shadow-[0_0_24px_rgba(14,165,233,0.5)]">
-            <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5 text-white">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" className="h-5 w-5 max-w-5 text-white">
               <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
@@ -56,8 +56,8 @@ export function Navbar() {
 
         {/* CTAs */}
         <div className="hidden items-center gap-3 lg:flex">
-          <a href="/app" className="text-sm font-semibold text-slate-300 hover:text-white transition">
-            Giriş Yap
+          <a href="/app/login" className="text-sm font-semibold text-slate-300 hover:text-white transition">
+            Uygulamaya Giriş
           </a>
           <a
             href="#demo"
@@ -101,7 +101,8 @@ export function Navbar() {
             ))}
           </ul>
           <div className="grid gap-2">
-            <a href="/app" className="rounded-xl border border-white/10 px-4 py-3 text-center text-sm font-semibold text-slate-200">Giriş Yap</a>
+            <a href="/app/login" className="rounded-xl border border-white/10 px-4 py-3 text-center text-sm font-semibold text-slate-200">Uygulamaya Giriş</a>
+            <a href="/system-admin/login" className="rounded-xl border border-white/10 px-4 py-3 text-center text-sm font-semibold text-slate-200">System Admin</a>
             <a href="#demo" onClick={() => setMenuOpen(false)} className="rounded-xl bg-brand-500 px-4 py-3 text-center text-sm font-semibold text-white">Ücretsiz Demo →</a>
           </div>
         </div>

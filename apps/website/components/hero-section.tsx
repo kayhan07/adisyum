@@ -53,13 +53,19 @@ export function HeroSection() {
             </svg>
           </a>
           <a
-            href="#features"
+            href="/app/login"
             className="inline-flex items-center gap-2 rounded-2xl border border-white/12 bg-white/5 px-7 py-4 text-base font-semibold text-white backdrop-blur-sm transition hover:border-white/20 hover:bg-white/10"
           >
             <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-slate-400">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
             </svg>
-            Platform Turu
+            Uygulamaya Giriş
+          </a>
+          <a
+            href="/system-admin/login"
+            className="inline-flex items-center rounded-2xl border border-white/12 bg-white/5 px-7 py-4 text-base font-semibold text-white backdrop-blur-sm transition hover:border-white/20 hover:bg-white/10"
+          >
+            System Admin
           </a>
         </div>
 
