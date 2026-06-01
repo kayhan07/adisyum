@@ -2,15 +2,6 @@
 
 import { runtimeFetch } from '@/lib/runtime/runtime-api';
 
-const HTTP_BASES = [
-  'http://localhost:4891',
-  'http://127.0.0.1:4891',
-  'http://localhost:3001',
-  'http://127.0.0.1:3001',
-  'https://localhost:3443',
-  'https://127.0.0.1:3443',
-];
-
 type LocalAgentRequestOptions = {
   method?: 'GET' | 'POST';
   body?: unknown;
@@ -35,22 +26,37 @@ declare global {
 
 export function isLocalBridgeBrowserRuntimeEnabled() {
   if (typeof window === 'undefined') return false;
-  if (process.env.NEXT_PUBLIC_ENABLE_LOCAL_BRIDGE === '1') return true;
-  return Boolean(window.adisyumDesktop);
+  if (window.adisyumDesktop) return true;
+  return process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_ENABLE_LOCAL_BRIDGE === '1';
+}
+
+function buildLoopbackBase(protocol: 'http' | 'https', host: 'localhost' | '127.0.0.1', port: string) {
+  return [protocol, '://', host, ':', port].join('');
 }
 
 export function getLocalBridgeHealthUrl() {
   if (!isLocalBridgeBrowserRuntimeEnabled()) return null;
   const port = process.env.NEXT_PUBLIC_LOCAL_BRIDGE_PORT ?? '4891';
-  return ['http://', '127.0.0.1', ':', port, '/health'].join('');
+  return `${buildLoopbackBase('http', '127.0.0.1', port)}/health`;
 }
 
 export function getLocalAgentBaseHint() {
-  return `${HTTP_BASES[0]} / ${HTTP_BASES[1]} (yedek proxy: /api/printers/local-agent)`;
+  if (!isLocalBridgeBrowserRuntimeEnabled()) {
+    return 'Sunucu proxy: /api/printers/local-agent';
+  }
+  const bases = directLocalAgentBases();
+  return `${bases[0]} / ${bases[1]} (yedek proxy: /api/printers/local-agent)`;
 }
 
 function directLocalAgentBases() {
-  return HTTP_BASES;
+  const httpPort = process.env.NEXT_PUBLIC_LOCAL_BRIDGE_PORT ?? '4891';
+  const httpsPort = process.env.NEXT_PUBLIC_LOCAL_BRIDGE_HTTPS_PORT ?? '3443';
+  return [
+    buildLoopbackBase('http', 'localhost', httpPort),
+    buildLoopbackBase('http', '127.0.0.1', httpPort),
+    buildLoopbackBase('https', 'localhost', httpsPort),
+    buildLoopbackBase('https', '127.0.0.1', httpsPort),
+  ];
 }
 
 async function fetchDirectLocalAgent(path: string, options: LocalAgentRequestOptions = {}) {
@@ -137,7 +143,7 @@ export async function fetchFromLocalAgent(path: string, options: LocalAgentReque
     return { ...body, source: 'local-agent-client' };
   })();
 
-  if (typeof window !== 'undefined') {
+  if (isLocalBridgeBrowserRuntimeEnabled()) {
     try {
       return await fetchDirectLocalAgent(path, { ...options, body: nextBody });
     } catch (error) {
