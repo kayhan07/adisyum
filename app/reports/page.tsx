@@ -27,7 +27,7 @@ export default function ReportsPage() {
 
       const ordersByTable = getStoredOrdersByTable<OrderLine>();
       const allLines = Object.values(ordersByTable).flat();
-      setOrderRevenue(allLines.reduce((sum, line) => sum + (line.qty * line.price * 1.1), 0));
+      setOrderRevenue(allLines.reduce((sum, line) => sum + (line.qty * line.price), 0));
       setOrderCount(allLines.reduce((sum, line) => sum + line.qty, 0));
 
       const invoices = loadStoredPurchaseInvoices();

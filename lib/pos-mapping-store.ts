@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { DEFAULT_SALE_PRODUCT_BASE } from '@/lib/sale-product-catalog';
 import { readRuntimeItem, writeRuntimeItem } from '@/lib/client/runtime-state';
+import { shouldUseSeedBusinessData } from '@/lib/tenant-clean-start';
 
 export type PosUnitType = 'adet' | 'kg' | 'lt' | 'gr' | 'ml' | 'porsiyon' | 'sise' | 'bardak';
 export type ProductMappingStatus = 'missing' | 'valid' | 'invalid';
@@ -27,16 +28,12 @@ interface MappingError {
 interface ProductMappingStore {
   errors: MappingError[];
   warnings: string[];
-  
-  // Actions
   addError: (error: MappingError) => void;
   removeError: (productId: string) => void;
   clearErrors: () => void;
   addWarning: (warning: string) => void;
   removeWarning: (warning: string) => void;
   clearWarnings: () => void;
-  
-  // Query
   hasErrors: () => boolean;
   getErrorsByType: (type: MappingError['type']) => MappingError[];
 }
@@ -47,8 +44,7 @@ export const useProductMappingStore = create<ProductMappingStore>((set, get) => 
 
   addError: (error) =>
     set((state) => {
-      // Avoid duplicates
-      if (state.errors.some((e) => e.productId === error.productId)) {
+      if (state.errors.some((item) => item.productId === error.productId)) {
         return state;
       }
       return { errors: [...state.errors, error] };
@@ -56,7 +52,7 @@ export const useProductMappingStore = create<ProductMappingStore>((set, get) => 
 
   removeError: (productId) =>
     set((state) => ({
-      errors: state.errors.filter((e) => e.productId !== productId),
+      errors: state.errors.filter((item) => item.productId !== productId),
     })),
 
   clearErrors: () => set({ errors: [] }),
@@ -68,14 +64,14 @@ export const useProductMappingStore = create<ProductMappingStore>((set, get) => 
 
   removeWarning: (warning) =>
     set((state) => ({
-      warnings: state.warnings.filter((w) => w !== warning),
+      warnings: state.warnings.filter((item) => item !== warning),
     })),
 
   clearWarnings: () => set({ warnings: [] }),
 
   hasErrors: () => get().errors.length > 0,
 
-  getErrorsByType: (type) => get().errors.filter((e) => e.type === type),
+  getErrorsByType: (type) => get().errors.filter((item) => item.type === type),
 }));
 
 const STORAGE_KEY = 'adisyon-product-mappings';
@@ -90,7 +86,7 @@ function normalizeProductKey(value: string) {
     .trim()
     .toLocaleLowerCase('tr-TR')
     .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9ığüşöçİĞÜŞÖÇ-]/gi, '');
+    .replace(/[^\p{L}\p{N}-]/gu, '');
 }
 
 function normalizePlu(value: string) {
@@ -129,36 +125,37 @@ function mergeWithDefaultMappings(existing: ProductMapping[]) {
     return !keySet.has(key);
   });
 
-  if (missing.length === 0) {
-    return existing;
-  }
-
-  return [...existing, ...missing];
+  return missing.length === 0 ? existing : [...existing, ...missing];
 }
 
 export function loadProductMappings(): ProductMapping[] {
   if (!canUseStorage()) return [];
+  const seedMappingsAllowed = shouldUseSeedBusinessData();
 
   try {
     const raw = readRuntimeItem('tenant', STORAGE_KEY);
     if (!raw) {
-      const seeded = buildDefaultMappings();
+      const seeded = seedMappingsAllowed ? buildDefaultMappings() : [];
       if (seeded.length > 0) {
         writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(seeded));
       }
       return seeded;
     }
+
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    if (parsed.length > 0) {
+    if (parsed.length > 0 && seedMappingsAllowed) {
       const merged = mergeWithDefaultMappings(parsed as ProductMapping[]);
       if (merged.length !== parsed.length) {
         writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(merged));
       }
       return merged;
     }
+    if (parsed.length > 0) {
+      return parsed as ProductMapping[];
+    }
 
-    const seeded = buildDefaultMappings();
+    const seeded = seedMappingsAllowed ? buildDefaultMappings() : [];
     if (seeded.length > 0) {
       writeRuntimeItem('tenant', STORAGE_KEY, JSON.stringify(seeded));
     }

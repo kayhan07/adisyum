@@ -20,7 +20,6 @@ import {
 
 const PENDING_QR_ORDERS_STORAGE_KEY = 'aurelia-qr-pending-orders';
 const QR_EVENT_NAME = 'aurelia-qr-menu:changed';
-const VAT_RATE = 0.1;
 
 export type QrOrderLine = {
   id: string;
@@ -214,7 +213,7 @@ export function appendQrOrderToTable(tableId: string, items: QrCartItem[]) {
     totalIds.map((id) => {
       const lines = nextOrders[id] ?? [];
       const subtotal = lines.reduce((sum, line) => sum + line.qty * line.price, 0);
-      const grossTotal = Number((subtotal * (1 + VAT_RATE)).toFixed(2));
+      const grossTotal = Number(subtotal.toFixed(2));
       return [id, grossTotal];
     }),
   ) as Record<string, number>;

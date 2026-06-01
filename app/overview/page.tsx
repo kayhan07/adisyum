@@ -195,7 +195,7 @@ export default function OverviewPage() {
                   <div>
                     <p className="font-medium text-white">{ingredientById[stock.ingredientId]?.name ?? stock.ingredientId}</p>
                     <p className="mt-1 text-sm text-slate-400">
-                      Mevcut {stock.quantity} {stock.unit} â€¢ Minimum {stock.minimumQuantity} {stock.unit}
+                      Mevcut {stock.quantity} {stock.unit} - Minimum {stock.minimumQuantity} {stock.unit}
                     </p>
                   </div>
                   <span
@@ -216,4 +216,3 @@ export default function OverviewPage() {
     </AppShell>
   );
 }
-

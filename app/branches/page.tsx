@@ -23,7 +23,7 @@ export default function BranchesPage() {
       setRuntimeTransferCount(loadTransferRecords().length);
       const ordersByTable = getStoredOrdersByTable<OrderLine>();
       setTotalRevenue(
-        Object.values(ordersByTable).flat().reduce((sum, line) => sum + (line.qty * line.price * 1.1), 0),
+        Object.values(ordersByTable).flat().reduce((sum, line) => sum + (line.qty * line.price), 0),
       );
     };
     refresh();

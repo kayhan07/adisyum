@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, Cpu, FileText, Loader2, Network, RefreshCw
 import { DEFAULT_SALE_PRODUCT_BASE, loadStoredSaleProducts, subscribeToStoredSaleProductsChanges } from '@/lib/sale-product-catalog';
 import { AppShell } from '@/components/app-shell';
 import { fetchLocalAgentJson } from '@/lib/local-agent';
+import { shouldUseSeedBusinessData } from '@/lib/tenant-clean-start';
 
 type PosTab = 'device' | 'mapping' | 'test' | 'logs';
 type DeviceType = 'ESC_POS' | 'SDK_DLL' | 'ANDROID_API' | 'JSON_HTTP';
@@ -397,6 +398,7 @@ export function PosSettingsClient() {
   useEffect(() => {
     const syncLocalProducts = () => {
       const stored = loadStoredSaleProducts();
+      const seedProductsAllowed = shouldUseSeedBusinessData();
       const source = stored && stored.length > 0
         ? stored.map((product) => ({
             id: product.id,
@@ -405,13 +407,15 @@ export function PosSettingsClient() {
             vat_rate: Number(product.vatRate || 0),
             is_active: true,
           }))
-        : DEFAULT_SALE_PRODUCT_BASE.map((product) => ({
+        : seedProductsAllowed
+          ? DEFAULT_SALE_PRODUCT_BASE.map((product) => ({
             id: product.id,
             name: product.name,
             price: Number(product.salePrice || 0),
             vat_rate: Number(product.vatRate || 0),
             is_active: true,
-          }));
+          }))
+          : [];
 
       setLocalProducts(source);
     };
