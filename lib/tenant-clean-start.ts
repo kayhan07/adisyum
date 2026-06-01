@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { removeRuntimeItem } from '@/lib/client/runtime-state';
 import { loadSessionState, subscribeToSessionChanges } from '@/lib/session-store';
 
 const DEFAULT_SEED_TENANT_ID = 'ABN-48291';
@@ -55,15 +54,14 @@ export function resetTenantBusinessCachesForLogin(nextTenantId: string) {
     const keysToRemove = new Set<string>();
     for (const prefix of TENANT_LOCAL_CACHE_PREFIXES) {
       keysToRemove.add(prefix);
-      keysToRemove.add(`${prefix}:${normalizedTenantId}`);
+      keysToRemove.add(`${prefix}:anonymous`);
     }
 
     for (const key of keysToRemove) {
       window.localStorage.removeItem(key);
-      removeRuntimeItem('tenant', key, { persist: false });
     }
 
-    console.info('[tenant-clean-start] tenant business caches reset for login', {
+    console.info('[tenant-clean-start] legacy tenant business caches reset for login', {
       tenantId: normalizedTenantId,
       removedKeys: Array.from(keysToRemove),
     });

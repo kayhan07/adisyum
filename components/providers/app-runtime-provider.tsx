@@ -461,7 +461,16 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     };
   }, [data, isFetched]);
 
-  if (!isAuthEntryRoute && isProtectedRoute && (!isFetched || isFetching || !data?.ok || !ready)) return null;
+  if (!isAuthEntryRoute && isProtectedRoute && (!isFetched || isFetching || !data?.ok || !ready)) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-slate-100">
+        <div className="text-center">
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-slate-700 border-t-sky-400" />
+          <p className="mt-3 text-sm font-semibold">Oturum doğrulanıyor...</p>
+        </div>
+      </main>
+    );
+  }
 
   if (!isFetched || !ready) return <>{children}</>;
   return (

@@ -27,6 +27,7 @@ export async function createSessionToken(input: Omit<SessionPayload, 'iat' | 'ex
 }
 
 export function setSessionCookie(response: NextResponse, token: string) {
+  clearSessionCookie(response);
   response.cookies.set(SESSION_COOKIE_NAME, token, getSessionCookieOptions());
   return response;
 }

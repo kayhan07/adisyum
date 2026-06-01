@@ -55,6 +55,8 @@ const productPage = read('app/products/page.tsx');
 const secureLogout = read('lib/client/secure-logout.ts');
 const appLogin = read('app/app/login/page.tsx');
 const systemAdminLogin = read('app/system-admin/login/page.tsx');
+const session = read('lib/session.ts');
+const tenantCleanStart = read('lib/tenant-clean-start.ts');
 
 assert(exists('PRODUCT_RECOVERY_CHECKLIST.md'), 'PRODUCT_RECOVERY_CHECKLIST.md must exist');
 assert(exists('PRODUCT_RUNTIME_QA.md'), 'PRODUCT_RUNTIME_QA.md must exist');
@@ -69,8 +71,11 @@ assert(/const PRODUCT_RECOVERY_MINIMAL_RUNTIME = true;/.test(provider), 'AppRunt
 assert(/usePathname/.test(provider), 'AppRuntimeProvider must know the current route for auth entry bypass');
 assert(/isAuthEntryRoute = pathname === '\/app\/login' \|\| pathname === '\/system-admin\/login'/.test(provider), 'AppRuntimeProvider must identify auth entry routes');
 assert(/enabled: !isAuthEntryRoute/.test(provider), 'Auth entry routes must not run the global auth session query');
-assert(/if \(!isFetched \|\| !ready\) return <>\{children\}<\/>;/.test(provider), 'AppRuntimeProvider must render children immediately instead of blanking the UI');
-assert(!/if \(!isFetched \|\| !ready\) return null;/.test(provider), 'AppRuntimeProvider must not return null during bootstrap');
+assert(/isProtectedRoute && \(!isFetched \|\| isFetching \|\| !data\?\.ok \|\| !ready\)/.test(provider), 'AppRuntimeProvider must gate protected UI until auth and runtime bootstrap are ready');
+assert(/Oturum doğrulanıyor\.\.\./.test(provider), 'AppRuntimeProvider must show deterministic loading feedback while protected UI is gated');
+assert(/clearSessionCookie\(response\);\s*response\.cookies\.set\(SESSION_COOKIE_NAME, token/.test(session), 'Session login must clear stale cookie variants before setting the active tenant cookie');
+assert(/keysToRemove\.add\(`\$\{prefix\}:anonymous`\)/.test(tenantCleanStart), 'Login cleanup must remove anonymous legacy tenant caches');
+assert(!/keysToRemove\.add\(`\$\{prefix\}:\$\{normalizedTenantId\}`\)/.test(tenantCleanStart), 'Login cleanup must preserve the authenticated tenant cache');
 assert((provider.match(/if \(PRODUCT_RECOVERY_MINIMAL_RUNTIME\) return;/g) ?? []).length >= 3, 'AppRuntimeProvider must disable non-essential runtime loops in product recovery mode');
 assert(/const validateSession = async \(\) =>/.test(provider), 'AppRuntimeProvider must keep the lightweight auth revocation check enabled in product recovery mode');
 assert(/window\.addEventListener\('focus', onFocus\)/.test(provider), 'AppRuntimeProvider must revalidate auth when the protected app regains focus');
