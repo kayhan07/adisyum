@@ -90,7 +90,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   }, [data, isAuthEntryRoute, pathname]);
 
   useEffect(() => {
-    if (isAuthEntryRoute || !isFetched || data?.ok || !isProtectedRoute || loginRedirectRef.current) return;
+    if (isAuthEntryRoute || !isFetched || isFetching || data?.ok || !isProtectedRoute || loginRedirectRef.current) return;
     loginRedirectRef.current = true;
     propagateRuntimeSessionAuth(null);
     setAuthSnapshotFromSession(null);
@@ -99,7 +99,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
       redirectTo: loginPathForRoute(pathname),
     });
     window.location.replace(loginPathForRoute(pathname));
-  }, [data, isAuthEntryRoute, isFetched, isProtectedRoute, pathname]);
+  }, [data, isAuthEntryRoute, isFetched, isFetching, isProtectedRoute, pathname]);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -183,7 +183,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
       previousFingerprintRef.current = nextFingerprint;
     }
 
-    if (!isFetched) return;
+    if (!isFetched || isFetching) return;
     setReady(false);
     void prepare().catch((error) => {
       console.error('[runtime-provider] prepare failed', error);
@@ -193,7 +193,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [authFingerprint, data, isFetched]);
+  }, [authFingerprint, data, isFetched, isFetching]);
 
   useEffect(() => {
     if (PRODUCT_RECOVERY_MINIMAL_RUNTIME) return;

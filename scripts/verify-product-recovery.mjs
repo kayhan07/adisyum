@@ -73,6 +73,8 @@ assert(/usePathname/.test(provider), 'AppRuntimeProvider must know the current r
 assert(/isAuthEntryRoute = pathname === '\/app\/login' \|\| pathname === '\/system-admin\/login'/.test(provider), 'AppRuntimeProvider must identify auth entry routes');
 assert(/enabled: !isAuthEntryRoute/.test(provider), 'Auth entry routes must not run the global auth session query');
 assert(/isProtectedRoute && \(!isFetched \|\| isFetching \|\| !data\?\.ok \|\| !ready\)/.test(provider), 'AppRuntimeProvider must gate protected UI until auth and runtime bootstrap are ready');
+assert(provider.includes('isAuthEntryRoute || !isFetched || isFetching || data?.ok'), 'AppRuntimeProvider must not redirect from protected routes while auth refetch is still running');
+assert(provider.includes('if (!isFetched || isFetching) return;'), 'AppRuntimeProvider must not hydrate session/runtime from stale auth cache while auth refetch is still running');
 assert(/Oturum doğrulanıyor\.\.\./.test(provider), 'AppRuntimeProvider must show deterministic loading feedback while protected UI is gated');
 assert(/clearSessionCookie\(response\);\s*response\.cookies\.set\(SESSION_COOKIE_NAME, token/.test(session), 'Session login must clear stale cookie variants before setting the active tenant cookie');
 assert(/keysToRemove\.add\(`\$\{prefix\}:anonymous`\)/.test(tenantCleanStart), 'Login cleanup must remove anonymous legacy tenant caches');
