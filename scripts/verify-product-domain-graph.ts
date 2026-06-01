@@ -78,7 +78,7 @@ const catalog = compileCanonicalPosCatalog([
     allowDiscount: true,
     happyHourEligible: true,
   },
-], { tenantId: 'ABN-48291', branchId: 'mrk', channel: 'pos' });
+], { tenantId: 'TNT-TEST-0001', branchId: 'mrk', channel: 'pos' });
 
 assert.equal(catalog.itemCount, 1);
 assert.equal(catalog.items[0].productSnapshot.category, 'İçecekler');

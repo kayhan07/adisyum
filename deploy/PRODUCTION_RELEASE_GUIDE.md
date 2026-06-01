@@ -39,7 +39,7 @@ There is no `app.adisyum.com`, `admin.adisyum.com`, second root Next.js process,
 
 Defaults used by the deployment bootstrap:
 
-- Tenant: `ABN-48291`
+- Tenant: gerçek üretim tenant kodu (`TNT-...`)
 - Username: `admin`
 - Password: `1234`
 

@@ -7,7 +7,7 @@ const require = createRequire(import.meta.url);
 const { loadEnvConfig } = require('@next/env') as typeof import('@next/env');
 loadEnvConfig(process.cwd(), true);
 
-const TENANT_ID = process.env.AUTH_VERIFY_TENANT_ID || process.env.BOOTSTRAP_TENANT_ID || 'ABN-48291';
+const TENANT_ID = process.env.AUTH_VERIFY_TENANT_ID || process.env.BOOTSTRAP_TENANT_ID;
 const BRANCH_ID = process.env.AUTH_VERIFY_BRANCH_ID || process.env.BOOTSTRAP_BRANCH_ID || 'mrk';
 const USERNAME = process.env.AUTH_VERIFY_USERNAME || process.env.BOOTSTRAP_ADMIN_USERNAME || 'admin';
 const PASSWORD = process.env.AUTH_VERIFY_PASSWORD || process.env.BOOTSTRAP_ADMIN_PASSWORD || '1234';
@@ -25,6 +25,10 @@ function requireDatabaseUrl() {
 }
 
 requireDatabaseUrl();
+if (!TENANT_ID) {
+  throw new Error('AUTH_VERIFY_TENANT_ID or BOOTSTRAP_TENANT_ID is required. Refusing to verify against a demo fallback tenant.');
+}
+const VERIFY_TENANT_ID = TENANT_ID;
 const prisma = new PrismaClient();
 
 function log(message: string, detail?: unknown) {
@@ -220,22 +224,22 @@ async function postJson(path: string, body: unknown) {
 }
 
 async function main() {
-  log('auth verification starting', { tenantId: TENANT_ID, username: USERNAME, passwordLength: PASSWORD.length, baseUrl: BASE_URL || null });
+  log('auth verification starting', { tenantId: VERIFY_TENANT_ID, username: USERNAME, passwordLength: PASSWORD.length, baseUrl: BASE_URL || null });
 
-  await ensureTenant({ tenantId: TENANT_ID, branchId: BRANCH_ID, name: 'Adisyum Production Tenant', branchName: 'Merkez' });
-  await ensureSubscription(TENANT_ID, 1);
-  await ensureRole({ tenantId: TENANT_ID, key: 'Admin', name: 'Admin' });
-  await ensureUser({ tenantId: TENANT_ID, branchId: BRANCH_ID, username: USERNAME, name: 'Admin', role: 'Admin', password: PASSWORD });
+  await ensureTenant({ tenantId: VERIFY_TENANT_ID, branchId: BRANCH_ID, name: 'Adisyum Production Tenant', branchName: 'Merkez' });
+  await ensureSubscription(VERIFY_TENANT_ID, 1);
+  await ensureRole({ tenantId: VERIFY_TENANT_ID, key: 'Admin', name: 'Admin' });
+  await ensureUser({ tenantId: VERIFY_TENANT_ID, branchId: BRANCH_ID, username: USERNAME, name: 'Admin', role: 'Admin', password: PASSWORD });
 
   await ensureTenant({ tenantId: SYSTEM_TENANT_ID, branchId: SYSTEM_BRANCH_ID, name: 'Adisyum System Administration', branchName: 'System Administration', system: true });
   await ensureSubscription(SYSTEM_TENANT_ID, 10);
   await ensureRole({ tenantId: SYSTEM_TENANT_ID, key: 'super_admin', name: 'Super Admin', system: true });
   await ensureUser({ tenantId: SYSTEM_TENANT_ID, branchId: SYSTEM_BRANCH_ID, username: USERNAME, name: 'System Admin', role: 'super_admin', password: PASSWORD, system: true });
 
-  await postJson('/api/auth/login', { tenantId: TENANT_ID, username: USERNAME, password: PASSWORD });
+  await postJson('/api/auth/login', { tenantId: VERIFY_TENANT_ID, username: USERNAME, password: PASSWORD });
   await postJson('/api/auth/system-admin', { username: USERNAME, password: PASSWORD });
 
-  log('auth verification completed successfully', { tenantId: TENANT_ID, username: USERNAME });
+  log('auth verification completed successfully', { tenantId: VERIFY_TENANT_ID, username: USERNAME });
 }
 
 main()

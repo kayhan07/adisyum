@@ -75,10 +75,10 @@ async function getRuntimeState(scope, jar) {
 async function run() {
   let jar = new Map();
 
-  jar = await loginAsTenant('ABN-48291', 'admin', '1234', jar);
+  jar = await loginAsTenant('TNT-TEST-0001', 'admin', '1234', jar);
   const tenantASession = await getSession(jar);
   assert.equal(tenantASession.ok, true, 'Tenant A session missing after login');
-  assert.equal(tenantASession.payload.session.tenantId, 'ABN-48291');
+  assert.equal(tenantASession.payload.session.tenantId, 'TNT-TEST-0001');
 
   const tenantAState = await getRuntimeState('tenant', jar);
   assert.equal(tenantAState.status, 200, 'Tenant A runtime state unavailable');
@@ -87,10 +87,10 @@ async function run() {
   const afterLogoutSession = await getSession(jar);
   assert.equal(afterLogoutSession.ok, false, 'Session still active after logout');
 
-  jar = await loginAsTenant('ABN-48291', 'admin', '1234', jar);
+  jar = await loginAsTenant('TNT-TEST-0001', 'admin', '1234', jar);
   const tenantBSession = await getSession(jar);
   assert.equal(tenantBSession.ok, true, 'Tenant B session missing after login');
-  assert.equal(tenantBSession.payload.session.tenantId, 'ABN-48291');
+  assert.equal(tenantBSession.payload.session.tenantId, 'TNT-TEST-0001');
 
   const tenantBState = await getRuntimeState('tenant', jar);
   assert.equal(tenantBState.status, 200, 'Tenant B runtime state unavailable');

@@ -38,7 +38,7 @@ const items: PosCatalogProduct[] = [
 ];
 
 const catalog = compileCanonicalPosCatalog(items, {
-  tenantId: 'ABN-48291',
+  tenantId: 'TNT-TEST-0001',
   branchId: 'main',
   channel: 'pos',
   deviceSync: [
@@ -56,7 +56,7 @@ assert.equal(isCatalogStale('CAT-OLD', catalog.catalogRevision), true);
 assert.equal(isCatalogStale(catalog.catalogRevision, catalog.catalogRevision), false);
 assert.equal(catalogSafeModeReason(catalog), null);
 
-const emptyCatalog = compileCanonicalPosCatalog([], { tenantId: 'ABN-48291' });
+const emptyCatalog = compileCanonicalPosCatalog([], { tenantId: 'TNT-TEST-0001' });
 assert.equal(catalogSafeModeReason(emptyCatalog), 'empty_catalog');
 
 const hardened = compileCanonicalPosCatalog([
@@ -64,7 +64,7 @@ const hardened = compileCanonicalPosCatalog([
   { ...items[0], id: 'duplicate', productId: 'duplicate-product' },
   { ...items[0], id: 'negative', productId: 'negative-product', posKey: createPosKey('negative'), price: -1 },
   { ...items[0], id: 'draft', productId: 'draft-product', posKey: createPosKey('draft'), lifecycleStatus: 'draft', publishStatus: 'draft' },
-], { tenantId: 'ABN-48291' });
+], { tenantId: 'TNT-TEST-0001' });
 assert.equal(hardened.itemCount, 2);
 assert.equal(hardened.observability.invalidItemCount, 3);
 

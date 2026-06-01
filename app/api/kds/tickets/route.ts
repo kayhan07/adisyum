@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     recordTenantError({ tenantId, message, scope: 'api.kds.tickets', route: '/api/kds/tickets' });
     logError({ service: 'api.kds.tickets', message, tenantId, route: '/api/kds/tickets' });
     recordRequestMetric({ tenantId, route: '/api/kds/tickets', durationMs: Date.now() - startedAt, statusCode: 200, method: 'GET' });
-    const payload = getLocalKdsTickets(channel, branchId);
+    const payload = getLocalKdsTickets(channel, branchId, tenantId);
     return NextResponse.json(payload, {
       headers: {
         'X-KDS-Source': 'local-fallback',

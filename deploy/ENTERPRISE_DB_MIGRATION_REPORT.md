@@ -104,7 +104,7 @@ npm run tenant:db-smoke
 Import localStorage export JSON:
 
 ```bash
-TENANT_ID=ABN-48291 npm run tenant:import-localstorage -- ./snapshot.json
+TENANT_ID=TNT-PRODUCTION-CODE npm run tenant:import-localstorage -- ./snapshot.json
 ```
 
 ## Required Environment

@@ -7,7 +7,7 @@ const require = createRequire(import.meta.url);
 const { loadEnvConfig } = require('@next/env') as typeof import('@next/env');
 loadEnvConfig(process.cwd(), true);
 
-const DEFAULT_TENANT_ID = process.env.BOOTSTRAP_TENANT_ID || 'ABN-48291';
+const DEFAULT_TENANT_ID = process.env.BOOTSTRAP_TENANT_ID;
 const DEFAULT_USERNAME = process.env.BOOTSTRAP_ADMIN_USERNAME || 'admin';
 const DEFAULT_PASSWORD = process.env.BOOTSTRAP_ADMIN_PASSWORD || '1234';
 const DEFAULT_BRANCH_ID = process.env.BOOTSTRAP_BRANCH_ID || 'mrk';
@@ -26,6 +26,10 @@ function requireDatabaseUrl() {
 }
 
 requireDatabaseUrl();
+if (!DEFAULT_TENANT_ID) {
+  throw new Error('BOOTSTRAP_TENANT_ID is required. Refusing to create a demo fallback tenant.');
+}
+const BOOTSTRAP_TENANT_ID = DEFAULT_TENANT_ID;
 const prisma = new PrismaClient();
 
 function log(message: string, detail?: unknown) {
@@ -209,15 +213,15 @@ async function ensureUser(input: {
 
 async function main() {
   await ensureTenant({
-    tenantId: DEFAULT_TENANT_ID,
+    tenantId: BOOTSTRAP_TENANT_ID,
     name: 'Adisyum Production Tenant',
     branchId: DEFAULT_BRANCH_ID,
     branchName: 'Merkez',
   });
-  await ensureSubscription(DEFAULT_TENANT_ID, 1);
-  await ensureRole({ tenantId: DEFAULT_TENANT_ID, key: 'Admin', name: 'Admin' });
+  await ensureSubscription(BOOTSTRAP_TENANT_ID, 1);
+  await ensureRole({ tenantId: BOOTSTRAP_TENANT_ID, key: 'Admin', name: 'Admin' });
   await ensureUser({
-    tenantId: DEFAULT_TENANT_ID,
+    tenantId: BOOTSTRAP_TENANT_ID,
     branchId: DEFAULT_BRANCH_ID,
     username: DEFAULT_USERNAME,
     name: 'Admin',
@@ -244,7 +248,7 @@ async function main() {
     system: true,
   });
 
-  console.log(`Bootstrap completed. Tenant=${DEFAULT_TENANT_ID}, username=${DEFAULT_USERNAME}`);
+  console.log(`Bootstrap completed. Tenant=${BOOTSTRAP_TENANT_ID}, username=${DEFAULT_USERNAME}`);
 }
 
 main()

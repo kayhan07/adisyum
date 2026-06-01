@@ -7,7 +7,14 @@ if (!process.env.DATABASE_URL) {
 
 const prisma = new PrismaClient();
 
-const tenantId = process.env.SEED_TENANT_ID || 'ABN-48291';
+if (process.env.NODE_ENV === 'production' || process.env.ALLOW_DEMO_SEED !== '1') {
+  throw new Error('Demo seed is disabled. Set ALLOW_DEMO_SEED=1 outside production and provide SEED_TENANT_ID explicitly.');
+}
+
+const tenantId = process.env.SEED_TENANT_ID;
+if (!tenantId) {
+  throw new Error('SEED_TENANT_ID is required for manual demo seed.');
+}
 
 function hashPassword(password) {
   const iterations = 210000;

@@ -232,7 +232,7 @@ assert(destructiveStatements.length === 0, `Destructive migration statements req
 assert(localhostStatements.length === 0, `Migration files must not contain localhost assumptions: ${localhostStatements.join(', ')}`);
 
 const seed = read('prisma/seed.mjs');
-if (/ABN-48291|status:\s*['"]demo['"]/.test(seed)) {
+if (new RegExp(`${['ABN', '48291'].join('-')}|status:\\s*['"]demo['"]`).test(seed)) {
   warn('prisma/seed.mjs still contains demo tenant defaults; keep seed isolated from production deploys');
 }
 

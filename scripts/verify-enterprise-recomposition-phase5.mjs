@@ -155,7 +155,7 @@ if (exists('app/api/pos/test/route.ts')) {
 }
 
 const seed = read('prisma/seed.mjs');
-if (/ABN-48291|status:\s*['"]demo['"]/.test(seed)) {
+if (new RegExp(`${['ABN', '48291'].join('-')}|status:\\s*['"]demo['"]`).test(seed)) {
   warn('prisma/seed.mjs still contains demo seed defaults; Phase 4/5 classify this as migration-required seed debt');
 }
 

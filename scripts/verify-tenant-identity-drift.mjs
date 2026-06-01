@@ -3,6 +3,7 @@ import path from 'node:path';
 
 const root = process.cwd();
 const failures = [];
+const legacyDemoTenantMarker = ['ABN', '48291'].join('-');
 
 function read(relativePath) {
   return fs.readFileSync(path.join(root, relativePath), 'utf8');
@@ -41,10 +42,10 @@ const productionFiles = [
   'middleware.ts',
 ].filter((file) => fs.existsSync(path.join(root, file)));
 
-const sourceWithDemoTenant = productionFiles.filter((file) => read(file).includes('ABN-48291'));
+const sourceWithDemoTenant = productionFiles.filter((file) => read(file).includes(legacyDemoTenantMarker));
 assert(
   sourceWithDemoTenant.length === 0,
-  `Production source must not contain ABN-48291 fallback references: ${sourceWithDemoTenant.join(', ')}`,
+  `Production source must not contain legacy demo tenant fallback references: ${sourceWithDemoTenant.join(', ')}`,
 );
 
 const tenantCleanStart = read('lib/tenant-clean-start.ts');
@@ -62,7 +63,7 @@ const systemAdminStore = read('lib/system-admin-store.ts');
 
 assert(/NEXT_PUBLIC_ENABLE_SEED_BUSINESS_DATA === '1'/.test(tenantCleanStart), 'Seed business data must be explicitly disabled unless an env flag enables it');
 assert(!/DEFAULT_SEED_TENANT_ID/.test(tenantCleanStart), 'Seed business data must not use a hardcoded default tenant id');
-assert(!/tenantId === ['"]ABN-48291['"]/.test(tableLayoutStore + saleProductCatalog + rawIngredientStore + recipePool + integrationStore + productPage), 'Tenant local stores must not read legacy unscoped caches through an ABN fallback');
+assert(!new RegExp(`tenantId === ['"]${legacyDemoTenantMarker}['"]`).test(tableLayoutStore + saleProductCatalog + rawIngredientStore + recipePool + integrationStore + productPage), 'Tenant local stores must not read legacy unscoped caches through an ABN fallback');
 assert(!/window\.localStorage\.getItem\(LOCAL_STORAGE_KEY\)/.test(tableLayoutStore + saleProductCatalog + rawIngredientStore + recipePool + integrationStore), 'Tenant local stores must not hydrate unscoped legacy localStorage keys');
 assert(!/window\.localStorage\.getItem\(LOCAL_PRODUCT_CATEGORY_STORAGE_KEY\)/.test(productPage), 'Product category cache must not hydrate unscoped legacy localStorage keys');
 
