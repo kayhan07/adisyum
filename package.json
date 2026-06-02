@@ -12,6 +12,7 @@
     "finance:reconciliation": "node scripts/verify-finance-reconciliation.mjs",
     "routes:audit": "node scripts/audit-next-routes.mjs",
     "runtime:audit-production": "node scripts/audit-production-runtime.mjs",
+    "release:customer-ready": "npm run finance:reconciliation && npm run pos:backbone && npm run pos:critical-flow && npm run demo:purity && npm run tenant:identity-drift && npm run tenant:access-policy && npm run product:recovery-validate && npm run runtime:audit-production",
     "auth:runtime-lock-test": "node scripts/verify-auth-failure-runtime-lock.mjs",
     "tenant:access-policy": "node scripts/verify-tenant-access-policy.mjs",
     "tenant:identity-drift": "node scripts/verify-tenant-identity-drift.mjs",
