@@ -48,6 +48,7 @@ const TENANT_SCOPED_TABLES = [
   'orders',
   'order_items',
   'payments',
+  'current_account_movements',
   'customers',
   'suppliers',
   'warehouses',
@@ -85,6 +86,7 @@ const CLEAN_START_TABLES = {
   floorCount: 'table_groups',
   orderCount: 'orders',
   paymentCount: 'payments',
+  currentAccountMovementCount: 'current_account_movements',
   currentAccountCount: 'customers',
   supplierCount: 'suppliers',
   cashRegisterCount: 'cash_registers',
@@ -358,7 +360,7 @@ export async function auditDatabase() {
         safePrinterDeactivateIds: printers.printers.filter((printer) => printer.safeToDeactivate).map((printer) => printer.id),
         safeDeviceRegistryRevokeIds: printers.registries.filter((registry) => registry.safeToRevoke).map((registry) => registry.id),
         manualReview: markerFindings.map((finding) => ({ table: finding.table, countReturned: finding.countReturned })),
-        doNotTouch: ['orders', 'order_items', 'payments', 'cash_transactions', 'customers', 'suppliers', 'reports'],
+        doNotTouch: ['orders', 'order_items', 'payments', 'current_account_movements', 'cash_transactions', 'customers', 'suppliers', 'reports'],
       },
     };
   } finally {

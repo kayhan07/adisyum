@@ -46,8 +46,7 @@ import {
   removeStoredTreasuryMovementIds,
 } from '@/lib/treasury-runtime-store';
 import {
-  appendStoredFinanceAccountTransaction,
-  buildFinanceTransaction,
+  createAuthoritativeFinanceAccountMovement,
   removeStoredFinanceAccountTransactionIds,
 } from '@/lib/finance-runtime-store';
 import { appendStoredAccount, loadStoredAccounts, subscribeToStoredAccountChanges } from '@/lib/account-store';
@@ -568,7 +567,7 @@ export function FloorWorkspace() {
     if (seeded.length > 0) {
       saveStoredTableReservations(seeded);
       seeded.forEach((reservation) => {
-        syncReservationDepositMovement(reservation);
+        void syncReservationDepositMovement(reservation);
       });
     }
   }, [storedReservations.length]);
@@ -925,7 +924,7 @@ export function FloorWorkspace() {
     setActionMessage(type === 'advance' ? 'Günlük kasa avansı kaydedildi' : 'Günlük gider kasadan işlendi');
   }
 
-  function addDailyAccountMovement() {
+  async function addDailyAccountMovement() {
     const account = selectedReportAccount;
     const amount = parseDailyAmount(reportAccountAmount);
 
@@ -939,33 +938,24 @@ export function FloorWorkspace() {
       return;
     }
 
-    const transactionType = reportAccountMode === 'collection'
-      ? account.type === 'customer'
-        ? 'customer_payment'
-        : account.type === 'partner'
-          ? 'partner_payment'
-          : account.type === 'staff'
-            ? 'staff_payment'
-            : 'supplier_payment'
-      : account.type === 'customer'
-        ? 'customer_charge'
-        : account.type === 'partner'
-          ? 'partner_payment'
-          : account.type === 'staff'
-            ? 'staff_payment'
-            : 'supplier_payment';
     const methodLabel = reportAccountMethod === 'cash' ? 'nakit' : reportAccountMethod === 'card' ? 'kart' : 'banka';
     const description = reportAccountNote.trim() || `${methodLabel} ile ${reportAccountMode === 'collection' ? 'tahsilat' : 'ödeme'}`;
 
-    appendStoredFinanceAccountTransaction(
-      buildFinanceTransaction({
+    try {
+      await createAuthoritativeFinanceAccountMovement({
+        action: reportAccountMode === 'collection' ? 'record_collection' : 'record_payment',
         accountId: account.id,
-        type: transactionType,
+        accountName: account.name,
+        accountType: account.type,
         amount,
+        method: reportAccountMethod,
         description,
-        date: reservationDateFilter,
-      }),
-    );
+      });
+    } catch (error) {
+      console.error('[cari-flow] daily report account movement failed', { accountId: account.id, reportAccountMode, amount, error });
+      setActionMessage('Cari işlemi sunucuya kaydedilemedi. Lütfen tekrar deneyin.');
+      return;
+    }
 
     appendDailyCashMovement({
       id: `${reportAccountMode}-${Date.now()}`,
@@ -1258,7 +1248,7 @@ export function FloorWorkspace() {
     setActionMessage(`${noteTable.name} masa bilgisi güncellendi`);
   }
 
-  function syncReservationDepositMovement(reservation: StoredTableReservation) {
+  async function syncReservationDepositMovement(reservation: StoredTableReservation) {
     const movementId = getDepositMovementId(reservation.id);
     const accountTransactionId = getDepositAccountTransactionId(reservation.id);
 
@@ -1277,16 +1267,21 @@ export function FloorWorkspace() {
         return;
       }
 
-      appendStoredFinanceAccountTransaction({
-        ...buildFinanceTransaction({
+      try {
+        await createAuthoritativeFinanceAccountMovement({
+          action: 'sync_reservation_deposit',
           accountId: account.id,
-          type: account.type === 'partner' ? 'partner_payment' : 'customer_payment',
+          accountName: account.name,
+          accountType: account.type,
           amount: reservation.deposit ?? 0,
+          method: 'bank',
           description: `${description} (cari kapora)`,
-          date: reservation.date,
-        }),
-        id: accountTransactionId,
-      });
+          reconciliationKey: `reservation-deposit:${reservation.id}`,
+        });
+      } catch (error) {
+        console.error('[cari-flow] reservation deposit movement failed', { reservationId: reservation.id, accountId: account.id, error });
+        setActionMessage('Cari kapora hareketi sunucuya kaydedilemedi.');
+      }
       return;
     }
 
@@ -1384,7 +1379,7 @@ export function FloorWorkspace() {
         });
 
     upsertStoredTableReservation(nextReservation);
-    syncReservationDepositMovement(nextReservation);
+    void syncReservationDepositMovement(nextReservation);
     setReservationDateFilter(reservationDraft.date || todayDateInput());
     setReservationDraft((current) => ({ ...current, reservationId: nextReservation.id }));
     setActionMessage(`${target.name} için rezervasyon kaydedildi`);
@@ -1432,6 +1427,24 @@ export function FloorWorkspace() {
     removeStoredTableReservation(targetReservation.id);
     removeStoredTreasuryMovementIds([getDepositMovementId(targetReservation.id)]);
     removeStoredFinanceAccountTransactionIds([getDepositAccountTransactionId(targetReservation.id)]);
+    if (targetReservation.depositMethod === 'account' && targetReservation.depositAccountId && (targetReservation.deposit ?? 0) > 0) {
+      const account = reservationChargeAccounts.find((item) => item.id === targetReservation.depositAccountId);
+      if (account) {
+        void createAuthoritativeFinanceAccountMovement({
+          action: 'record_refund',
+          accountId: account.id,
+          accountName: account.name,
+          accountType: account.type,
+          amount: targetReservation.deposit ?? 0,
+          method: 'bank',
+          description: `${targetReservation.guestName} rezervasyon kaporası iptali`,
+          reconciliationKey: `reservation-deposit:${targetReservation.id}:void`,
+        }).catch((error) => {
+          console.error('[cari-flow] reservation deposit refund failed', { reservationId: targetReservation.id, accountId: account.id, error });
+          setActionMessage('Rezervasyon temizlendi ancak cari kapora iadesi kaydedilemedi.');
+        });
+      }
+    }
     setReservationDraft((current) => ({
       ...current,
       reservationId: '',

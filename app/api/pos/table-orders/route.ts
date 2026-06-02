@@ -329,6 +329,9 @@ function normalizeTableOrderMutationBody(body: unknown) {
       cashAmount: numberField(payment, ['cashAmount', 'cash_amount']),
       cardAmount: numberField(payment, ['cardAmount', 'card_amount']),
       accountAmount: numberField(payment, ['accountAmount', 'account_amount']),
+      accountId: stringField(payment, ['accountId', 'account_id']),
+      accountName: stringField(payment, ['accountName', 'account_name']),
+      accountType: stringField(payment, ['accountType', 'account_type']),
     },
     product,
     receivedItem,
@@ -633,6 +636,11 @@ async function loadPaymentState(
         cashAmount: typeof metadata.cashAmount === 'number'
           ? metadata.cashAmount
           : payment.method === 'cash'
+            ? decimalToNumber(payment.amount)
+            : 0,
+        accountAmount: typeof metadata.accountAmount === 'number'
+          ? metadata.accountAmount
+          : payment.method === 'account'
             ? decimalToNumber(payment.amount)
             : 0,
       };
@@ -978,6 +986,42 @@ export async function POST(request: Request) {
               },
             });
           }
+          if (matchingPayment.accountAmount > 0) {
+            const paymentRecord = await tx.payment.findUnique({
+              where: { id: matchingPayment.id, tenantId },
+              select: { metadata: true },
+            });
+            const paymentMetadata = normalizeMetadata(paymentRecord?.metadata);
+            const accountId = typeof paymentMetadata.accountId === 'string' ? paymentMetadata.accountId : '';
+            if (accountId) {
+              const totals = await tx.currentAccountMovement.aggregate({
+                where: { tenantId, accountId },
+                _sum: { debit: true, credit: true },
+              });
+              const previousBalance = Number(totals._sum.debit ?? 0) - Number(totals._sum.credit ?? 0);
+              await tx.currentAccountMovement.upsert({
+                where: { tenantId_reconciliationKey: { tenantId, reconciliationKey: `${reconciliationKey}:account-sale-void` } },
+                create: {
+                  tenantId,
+                  accountId,
+                  orderId: order.id,
+                  paymentId: matchingPayment.id,
+                  reconciliationKey: `${reconciliationKey}:account-sale-void`,
+                  type: 'REFUND',
+                  method: 'cari',
+                  credit: matchingPayment.accountAmount,
+                  balanceAfter: Number((previousBalance - matchingPayment.accountAmount).toFixed(2)),
+                  description: `${tableId} masa cari tahsilat iptali`,
+                  metadata: compactJsonObject({
+                    source: 'pos-table-orders',
+                    tableKey: tableId,
+                    accountType: paymentMetadata.accountType,
+                  }),
+                },
+                update: {},
+              });
+            }
+          }
           currentState = await loadPaymentState(tx, tenantId, order);
           await tx.order.update({
             where: { id: order.id, tenantId },
@@ -1016,7 +1060,7 @@ export async function POST(request: Request) {
         ).toFixed(2));
         if (paymentAmount <= 0) throw new Error('Tahsil edilecek bakiye bulunamadı.');
 
-        await tx.payment.create({
+        const createdPayment = await tx.payment.create({
           data: {
             tenantId,
             orderId: order.id,
@@ -1033,6 +1077,9 @@ export async function POST(request: Request) {
               cashAmount: normalizedBody.payment.cashAmount,
               cardAmount: normalizedBody.payment.cardAmount,
               accountAmount: normalizedBody.payment.accountAmount,
+              accountId: normalizedBody.payment.accountId,
+              accountName: normalizedBody.payment.accountName,
+              accountType: normalizedBody.payment.accountType,
               source: 'pos-table-orders',
               recordedAt: new Date().toISOString(),
             }),
@@ -1058,6 +1105,41 @@ export async function POST(request: Request) {
                 paymentMethod: normalizedBody.payment.method,
                 source: 'pos-table-orders',
                 receivedAt,
+              }),
+            },
+          });
+        }
+        const accountAmount = normalizedBody.payment.method === 'account'
+          ? paymentAmount
+          : normalizedBody.payment.method === 'mixed'
+            ? Math.min(Math.max(normalizedBody.payment.accountAmount ?? 0, 0), paymentAmount)
+            : 0;
+        if (accountAmount > 0) {
+          const accountId = normalizedBody.payment.accountId;
+          if (!accountId) throw new Error('Cari hesap seçilmedi.');
+          const totals = await tx.currentAccountMovement.aggregate({
+            where: { tenantId, accountId },
+            _sum: { debit: true, credit: true },
+          });
+          const previousBalance = Number(totals._sum.debit ?? 0) - Number(totals._sum.credit ?? 0);
+          await tx.currentAccountMovement.create({
+            data: {
+              tenantId,
+              accountId,
+              orderId: order.id,
+              paymentId: createdPayment.id,
+              reconciliationKey: `${reconciliationKey}:account-sale`,
+              type: 'SALE_DEBT',
+              method: 'cari',
+              debit: accountAmount,
+              balanceAfter: Number((previousBalance + accountAmount).toFixed(2)),
+              description: `${tableId} masa adisyonu cari hesaba işlendi`,
+              metadata: compactJsonObject({
+                tableKey: tableId,
+                accountName: normalizedBody.payment.accountName,
+                accountType: normalizedBody.payment.accountType,
+                mutationId: normalizedBody.mutationId,
+                source: 'pos-table-orders',
               }),
             },
           });

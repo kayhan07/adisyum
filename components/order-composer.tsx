@@ -3160,6 +3160,9 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           cashAmount: paymentMethod === 'cash' ? roundCurrency(amount) : paymentMethod === 'mixed' ? roundCurrency(cashValue) : 0,
           cardAmount: paymentMethod === 'card' ? roundCurrency(amount) : paymentMethod === 'mixed' ? roundCurrency(cardValue) : 0,
           accountAmount: paymentMethod === 'account' ? roundCurrency(amount) : paymentMethod === 'mixed' ? roundCurrency(mixedAccountRemainder) : 0,
+          accountId: selectedAccount?.id,
+          accountName: selectedAccount?.name,
+          accountType: selectedAccount?.type,
         },
       }),
     });

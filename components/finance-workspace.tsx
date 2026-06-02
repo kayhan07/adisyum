@@ -10,9 +10,9 @@ import {
   subscribeToStoredAccountChanges,
 } from '@/lib/account-store';
 import {
-  appendStoredFinanceAccountTransaction,
   appendStoredFinanceInvoice,
-  buildFinanceTransaction,
+  createAuthoritativeFinanceAccountMovement,
+  loadAuthoritativeFinanceAccountTransactions,
   loadStoredFinanceAccountTransactions,
   loadStoredFinanceInvoices,
   subscribeToFinanceRuntimeChanges,
@@ -631,7 +631,7 @@ function InvoiceWindow() {
     resetNewStockCardForm(mode === 'purchase' ? 'raw' : 'sale');
   }
 
-  function saveInvoice() {
+  async function saveInvoice() {
     const effectivePartner = resolvePartnerFromInput();
     const hasAnyNamedLine = lines.some((line) => line.name.trim());
     const invoiceDate = normalizeDateForStorage(date);
@@ -670,26 +670,26 @@ function InvoiceWindow() {
       createdAt: new Date().toISOString(),
     });
 
-    if (mode === 'purchase') {
-      appendStoredFinanceAccountTransaction(
-        buildFinanceTransaction({
+    if (mode === 'purchase' || paymentType === 'account') {
+      const description = mode === 'purchase'
+        ? `${invoiceNo || 'Yeni alış faturası'} alış faturası`
+        : `${invoiceNo || 'Yeni satış faturası'} satış faturası`;
+      try {
+        await createAuthoritativeFinanceAccountMovement({
+          action: 'record_debt',
           accountId: effectivePartner.id,
-          type: 'supplier_invoice',
+          accountName: effectivePartner.name,
+          accountType: effectivePartner.type,
           amount: totals.total,
-          description: `${invoiceNo || 'Yeni alış faturası'} alış faturası`,
-          date: invoiceDate,
-        }),
-      );
-    } else if (paymentType === 'account') {
-      appendStoredFinanceAccountTransaction(
-        buildFinanceTransaction({
-          accountId: effectivePartner.id,
-          type: 'customer_charge',
-          amount: totals.total,
-          description: `${invoiceNo || 'Yeni satış faturası'} satış faturası`,
-          date: invoiceDate,
-        }),
-      );
+          method: 'bank',
+          description,
+          reconciliationKey: `invoice:${mode}:${invoiceNo || invoiceDate}:${effectivePartner.id}:${totals.total}`,
+        });
+      } catch (error) {
+        console.error('[cari-flow] invoice account movement failed', { mode, partnerId: effectivePartner.id, total: totals.total, error });
+        setSavedInvoices((current) => ['Fatura kaydedildi ancak cari hareketi sunucuya yazılamadı. Lütfen kontrol edin.', ...current]);
+        return;
+      }
     }
 
     const message = mode === 'purchase'
@@ -1328,6 +1328,7 @@ function CollectionWindow() {
   const [amount, setAmount] = useState('500');
   const [method, setMethod] = useState<'cash' | 'card' | 'bank'>('cash');
   const [saved, setSaved] = useState<Array<{ text: string; direction: 'in' | 'out' }>>([]);
+  const [saving, setSaving] = useState(false);
   const [storedAccounts, setStoredAccounts] = useState<Account[]>([]);
   const [storedTransactions, setStoredTransactions] = useState<StoredFinanceAccountTransaction[]>([]);
   const includeSeedData = useSeedBusinessDataEnabled();
@@ -1355,6 +1356,9 @@ function CollectionWindow() {
     };
 
     refresh();
+    loadAuthoritativeFinanceAccountTransactions()
+      .then(refresh)
+      .catch((error) => console.error('[cari-flow] authoritative movement hydrate failed', error));
     const unsubscribeFinance = subscribeToFinanceRuntimeChanges(refresh);
     const unsubscribeAccounts = subscribeToStoredAccountChanges(refresh);
     return () => {
@@ -1375,7 +1379,7 @@ function CollectionWindow() {
     }
   }, [paymentAccounts, selectedPaymentAccountId]);
 
-  function saveTransaction() {
+  async function saveTransaction() {
     const numericAmount = Number(amount.replace(',', '.')) || 0;
     if (numericAmount <= 0 || !currentAccount) {
       setSaved((current) => [{
@@ -1384,28 +1388,28 @@ function CollectionWindow() {
       }, ...current]);
       return;
     }
-    const transactionType = mode === 'collection'
-      ? currentAccount.type === 'partner'
-        ? 'customer_payment'
-        : 'customer_payment'
-      : currentAccount.type === 'partner'
-        ? 'partner_payment'
-        : currentAccount.type === 'staff'
-          ? 'staff_payment'
-          : 'supplier_payment';
     const methodLabel = method === 'cash' ? 'nakit' : method === 'card' ? 'kart' : 'banka';
-    appendStoredFinanceAccountTransaction(
-      buildFinanceTransaction({
+    const description = `${methodLabel} ile ${mode === 'collection' ? 'tahsilat' : 'ödeme'}`;
+    setSaving(true);
+    try {
+      await createAuthoritativeFinanceAccountMovement({
+        action: mode === 'collection' ? 'record_collection' : 'record_payment',
         accountId: currentAccount.id,
-        type: transactionType,
+        accountName: currentAccount.name,
+        accountType: currentAccount.type,
         amount: numericAmount,
-        description: `${methodLabel} ile ${mode === 'collection' ? 'tahsilat' : 'odeme'}`,
-        date: new Date().toISOString().slice(0, 10),
-      }),
-    );
-    const text = mode === 'collection' ? `${currentAccount.name} müşterisinden ${formatTRY(numericAmount)} tahsilat alındı.` : `${currentAccount.name} carisine ${formatTRY(numericAmount)} ödeme yapıldı.`;
-    setSaved((current) => [{ text, direction: mode === 'collection' ? 'in' : 'out' }, ...current]);
-    setAmount('');
+        method,
+        description,
+      });
+      const text = mode === 'collection' ? `${currentAccount.name} müşterisinden ${formatTRY(numericAmount)} tahsilat alındı.` : `${currentAccount.name} carisine ${formatTRY(numericAmount)} ödeme yapıldı.`;
+      setSaved((current) => [{ text, direction: mode === 'collection' ? 'in' : 'out' }, ...current]);
+      setAmount('');
+    } catch (error) {
+      console.error('[cari-flow] finance collection mutation failed', { mode, accountId: currentAccount.id, amount: numericAmount, error });
+      setSaved((current) => [{ text: 'Cari işlemi sunucuya kaydedilemedi. Lütfen tekrar deneyin.', direction: mode === 'collection' ? 'in' : 'out' }, ...current]);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -1415,9 +1419,10 @@ function CollectionWindow() {
         <p className="mt-1 text-sm text-slate-400">Müşteriden alınan para tahsilattır; tedarikçi, personel veya ortağa çıkan para ödemedir.</p>
         <div className="mt-5 grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-[#0B1220] p-1"><button type="button" onClick={() => setMode('collection')} className={`h-12 rounded-xl text-sm font-semibold transition active:scale-[0.98] ${mode === 'collection' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>Tahsilat al</button><button type="button" onClick={() => setMode('payment')} className={`h-12 rounded-xl text-sm font-semibold transition active:scale-[0.98] ${mode === 'payment' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>Ödeme yap</button></div>
         {mode === 'collection' ? <label className="mt-5 block"><span className="text-sm text-slate-400">Müşteri cari</span><select value={selectedCollectionAccountId} onChange={(event) => setSelectedCollectionAccountId(event.target.value)} className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-[#0B1220] px-4 font-semibold text-white outline-none">{collectionAccounts.map((account) => <option key={account.id} value={account.id}>{account.code} - {account.name}</option>)}</select></label> : <label className="mt-5 block"><span className="text-sm text-slate-400">Ödeme yapılacak cari</span><select value={selectedPaymentAccountId} onChange={(event) => setSelectedPaymentAccountId(event.target.value)} className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-[#0B1220] px-4 font-semibold text-white outline-none">{paymentAccounts.map((account) => <option key={account.id} value={account.id}>{account.code} - {account.name}</option>)}</select></label>}
+        {currentAccount ? <p className="mt-4 rounded-xl bg-white/5 px-3 py-2 text-sm font-semibold text-slate-300">Seçili cari bakiye: <span className="text-white">{formatTRY(currentAccount.balance)}</span></p> : null}
         <label className="mt-4 block"><span className="text-sm text-slate-400">Tutar</span><input value={amount} onChange={(event) => setAmount(event.target.value)} className="mt-2 h-14 w-full rounded-2xl border border-white/10 bg-[#0B1220] px-4 text-2xl font-semibold text-white outline-none" /></label>
         <div className="mt-4 grid grid-cols-3 gap-2">{[['cash', 'Nakit'], ['card', 'Kart / POS'], ['bank', 'Banka']].map(([id, label]) => <button key={id} type="button" onClick={() => setMethod(id as 'cash' | 'card' | 'bank')} className={`h-11 rounded-2xl text-sm font-semibold transition active:scale-[0.98] ${method === id ? 'bg-blue-600 text-white' : 'border border-white/10 bg-[#0B1220] text-slate-300 hover:bg-[#172033]'}`}>{label}</button>)}</div>
-        <button type="button" onClick={saveTransaction} className={`mt-4 h-14 w-full rounded-2xl text-base font-semibold text-white shadow-[0_0_24px_rgba(59,130,246,0.25)] transition active:scale-[0.98] ${mode === 'collection' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-rose-600 hover:bg-rose-500'}`}>{mode === 'collection' ? 'Tahsilatı kaydet' : 'Ödemeyi kaydet'}</button>
+        <button type="button" onClick={saveTransaction} disabled={saving} className={`mt-4 h-14 w-full rounded-2xl text-base font-semibold text-white shadow-[0_0_24px_rgba(59,130,246,0.25)] transition active:scale-[0.98] disabled:cursor-wait disabled:opacity-60 ${mode === 'collection' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-rose-600 hover:bg-rose-500'}`}>{saving ? 'Kaydediliyor...' : mode === 'collection' ? 'Tahsilatı kaydet' : 'Ödemeyi kaydet'}</button>
       </article>
         <article className="rounded-[1.5rem] border border-white/10 bg-[#111827] p-5 shadow-[0_18px_42px_rgba(2,6,23,0.28)]"><h3 className="text-xl font-semibold text-white">Açık bakiyeler</h3><div className="mt-5 grid gap-5 lg:grid-cols-2"><div><p className="mb-3 text-sm font-semibold text-emerald-200">Tahsilat yapılacak müşteri / ortak carileri</p><div className="space-y-3">{collectionAccounts.map((account) => <div key={account.id} className="flex items-center justify-between rounded-2xl border border-white/10 bg-[#0B1220]/70 px-4 py-3"><div><p className="font-semibold text-white">{account.name}</p><p className="mt-1 text-sm text-slate-500">{account.code}</p></div><p className="font-semibold text-amber-200">{formatTRY(account.balance)}</p></div>)}</div></div><div><p className="mb-3 text-sm font-semibold text-rose-200">Ödeme yapılacak cariler</p><div className="space-y-3">{paymentAccounts.map((account) => <div key={account.id} className="flex items-center justify-between rounded-2xl border border-white/10 bg-[#0B1220]/70 px-4 py-3"><div><p className="font-semibold text-white">{account.name}</p><p className="mt-1 text-sm text-slate-500">{account.code}</p></div><p className="font-semibold text-rose-200">{formatTRY(account.balance)}</p></div>)}</div></div></div><div className="mt-5 space-y-3">{saved.map((item, index) => <p key={`${item.text}-${index}`} className={`rounded-2xl px-4 py-3 text-sm font-semibold ${item.direction === 'in' ? 'bg-emerald-500/12 text-emerald-200' : 'bg-rose-500/12 text-rose-200'}`}>{item.text}</p>)}</div></article>
     </section>

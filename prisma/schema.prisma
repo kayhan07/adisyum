@@ -706,6 +706,31 @@ model Payment {
   @@map("payments")
 }
 
+model CurrentAccountMovement {
+  id                String   @id @default(uuid()) @db.Uuid
+  tenantId          String   @map("tenant_id") @db.VarChar(64)
+  accountId         String   @map("account_id") @db.VarChar(160)
+  customerId        String?  @map("customer_id") @db.Uuid
+  orderId           String?  @map("order_id") @db.Uuid
+  paymentId         String?  @map("payment_id") @db.Uuid
+  reconciliationKey String   @map("reconciliation_key") @db.VarChar(220)
+  type              String   @db.VarChar(32)
+  method            String   @db.VarChar(32)
+  debit             Decimal  @default(0) @db.Decimal(12, 2)
+  credit            Decimal  @default(0) @db.Decimal(12, 2)
+  balanceAfter      Decimal? @map("balance_after") @db.Decimal(12, 2)
+  description       String?
+  createdBy         String?  @map("created_by") @db.VarChar(160)
+  metadata          Json     @default("{}")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, reconciliationKey])
+  @@index([tenantId])
+  @@index([tenantId, accountId])
+  @@index([tenantId, createdAt])
+  @@map("current_account_movements")
+}
+
 model Customer {
   id        String   @id @default(uuid()) @db.Uuid
   tenantId  String   @map("tenant_id") @db.VarChar(64)

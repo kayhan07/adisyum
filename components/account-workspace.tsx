@@ -7,7 +7,7 @@ import {
   loadStoredAccounts,
   subscribeToStoredAccountChanges,
 } from '@/lib/account-store';
-import { appendStoredFinanceAccountTransaction, buildFinanceTransaction, loadStoredFinanceAccountTransactions, subscribeToFinanceRuntimeChanges } from '@/lib/finance-runtime-store';
+import { createAuthoritativeFinanceAccountMovement, loadAuthoritativeFinanceAccountTransactions, loadStoredFinanceAccountTransactions, subscribeToFinanceRuntimeChanges } from '@/lib/finance-runtime-store';
 import { getStoredOrdersByTable, subscribeToStoredOrdersChanges } from '@/lib/table-payment-state';
 import {
   calculateAccountBalances,
@@ -132,6 +132,9 @@ export function AccountWorkspace() {
     };
 
     refresh();
+    loadAuthoritativeFinanceAccountTransactions()
+      .then(refresh)
+      .catch((error) => console.error('[cari-flow] account workspace hydrate failed', error));
     const unsubscribeFinance = subscribeToFinanceRuntimeChanges(refresh);
     const unsubscribeAccounts = subscribeToStoredAccountChanges(refresh);
     return () => {
@@ -194,7 +197,7 @@ export function AccountWorkspace() {
     setAccountActionMessage(`${selectedAdisyonIds.length} cari adisyon toplu yazdırma kuyruğuna alındı.`);
   }
 
-  function applyCustomerDiscount() {
+  async function applyCustomerDiscount() {
     if (!selectedAccount || selectedAdisyonIds.length === 0) {
       setAccountActionMessage('İskonto için cari adisyon seçin.');
       return;
@@ -205,15 +208,21 @@ export function AccountWorkspace() {
       return;
     }
 
-    appendStoredFinanceAccountTransaction(
-      buildFinanceTransaction({
+    try {
+      await createAuthoritativeFinanceAccountMovement({
+        action: 'record_adjustment',
         accountId: selectedAccount.id,
-        type: 'customer_payment',
+        accountName: selectedAccount.name,
+        accountType: selectedAccount.type,
         amount: discountAmount,
+        method: 'bank',
         description: `Cari müşteri iskonto mahsupu (${selectedAdisyonIds.length} adisyon)`,
-        date: new Date().toISOString().slice(0, 10),
-      }),
-    );
+      });
+    } catch (error) {
+      console.error('[cari-flow] account discount adjustment failed', { accountId: selectedAccount.id, discountAmount, error });
+      setAccountActionMessage('Cari iskonto mahsubu sunucuya kaydedilemedi.');
+      return;
+    }
     setAccountDiscountInput('');
     setSelectedAdisyonIds([]);
     setAccountActionMessage(`${formatTRY(discountAmount)} cari iskonto mahsup edildi.`);
