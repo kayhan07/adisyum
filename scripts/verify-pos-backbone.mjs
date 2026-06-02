@@ -21,15 +21,21 @@ const localAgentRoute = read('app/api/printers/local-agent/route.ts');
 
 const saveOrderIndex = orderComposer.indexOf("await persistOrderState('save_order')");
 const printerDiscoveryIndex = orderComposer.indexOf('const ensureRuntimePrinters');
-const paymentCloseIndex = orderComposer.indexOf('await closePaidTableOrder');
-const journalWriteIndex = orderComposer.indexOf('recordPaymentJournal(currentTable.name, paymentTargetTotal, paymentMutationId);', paymentCloseIndex);
+const paymentFinalizeIndex = orderComposer.indexOf("await mutateAuthoritativePayment('finalize_payment'");
+const partialPaymentIndex = orderComposer.indexOf("await mutateAuthoritativePayment('add_partial_payment'");
+const journalWriteIndex = orderComposer.indexOf('recordPaymentJournal(currentTable.name, paymentTargetTotal, paymentMutationId);', partialPaymentIndex);
 
 assert(tableOrdersRoute.includes('await tx.order.upsert') && tableOrdersRoute.includes('await tx.orderItem.create'), 'POS API must keep the tenant-scoped product insertion path');
 assert(saveOrderIndex > -1 && printerDiscoveryIndex > saveOrderIndex, 'Order save must complete before printer discovery');
 assert(orderComposer.includes("await persistOrderState('mark_order_sent')"), 'Printed state must be persisted only after successful printing');
 assert(tableOrdersRoute.includes("normalizedBody.action === 'close_table_payment'"), 'Payment must close through the authoritative table-orders API');
-assert(/existingPaidPayment/.test(tableOrdersRoute), 'Payment close must guard duplicate paid records');
-assert(paymentCloseIndex > -1 && journalWriteIndex > paymentCloseIndex, 'Local journal write must happen after authoritative full-payment close');
+assert(tableOrdersRoute.includes("normalizedBody.action === 'add_partial_payment'"), 'Partial payment must use the authoritative table-orders API');
+assert(tableOrdersRoute.includes("normalizedBody.action === 'get_payment_state'"), 'Payment modal must be able to reload authoritative payment state');
+assert(tableOrdersRoute.includes('pg_advisory_xact_lock'), 'Payment mutation must serialize concurrent terminal writes');
+assert(tableOrdersRoute.includes('duplicate payment mutation ignored'), 'Payment mutation must guard duplicate reconciliation keys');
+assert(tableOrdersRoute.includes("type: 'pos_payment'"), 'Cash payment must persist a tenant-scoped cash transaction');
+assert(paymentFinalizeIndex > -1 && partialPaymentIndex > -1 && journalWriteIndex > partialPaymentIndex, 'Local journal write must happen after authoritative payment mutation');
+assert(orderComposer.includes('authoritativePaymentState.payments.map'), 'Payment modal must render authoritative payment history');
 assert(/table\.total > 0\) return 'occupied'/.test(floorWorkspace), 'Floor table status must derive occupied state from authoritative open-order totals');
 assert(!/subtotal \+ taxTotal/.test(tableOrdersRoute), 'POS API must not add VAT on top of VAT-included sale prices');
 assert(!/\* \(1 \+ VAT_RATE\)/.test(floorWorkspace), 'Floor totals must not add VAT on top of VAT-included sale prices');

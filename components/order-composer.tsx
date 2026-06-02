@@ -146,6 +146,21 @@ type OrderLine = {
   productSnapshot?: Record<string, unknown>;
 };
 type TableStatus = 'available' | 'occupied' | 'reserved';
+type AuthoritativePaymentState = {
+  orderId: string;
+  orderStatus: string;
+  orderTotal: number;
+  paidTotal: number;
+  remainingTotal: number;
+  payments: Array<{
+    id: string;
+    method: string;
+    amount: number;
+    currency: string;
+    receivedAt: string;
+    reconciliationKey: string;
+  }>;
+};
 type PosTable = {
   id: string;
   name: string;
@@ -608,6 +623,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const [posMappingWarning, setPosMappingWarning] = useState('');
   const [posClickDebug, setPosClickDebug] = useState<PosClickDebugSnapshot | null>(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [authoritativePaymentState, setAuthoritativePaymentState] = useState<AuthoritativePaymentState | null>(null);
   const [paymentExpanded, setPaymentExpanded] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [paymentScope, setPaymentScope] = useState<PaymentScope>('full');
@@ -1037,6 +1053,9 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     return Math.max(currentTable.reservationDeposit, 0);
   }, [currentTable?.reservationDate, currentTable?.reservationDeposit]);
   const discountedSettlementTotal = roundCurrency(Math.max(roundedSettlementTotal - activeReservationDeposit, 0));
+  const remainingSettlementTotal = authoritativePaymentState?.orderStatus === 'open'
+    ? roundCurrency(Math.min(authoritativePaymentState.remainingTotal, discountedSettlementTotal))
+    : discountedSettlementTotal;
 
   useEffect(() => {
     logOrderFlow('ProductCard rendered', {
@@ -1064,8 +1083,8 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const splitTargetTotal = paymentScope === 'split'
     ? splitMode === 'person'
       ? splitSelectedTotal
-      : Math.min(splitAmountValue, discountedSettlementTotal)
-    : discountedSettlementTotal;
+      : Math.min(splitAmountValue, remainingSettlementTotal)
+    : remainingSettlementTotal;
   const paymentTargetTotal = roundCurrency(Math.max(splitTargetTotal, 0));
 
   useEffect(() => {
@@ -1076,7 +1095,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     setSplitAmountInput('');
     setActivePadTarget('cash');
     setPaymentExpanded(true);
-    setCashReceived(discountedSettlementTotal.toFixed(2));
+    setCashReceived(remainingSettlementTotal.toFixed(2));
     setCardAmount('0');
     setSelectedAccountId(chargeAccounts[0]?.id ?? '');
     setSplitSelection(Object.fromEntries(lines.map((line) => [line.id, 0])));
@@ -1084,7 +1103,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     setDiscountAmountInput('0');
     setRoundingDiscountEnabled(false);
     setDiscountReason('');
-  }, [paymentOpen, discountedSettlementTotal, currentTable?.id, splitSelectionLineKey]);
+  }, [paymentOpen, remainingSettlementTotal, currentTable?.id, splitSelectionLineKey]);
 
   useEffect(() => {
     if (!currentTable) return;
@@ -3117,30 +3136,66 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     }
   };
 
-  const closePaidTableOrder = async (tableId: string, amount: number, mutationId: string) => {
+  const mutateAuthoritativePayment = async (
+    action: 'get_payment_state' | 'add_partial_payment' | 'finalize_payment',
+    tableId: string,
+    amount: number,
+    mutationId: string,
+  ) => {
+    const reconciliationKey = `${tableId}:${mutationId}`;
     const response = await runtimeFetch('/api/pos/table-orders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        action: 'close_table_payment',
+        action,
         mutationId,
         tableId,
         payment: {
           amount: roundCurrency(amount),
           method: paymentMethod,
           scope: paymentScope,
+          currency: 'TRY',
+          receivedAt: new Date().toISOString(),
+          reconciliationKey,
+          cashAmount: paymentMethod === 'cash' ? roundCurrency(amount) : paymentMethod === 'mixed' ? roundCurrency(cashValue) : 0,
+          cardAmount: paymentMethod === 'card' ? roundCurrency(amount) : paymentMethod === 'mixed' ? roundCurrency(cardValue) : 0,
+          accountAmount: paymentMethod === 'account' ? roundCurrency(amount) : paymentMethod === 'mixed' ? roundCurrency(mixedAccountRemainder) : 0,
         },
       }),
     });
-    const payload = await response.json().catch(() => null) as { ok?: boolean; ordersByTable?: Record<string, OrderLine[]>; error?: string } | null;
+    const payload = await response.json().catch(() => null) as {
+      ok?: boolean;
+      ordersByTable?: Record<string, OrderLine[]>;
+      paymentState?: AuthoritativePaymentState;
+      paymentCreated?: boolean;
+      error?: string;
+    } | null;
     if (!response.ok || !payload?.ok) {
-      throw new Error(payload?.error ?? `Masa kapatma istegi basarisiz: ${response.status}`);
+      throw new Error(payload?.error ?? `Tahsilat isteği başarısız: ${response.status}`);
     }
     if (payload.ordersByTable) {
       replaceAuthoritativeOrdersByTable(payload.ordersByTable);
       setOrdersByTable(payload.ordersByTable);
     }
+    if (payload.paymentState) setAuthoritativePaymentState(payload.paymentState);
+    return payload;
   };
+
+  useEffect(() => {
+    if (!paymentOpen || !currentTable?.id || lines.length === 0) return;
+    setAuthoritativePaymentState(null);
+    const mutationId = `${currentTable.id}-payment-state-${Date.now()}`;
+    void mutateAuthoritativePayment('get_payment_state', currentTable.id, 0, mutationId).catch((error) => {
+      console.error('[payment-flow] authoritative payment state load failed', {
+        tableId: currentTable.id,
+        tenantId: sessionState.tenantId,
+        error,
+      });
+      setFeedbackMessage('Ödeme durumu sunucudan okunamadı. Lütfen tekrar deneyin.');
+    });
+  // Payment state refreshes when a different table payment panel opens.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentOpen, currentTable?.id]);
 
   const releasePaymentSubmission = () => {
     paymentInFlightRef.current = false;
@@ -3214,7 +3269,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     const currentTableId = currentTable.id;
     const paymentMutationId = `${currentTableId}-payment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const paymentStartedAt = businessNowMs();
-    const isPartialPayment = paymentScope === 'split' && paymentTargetTotal < discountedSettlementTotal;
+    const isPartialPayment = paymentScope === 'split' && paymentTargetTotal < remainingSettlementTotal;
     paymentInFlightRef.current = true;
     setPaymentSubmitting(true);
     lastPaymentGuardRef.current = { tableId: currentTableId, total: paymentTargetTotal, at: Date.now() };
@@ -3233,8 +3288,23 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
     if (paymentScope === 'split' && splitMode === 'person') {
       const paidItems = lines.filter((line) => (splitSelection[line.id] ?? 0) > 0);
-      recordPaymentJournal(currentTable.name, paymentTargetTotal, paymentMutationId);
-      if (paymentMethod === 'account' && selectedAccount) {
+      let paymentResult: Awaited<ReturnType<typeof mutateAuthoritativePayment>>;
+      try {
+        paymentResult = await mutateAuthoritativePayment('add_partial_payment', currentTableId, paymentTargetTotal, paymentMutationId);
+      } catch (error) {
+        console.error('[payment-flow] authoritative partial payment failed', {
+          tableId: currentTableId,
+          tenantId: sessionState.tenantId,
+          mutationId: paymentMutationId,
+          amount: paymentTargetTotal,
+          error,
+        });
+        setFeedbackMessage('Parçalı tahsilat sunucuya yazılamadı. Kasa/cari kaydı yapılmadı.');
+        releasePaymentSubmission();
+        return;
+      }
+      if (paymentResult.paymentCreated !== false) recordPaymentJournal(currentTable.name, paymentTargetTotal, paymentMutationId);
+      if (paymentResult.paymentCreated !== false && paymentMethod === 'account' && selectedAccount) {
         postAccountCharge(
           selectedAccount,
           paymentTargetTotal,
@@ -3261,30 +3331,11 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
             },
           });
       }
-      setOrdersByTable((current) => {
-        rememberUndo(current, `${paymentLabel} parcali tahsilat`);
-        const currentLines = current[currentTableId] ?? [];
-        const nextLines = currentLines
-          .map((line) => {
-            const selectedQty = Math.min(splitSelection[line.id] ?? 0, line.qty);
-            const nextQty = line.qty - selectedQty;
-            return {
-              ...line,
-              qty: nextQty,
-              sentQty: Math.min(line.sentQty, nextQty),
-            };
-          })
-          .filter((line) => line.qty > 0);
-
-        return { ...current, [currentTableId]: nextLines };
-      });
-
-      setPaymentOpen(false);
       setPaymentScope('full');
       setSplitMode('person');
       setSplitAmountInput('');
       setSplitSelection({});
-      setCashReceived('');
+      setCashReceived(String(paymentResult.paymentState?.remainingTotal ?? ''));
       setCardAmount('');
       updatePaymentRequested(currentTableId, false);
       const durationMs = businessDurationMs(paymentStartedAt);
@@ -3310,25 +3361,39 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       setDiscountRateInput('0');
       setRoundingDiscountEnabled(false);
       setDiscountReason('');
-      setFeedbackMessage(`${paidItems.length} kalem icin ${formatMoney(paymentTargetTotal)} tahsil edildi`);
+      setFeedbackMessage(`${paidItems.length} kalem için ${formatMoney(paymentTargetTotal)} tahsil edildi. Kalan: ${formatMoney(paymentResult.paymentState?.remainingTotal ?? 0)}`);
       releasePaymentSubmission();
       return;
     }
 
     if (isPartialPayment) {
-      recordPaymentJournal(currentTable.name, paymentTargetTotal, paymentMutationId);
-      if (paymentMethod === 'account' && selectedAccount) {
+      let paymentResult: Awaited<ReturnType<typeof mutateAuthoritativePayment>>;
+      try {
+        paymentResult = await mutateAuthoritativePayment('add_partial_payment', currentTableId, paymentTargetTotal, paymentMutationId);
+      } catch (error) {
+        console.error('[payment-flow] authoritative partial payment failed', {
+          tableId: currentTableId,
+          tenantId: sessionState.tenantId,
+          mutationId: paymentMutationId,
+          amount: paymentTargetTotal,
+          error,
+        });
+        setFeedbackMessage('Parçalı tahsilat sunucuya yazılamadı. Kasa/cari kaydı yapılmadı.');
+        releasePaymentSubmission();
+        return;
+      }
+      if (paymentResult.paymentCreated !== false) recordPaymentJournal(currentTable.name, paymentTargetTotal, paymentMutationId);
+      if (paymentResult.paymentCreated !== false && paymentMethod === 'account' && selectedAccount) {
         postAccountCharge(
           selectedAccount,
           paymentTargetTotal,
           `${currentTable.name} masa adisyonu - kısmi tutar cariye işlendi`,
         );
       }
-      setPaymentOpen(false);
       setPaymentScope('full');
       setSplitMode('person');
       setSplitAmountInput('');
-      setCashReceived('');
+      setCashReceived(String(paymentResult.paymentState?.remainingTotal ?? ''));
       setCardAmount('');
       setDiscountRateInput('0');
       setRoundingDiscountEnabled(false);
@@ -3340,7 +3405,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         tenantId: sessionState.tenantId,
         mutationId: paymentMutationId,
         amount: paymentTargetTotal,
-        remaining: discountedSettlementTotal - paymentTargetTotal,
+        remaining: paymentResult.paymentState?.remainingTotal,
         durationMs,
         timestamp: new Date().toISOString(),
       });
@@ -3354,13 +3419,14 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           slowThresholdMs: SLOW_PAYMENT_COMMIT_MS,
         });
       }
-      setFeedbackMessage(`${formatMoney(paymentTargetTotal)} tahsil edildi, kalan ${formatMoney(discountedSettlementTotal - paymentTargetTotal)}`);
+      setFeedbackMessage(`${formatMoney(paymentTargetTotal)} tahsil edildi, kalan ${formatMoney(paymentResult.paymentState?.remainingTotal ?? 0)}`);
       releasePaymentSubmission();
       return;
     }
 
+    let paymentResult: Awaited<ReturnType<typeof mutateAuthoritativePayment>>;
     try {
-      await closePaidTableOrder(currentTableId, paymentTargetTotal, paymentMutationId);
+      paymentResult = await mutateAuthoritativePayment('finalize_payment', currentTableId, paymentTargetTotal, paymentMutationId);
     } catch (error) {
       console.error('[business-flow] payment table close failed', {
         tableId: currentTableId,
@@ -3376,21 +3442,21 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       return;
     }
 
-    if (paymentMethod === 'account' && selectedAccount) {
+    if (paymentResult.paymentCreated !== false && paymentMethod === 'account' && selectedAccount) {
       postAccountCharge(
         selectedAccount,
         paymentTargetTotal,
         `${currentTable.name} masa adisyonu cari hesaba işlendi`,
       );
     }
-    if (paymentMethod === 'mixed' && mixedAccountEnabled && mixedAccountRemainder > 0 && selectedAccount) {
+    if (paymentResult.paymentCreated !== false && paymentMethod === 'mixed' && mixedAccountEnabled && mixedAccountRemainder > 0 && selectedAccount) {
       postAccountCharge(
         selectedAccount,
         mixedAccountRemainder,
         `${currentTable.name} masa adisyonu - karma tahsilat kalan tutar`,
       );
     }
-    recordPaymentJournal(currentTable.name, paymentTargetTotal, paymentMutationId);
+    if (paymentResult.paymentCreated !== false) recordPaymentJournal(currentTable.name, paymentTargetTotal, paymentMutationId);
 
     setOrdersByTable((current) => {
       rememberUndo(current, `${paymentLabel} tahsilat\u0131`);
@@ -3444,6 +3510,11 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     : paymentMethod === 'mixed' && mixedAccountEnabled && mixedAccountRemainder > 0
       ? Boolean(selectedAccount)
       : true;
+  const paymentSubmitLabel = paymentScope === 'split'
+    ? 'Parçalı tahsilat ekle'
+    : (authoritativePaymentState?.paidTotal ?? 0) > 0
+      ? 'Kalan bakiyeyi tahsil et'
+      : 'Tahsilatı tamamla';
 
   useEffect(() => {
     function isTypingTarget(target: EventTarget | null) {
@@ -4005,6 +4076,14 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
                 <span className="text-slate-500">Net toplam</span>
                 <span className="font-semibold text-[#0F172A]">{formatMoney(discountedSettlementTotal)}</span>
               </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Ödenen toplam</span>
+                <span className="font-semibold text-emerald-700">{formatMoney(authoritativePaymentState?.paidTotal ?? 0)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Kalan bakiye</span>
+                <span className="font-semibold text-rose-700">{formatMoney(remainingSettlementTotal)}</span>
+              </div>
               {paymentScope === 'split' ? (
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500">Bu islem</span>
@@ -4025,6 +4104,22 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
               ) : null}
             </div>
           </div>
+
+          {authoritativePaymentState?.payments.length ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-2.5">
+              <p className="text-sm font-semibold text-[#0F172A]">Tahsilat geçmişi</p>
+              <div className="mt-2 grid gap-1.5">
+                {authoritativePaymentState.payments.map((payment) => (
+                  <div key={payment.id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-xs">
+                    <span className="font-medium text-slate-600">
+                      {payment.method === 'cash' ? 'Nakit' : payment.method === 'card' ? 'Kart' : payment.method === 'account' ? 'Cari' : payment.method}
+                    </span>
+                    <span className="font-semibold text-[#0F172A]">{formatMoney(payment.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           <div className="rounded-2xl border border-slate-200 bg-white p-2.5">
             <div className="flex items-center justify-between gap-3">
@@ -4138,7 +4233,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
               disabled={paymentSubmitting || !canCompleteSplit || !canCompleteAccount || paidAmount < paymentTargetTotal || paymentTargetTotal <= 0}
               className="inline-flex h-15 w-full items-center justify-center rounded-[1rem] bg-emerald-600 px-4 text-[17px] font-bold text-white shadow-[0_16px_30px_rgba(5,150,105,0.28)] transition duration-150 hover:-translate-y-[1px] hover:bg-emerald-700 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {paymentSubmitting ? 'Tahsilat isleniyor...' : 'Tahsilati tamamla'}
+              {paymentSubmitting ? 'Tahsilat işleniyor...' : paymentSubmitLabel}
             </button>
             <button
               type="button"
@@ -4157,7 +4252,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
               disabled={paymentSubmitting || !canCompleteSplit || !canCompleteAccount || paidAmount < paymentTargetTotal || paymentTargetTotal <= 0}
               className="inline-flex h-15 w-full items-center justify-center rounded-[1rem] bg-emerald-600 px-4 text-[17px] font-bold text-white shadow-[0_16px_30px_rgba(5,150,105,0.28)] transition duration-150 hover:-translate-y-[1px] hover:bg-emerald-700 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {paymentSubmitting ? 'Tahsilat isleniyor...' : 'Tahsilati tamamla'}
+              {paymentSubmitting ? 'Tahsilat işleniyor...' : paymentSubmitLabel}
             </button>
           </div>
         )}

@@ -323,6 +323,12 @@ function normalizeTableOrderMutationBody(body: unknown) {
       amount: numberField(payment, ['amount', 'total']),
       method: stringField(payment, ['method', 'paymentMethod', 'payment_method']) ?? 'unknown',
       scope: stringField(payment, ['scope', 'paymentScope', 'payment_scope']) ?? 'full',
+      currency: stringField(payment, ['currency']) ?? 'TRY',
+      receivedAt: stringField(payment, ['receivedAt', 'received_at']),
+      reconciliationKey: stringField(payment, ['reconciliationKey', 'reconciliation_key']),
+      cashAmount: numberField(payment, ['cashAmount', 'cash_amount']),
+      cardAmount: numberField(payment, ['cardAmount', 'card_amount']),
+      accountAmount: numberField(payment, ['accountAmount', 'account_amount']),
     },
     product,
     receivedItem,
@@ -559,6 +565,79 @@ async function loadAuthoritativeOrdersByTable(tenantId: string, branchId?: strin
     })
       .filter(([, lines]) => lines.length > 0),
   ) as Record<string, OrderLinePayload[]>;
+}
+
+type PaymentLedgerOrder = {
+  id: string;
+  metadata: Prisma.JsonValue;
+  status: string;
+  subtotal: Prisma.Decimal;
+  total: Prisma.Decimal;
+};
+
+async function loadPaymentState(
+  db: Prisma.TransactionClient | typeof prisma,
+  tenantId: string,
+  order: PaymentLedgerOrder,
+) {
+  const [itemTotals, payments] = await Promise.all([
+    db.orderItem.aggregate({
+      where: { tenantId, orderId: order.id },
+      _sum: { total: true },
+    }),
+    db.payment.findMany({
+      where: { tenantId, orderId: order.id, status: 'paid' },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        method: true,
+        amount: true,
+        metadata: true,
+        createdAt: true,
+      },
+    }),
+  ]);
+  const orderMetadata = normalizeMetadata(order.metadata);
+  const itemTotal = decimalToNumber(itemTotals._sum.total);
+  const preservedOrderTotal = Number(orderMetadata.prePaymentLineTotal ?? 0);
+  const orderTotal = Number((
+    itemTotal
+    || (Number.isFinite(preservedOrderTotal) ? preservedOrderTotal : 0)
+    || decimalToNumber(order.subtotal)
+    || decimalToNumber(order.total)
+  ).toFixed(2));
+  const paidTotal = Number(payments.reduce((sum, payment) => sum + decimalToNumber(payment.amount), 0).toFixed(2));
+  const remainingTotal = order.status === 'paid'
+    ? 0
+    : Number(Math.max(orderTotal - paidTotal, 0).toFixed(2));
+
+  return {
+    orderId: order.id,
+    orderStatus: order.status,
+    orderTotal,
+    paidTotal,
+    remainingTotal,
+    payments: payments.map((payment) => {
+      const metadata = normalizeMetadata(payment.metadata);
+      return {
+        id: payment.id,
+        method: payment.method,
+        amount: decimalToNumber(payment.amount),
+        currency: typeof metadata.currency === 'string' ? metadata.currency : 'TRY',
+        receivedAt: typeof metadata.receivedAt === 'string' ? metadata.receivedAt : payment.createdAt.toISOString(),
+        reconciliationKey: typeof metadata.reconciliationKey === 'string'
+          ? metadata.reconciliationKey
+          : typeof metadata.mutationId === 'string'
+            ? metadata.mutationId
+            : payment.id,
+        cashAmount: typeof metadata.cashAmount === 'number'
+          ? metadata.cashAmount
+          : payment.method === 'cash'
+            ? decimalToNumber(payment.amount)
+            : 0,
+      };
+    }),
+  };
 }
 
 export async function GET(request: Request) {
@@ -819,7 +898,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, source: 'db', mutationId: normalizedBody.mutationId, ordersByTable });
     }
 
-    if (normalizedBody.action === 'close_table_payment' || normalizedBody.action === 'payment_completed') {
+    if (
+      normalizedBody.action === 'get_payment_state'
+      || normalizedBody.action === 'add_partial_payment'
+      || normalizedBody.action === 'finalize_payment'
+      || normalizedBody.action === 'cancel_partial_payment'
+      || normalizedBody.action === 'close_table_payment'
+      || normalizedBody.action === 'payment_completed'
+    ) {
       if (!tableId) {
         return runtimeInsertionErrorResponse({
           status: 400,
@@ -834,7 +920,7 @@ export async function POST(request: Request) {
       const orderNo = tableOrderNo(tableId);
       const order = await prisma.order.findUnique({
         where: { tenantId_orderNo: { tenantId, orderNo } },
-        select: { id: true, metadata: true, status: true, total: true },
+        select: { id: true, metadata: true, status: true, subtotal: true, total: true },
       });
 
       if (!order) {
@@ -848,92 +934,198 @@ export async function POST(request: Request) {
         });
       }
 
-      await prisma.$transaction(async (tx) => {
-        const itemTotals = await tx.orderItem.aggregate({
-          where: { tenantId, orderId: order.id },
-          _sum: { total: true },
-        });
-        const authoritativeAmount = decimalToNumber(itemTotals._sum.total) || decimalToNumber(order.total);
-        const requestedAmount = Number(normalizedBody.payment.amount ?? 0);
-        const paymentAmount = Number.isFinite(requestedAmount) && requestedAmount > 0
-          ? requestedAmount
-          : authoritativeAmount;
-        const existingPaidPayment = await tx.payment.findFirst({
-          where: { tenantId, orderId: order.id, status: 'paid' },
-          select: { id: true },
-        });
+      if (normalizedBody.action === 'get_payment_state') {
+        const paymentState = await loadPaymentState(prisma, tenantId, order);
+        return NextResponse.json({ ok: true, source: 'db', paymentState });
+      }
 
-        if (!existingPaidPayment && paymentAmount > 0) {
-          await tx.payment.create({
+      const reconciliationKey = normalizedBody.payment.reconciliationKey || normalizedBody.mutationId || traceId;
+      const receivedAt = normalizedBody.payment.receivedAt || new Date().toISOString();
+      const transactionResult = await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${order.id}))`;
+        let currentState = await loadPaymentState(tx, tenantId, order);
+
+        if (normalizedBody.action === 'cancel_partial_payment') {
+          const matchingPayment = currentState.payments.find((payment) => payment.reconciliationKey === reconciliationKey);
+          if (!matchingPayment) throw new Error('İptal edilecek parçalı tahsilat bulunamadı.');
+          if (currentState.orderStatus === 'paid') throw new Error('Kapanmış adisyonda tahsilat iptal edilemez.');
+          await tx.payment.update({
+            where: { id: matchingPayment.id, tenantId },
             data: {
-              tenantId,
-              orderId: order.id,
-              method: normalizedBody.payment.method || 'unknown',
-              status: 'paid',
-              amount: paymentAmount,
-              metadata: {
-                tableKey: tableId,
-                mutationId: normalizedBody.mutationId,
-                paymentScope: normalizedBody.payment.scope,
-                source: 'pos-table-orders',
-                recordedAt: new Date().toISOString(),
-              },
+              status: 'voided',
+              metadata: compactJsonObject({
+                cancelledAt: new Date().toISOString(),
+                cancellationMutationId: normalizedBody.mutationId,
+              }),
             },
           });
-        } else if (existingPaidPayment) {
-          console.warn('[pos-table-orders] duplicate payment close ignored', {
+          if (matchingPayment.cashAmount > 0) {
+            await tx.cashTransaction.create({
+              data: {
+                tenantId,
+                type: 'pos_payment_void',
+                amount: -matchingPayment.cashAmount,
+                note: `${tableId} masa tahsilat iptali`,
+                metadata: compactJsonObject({
+                  orderId: order.id,
+                  paymentId: matchingPayment.id,
+                  tableKey: tableId,
+                  mutationId: normalizedBody.mutationId,
+                  reconciliationKey,
+                  source: 'pos-table-orders',
+                  receivedAt: new Date().toISOString(),
+                }),
+              },
+            });
+          }
+          currentState = await loadPaymentState(tx, tenantId, order);
+          await tx.order.update({
+            where: { id: order.id, tenantId },
+            data: {
+              metadata: compactJsonObject({
+                ...normalizeMetadata(order.metadata),
+                tableKey: tableId,
+                paidTotal: currentState.paidTotal,
+                remainingTotal: currentState.remainingTotal,
+                updatedAtMs: Date.now(),
+              }),
+            },
+          });
+          return { paymentCreated: false, paymentState: currentState, closed: false };
+        }
+
+        const duplicatePayment = currentState.payments.find((payment) => payment.reconciliationKey === reconciliationKey);
+        if (duplicatePayment) {
+          console.warn('[pos-table-orders] duplicate payment mutation ignored', {
             timestamp: new Date().toISOString(),
             tenantId,
             tableId,
             orderId: order.id,
             mutationId: normalizedBody.mutationId,
-            existingPaymentId: existingPaidPayment.id,
+            reconciliationKey,
+            existingPaymentId: duplicatePayment.id,
           });
+          return { paymentCreated: false, paymentState: currentState, closed: currentState.remainingTotal <= 0 };
         }
 
-        await tx.orderItem.deleteMany({ where: { tenantId, orderId: order.id } });
-        if (order.status !== 'paid') {
-          const discountAmount = Math.max(authoritativeAmount - paymentAmount, 0);
-          await tx.order.update({
-            where: { id: order.id, tenantId },
+        const requestedAmount = Number(normalizedBody.payment.amount ?? 0);
+        const paymentAmount = Number((
+          Number.isFinite(requestedAmount) && requestedAmount > 0
+            ? Math.min(requestedAmount, currentState.remainingTotal)
+            : currentState.remainingTotal
+        ).toFixed(2));
+        if (paymentAmount <= 0) throw new Error('Tahsil edilecek bakiye bulunamadı.');
+
+        await tx.payment.create({
+          data: {
+            tenantId,
+            orderId: order.id,
+            method: normalizedBody.payment.method || 'unknown',
+            status: 'paid',
+            amount: paymentAmount,
+            metadata: compactJsonObject({
+              tableKey: tableId,
+              mutationId: normalizedBody.mutationId,
+              reconciliationKey,
+              paymentScope: normalizedBody.payment.scope,
+              currency: normalizedBody.payment.currency,
+              receivedAt,
+              cashAmount: normalizedBody.payment.cashAmount,
+              cardAmount: normalizedBody.payment.cardAmount,
+              accountAmount: normalizedBody.payment.accountAmount,
+              source: 'pos-table-orders',
+              recordedAt: new Date().toISOString(),
+            }),
+          },
+        });
+        const cashAmount = normalizedBody.payment.method === 'cash'
+          ? paymentAmount
+          : normalizedBody.payment.method === 'mixed'
+            ? Math.min(Math.max(normalizedBody.payment.cashAmount ?? 0, 0), paymentAmount)
+            : 0;
+        if (cashAmount > 0) {
+          await tx.cashTransaction.create({
             data: {
-              status: 'paid',
-              subtotal: authoritativeAmount,
-              discount: discountAmount,
-              total: paymentAmount,
-              metadata: {
-                ...normalizeMetadata(order.metadata),
+              tenantId,
+              type: 'pos_payment',
+              amount: cashAmount,
+              note: `${tableId} masa tahsilatı`,
+              metadata: compactJsonObject({
+                orderId: order.id,
                 tableKey: tableId,
-                lastMutationId: normalizedBody.mutationId,
-                paymentAmount,
-                prePaymentLineTotal: authoritativeAmount,
-                discountAmount,
-                paidAt: new Date().toISOString(),
-                closedBy: 'pos-table-orders',
-                updatedAtMs: Date.now(),
-              },
+                mutationId: normalizedBody.mutationId,
+                reconciliationKey,
+                paymentMethod: normalizedBody.payment.method,
+                source: 'pos-table-orders',
+                receivedAt,
+              }),
             },
           });
         }
+        currentState = await loadPaymentState(tx, tenantId, order);
+        const closesRequestedBalance = normalizedBody.action === 'finalize_payment'
+          || normalizedBody.action === 'close_table_payment'
+          || normalizedBody.action === 'payment_completed';
+        const closed = closesRequestedBalance || currentState.remainingTotal <= 0;
+        const discountAmount = closed ? currentState.remainingTotal : 0;
+        const persistedPaymentState = closed
+          ? { ...currentState, orderStatus: 'paid', remainingTotal: 0 }
+          : { ...currentState, orderStatus: 'open' };
+
+        if (closed) await tx.orderItem.deleteMany({ where: { tenantId, orderId: order.id } });
+        await tx.order.update({
+          where: { id: order.id, tenantId },
+          data: {
+            status: closed ? 'paid' : 'open',
+            subtotal: currentState.orderTotal,
+            discount: discountAmount,
+            total: Number((currentState.orderTotal - discountAmount).toFixed(2)),
+            metadata: compactJsonObject({
+              ...normalizeMetadata(order.metadata),
+              tableKey: tableId,
+              lastMutationId: normalizedBody.mutationId,
+              paymentAmount,
+              paidTotal: persistedPaymentState.paidTotal,
+              remainingTotal: persistedPaymentState.remainingTotal,
+              prePaymentLineTotal: currentState.orderTotal,
+              discountAmount,
+              ...(closed ? { paidAt: receivedAt, closedBy: 'pos-table-orders' } : {}),
+              updatedAtMs: Date.now(),
+            }),
+          },
+        });
+
+        return { paymentCreated: true, paymentState: persistedPaymentState, closed };
       });
 
       await publishTenantEvent(tenantId, 'orders', {
-        type: 'order.paid',
+        type: transactionResult.closed ? 'order.paid' : 'order.partial_payment_added',
         tableId,
         mutationId: normalizedBody.mutationId,
+        reconciliationKey,
+        paidTotal: transactionResult.paymentState.paidTotal,
+        remainingTotal: transactionResult.paymentState.remainingTotal,
       }).catch((eventError) => {
         console.warn('[pos-table-orders] tenant event publish failed', {
           timestamp: new Date().toISOString(),
           tenantId,
           tableId,
           mutationId: normalizedBody.mutationId,
-          eventType: 'order.paid',
+          eventType: transactionResult.closed ? 'order.paid' : 'order.partial_payment_added',
           error: eventError instanceof Error ? eventError.message : String(eventError),
         });
       });
 
       const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId, tenant.branchId ?? undefined);
-      return NextResponse.json({ ok: true, source: 'db', mutationId: normalizedBody.mutationId, ordersByTable });
+      return NextResponse.json({
+        ok: true,
+        source: 'db',
+        mutationId: normalizedBody.mutationId,
+        reconciliationKey,
+        paymentCreated: transactionResult.paymentCreated,
+        paymentState: transactionResult.paymentState,
+        ordersByTable,
+      });
     }
 
     const product = normalizedBody.product;
