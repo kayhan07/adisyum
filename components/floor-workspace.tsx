@@ -120,8 +120,6 @@ type ReservationDraft = {
 };
 
 const FIXED_GROUPS = ['Salon', 'Teras', 'Bahce', 'VIP', 'Bar'] as const;
-const VAT_RATE = 0.1;
-
 function normalizeGroupName(value: string) {
   return value.trim().replace(/\s+/g, ' ');
 }
@@ -168,11 +166,7 @@ function groupPrefix(group: string) {
 }
 
 function getSeededTableGrossTotal(table: TableRecord) {
-  if (table.status !== 'occupied') {
-    return table.total;
-  }
-
-  return Number((table.total * (1 + VAT_RATE)).toFixed(2));
+  return table.total;
 }
 
 function reservationMatchesDate(table: LocalTableRecord, date: string) {
@@ -189,7 +183,7 @@ function mapStatus(table: LocalTableRecord & { paymentRequested: boolean; total:
 
 function getOrderGross(lines: OrderLine[]) {
   const subtotal = lines.reduce((sum, line) => sum + line.qty * line.price, 0);
-  return Number((subtotal * (1 + VAT_RATE)).toFixed(2));
+  return Number(subtotal.toFixed(2));
 }
 
 function formatTRY(value: number) {

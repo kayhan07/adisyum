@@ -101,13 +101,13 @@ async function main() {
       const sign = metadata.isReturn ? -1 : 1;
       return sum + (Number(row.quantity) * Number(row.unitPrice) * sign);
     }, 0);
-    const taxTotal = Number((subtotal * VAT_RATE).toFixed(2));
+    const taxTotal = Number((subtotal - (subtotal / (1 + VAT_RATE))).toFixed(2));
     await tx.order.update({
       where: { id: order.id, tenantId },
       data: {
         subtotal,
         taxTotal,
-        total: Number((subtotal + taxTotal).toFixed(2)),
+        total: Number(subtotal.toFixed(2)),
         metadata: { ...metadataObject(order.metadata), tableKey: tableId, lastMutationId: mutationId },
       },
     });

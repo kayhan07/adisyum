@@ -171,6 +171,10 @@ function getLineSubtotal(line: Pick<OrderLinePayload, 'qty' | 'price' | 'complim
   return line.isReturn ? -value : value;
 }
 
+function extractIncludedVat(grossTotal: number) {
+  return Number((grossTotal - (grossTotal / (1 + VAT_RATE))).toFixed(2));
+}
+
 function normalizeMetadata(input: Prisma.JsonValue | null | undefined) {
   return input && typeof input === 'object' && !Array.isArray(input)
     ? input as Record<string, unknown>
@@ -775,14 +779,14 @@ export async function POST(request: Request) {
             isReturn: Boolean(metadata.isReturn),
           });
         }, 0);
-        const taxTotal = Number((subtotal * VAT_RATE).toFixed(2));
+        const taxTotal = extractIncludedVat(subtotal);
         await tx.order.update({
           where: { id: order.id, tenantId },
           data: {
             status: nextItems.length > 0 ? 'open' : 'paid',
             subtotal,
             taxTotal,
-            total: Number((subtotal + taxTotal).toFixed(2)),
+            total: Number(subtotal.toFixed(2)),
             metadata: {
               ...normalizeMetadata(order.metadata),
               tableKey: tableId,
@@ -1620,13 +1624,13 @@ export async function POST(request: Request) {
           isReturn: Boolean(metadata.isReturn),
         });
       }, 0);
-      const taxTotal = Number((subtotal * VAT_RATE).toFixed(2));
+      const taxTotal = extractIncludedVat(subtotal);
       await tx.order.update({
         where: { id: order.id, tenantId },
         data: {
           subtotal,
           taxTotal,
-          total: Number((subtotal + taxTotal).toFixed(2)),
+          total: Number(subtotal.toFixed(2)),
           metadata: {
             ...normalizeMetadata(order.metadata),
             tableKey: tableId,
@@ -1643,7 +1647,7 @@ export async function POST(request: Request) {
         itemCount: nextItems.length,
         subtotal,
         taxTotal,
-        total: Number((subtotal + taxTotal).toFixed(2)),
+        total: Number(subtotal.toFixed(2)),
       });
       updatedOrderId = order.id;
       updatedLineCount = nextItems.length;

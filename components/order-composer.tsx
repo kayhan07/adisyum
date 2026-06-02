@@ -1006,7 +1006,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     });
   }, [runtimeSession, tenantPrinters]);
   const subtotal = useMemo(() => lines.reduce((sum, item) => sum + getOrderLineSubtotal(item), 0), [lines]);
-  const vat = subtotal * VAT_RATE;
+  const vat = subtotal - (subtotal / (1 + VAT_RATE));
   
   const total = subtotal;
 
