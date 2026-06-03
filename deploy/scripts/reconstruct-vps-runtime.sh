@@ -754,8 +754,8 @@ validate_pm2() {
 validate_live_ports() {
   log "Validating live listener ports"
   ss -ltnp | grep -E ":(${ROOT_PORT}|${WEBSITE_PORT})" || true
-  ss -ltnp | grep -Eq "127\\.0\\.0\\.1:${ROOT_PORT}|\\[::1\\]:${ROOT_PORT}|0\\.0\\.0\\.0:${ROOT_PORT}|\\[::\\]:${ROOT_PORT}" || fail "adisyum-root-app is not listening on ${ROOT_PORT}"
-  ss -ltnp | grep -Eq "127\\.0\\.0\\.1:${WEBSITE_PORT}|\\[::1\\]:${WEBSITE_PORT}|0\\.0\\.0\\.0:${WEBSITE_PORT}|\\[::\\]:${WEBSITE_PORT}" || fail "adisyum-website is not listening on ${WEBSITE_PORT}"
+  ss -ltnp | awk -v port=":${ROOT_PORT}" '$1 == "LISTEN" && index($4, port) { found=1 } END { exit found ? 0 : 1 }' || fail "adisyum-root-app is not listening on ${ROOT_PORT}"
+  ss -ltnp | awk -v port=":${WEBSITE_PORT}" '$1 == "LISTEN" && index($4, port) { found=1 } END { exit found ? 0 : 1 }' || fail "adisyum-website is not listening on ${WEBSITE_PORT}"
 }
 
 validate_runtime_build_identity() {
