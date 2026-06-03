@@ -1,5 +1,5 @@
 import type { ProductRecipeOverride, RecipePoolUnit } from '@/lib/recipe-pool';
-import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
+import { persistRuntimeScope, readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
 import { loadSessionState } from '@/lib/session-store';
 import { compileCanonicalPosCatalog } from '@/lib/canonical-pos-catalog';
 import type { ProductLifecycleStatus, ProductPublishState } from '@/lib/product-lifecycle-governance';
@@ -352,6 +352,9 @@ export function saveStoredSaleProducts(products: StoredSaleProduct[]) {
     const serialized = JSON.stringify(incoming);
     writeLocalSaleProducts(serialized);
     writeRuntimeItem('tenant', STORAGE_KEY, serialized);
+    void persistRuntimeScope('tenant').catch((error) => {
+      console.error('[business-flow] sale products server sync failed', error);
+    });
     emitSaleProductsChange();
   } catch (error) {
     console.error('[business-flow] sale products save failed', error);

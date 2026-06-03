@@ -1,6 +1,6 @@
 'use client';
 
-import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
+import { persistRuntimeScope, readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
 import { loadSessionState } from '@/lib/session-store';
 import { shouldUseSeedBusinessData } from '@/lib/tenant-clean-start';
 
@@ -126,6 +126,9 @@ export function saveTableLayoutState(state: TableLayoutState) {
     const serialized = JSON.stringify(state);
     writeLocalTableLayoutState(serialized);
     writeRuntimeItem('tenant', STORAGE_KEY, serialized);
+    void persistRuntimeScope('tenant').catch((error) => {
+      console.error('[business-flow] table layout server sync failed', error);
+    });
     emitChange();
   } catch (error) {
     console.error('[business-flow] table layout save failed', error);
