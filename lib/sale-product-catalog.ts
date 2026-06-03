@@ -134,7 +134,9 @@ function emitSaleProductsChange() {
 function readLocalSaleProducts() {
   if (typeof window === 'undefined') return null;
   try {
-    const tenantId = loadSessionState().tenantId || 'anonymous';
+    const session = loadSessionState();
+    if (!session.isAuthenticated || !session.tenantId) return null;
+    const tenantId = session.tenantId;
     return window.localStorage.getItem(`${LOCAL_STORAGE_KEY}:${tenantId}`);
   } catch (error) {
     console.error('[business-flow] local sale products read failed', error);
@@ -145,7 +147,9 @@ function readLocalSaleProducts() {
 function writeLocalSaleProducts(value: string) {
   if (typeof window === 'undefined') return;
   try {
-    const tenantId = loadSessionState().tenantId || 'anonymous';
+    const session = loadSessionState();
+    if (!session.isAuthenticated || !session.tenantId) return;
+    const tenantId = session.tenantId;
     window.localStorage.setItem(`${LOCAL_STORAGE_KEY}:${tenantId}`, value);
   } catch (error) {
     console.error('[business-flow] local sale products save failed', error);
@@ -295,7 +299,8 @@ export function loadStoredSaleProducts() {
   if (typeof window === 'undefined') return null;
 
   try {
-    const raw = readLocalSaleProducts() ?? readRuntimeItem('tenant', STORAGE_KEY);
+    const runtimeRaw = readRuntimeItem('tenant', STORAGE_KEY);
+    const raw = runtimeRaw ?? readLocalSaleProducts();
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     const products = Array.isArray(parsed)
@@ -362,7 +367,9 @@ export function subscribeToStoredSaleProductsChanges(callback: () => void) {
     callback();
   };
   const handleStorage = (event: StorageEvent) => {
-    const tenantId = loadSessionState().tenantId || 'anonymous';
+    const session = loadSessionState();
+    if (!session.isAuthenticated || !session.tenantId) return;
+    const tenantId = session.tenantId;
     if (event.key === `${LOCAL_STORAGE_KEY}:${tenantId}`) callback();
   };
 

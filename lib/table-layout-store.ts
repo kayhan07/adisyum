@@ -65,14 +65,15 @@ function emitChange() {
 }
 
 function localTableLayoutKey() {
-  const tenantId = loadSessionState().tenantId || 'anonymous';
-  return `${LOCAL_STORAGE_KEY}:${tenantId}`;
+  const session = loadSessionState();
+  return session.isAuthenticated && session.tenantId ? `${LOCAL_STORAGE_KEY}:${session.tenantId}` : null;
 }
 
 function readLocalTableLayoutState() {
   if (typeof window === 'undefined') return null;
   try {
-    return window.localStorage.getItem(localTableLayoutKey());
+    const key = localTableLayoutKey();
+    return key ? window.localStorage.getItem(key) : null;
   } catch (error) {
     console.error('[business-flow] local table layout read failed', error);
     return null;
@@ -82,7 +83,9 @@ function readLocalTableLayoutState() {
 function writeLocalTableLayoutState(value: string) {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(localTableLayoutKey(), value);
+    const key = localTableLayoutKey();
+    if (!key) return;
+    window.localStorage.setItem(key, value);
   } catch (error) {
     console.error('[business-flow] local table layout save failed', error);
   }
@@ -98,7 +101,8 @@ export function loadTableLayoutState() {
   }
 
   try {
-    const raw = readLocalTableLayoutState() ?? readRuntimeItem('tenant', STORAGE_KEY);
+    const runtimeRaw = readRuntimeItem('tenant', STORAGE_KEY);
+    const raw = runtimeRaw ?? readLocalTableLayoutState();
     if (!raw) {
       return getDefaultTableLayoutState();
     }
@@ -133,7 +137,8 @@ export function subscribeToTableLayoutChanges(callback: () => void) {
 
   const onCustom = () => callback();
   const onStorage = (event: StorageEvent) => {
-    if (event.key === localTableLayoutKey()) callback();
+    const key = localTableLayoutKey();
+    if (key && event.key === key) callback();
   };
 
   window.addEventListener(EVENT_NAME, onCustom);
