@@ -1244,15 +1244,22 @@ main() {
   inspect_drift_before_cleanup
   load_env
   preflight_database_auth
-  stop_all_runtime
-  clean_pm2_state
-  clean_filesystem_runtime
+  if [[ "${DESTRUCTIVE_RECONSTRUCT:-0}" == "1" ]]; then
+    log "DESTRUCTIVE_RECONSTRUCT=1 enabled; stopping runtime and cleaning build filesystem before validation"
+    stop_all_runtime
+    clean_pm2_state
+    clean_filesystem_runtime
+  else
+    log "Safe deploy mode: keeping current PM2 runtime online until build and validation complete"
+  fi
   install_dependencies
   validate_node_runtime
   validate_ecosystem
   rebuild_prisma_and_typecheck
   build_apps
   validate_and_publish_windows_downloads
+  stop_all_runtime
+  clean_pm2_state
   start_pm2_clean
   validate_live_ports
   run_auth_verification
