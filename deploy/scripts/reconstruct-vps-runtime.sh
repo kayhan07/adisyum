@@ -641,6 +641,7 @@ build_apps() {
   rm -rf ".next/standalone/.next/static" ".next/standalone/public"
   cp -a ".next/static" ".next/standalone/.next/static"
   cp -a "public" ".next/standalone/public"
+  find ".next/standalone/.next/static" -type f \( -name "*.css" -o -name "*.js" \) | grep -q . || fail "Root standalone static CSS/JS assets missing"
   [[ -s ".next/standalone/.next/server/app/api/pos/table-orders/route.js" ]] || fail "Standalone /api/pos/table-orders artifact missing"
   [[ -d ".next/server/app/app" || -f ".next/server/app/app.html" || -f ".next/server/app/app/page.js" ]] || fail "Root /app build artifact missing"
   [[ -d ".next/server/app/system-admin" || -f ".next/server/app/system-admin.html" || -f ".next/server/app/system-admin/page.js" ]] || fail "Root /system-admin build artifact missing"
@@ -654,6 +655,7 @@ build_apps() {
   [[ -s "apps/website/.next/BUILD_ID" ]] || fail "Website .next/BUILD_ID missing"
   [[ -d "apps/website/.next/server" ]] || fail "Website .next/server missing"
   [[ -d "apps/website/.next/static" ]] || fail "Website .next/static missing"
+  find "apps/website/.next/static" -type f \( -name "*.css" -o -name "*.js" \) | grep -q . || fail "Website static CSS/JS assets missing"
   log "Website BUILD_ID=$(cat apps/website/.next/BUILD_ID)"
 }
 
@@ -846,6 +848,13 @@ server {
         add_header Accept-Ranges bytes always;
     }
 
+    location ^~ ${ROOT_ASSET_PREFIX}/_next/static/ {
+        alias ${APP_DIR}/.next/standalone/.next/static/;
+        access_log off;
+        expires 1y;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+    }
+
     location ^~ ${ROOT_ASSET_PREFIX}/_next/ {
         rewrite ^${ROOT_ASSET_PREFIX}(/_next/.*)\$ \$1 break;
         proxy_pass http://127.0.0.1:${ROOT_PORT};
@@ -858,8 +867,15 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
+    location ^~ /_next/static/ {
+        alias ${APP_DIR}/apps/website/.next/static/;
+        access_log off;
+        expires 1y;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+    }
+
     location ^~ /_next/ {
-        proxy_pass http://127.0.0.1:${ROOT_PORT};
+        proxy_pass http://127.0.0.1:${WEBSITE_PORT};
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection \$connection_upgrade;
@@ -1127,6 +1143,7 @@ validate_runtime_routes() {
   wait_for_route_status "POST" "https://${DOMAIN}/api/pos/table-orders" "401"
   wait_for_route_not_404 "GET" "https://${DOMAIN}/api/runtime-build-id"
   validate_runtime_build_identity "https://${DOMAIN}/api/runtime-build-id"
+  validate_next_page_asset "https://${DOMAIN}/" "https://${DOMAIN}" ""
   validate_next_page_asset "https://${DOMAIN}/app" "https://${DOMAIN}" ""
 }
 
