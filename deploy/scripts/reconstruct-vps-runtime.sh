@@ -639,13 +639,14 @@ build_apps() {
   [[ -s ".next/BUILD_ID" ]] || fail "Root .next/BUILD_ID missing"
   [[ -d ".next/server" ]] || fail "Root .next/server missing"
   [[ -d ".next/static" ]] || fail "Root .next/static missing"
+  find ".next/static" -type f \( -name "*.css" -o -name "*.js" \) | grep -q . || fail "Root .next/static CSS/JS assets missing"
   [[ -s ".next/standalone/server.js" ]] || fail "Root standalone server missing"
   mkdir -p ".next/standalone/.next"
   rm -rf ".next/standalone/.next/static" ".next/standalone/public"
   mkdir -p ".next/standalone/.next/static" ".next/standalone/public"
   cp -a ".next/static/." ".next/standalone/.next/static/"
   cp -a "public/." ".next/standalone/public/"
-  find ".next/standalone/.next/static" -type f \( -name "*.css" -o -name "*.js" \) | grep -q . || fail "Root standalone static CSS/JS assets missing"
+  find ".next/standalone/.next/static" -type f \( -name "*.css" -o -name "*.js" \) | grep -q . || log "WARNING: Root standalone static copy has no CSS/JS; NGINX will serve ${APP_DIR}/.next/static directly"
   [[ -s ".next/standalone/.next/server/app/api/pos/table-orders/route.js" ]] || fail "Standalone /api/pos/table-orders artifact missing"
   [[ -d ".next/server/app/app" || -f ".next/server/app/app.html" || -f ".next/server/app/app/page.js" ]] || fail "Root /app build artifact missing"
   [[ -d ".next/server/app/system-admin" || -f ".next/server/app/system-admin.html" || -f ".next/server/app/system-admin/page.js" ]] || fail "Root /system-admin build artifact missing"
@@ -853,7 +854,7 @@ server {
     }
 
     location ^~ ${ROOT_ASSET_PREFIX}/_next/static/ {
-        alias ${APP_DIR}/.next/standalone/.next/static/;
+        alias ${APP_DIR}/.next/static/;
         access_log off;
         expires 1y;
         add_header Cache-Control "public, max-age=31536000, immutable" always;
@@ -891,7 +892,7 @@ server {
     }
 
     location ^~ /_next/static/ {
-        alias ${APP_DIR}/.next/standalone/.next/static/;
+        alias ${APP_DIR}/.next/static/;
         access_log off;
         expires 1y;
         add_header Cache-Control "public, max-age=31536000, immutable" always;

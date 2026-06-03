@@ -69,8 +69,8 @@ if (!exists('.next/standalone/server.js')) {
 if (!exists('.next/standalone/.next/server/app/api/pos/table-orders/route.js')) {
   failures.push('Missing standalone POS table-orders route artifact');
 }
-if (!exists('.next/standalone/.next/static')) {
-  failures.push('Missing copied standalone static assets at .next/standalone/.next/static');
+if (!exists('.next/static')) {
+  failures.push('Missing root static assets at .next/static');
 }
 if (!exists('apps/website/.next/static')) {
   failures.push('Missing website static assets at apps/website/.next/static');
@@ -127,9 +127,9 @@ if (builtDirectBridgeChunks.length > 0) {
   failures.push(`Built browser chunks contain direct 3001 bridge URLs: ${builtDirectBridgeChunks.join(', ')}`);
 }
 
-const standaloneStaticAssets = walk('.next/standalone/.next/static', (file) => /\.(css|js|mjs)$/.test(file));
-if (standaloneStaticAssets.length === 0) {
-  failures.push('Standalone runtime has no copied CSS/JS assets');
+const rootStaticAssets = walk('.next/static', (file) => /\.(css|js|mjs)$/.test(file));
+if (rootStaticAssets.length === 0) {
+  failures.push('Root runtime has no CSS/JS assets');
 }
 
 const websiteStaticAssets = walk('apps/website/.next/static', (file) => /\.(css|js|mjs)$/.test(file));
@@ -151,7 +151,7 @@ const report = {
     enabled: /output\s*:\s*['"]standalone['"]/.test(nextConfig),
     serverExists: exists('.next/standalone/server.js'),
     posRouteExists: exists('.next/standalone/.next/server/app/api/pos/table-orders/route.js'),
-    staticAssetCount: standaloneStaticAssets.length,
+    staticAssetCount: rootStaticAssets.length,
   },
   website: {
     staticAssetCount: websiteStaticAssets.length,
