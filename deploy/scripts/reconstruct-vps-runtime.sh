@@ -649,7 +649,6 @@ build_apps() {
   [[ -d ".next/server/app/app" || -f ".next/server/app/app.html" || -f ".next/server/app/app/page.js" ]] || fail "Root /app build artifact missing"
   [[ -d ".next/server/app/system-admin" || -f ".next/server/app/system-admin.html" || -f ".next/server/app/system-admin/page.js" ]] || fail "Root /system-admin build artifact missing"
   run_app npm run routes:audit
-  run_app npm run runtime:audit-production
   run_app npm run env:audit-production
   log "Root BUILD_ID=$(cat .next/BUILD_ID)"
   log "Root GIT_COMMIT=${GIT_COMMIT:-unknown} DEPLOYED_AT=${DEPLOYED_AT:-unknown}"
@@ -660,6 +659,7 @@ build_apps() {
   [[ -d "apps/website/.next/static" ]] || fail "Website .next/static missing"
   find "apps/website/.next/static" -type f \( -name "*.css" -o -name "*.js" \) | grep -q . || fail "Website static CSS/JS assets missing"
   log "Website BUILD_ID=$(cat apps/website/.next/BUILD_ID)"
+  run_app npm run runtime:audit-production
 }
 
 validate_and_publish_windows_downloads() {
