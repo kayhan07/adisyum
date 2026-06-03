@@ -105,6 +105,29 @@ function logTableOrderEvent(event: string, payload: Record<string, unknown>) {
   });
 }
 
+function publishTenantOrderEventBestEffort(
+  tenantId: string,
+  payload: {
+    type: string;
+    tableId?: string;
+    mutationId?: string;
+    [key: string]: unknown;
+  },
+) {
+  void publishTenantEvent(tenantId, 'orders', payload).catch((eventError) => {
+    console.warn('[pos-table-orders] tenant event publish failed', {
+      timestamp: new Date().toISOString(),
+      tenantId,
+      tableId: payload.tableId,
+      mutationId: payload.mutationId,
+      eventType: payload.type,
+      sideEffectOnly: true,
+      orderPersistenceUnaffected: true,
+      error: eventError instanceof Error ? eventError.message : String(eventError),
+    });
+  });
+}
+
 function runtimeInsertionErrorResponse(input: {
   status: number;
   reason: string;
@@ -747,23 +770,14 @@ export async function POST(request: Request) {
         });
       });
 
-      await publishTenantEvent(tenantId, 'orders', {
+      publishTenantOrderEventBestEffort(tenantId, {
         type: normalizedBody.action === 'mark_order_sent' ? 'order.sent' : 'order.saved',
         tableId,
         mutationId: normalizedBody.mutationId,
-      }).catch((eventError) => {
-        console.warn('[pos-table-orders] tenant event publish failed', {
-          timestamp: new Date().toISOString(),
-          tenantId,
-          tableId,
-          mutationId: normalizedBody.mutationId,
-          eventType: normalizedBody.action === 'mark_order_sent' ? 'order.sent' : 'order.saved',
-          error: eventError instanceof Error ? eventError.message : String(eventError),
-        });
       });
 
       const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId, tenant.branchId ?? undefined);
-      return NextResponse.json({ ok: true, source: 'db', mutationId: normalizedBody.mutationId, ordersByTable });
+      return NextResponse.json({ ok: true, source: 'db', mutationId: normalizedBody.mutationId, ordersByTable, authoritativeState: { ordersByTable } });
     }
 
     if (normalizedBody.action === 'update_line_quantity' || normalizedBody.action === 'remove_line') {
@@ -884,26 +898,16 @@ export async function POST(request: Request) {
         });
       });
 
-      await publishTenantEvent(tenantId, 'orders', {
+      publishTenantOrderEventBestEffort(tenantId, {
         type: normalizedBody.action === 'remove_line' ? 'order.item.removed' : 'order.item.quantity_updated',
         tableId,
         lineId,
         quantity: nextQuantity,
         mutationId: normalizedBody.mutationId,
-      }).catch((eventError) => {
-        console.warn('[pos-table-orders] tenant event publish failed', {
-          timestamp: new Date().toISOString(),
-          tenantId,
-          tableId,
-          lineId,
-          mutationId: normalizedBody.mutationId,
-          eventType: normalizedBody.action === 'remove_line' ? 'order.item.removed' : 'order.item.quantity_updated',
-          error: eventError instanceof Error ? eventError.message : String(eventError),
-        });
       });
 
       const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId, tenant.branchId ?? undefined);
-      return NextResponse.json({ ok: true, source: 'db', mutationId: normalizedBody.mutationId, ordersByTable });
+      return NextResponse.json({ ok: true, source: 'db', mutationId: normalizedBody.mutationId, ordersByTable, authoritativeState: { ordersByTable } });
     }
 
     if (
@@ -1180,22 +1184,13 @@ export async function POST(request: Request) {
         return { paymentCreated: true, paymentState: persistedPaymentState, closed };
       });
 
-      await publishTenantEvent(tenantId, 'orders', {
+      publishTenantOrderEventBestEffort(tenantId, {
         type: transactionResult.closed ? 'order.paid' : 'order.partial_payment_added',
         tableId,
         mutationId: normalizedBody.mutationId,
         reconciliationKey,
         paidTotal: transactionResult.paymentState.paidTotal,
         remainingTotal: transactionResult.paymentState.remainingTotal,
-      }).catch((eventError) => {
-        console.warn('[pos-table-orders] tenant event publish failed', {
-          timestamp: new Date().toISOString(),
-          tenantId,
-          tableId,
-          mutationId: normalizedBody.mutationId,
-          eventType: transactionResult.closed ? 'order.paid' : 'order.partial_payment_added',
-          error: eventError instanceof Error ? eventError.message : String(eventError),
-        });
       });
 
       const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId, tenant.branchId ?? undefined);
@@ -1207,6 +1202,7 @@ export async function POST(request: Request) {
         paymentCreated: transactionResult.paymentCreated,
         paymentState: transactionResult.paymentState,
         ordersByTable,
+        authoritativeState: { ordersByTable, paymentState: transactionResult.paymentState },
       });
     }
 
@@ -1934,19 +1930,10 @@ export async function POST(request: Request) {
       mutationId,
     });
 
-    await publishTenantEvent(tenantId, 'orders', {
+    publishTenantOrderEventBestEffort(tenantId, {
       type: 'order.updated',
       tableId,
       mutationId,
-    }).catch((eventError) => {
-      console.warn('[pos-table-orders] tenant event publish failed', {
-        timestamp: new Date().toISOString(),
-        tenantId,
-        tableId,
-        mutationId,
-        eventType: 'order.updated',
-        error: eventError instanceof Error ? eventError.message : String(eventError),
-      });
     });
     await recordOperationalEvent({
       tenantId,
@@ -1988,7 +1975,7 @@ export async function POST(request: Request) {
       tableCount: Object.keys(ordersByTable).length,
       activeLineCount: ordersByTable[tableId]?.length ?? 0,
     });
-    return NextResponse.json({ ok: true, source: 'db', mutationId, ordersByTable });
+    return NextResponse.json({ ok: true, source: 'db', mutationId, ordersByTable, authoritativeState: { ordersByTable } });
   } catch (error) {
     return mutationErrorResponse(error, traceId, tenantId, tableId);
   }

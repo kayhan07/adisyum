@@ -416,9 +416,18 @@ export async function persistRuntimeScope(scope: RuntimeScope) {
 		}
 		return snapshots[scope];
 	} catch (error) {
-		dirtyScopes[scope] = !isRuntimeStateAuthFailure(error);
+		const authFailure = isRuntimeStateAuthFailure(error);
+		dirtyScopes[scope] = !authFailure;
+		if (authFailure) {
+			const pending = pendingFlushes.get(scope);
+			if (pending) {
+				globalThis.clearTimeout(pending);
+				pendingFlushes.delete(scope);
+			}
+		}
 		console.warn('[runtime-state] persist failed; keeping local snapshot', runtimeDiagnostics(scope, {
-			retrySuppressed: isRuntimeStateAuthFailure(error),
+			retrySuppressed: authFailure,
+			authRequired: authFailure,
 			durationMs: Date.now() - persistStartedAt,
 			error,
 		}));

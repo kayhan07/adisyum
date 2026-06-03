@@ -170,7 +170,19 @@ export async function fetchFromLocalAgent(path: string, options: LocalAgentReque
   });
 
   if (!response.ok) {
-    throw new Error(`Local agent proxy status ${response.status}`);
+    const payload = await response.json().catch(() => null) as { error?: string; message?: string; code?: string } | null;
+    const message = payload?.message || payload?.error || (
+      response.status === 403
+        ? 'Tenant oturumu gerekli. Lütfen uygulamaya abone kullanıcısıyla tekrar giriş yapın.'
+        : `Local agent proxy status ${response.status}`
+    );
+    const error = new Error(message);
+    Object.assign(error, {
+      code: payload?.code ?? (response.status === 403 ? 'tenant_session_required' : 'local_agent_proxy_failed'),
+      status: response.status,
+      payload,
+    });
+    throw error;
   }
 
   if (path !== '/health') {

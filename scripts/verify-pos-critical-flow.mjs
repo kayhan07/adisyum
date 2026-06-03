@@ -16,6 +16,8 @@ const orderComposer = read('components/order-composer.tsx');
 const floorWorkspace = read('components/floor-workspace.tsx');
 const tableOrdersRoute = read('app/api/pos/table-orders/route.ts');
 const localAgentRoute = read('app/api/printers/local-agent/route.ts');
+const localAgentClient = read('lib/local-agent.ts');
+const runtimeState = read('lib/client/runtime-state.ts');
 
 const saveRequestIndex = orderComposer.indexOf("action: 'save_order'");
 const printerDiscoveryIndex = orderComposer.indexOf('const ensureRuntimePrinters');
@@ -27,6 +29,10 @@ assert(tableOrdersRoute.includes("normalizedBody.action === 'save_order'"), 'Tab
 assert(tableOrdersRoute.includes("normalizedBody.action === 'mark_order_sent'"), 'Table-orders API must separate saved orders from printed orders');
 assert(orderComposer.includes("await persistOrderState('mark_order_sent')"), 'Order composer must mark items sent only after successful printing');
 assert(tableOrdersRoute.includes("'order.saved'"), 'Table-orders API must publish the saved order event');
+assert(tableOrdersRoute.includes('publishTenantOrderEventBestEffort'), 'Order event publishing must be best-effort side effect work');
+assert(!tableOrdersRoute.includes("await publishTenantEvent(tenantId, 'orders'"), 'Order mutations must not wait for tenant event publishing');
+assert(tableOrdersRoute.includes('orderPersistenceUnaffected: true'), 'Event publish failure logs must state that order persistence is unaffected');
+assert(tableOrdersRoute.includes('authoritativeState: { ordersByTable'), 'Successful POS mutations must return authoritative state for UI reconcile');
 assert(tableOrdersRoute.includes('tenantProductIds'), 'Open-order hydration must preserve active products linked to the current tenant');
 assert(!/catalog\.items\.length === 0[\s\S]{0,120}return \{\}/.test(tableOrdersRoute), 'Open-order hydration must not disappear while the runtime catalog is rebuilding');
 assert(tableOrdersRoute.includes("normalizedBody.action === 'close_table_payment'"), 'Payment must close through the authoritative table-orders API');
@@ -35,6 +41,9 @@ assert(/table\.total > 0\) return 'occupied'/.test(floorWorkspace), 'Floor statu
 assert(localAgentRoute.includes('registered_printers_only'), 'Local-agent proxy must expose registered printers when the agent is missing');
 assert(localAgentRoute.includes('agent_offline_registered_printers'), 'Local-agent proxy must expose registered printers when the agent is offline');
 assert(localAgentRoute.includes('prisma.printer.findMany'), 'Local-agent proxy must load tenant-scoped registered printer mappings');
+assert(localAgentClient.includes('tenant_session_required'), 'Local-agent client must surface tenant-session-required printer diagnostics');
+assert(runtimeState.includes('authRequired: authFailure'), 'Runtime state persist must mark auth failures and stop retry churn');
+assert(runtimeState.includes('pendingFlushes.delete(scope)'), 'Runtime state auth failure must clear pending persist flushes');
 
 if (failures.length > 0) {
   console.error('POS critical flow validation failed:');
