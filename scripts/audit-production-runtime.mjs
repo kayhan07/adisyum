@@ -44,10 +44,24 @@ const nextConfig = read('next.config.mjs') || read('next.config.js');
 const ecosystemConfig = read('ecosystem.config.cjs') || read('ecosystem.config.js');
 const middleware = read('middleware.ts');
 const reconstructScript = read('deploy/scripts/reconstruct-vps-runtime.sh');
+const nginxConfig = read('deploy/nginx/adisyum.conf');
+const websiteNextConfig = read('apps/website/next.config.mjs');
 const envFiles = ['.env', '.env.production'].filter(exists);
 
 if (!/output\s*:\s*['"]standalone['"]/.test(nextConfig)) {
   failures.push('next.config does not enable output: standalone');
+}
+if (!/adisyum-root-assets/.test(nextConfig) || !/ADISYUM_ROOT_ASSET_PREFIX/.test(nextConfig)) {
+  failures.push('Root app assetPrefix must default to /adisyum-root-assets and allow ADISYUM_ROOT_ASSET_PREFIX override');
+}
+if (!/website-assets/.test(websiteNextConfig) || !/ADISYUM_WEBSITE_ASSET_PREFIX/.test(websiteNextConfig)) {
+  failures.push('Website app assetPrefix must default to /website-assets and allow ADISYUM_WEBSITE_ASSET_PREFIX override');
+}
+if (!/location\s+\^~\s+\/adisyum-root-assets\/_next\/static\//.test(nginxConfig)) {
+  failures.push('Nginx must serve root app static assets from /adisyum-root-assets/_next/static/');
+}
+if (!/location\s+\^~\s+\/website-assets\/_next\/static\//.test(nginxConfig)) {
+  failures.push('Nginx must serve website static assets from /website-assets/_next/static/');
 }
 if (!exists('.next/standalone/server.js')) {
   failures.push('Missing .next/standalone/server.js');
@@ -151,6 +165,12 @@ const report = {
   envFiles,
   csp: {
     localhostAllowed: /connect-src[^"]*(127\.0\.0\.1|localhost)/.test(middleware),
+  },
+  staticRouting: {
+    rootAssetPrefix: /adisyum-root-assets/.test(nextConfig),
+    websiteAssetPrefix: /website-assets/.test(websiteNextConfig),
+    nginxRootStatic: /location\s+\^~\s+\/adisyum-root-assets\/_next\/static\//.test(nginxConfig),
+    nginxWebsiteStatic: /location\s+\^~\s+\/website-assets\/_next\/static\//.test(nginxConfig),
   },
   browserSourceWithDirectBridge,
   builtDirectBridgeChunks,

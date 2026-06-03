@@ -7,6 +7,7 @@ DOMAIN="${DOMAIN:-adisyum.com}"
 ROOT_PORT="${ROOT_PORT:-3000}"
 WEBSITE_PORT="${WEBSITE_PORT:-3010}"
 ROOT_ASSET_PREFIX="${ROOT_ASSET_PREFIX:-/adisyum-root-assets}"
+WEBSITE_ASSET_PREFIX="${WEBSITE_ASSET_PREFIX:-/website-assets}"
 SSL_CERT="${SSL_CERT:-/etc/ssl/cloudflare/origin.pem}"
 SSL_KEY="${SSL_KEY:-/etc/ssl/cloudflare/origin.key}"
 BACKUP_ROOT="${BACKUP_ROOT:-/var/backups/adisyum-clean-reconstruct}"
@@ -225,6 +226,7 @@ recover_or_create_env() {
     write_env_line PUBLIC_APP_URL "https://${DOMAIN}"
     write_env_line SESSION_COOKIE_DOMAIN ".${DOMAIN}"
     write_env_line ADISYUM_ROOT_ASSET_PREFIX "${ROOT_ASSET_PREFIX}"
+    write_env_line ADISYUM_WEBSITE_ASSET_PREFIX "${WEBSITE_ASSET_PREFIX}"
     write_env_line DATABASE_URL "${DATABASE_URL:-}"
     write_env_line POSTGRES_POOL_MAX "${POSTGRES_POOL_MAX:-10}"
     write_env_line POSTGRES_IDLE_TIMEOUT_MS "${POSTGRES_IDLE_TIMEOUT_MS:-30000}"
@@ -458,6 +460,7 @@ load_env() {
   export GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || true)"
   export DEPLOYED_AT="${TS}"
   export ADISYUM_ROOT_ASSET_PREFIX="${ROOT_ASSET_PREFIX}"
+  export ADISYUM_WEBSITE_ASSET_PREFIX="${WEBSITE_ASSET_PREFIX}"
   export NEXT_PUBLIC_APP_URL="https://${DOMAIN}"
   export NEXTAUTH_URL="https://${DOMAIN}"
   export APP_URL="https://${DOMAIN}"
@@ -867,15 +870,34 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
-    location ^~ /_next/static/ {
+    location ^~ ${WEBSITE_ASSET_PREFIX}/_next/static/ {
         alias ${APP_DIR}/apps/website/.next/static/;
         access_log off;
         expires 1y;
         add_header Cache-Control "public, max-age=31536000, immutable" always;
     }
 
-    location ^~ /_next/ {
+    location ^~ ${WEBSITE_ASSET_PREFIX}/_next/ {
+        rewrite ^${WEBSITE_ASSET_PREFIX}(/_next/.*)\$ \$1 break;
         proxy_pass http://127.0.0.1:${WEBSITE_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$connection_upgrade;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location ^~ /_next/static/ {
+        alias ${APP_DIR}/.next/standalone/.next/static/;
+        access_log off;
+        expires 1y;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+    }
+
+    location ^~ /_next/ {
+        proxy_pass http://127.0.0.1:${ROOT_PORT};
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection \$connection_upgrade;
@@ -1145,6 +1167,7 @@ validate_runtime_routes() {
   validate_runtime_build_identity "https://${DOMAIN}/api/runtime-build-id"
   validate_next_page_asset "https://${DOMAIN}/" "https://${DOMAIN}" ""
   validate_next_page_asset "https://${DOMAIN}/app" "https://${DOMAIN}" ""
+  validate_next_page_asset "https://${DOMAIN}/system-admin/login" "https://${DOMAIN}" ""
 }
 
 print_final_state() {
