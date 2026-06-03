@@ -8,6 +8,8 @@ ROOT_PORT="${ROOT_PORT:-3000}"
 WEBSITE_PORT="${WEBSITE_PORT:-3010}"
 ROOT_ASSET_PREFIX="${ROOT_ASSET_PREFIX:-/adisyum-root-assets}"
 WEBSITE_ASSET_PREFIX="${WEBSITE_ASSET_PREFIX:-/website-assets}"
+ROOT_STATIC_DIR="${ROOT_STATIC_DIR:-/var/lib/adisyum/root-static}"
+WEBSITE_STATIC_DIR="${WEBSITE_STATIC_DIR:-/var/lib/adisyum/website-static}"
 SSL_CERT="${SSL_CERT:-/etc/ssl/cloudflare/origin.pem}"
 SSL_KEY="${SSL_KEY:-/etc/ssl/cloudflare/origin.key}"
 BACKUP_ROOT="${BACKUP_ROOT:-/var/backups/adisyum-clean-reconstruct}"
@@ -647,6 +649,8 @@ build_apps() {
   cp -a ".next/static/." ".next/standalone/.next/static/"
   cp -a "public/." ".next/standalone/public/"
   find ".next/standalone/.next/static" -type f \( -name "*.css" -o -name "*.js" \) | grep -q . || log "WARNING: Root standalone static copy has no CSS/JS; NGINX will serve ${APP_DIR}/.next/static directly"
+  mkdir -p "${ROOT_STATIC_DIR}"
+  cp -a ".next/static/." "${ROOT_STATIC_DIR}/"
   [[ -s ".next/standalone/.next/server/app/api/pos/table-orders/route.js" ]] || fail "Standalone /api/pos/table-orders artifact missing"
   [[ -d ".next/server/app/app" || -f ".next/server/app/app.html" || -f ".next/server/app/app/page.js" ]] || fail "Root /app build artifact missing"
   [[ -d ".next/server/app/system-admin" || -f ".next/server/app/system-admin.html" || -f ".next/server/app/system-admin/page.js" ]] || fail "Root /system-admin build artifact missing"
@@ -660,6 +664,8 @@ build_apps() {
   [[ -d "apps/website/.next/server" ]] || fail "Website .next/server missing"
   [[ -d "apps/website/.next/static" ]] || fail "Website .next/static missing"
   find "apps/website/.next/static" -type f \( -name "*.css" -o -name "*.js" \) | grep -q . || fail "Website static CSS/JS assets missing"
+  mkdir -p "${WEBSITE_STATIC_DIR}"
+  cp -a "apps/website/.next/static/." "${WEBSITE_STATIC_DIR}/"
   log "Website BUILD_ID=$(cat apps/website/.next/BUILD_ID)"
   run_app npm run runtime:audit-production
 }
@@ -854,7 +860,7 @@ server {
     }
 
     location ^~ ${ROOT_ASSET_PREFIX}/_next/static/ {
-        alias ${APP_DIR}/.next/static/;
+        alias ${ROOT_STATIC_DIR}/;
         access_log off;
         expires 1y;
         add_header Cache-Control "public, max-age=31536000, immutable" always;
@@ -873,7 +879,7 @@ server {
     }
 
     location ^~ ${WEBSITE_ASSET_PREFIX}/_next/static/ {
-        alias ${APP_DIR}/apps/website/.next/static/;
+        alias ${WEBSITE_STATIC_DIR}/;
         access_log off;
         expires 1y;
         add_header Cache-Control "public, max-age=31536000, immutable" always;
@@ -892,7 +898,7 @@ server {
     }
 
     location ^~ /_next/static/ {
-        alias ${APP_DIR}/.next/static/;
+        alias ${ROOT_STATIC_DIR}/;
         access_log off;
         expires 1y;
         add_header Cache-Control "public, max-age=31536000, immutable" always;
