@@ -652,14 +652,12 @@ build_apps() {
     if find ".next/standalone/.next/static" -type f \( -name "*.css" -o -name "*.js" \) | grep -q .; then
       root_static_source=".next/standalone/.next/static"
     else
-      log "WARNING: Root build did not expose CSS/JS files under .next/static; preserving existing ${ROOT_STATIC_DIR} assets"
-      root_static_source=""
+      fail "Root build did not expose CSS/JS files under .next/static or standalone static"
     fi
   fi
+  rm -rf "${ROOT_STATIC_DIR}"
   mkdir -p "${ROOT_STATIC_DIR}"
-  if [[ -n "${root_static_source}" ]]; then
-    cp -a "${root_static_source}/." "${ROOT_STATIC_DIR}/"
-  fi
+  cp -a "${root_static_source}/." "${ROOT_STATIC_DIR}/"
   [[ -s ".next/standalone/.next/server/app/api/pos/table-orders/route.js" ]] || fail "Standalone /api/pos/table-orders artifact missing"
   [[ -d ".next/server/app/app" || -f ".next/server/app/app.html" || -f ".next/server/app/app/page.js" ]] || fail "Root /app build artifact missing"
   [[ -d ".next/server/app/system-admin" || -f ".next/server/app/system-admin.html" || -f ".next/server/app/system-admin/page.js" ]] || fail "Root /system-admin build artifact missing"
@@ -673,6 +671,7 @@ build_apps() {
   [[ -d "apps/website/.next/server" ]] || fail "Website .next/server missing"
   [[ -d "apps/website/.next/static" ]] || fail "Website .next/static missing"
   find "apps/website/.next/static" -type f \( -name "*.css" -o -name "*.js" \) | grep -q . || fail "Website static CSS/JS assets missing"
+  rm -rf "${WEBSITE_STATIC_DIR}"
   mkdir -p "${WEBSITE_STATIC_DIR}"
   cp -a "apps/website/.next/static/." "${WEBSITE_STATIC_DIR}/"
   log "Website BUILD_ID=$(cat apps/website/.next/BUILD_ID)"
