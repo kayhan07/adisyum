@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { LogIn } from 'lucide-react';
@@ -9,7 +9,7 @@ import { authQueryKeys } from '@/lib/query/keys';
 import { resetRuntimeAuthFailureLock, runtimeFetch } from '@/lib/runtime/runtime-api';
 import { hydrateSessionStateFromAuth } from '@/lib/session-store';
 import { setAuthSnapshotFromSession } from '@/lib/saas-store';
-import { resetTenantBusinessCachesForLogin } from '@/lib/tenant-clean-start';
+import { LEGACY_DEMO_TENANT_ID, purgeLegacyDemoTenantClientState, resetTenantBusinessCachesForLogin } from '@/lib/tenant-clean-start';
 import { hydrateCompanyStateFromTenantProfile, type TenantCompanyProfile } from '@/lib/company-store';
 
 type LoginResponse = {
@@ -43,6 +43,10 @@ export default function AppLoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  useEffect(() => {
+    purgeLegacyDemoTenantClientState();
+  }, []);
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (loading) return;
@@ -50,6 +54,11 @@ export default function AppLoginPage() {
     setError('');
 
     try {
+      if (tenantId.trim() === LEGACY_DEMO_TENANT_ID) {
+        setError(`${LEGACY_DEMO_TENANT_ID} silinmiş demo aboneliğidir. Lütfen gerçek abone kodu ile giriş yapın.`);
+        return;
+      }
+
       const response = await runtimeFetch('/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

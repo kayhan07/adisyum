@@ -5,6 +5,7 @@ import { loadSessionState, subscribeToSessionChanges } from '@/lib/session-store
 
 const SEED_BUSINESS_DATA_ENABLED = process.env.NEXT_PUBLIC_ENABLE_SEED_BUSINESS_DATA === '1';
 const SEED_TENANT_ID = process.env.NEXT_PUBLIC_SEED_TENANT_ID?.trim();
+export const LEGACY_DEMO_TENANT_ID = ['ABN', '48291'].join('-');
 
 const TENANT_LOCAL_CACHE_PREFIXES = [
   'adisyum-local-sale-products',
@@ -70,6 +71,39 @@ export function resetTenantBusinessCachesForLogin(nextTenantId: string) {
   } catch (error) {
     console.warn('[tenant-clean-start] tenant business cache reset failed', {
       tenantId: normalizedTenantId,
+      error,
+    });
+  }
+}
+
+export function purgeLegacyDemoTenantClientState() {
+  if (typeof window === 'undefined') return;
+
+  const containsLegacyDemoTenant = (value: string | null) => Boolean(value && value.includes(LEGACY_DEMO_TENANT_ID));
+
+  try {
+    const removed: string[] = [];
+    for (const storage of [window.localStorage, window.sessionStorage]) {
+      for (let index = storage.length - 1; index >= 0; index -= 1) {
+        const key = storage.key(index);
+        if (!key) continue;
+        const value = storage.getItem(key);
+        if (key.includes(LEGACY_DEMO_TENANT_ID) || containsLegacyDemoTenant(value)) {
+          storage.removeItem(key);
+          removed.push(key);
+        }
+      }
+    }
+
+    if (removed.length > 0) {
+      console.info('[tenant-clean-start] legacy demo tenant client state purged', {
+        tenantId: LEGACY_DEMO_TENANT_ID,
+        removedKeys: removed,
+      });
+    }
+  } catch (error) {
+    console.warn('[tenant-clean-start] legacy demo tenant purge failed', {
+      tenantId: LEGACY_DEMO_TENANT_ID,
       error,
     });
   }
