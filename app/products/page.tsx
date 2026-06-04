@@ -1140,7 +1140,7 @@ function ProductsPageContent() {
   const deferredSaleProductSearch = useDeferredValue(saleProductSearch);
   const deferredRecipeIngredientQuery = useDeferredValue(newRecipeIngredientQuery);
   const deferredBarActionProductQuery = useDeferredValue(barActionProductQuery);
-  const quickCreateEnabled = activeWindow === 'raw';
+  const quickCreateEnabled = activeWindow === 'raw' || activeWindow === 'sale';
   const activeCreationOption = productCreationOptions.find((option) => option.id === newItemDraft.itemType) ?? productCreationOptions[1];
   const activeDraftProductType = productTypeForCreateItemType(newItemDraft.itemType);
   const activeDraftCategoryOptions = useMemo(
@@ -1160,7 +1160,7 @@ function ProductsPageContent() {
     }),
     [activeDraftProductType, newItemDraft.category, newItemDraft.name, newItemDraft.salePrice],
   );
-  const importWindow: 'raw' = 'raw';
+  const importWindow: 'raw' | 'sale' = activeWindow === 'sale' ? 'sale' : 'raw';
   const deferredQuickCreateText = useDeferredValue(quickCreateEnabled ? bulkDrafts[importWindow] : '');
 
   useEffect(() => {
@@ -1900,6 +1900,11 @@ function ProductsPageContent() {
 
   const quickCreateText = deferredQuickCreateText;
   const quickCreateFileName = quickCreateEnabled ? bulkFileNames[importWindow] : '';
+  const quickCreateTargetLabel = importWindow === 'raw' ? 'Hammadde' : 'Satış ürünü';
+  const quickCreateTargetPluralLabel = importWindow === 'raw' ? 'Hammaddeler' : 'Satış ürünleri';
+  const quickCreateExpectedColumns = importWindow === 'raw'
+    ? 'Kart adı, Birim, Alış fiyatı, Minimum stok, Mevcut stok'
+    : 'Kart adı, Kategori, Satış fiyatı';
   const quickCreateRows = useMemo(
     () => (quickCreateEnabled ? stripBulkHeader(parseBulkPaste(quickCreateText), importWindow) : []),
     [importWindow, quickCreateEnabled, quickCreateText],
@@ -3152,27 +3157,73 @@ function ProductsPageContent() {
 
   function downloadQuickCreateTemplate() {
     if (!quickCreateEnabled) return;
-    const headerRow = ['Kart adı', 'Birim', 'Alış fiyatı', 'Minimum stok', 'Mevcut stok'];
-    const sampleRows = [
-      ['Kahve Çekirdeği', 'kg', '520', '15', '20'],
-      ['Süt', 'lt', '42', '18', '36'],
-    ];
+    const isRawImport = importWindow === 'raw';
+    const headerRow = isRawImport
+      ? ['Kart adı', 'Birim', 'Alış fiyatı', 'Minimum stok', 'Mevcut stok']
+      : ['Kart adı', 'Kategori', 'Satış fiyatı'];
+    const sampleRows = isRawImport
+      ? [
+          ['Kahve Çekirdeği', 'kg', '520', '15', '20'],
+          ['Süt', 'lt', '42', '18', '36'],
+        ]
+      : [
+          ['Caffe Latte', 'Kahve', '145'],
+          ['Truffle Burger', 'Burger', '420'],
+        ];
 
     const csv = ['\uFEFF' + headerRow.join(';'), ...sampleRows.map((row) => row.join(';'))].join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'hammadde-sablonu.csv';
+    link.download = isRawImport ? 'hammadde-sablonu.csv' : 'satis-urunu-sablonu.csv';
     link.click();
     URL.revokeObjectURL(url);
   }
 
   async function importQuickCreateFile(file: File) {
     if (!quickCreateEnabled) return;
-    const text = await file.text();
-    updateBulkDraft(text.replace(/^\uFEFF/, ''));
-    setBulkFileNames((current) => ({ ...current, raw: file.name }));
+    const lowerName = file.name.toLocaleLowerCase('tr-TR');
+
+    try {
+      if (lowerName.endsWith('.xls') && !lowerName.endsWith('.xlsx')) {
+        setSavedNotes((current) => ['Eski .xls biçimi desteklenmiyor. Dosyayı .xlsx veya CSV olarak kaydedip tekrar yükleyin.', ...current]);
+        return;
+      }
+
+      if (lowerName.endsWith('.xlsx')) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('window', importWindow);
+
+        const response = await fetch('/api/products/import-excel', {
+          method: 'POST',
+          body: formData,
+          credentials: 'include',
+          cache: 'no-store',
+        });
+        const payload = await response.json().catch(() => null) as { ok?: boolean; rows?: string[][]; error?: string } | null;
+
+        if (!response.ok || !payload?.ok || !Array.isArray(payload.rows)) {
+          throw new Error(payload?.error ?? 'Excel dosyası içe aktarılamadı.');
+        }
+
+        const text = payload.rows.map((row) => row.join('\t')).join('\n');
+        updateBulkDraft(text);
+      } else {
+        const text = await file.text();
+        updateBulkDraft(text.replace(/^\uFEFF/, ''));
+      }
+
+      setBulkFileNames((current) => ({ ...current, [importWindow]: file.name }));
+      setSavedNotes((current) => [`${file.name} dosyası okundu. Önizlemeyi kontrol edip içe aktarabilirsiniz.`, ...current]);
+    } catch (error) {
+      console.error('[products] excel import failed', { fileName: file.name, importWindow, error });
+      setSavedNotes((current) => [
+        error instanceof Error ? error.message : 'Excel dosyası içe aktarılamadı.',
+        ...current,
+      ]);
+    }
   }
 
   async function handleQuickCreateFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -3981,11 +4032,11 @@ function ProductsPageContent() {
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-300">Excel aktarımı</p>
                 <h2 className="mt-2 text-2xl font-semibold text-white">
-                  Hammaddeleri Excel ile toplu ekle
+                  {quickCreateTargetPluralLabel} Excel ile toplu ekle
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-slate-300">
                   Önce şablonu indir, Excel’de hücreleri doldur, sonra aynı dosyayı içe aktar.
-                  {' '}Kolon sırası: Kart adı, Birim, Alış fiyatı, Minimum stok, Mevcut stok.
+                  {' '}Kolon sırası: {quickCreateExpectedColumns}.
                 </p>
               </div>
               <button
@@ -4019,13 +4070,13 @@ function ProductsPageContent() {
                     <input
                       ref={quickCreateFileInputRef}
                       type="file"
-                      accept=".csv,.txt"
+                      accept=".xlsx,.csv,.txt"
                       onChange={handleQuickCreateFileChange}
                       className="hidden"
                     />
                   </div>
                   <p className="mt-3 text-xs text-slate-400">
-                    Dosyayı Excel’de doldurup CSV olarak kaydet. Aynı şablonu tekrar içe alabilirsin.
+                    Dosyayı Excel’de doldurup .xlsx veya CSV olarak kaydet. Aynı şablonu tekrar içe alabilirsin.
                   </p>
                 </div>
                 <div className="mt-4 rounded-[1.5rem] border border-white/10 bg-[#0B1220] p-4">
@@ -4034,7 +4085,7 @@ function ProductsPageContent() {
                     {quickCreateFileName || 'Henüz bir dosya seçilmedi'}
                   </p>
                   <p className="mt-3 text-xs text-slate-400">
-                    Beklenen kolonlar: Kart adı, Birim, Alış fiyatı, Minimum stok, Mevcut stok
+                    Beklenen kolonlar: {quickCreateExpectedColumns}
                   </p>
                 </div>
               </div>
@@ -4090,7 +4141,7 @@ function ProductsPageContent() {
                   disabled={quickCreateRows.length === 0 || quickCreateAnalysis.invalidCount > 0}
                   className="h-14 w-full rounded-2xl bg-emerald-600 text-base font-semibold text-white shadow-[0_0_24px_rgba(16,185,129,0.22)] transition hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400 disabled:shadow-none"
                 >
-                  Hammaddeleri içe aktar
+                  {quickCreateTargetPluralLabel} içe aktar
                 </button>
               </div>
             </div>
