@@ -18,6 +18,7 @@ const PROTECTED_PREFIXES = [
   '/app',
   '/dashboard',
   '/api',
+  '/floor',
   '/pos',
   '/orders',
   '/products',
@@ -199,6 +200,13 @@ function withAuthEntryHeaders(response: NextResponse) {
   return response;
 }
 
+function withLivePosPageHeaders(response: NextResponse) {
+  response.headers.set('cache-control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  response.headers.set('pragma', 'no-cache');
+  response.headers.set('expires', '0');
+  return response;
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -278,6 +286,9 @@ export async function middleware(request: NextRequest) {
 
   const response = NextResponse.next();
   response.headers.set('x-adisyum-tenant', session.tenantId);
+  if (pathname === '/floor' || pathname.startsWith('/orders')) {
+    return withLivePosPageHeaders(withSecurityHeaders(response));
+  }
   return withSecurityHeaders(response);
 }
 
@@ -291,6 +302,8 @@ export const config = {
     '/adisyonsistemi/:path*',
     '/dashboard/:path*',
     '/api/:path*',
+    '/floor',
+    '/floor/:path*',
     '/pos/:path*',
     '/orders/:path*',
     '/products/:path*',
