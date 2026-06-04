@@ -55,6 +55,15 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"
 }
 
+validate_static_asset_dir() {
+  local label="$1"
+  local dir="$2"
+
+  [[ -d "${dir}" ]] || fail "${label} static asset directory missing: ${dir}"
+  find "${dir}" -type f -name "*.js" | grep -q . || fail "${label} static JS assets missing from ${dir}"
+  find "${dir}" -type f -name "*.css" | grep -q . || fail "${label} static CSS assets missing from ${dir}"
+}
+
 user_home() {
   local user="$1"
   getent passwd "${user}" 2>/dev/null | cut -d: -f6 || true
@@ -671,6 +680,7 @@ NODE
   rm -rf "${ROOT_STATIC_DIR}"
   mkdir -p "${ROOT_STATIC_DIR}"
   cp -a "${root_static_source}/." "${ROOT_STATIC_DIR}/"
+  validate_static_asset_dir "Root" "${ROOT_STATIC_DIR}"
   [[ -s ".next/standalone/.next/server/app/api/pos/table-orders/route.js" ]] || fail "Standalone /api/pos/table-orders artifact missing"
   [[ -d ".next/server/app/app" || -f ".next/server/app/app.html" || -f ".next/server/app/app/page.js" ]] || fail "Root /app build artifact missing"
   [[ -d ".next/server/app/system-admin" || -f ".next/server/app/system-admin.html" || -f ".next/server/app/system-admin/page.js" ]] || fail "Root /system-admin build artifact missing"
@@ -687,6 +697,7 @@ NODE
   rm -rf "${WEBSITE_STATIC_DIR}"
   mkdir -p "${WEBSITE_STATIC_DIR}"
   cp -a "apps/website/.next/static/." "${WEBSITE_STATIC_DIR}/"
+  validate_static_asset_dir "Website" "${WEBSITE_STATIC_DIR}"
   log "Website BUILD_ID=$(cat apps/website/.next/BUILD_ID)"
   run_app npm run runtime:audit-production
 }
@@ -882,9 +893,24 @@ server {
 
     location ^~ ${ROOT_ASSET_PREFIX}/_next/static/ {
         alias ${ROOT_STATIC_DIR}/;
+        types {
+            text/css css;
+            application/javascript js mjs;
+            application/json json map;
+            font/woff woff;
+            font/woff2 woff2;
+            image/svg+xml svg;
+            image/png png;
+            image/jpeg jpg jpeg;
+            image/webp webp;
+            image/x-icon ico;
+        }
+        default_type application/octet-stream;
+        try_files \$uri =404;
         access_log off;
         expires 1y;
         add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header X-Adisyum-Static "root" always;
     }
 
     location ^~ ${ROOT_ASSET_PREFIX}/_next/ {
@@ -901,9 +927,24 @@ server {
 
     location ^~ ${WEBSITE_ASSET_PREFIX}/_next/static/ {
         alias ${WEBSITE_STATIC_DIR}/;
+        types {
+            text/css css;
+            application/javascript js mjs;
+            application/json json map;
+            font/woff woff;
+            font/woff2 woff2;
+            image/svg+xml svg;
+            image/png png;
+            image/jpeg jpg jpeg;
+            image/webp webp;
+            image/x-icon ico;
+        }
+        default_type application/octet-stream;
+        try_files \$uri =404;
         access_log off;
         expires 1y;
         add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header X-Adisyum-Static "website" always;
     }
 
     location ^~ ${WEBSITE_ASSET_PREFIX}/_next/ {
@@ -920,9 +961,24 @@ server {
 
     location ^~ /_next/static/ {
         alias ${ROOT_STATIC_DIR}/;
+        types {
+            text/css css;
+            application/javascript js mjs;
+            application/json json map;
+            font/woff woff;
+            font/woff2 woff2;
+            image/svg+xml svg;
+            image/png png;
+            image/jpeg jpg jpeg;
+            image/webp webp;
+            image/x-icon ico;
+        }
+        default_type application/octet-stream;
+        try_files \$uri =404;
         access_log off;
         expires 1y;
         add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header X-Adisyum-Static "root-legacy" always;
     }
 
     location ^~ /_next/ {
@@ -1054,6 +1110,11 @@ validate_nginx() {
   grep -Eq "location[[:space:]]+\\^~[[:space:]]+/system-admin/" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing location ^~ /system-admin/"
   grep -Eq "location[[:space:]]+=[[:space:]]+/api" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing location = /api"
   grep -Eq "location[[:space:]]+\\^~[[:space:]]+/api/" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing location ^~ /api/"
+  grep -Fq "location ^~ ${ROOT_ASSET_PREFIX}/_next/static/" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing root static asset location ${ROOT_ASSET_PREFIX}/_next/static/"
+  grep -Fq "location ^~ ${WEBSITE_ASSET_PREFIX}/_next/static/" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing website static asset location ${WEBSITE_ASSET_PREFIX}/_next/static/"
+  grep -Fq "alias ${ROOT_STATIC_DIR}/;" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing root static alias ${ROOT_STATIC_DIR}"
+  grep -Fq "alias ${WEBSITE_STATIC_DIR}/;" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing website static alias ${WEBSITE_STATIC_DIR}"
+  grep -Fq 'try_files $uri =404;' "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Static asset locations must use try_files \$uri =404"
   grep -Eq "location[[:space:]]+=[[:space:]]+/adisyonsistemi" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing legacy redirect location = /adisyonsistemi"
   grep -Eq "location[[:space:]]+\\^~[[:space:]]+/adisyonsistemi/" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing legacy redirect location ^~ /adisyonsistemi/"
   awk '
@@ -1146,7 +1207,7 @@ validate_next_page_asset() {
   local page_url="$1"
   local base_url="$2"
   local strip_prefix="${3:-}"
-  local html_file asset_path asset_url code
+  local html_file asset_path asset_url code content_type
   html_file="$(mktemp)"
 
   curl -ksS --max-time 15 "${page_url}" -o "${html_file}" || {
@@ -1170,7 +1231,20 @@ validate_next_page_asset() {
   asset_url="${base_url}${asset_path}"
   code="$(curl -ksS -o /dev/null -w '%{http_code}' --max-time 15 "${asset_url}" || true)"
   [[ "${code}" == "200" ]] || fail "Next.js page asset is not reachable: ${asset_url} HTTP ${code:-none}"
-  log "Next.js page asset reachable: ${asset_url} HTTP ${code}"
+  content_type="$(curl -ksSI --max-time 15 "${asset_url}" | awk -F': ' 'tolower($1)=="content-type"{print tolower($2); exit}' | tr -d '\r' || true)"
+  [[ -n "${content_type}" ]] || fail "Next.js page asset has no content-type: ${asset_url}"
+  if [[ "${content_type}" == text/html* ]]; then
+    fail "Next.js page asset returned HTML instead of a static file: ${asset_url} content-type=${content_type}"
+  fi
+  case "${asset_url}" in
+    *.css)
+      [[ "${content_type}" == text/css* ]] || fail "Next.js CSS asset has wrong content-type: ${asset_url} content-type=${content_type}"
+      ;;
+    *.js)
+      [[ "${content_type}" == *javascript* || "${content_type}" == text/javascript* ]] || fail "Next.js JS asset has wrong content-type: ${asset_url} content-type=${content_type}"
+      ;;
+  esac
+  log "Next.js page asset reachable: ${asset_url} HTTP ${code} content-type=${content_type}"
 }
 
 validate_live_floor_bundle() {
