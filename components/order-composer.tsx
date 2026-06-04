@@ -1359,6 +1359,10 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   }, [ordersHydrated, reconcileAuthoritativeOrders, sourceProducts]);
 
   useEffect(() => {
+    logOrderFlow('authoritative-orders-background-sync-disabled', {
+      reason: 'product-recovery-uses-bounded-table-order-refresh',
+      activeEndpoint: '/api/pos/table-orders',
+    });
     logOrderFlow('offline-auto-sync-disabled', {
       reason: 'product-recovery-minimal-runtime',
     });

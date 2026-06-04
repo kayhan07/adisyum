@@ -1,6 +1,7 @@
 'use client';
 
 import { persistRuntimeScope, readRuntimeItem, refreshRuntimeScope, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
+import { runtimeFetch } from '@/lib/runtime/runtime-api';
 import { loadSessionState } from '@/lib/session-store';
 import { shouldUseSeedBusinessData } from '@/lib/tenant-clean-start';
 
@@ -91,6 +92,49 @@ function writeLocalTableLayoutState(value: string) {
   }
 }
 
+function normalizeTableLayoutState(input: unknown): TableLayoutState | null {
+  if (!input || typeof input !== 'object') return null;
+  const tables = (input as Partial<TableLayoutState>).tables;
+  if (!Array.isArray(tables)) return null;
+  return {
+    tables: tables
+      .filter((table): table is StoredFloorTable => Boolean(table) && typeof table === 'object' && typeof (table as StoredFloorTable).id === 'string')
+      .map((table) => ({
+        id: String(table.id),
+        branchId: String(table.branchId || 'mrk'),
+        name: String(table.name || table.id),
+        group: String(table.group || 'Salon'),
+        status: table.status === 'occupied' || table.status === 'reserved' ? table.status : 'available',
+        guests: Number.isFinite(Number(table.guests)) ? Number(table.guests) : 0,
+        total: Number.isFinite(Number(table.total)) ? Number(table.total) : 0,
+        paymentRequested: Boolean(table.paymentRequested),
+      })),
+  };
+}
+
+function applyTableLayoutState(state: TableLayoutState, options: { persistRuntime?: boolean } = {}) {
+  const serialized = JSON.stringify(state);
+  writeLocalTableLayoutState(serialized);
+  writeRuntimeItem('tenant', STORAGE_KEY, serialized, { persist: options.persistRuntime ?? false });
+}
+
+async function fetchServerTableLayoutState() {
+  const response = await runtimeFetch('/api/runtime/table-state', { cache: 'no-store' });
+  if (!response.ok) throw new Error(`Table layout server fetch failed with ${response.status}`);
+  const payload = await response.json().catch(() => null) as { state?: unknown } | null;
+  return normalizeTableLayoutState(payload?.state);
+}
+
+async function persistServerTableLayoutState(state: TableLayoutState) {
+  const response = await runtimeFetch('/api/runtime/table-state', {
+    method: 'POST',
+    cache: 'no-store',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ tables: state.tables }),
+  });
+  if (!response.ok) throw new Error(`Table layout server save failed with ${response.status}`);
+}
+
 export function getDefaultTableLayoutState(): TableLayoutState {
   return shouldUseSeedBusinessData() ? DEFAULT_TABLE_LAYOUT_STATE : EMPTY_TABLE_LAYOUT_STATE;
 }
@@ -107,12 +151,7 @@ export function loadTableLayoutState() {
       return getDefaultTableLayoutState();
     }
 
-    const parsed = JSON.parse(raw) as Partial<TableLayoutState>;
-    return {
-      tables: Array.isArray(parsed.tables)
-        ? parsed.tables
-        : getDefaultTableLayoutState().tables,
-    } satisfies TableLayoutState;
+    return normalizeTableLayoutState(JSON.parse(raw)) ?? getDefaultTableLayoutState();
   } catch (error) {
     console.error('[business-flow] table layout load failed', error);
     return getDefaultTableLayoutState();
@@ -126,6 +165,9 @@ export function saveTableLayoutState(state: TableLayoutState) {
     const serialized = JSON.stringify(state);
     writeLocalTableLayoutState(serialized);
     writeRuntimeItem('tenant', STORAGE_KEY, serialized);
+    void persistServerTableLayoutState(state).catch((error) => {
+      console.error('[business-flow] table layout authoritative sync failed', error);
+    });
     void persistRuntimeScope('tenant').catch((error) => {
       console.error('[business-flow] table layout server sync failed', error);
     });
@@ -137,6 +179,16 @@ export function saveTableLayoutState(state: TableLayoutState) {
 
 export async function refreshTableLayoutState() {
   if (typeof window === 'undefined') return getDefaultTableLayoutState();
+
+  const serverState = await fetchServerTableLayoutState().catch((error) => {
+    console.warn('[business-flow] table layout authoritative fetch failed', error);
+    return null;
+  });
+  if (serverState) {
+    applyTableLayoutState(serverState, { persistRuntime: false });
+    emitChange();
+    return serverState;
+  }
 
   await refreshRuntimeScope('tenant');
   const state = loadTableLayoutState();

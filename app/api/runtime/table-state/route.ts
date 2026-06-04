@@ -8,6 +8,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 type SharedTablePaymentState = {
+  tables: unknown[];
   paymentRequestedTableIds: string[];
   liveTotals: Record<string, number>;
   tableMeta: Record<string, unknown>;
@@ -18,6 +19,7 @@ const TABLE_STATE_KEY = 'table-payment-state';
 
 function getDefaultState(): SharedTablePaymentState {
   return {
+    tables: [],
     paymentRequestedTableIds: [],
     liveTotals: {},
     tableMeta: {},
@@ -64,6 +66,9 @@ export async function POST(request: Request) {
     ? stored.payload as SharedTablePaymentState
     : getDefaultState();
   const nextState = {
+    tables: Array.isArray(body.tables)
+      ? body.tables.filter((value) => value && typeof value === 'object')
+      : current.tables ?? [],
     paymentRequestedTableIds: Array.isArray(body.paymentRequestedTableIds)
       ? body.paymentRequestedTableIds.filter((value): value is string => typeof value === 'string')
       : current.paymentRequestedTableIds,
