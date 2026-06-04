@@ -7,11 +7,23 @@ type GlobalRouteErrorProps = {
   reset: () => void;
 };
 
+function summarizeError(error: Error & { digest?: string }) {
+  const message = error.message || 'Hata mesajı boş geldi.';
+  const stackLine = error.stack?.split('\n').find((line) => line.trim().startsWith('at '))?.trim();
+  return {
+    message,
+    digest: error.digest,
+    stackLine,
+  };
+}
+
 export default function GlobalRouteError({ error, reset }: GlobalRouteErrorProps) {
+  const summary = summarizeError(error);
+
   useEffect(() => {
     console.error('[runtime-error-boundary]', {
-      message: error.message,
-      digest: error.digest,
+      message: summary.message,
+      digest: summary.digest,
       stack: error.stack,
       boundaryName: 'GlobalRouteError',
       componentName: 'app/error.tsx',
@@ -21,7 +33,7 @@ export default function GlobalRouteError({ error, reset }: GlobalRouteErrorProps
         userAgent: typeof navigator === 'undefined' ? '' : navigator.userAgent,
       },
     });
-  }, [error]);
+  }, [error, summary.digest, summary.message]);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-white">
@@ -29,13 +41,13 @@ export default function GlobalRouteError({ error, reset }: GlobalRouteErrorProps
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-rose-300">Runtime hata yakalandı</p>
         <h1 className="mt-3 text-2xl font-semibold">Ekran güvenli moda alındı</h1>
         <p className="mt-2 text-sm leading-6 text-slate-300">
-          POS ekranı beklenmeyen bir render hatası yakaladı. Hata konsola işlendi; tekrar deneyebilirsiniz.
+          POS ekranı beklenmeyen bir render hatası yakaladı. Hata detayı aşağıda ve konsolda kayıtlıdır.
         </p>
-        {error.message ? (
-          <p className="mt-3 rounded-xl border border-rose-400/20 bg-rose-950/30 px-3 py-2 text-xs text-rose-100">
-            {error.message}
-          </p>
-        ) : null}
+        <div className="mt-3 rounded-xl border border-rose-400/20 bg-rose-950/30 px-3 py-2 text-xs text-rose-100">
+          <p className="font-semibold">{summary.message}</p>
+          {summary.digest ? <p className="mt-1 text-rose-200/80">Digest: {summary.digest}</p> : null}
+          {summary.stackLine ? <p className="mt-1 break-words text-rose-200/80">{summary.stackLine}</p> : null}
+        </div>
         <button
           type="button"
           onClick={reset}
