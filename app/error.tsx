@@ -31,6 +31,11 @@ export default function GlobalRouteError({ error, reset }: GlobalRouteErrorProps
         <p className="mt-2 text-sm leading-6 text-slate-300">
           POS ekranı beklenmeyen bir render hatası yakaladı. Hata konsola işlendi; tekrar deneyebilirsiniz.
         </p>
+        {error.message ? (
+          <p className="mt-3 rounded-xl border border-rose-400/20 bg-rose-950/30 px-3 py-2 text-xs text-rose-100">
+            {error.message}
+          </p>
+        ) : null}
         <button
           type="button"
           onClick={reset}
