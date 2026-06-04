@@ -254,6 +254,31 @@ function fallbackLastActionMinutes(name: string, status: FloorTableStatus) {
   return 0;
 }
 
+function fallbackTableFromOrder(tableId: string, activeBranchId: string, lines: OrderLine[]): LocalTableRecord {
+  const displayName = cleanTableName(tableId).replace(/^[A-Z]+-/, 'Masa ');
+  return {
+    id: tableId,
+    branchId: activeBranchId === 'all' ? 'mrk' : activeBranchId,
+    name: displayName || tableId,
+    group: deriveGroupFromTableId(tableId),
+    status: 'occupied',
+    guests: 0,
+    total: getOrderGross(lines),
+    paymentRequested: false,
+    openedAt: new Date().toISOString(),
+    lastActionAt: new Date().toISOString(),
+  };
+}
+
+function deriveGroupFromTableId(tableId: string) {
+  const normalized = tableId.toLocaleUpperCase('tr-TR');
+  if (normalized.includes('TERAS') || normalized.startsWith('T-')) return 'Teras';
+  if (normalized.includes('BAHCE') || normalized.startsWith('B-')) return 'Bahce';
+  if (normalized.includes('VIP') || normalized.startsWith('V-')) return 'VIP';
+  if (normalized.includes('BAR') || normalized.startsWith('R-')) return 'Bar';
+  return 'Salon';
+}
+
 export function FloorWorkspace() {
   const router = useRouter();
   const [sessionState, setSessionState] = useState(() => getDefaultSessionState());
@@ -333,7 +358,14 @@ export function FloorWorkspace() {
   const searchParams = useSearchParams();
   const currentTab = searchParams.get('tab');
   const activeTab: FloorTab = currentTab === 'reservation' || currentTab === 'setup' || currentTab === 'report' ? currentTab : 'overview';
-  const sortedTableRows = useMemo(() => sortTables(tableRows), [tableRows]);
+  const tableRowsWithAuthoritativeOrders = useMemo(() => {
+    const existingIds = new Set(tableRows.map((table) => table.id));
+    const recoveredTables = Object.entries(ordersByTable)
+      .filter(([tableId, lines]) => !existingIds.has(tableId) && lines.some((line) => line.qty > 0))
+      .map(([tableId, lines]) => fallbackTableFromOrder(tableId, activeBranchId, lines));
+    return recoveredTables.length > 0 ? [...tableRows, ...recoveredTables] : tableRows;
+  }, [activeBranchId, ordersByTable, tableRows]);
+  const sortedTableRows = useMemo(() => sortTables(tableRowsWithAuthoritativeOrders), [tableRowsWithAuthoritativeOrders]);
   const paymentRequestedSet = useMemo(() => new Set(paymentRequestedIds), [paymentRequestedIds]);
   const reservationsForWorkingDate = useMemo(
     () =>

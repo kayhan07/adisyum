@@ -582,8 +582,8 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   }, [sessionState.isAuthenticated]);
 
   const baseTables = useMemo(
-    () =>
-      tableLayoutState.tables
+    () => {
+      const layoutTables = tableLayoutState.tables
         .filter((table) => (activeBranchId === 'all' ? true : table.branchId === activeBranchId))
         .map((table) => ({
           id: table.id,
@@ -592,8 +592,22 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           total: table.total,
           status: resolveInitialStatus(table.status),
           paymentRequested: table.paymentRequested ?? false,
-        })),
-    [activeBranchId, tableLayoutState.tables],
+        }));
+
+      if (initialTableId && !layoutTables.some((table) => table.id === initialTableId)) {
+        layoutTables.push({
+          id: initialTableId,
+          name: cleanTableName(initialTableId).replace(/^[A-Z]+-/, 'Masa ') || initialTableId,
+          group: deriveTableGroup(initialTableId),
+          total: 0,
+          status: 'available',
+          paymentRequested: false,
+        });
+      }
+
+      return layoutTables;
+    },
+    [activeBranchId, initialTableId, tableLayoutState.tables],
   );
 
   const initialOrders = useMemo<Record<string, OrderLine[]>>(() => {
