@@ -234,6 +234,8 @@ function logFloorFlow(event: string, payload: Record<string, unknown>) {
   console.info(`[masa-flow] ${event}`, payload);
 }
 
+const FLOOR_SYNC_PATCH_ID = 'floor-sync-bind-open-orders-v3';
+
 function minutesSince(iso?: string, fallback = 0) {
   if (!iso) return fallback;
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
@@ -279,7 +281,7 @@ function mergeTableRowsWithAuthoritativeOrders(
 ) {
   const existingIds = new Set(rows.map((table) => table.id));
   const recoveredTables = Object.entries(ordersByTable)
-    .filter(([tableId, lines]) => !existingIds.has(tableId) && lines.some((line) => line.qty > 0))
+    .filter(([tableId, lines]) => !existingIds.has(tableId) && lines.length > 0)
     .map(([tableId, lines]) => fallbackTableFromOrder(tableId, activeBranchId, lines));
 
   return recoveredTables.length > 0 ? [...rows, ...recoveredTables] : rows;
@@ -377,7 +379,7 @@ export function FloorWorkspace() {
   const tableRowsWithAuthoritativeOrders = useMemo(() => {
     const existingIds = new Set(tableRows.map((table) => table.id));
     const recoveredTables = Object.entries(ordersByTable)
-      .filter(([tableId, lines]) => !existingIds.has(tableId) && lines.some((line) => line.qty > 0))
+      .filter(([tableId, lines]) => !existingIds.has(tableId) && lines.length > 0)
       .map(([tableId, lines]) => fallbackTableFromOrder(tableId, activeBranchId, lines));
     return recoveredTables.length > 0 ? [...tableRows, ...recoveredTables] : tableRows;
   }, [activeBranchId, ordersByTable, tableRows]);
@@ -562,6 +564,7 @@ export function FloorWorkspace() {
           ),
         );
         logFloorFlow('authoritative-orders-hydrated', {
+          patchId: FLOOR_SYNC_PATCH_ID,
           tableCount: Object.keys(serverOrders).length,
           activeOrderTables: Object.entries(serverOrders).filter(([, lines]) => lines.length > 0).map(([tableId]) => tableId),
         });
@@ -2738,7 +2741,8 @@ export function FloorWorkspace() {
                     Sunucu açık adisyon: {orderSyncDiagnostics.openOrderCount ?? 0} ·
                     Sunucu satır: {orderSyncDiagnostics.openItemCount ?? 0} ·
                     Görünen masa: {orderSyncDiagnostics.visibleTableCount ?? 0} ·
-                    Görünen satır: {orderSyncDiagnostics.visibleLineCount ?? 0}
+                    Görünen satır: {orderSyncDiagnostics.visibleLineCount ?? 0} ·
+                    Patch: {FLOOR_SYNC_PATCH_ID}
                   </p>
                 ) : null}
               </section>
