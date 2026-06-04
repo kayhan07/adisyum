@@ -1157,6 +1157,39 @@ validate_next_page_asset() {
   log "Next.js page asset reachable: ${asset_url} HTTP ${code}"
 }
 
+validate_live_floor_bundle() {
+  local page_url="$1"
+  local html_file asset_path asset_file
+  html_file="$(mktemp)"
+
+  curl -ksS --max-time 15 "${page_url}" -o "${html_file}" || {
+    rm -f "${html_file}"
+    fail "Could not fetch /floor HTML for bundle validation: ${page_url}"
+  }
+
+  if grep -q 'page-9eb4bafb6b86ab25\.js' "${html_file}"; then
+    rm -f "${html_file}"
+    fail "${page_url} is still serving the stale floor bundle page-9eb4bafb6b86ab25.js"
+  fi
+
+  asset_path="$(
+    grep -Eo '(/[^"]*_next/static/[^"]+app/floor/page-[^"]+\.js)' "${html_file}" \
+      | head -n 1 \
+      | sed 's/&amp;/\&/g' || true
+  )"
+  rm -f "${html_file}"
+
+  [[ -n "${asset_path}" ]] || fail "${page_url} did not include a /floor page bundle"
+  asset_path="${asset_path#"${ROOT_ASSET_PREFIX}/_next/static/"}"
+  asset_path="${asset_path#"/_next/static/"}"
+  asset_file="${ROOT_STATIC_DIR}/${asset_path}"
+
+  [[ -s "${asset_file}" ]] || fail "Live /floor bundle asset missing from root static dir: ${asset_file}"
+  grep -q 'floor-sync-bind-open-orders-v3' "${asset_file}" \
+    || fail "Live /floor bundle does not contain floor-sync-bind-open-orders-v3: ${asset_file}"
+  log "Live /floor bundle contains floor-sync-bind-open-orders-v3: ${asset_file}"
+}
+
 validate_runtime_routes() {
   log "Validating local and public runtime routes"
   if ss -ltnp | grep -q ':3020'; then
@@ -1173,6 +1206,7 @@ validate_runtime_routes() {
   wait_for_route_not_404 "GET" "http://127.0.0.1:${ROOT_PORT}/api/runtime-build-id"
   validate_runtime_build_identity "http://127.0.0.1:${ROOT_PORT}/api/runtime-build-id"
   validate_next_page_asset "http://127.0.0.1:${ROOT_PORT}/app" "http://127.0.0.1:${ROOT_PORT}" "${ROOT_ASSET_PREFIX}"
+  validate_live_floor_bundle "http://127.0.0.1:${ROOT_PORT}/floor"
 
   wait_for_healthy_route "https://${DOMAIN}"
   wait_for_healthy_route "https://${DOMAIN}/app"
@@ -1184,6 +1218,7 @@ validate_runtime_routes() {
   validate_next_page_asset "https://${DOMAIN}/" "https://${DOMAIN}" ""
   validate_next_page_asset "https://${DOMAIN}/app" "https://${DOMAIN}" ""
   validate_next_page_asset "https://${DOMAIN}/system-admin/login" "https://${DOMAIN}" ""
+  validate_live_floor_bundle "https://${DOMAIN}/floor"
 }
 
 print_final_state() {
