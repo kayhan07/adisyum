@@ -35,6 +35,7 @@ import {
   loadStoredSaleProducts,
   buildPosCatalogFromStored,
   resolveSaleProductPrice,
+  subscribeToStoredSaleProductsChanges,
   type StoredSaleProduct,
 } from '@/lib/sale-product-catalog';
 import { isSellableProductType, type ProductDomainType } from '@/lib/product-domain';
@@ -778,15 +779,20 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   }, []);
 
   useEffect(() => {
-    const stored = loadStoredSaleProducts();
-    if (stored?.length) {
-      setStoredSaleProducts(stored);
-      setStoredCatalogProducts(buildPosCatalogFromStored(stored, { eventMode: eventPricingEnabled }));
-      return;
-    }
+    const refreshStoredProducts = () => {
+      const stored = loadStoredSaleProducts();
+      if (stored?.length) {
+        setStoredSaleProducts((current) => (JSON.stringify(current) === JSON.stringify(stored) ? current : stored));
+        setStoredCatalogProducts(buildPosCatalogFromStored(stored, { eventMode: eventPricingEnabled }));
+        return;
+      }
 
-    setStoredSaleProducts([]);
-    setStoredCatalogProducts(includeSeedData ? getDefaultPosCatalog() : []);
+      setStoredSaleProducts([]);
+      setStoredCatalogProducts(includeSeedData ? getDefaultPosCatalog() : []);
+    };
+
+    refreshStoredProducts();
+    return subscribeToStoredSaleProductsChanges(refreshStoredProducts);
   }, [eventPricingEnabled, includeSeedData]);
 
   useEffect(() => {

@@ -256,7 +256,19 @@ export async function POST(request: Request, context: { params: Promise<{ scope:
     const target = await resolveScope(request, scope);
     tenantId = target.tenantId;
     const body = (await request.json().catch(() => null)) as { state?: unknown } | null;
-    const normalized = normalizeSnapshot(body?.state, { tenantId: target.tenantId, scope });
+    const incoming = normalizeSnapshot(body?.state, { tenantId: target.tenantId, scope });
+    const stored = await prisma.runtimeState.findUnique({
+      where: runtimeStateTenantKey(target.tenantId, target.key),
+      select: { payload: true },
+    });
+    const existing = normalizeSnapshot(stored?.payload, { tenantId: target.tenantId, scope });
+    const normalized = normalizeSnapshot(
+      {
+        ...existing.state,
+        ...incoming.state,
+      },
+      { tenantId: target.tenantId, scope },
+    );
     if (normalized.gcAction === 'delete') {
       await prisma.runtimeState.delete({
         where: runtimeStateTenantKey(target.tenantId, target.key),

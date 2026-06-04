@@ -19,6 +19,7 @@ import {
   DEFAULT_SALE_PRODUCT_BASE,
   loadStoredSaleProducts,
   saveStoredSaleProducts,
+  subscribeToStoredSaleProductsChanges,
   type SaleUnitType,
   type StoredSaleProduct,
   type VatRate,
@@ -2101,6 +2102,37 @@ function ProductsPageContent() {
 
     setHydrated(true);
   }, [includeSeedData, saleStocks]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+
+    const syncSaleProductsFromRuntime = () => {
+      const storedProducts = loadStoredSaleProducts();
+      const hydratedProducts = buildInitialSaleProducts(storedProducts, includeSeedData).map((product, index) => ({
+        ...product,
+        recipeId: product.recipeId ?? (product.recipeLines.length > 0 ? `recipe-${product.id}-${index + 1}` : undefined),
+      }));
+
+      setSaleProducts((current) => {
+        if (JSON.stringify(current) === JSON.stringify(hydratedProducts)) return current;
+        return hydratedProducts;
+      });
+      setSelectedProductId((current) =>
+        hydratedProducts.some((product) => product.id === current) ? current : hydratedProducts[0]?.id ?? '',
+      );
+      setCategories((current) => {
+        const nextCategories = mergeProductCategories(
+          includeSeedData ? DEFAULT_PRODUCT_CATEGORIES : [],
+          current,
+          hydratedProducts.map((product) => product.category),
+          recipePool.map((recipe) => recipe.category || inferCategory(recipe.name)),
+        );
+        return JSON.stringify(current) === JSON.stringify(nextCategories) ? current : nextCategories;
+      });
+    };
+
+    return subscribeToStoredSaleProductsChanges(syncSaleProductsFromRuntime);
+  }, [hydrated, includeSeedData, recipePool]);
 
   useEffect(() => {
     setPoolDraftLines(

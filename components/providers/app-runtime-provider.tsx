@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { usePathname } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { authSessionQueryOptions } from '@/lib/query/auth';
-import { bootstrapRuntimeScope } from '@/lib/client/runtime-state';
+import { bootstrapRuntimeScope, refreshRuntimeScope } from '@/lib/client/runtime-state';
 import { connectTenantRealtime, reconnectTenantRealtime } from '@/lib/client/realtime-client';
 import { authQueryKeys } from '@/lib/query/keys';
 import { setAuthSnapshotFromSession } from '@/lib/saas-store';
@@ -351,6 +351,32 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
       window.clearInterval(interval);
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [data, isFetched]);
+
+  useEffect(() => {
+    if (!isFetched || !data?.ok || data.session.role === 'super_admin') return;
+
+    let cancelled = false;
+    const refreshTenantRuntime = () => {
+      if (cancelled || isLogoutInProgress() || isRuntimeAuthRequired()) return;
+      void refreshRuntimeScope('tenant');
+    };
+    const handleFocus = () => refreshTenantRuntime();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') refreshTenantRuntime();
+    };
+
+    refreshTenantRuntime();
+    const interval = window.setInterval(refreshTenantRuntime, 5000);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [data, isFetched]);
 
