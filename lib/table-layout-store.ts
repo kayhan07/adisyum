@@ -1,6 +1,6 @@
 'use client';
 
-import { persistRuntimeScope, readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
+import { persistRuntimeScope, readRuntimeItem, refreshRuntimeScope, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
 import { loadSessionState } from '@/lib/session-store';
 import { shouldUseSeedBusinessData } from '@/lib/tenant-clean-start';
 
@@ -133,6 +133,15 @@ export function saveTableLayoutState(state: TableLayoutState) {
   } catch (error) {
     console.error('[business-flow] table layout save failed', error);
   }
+}
+
+export async function refreshTableLayoutState() {
+  if (typeof window === 'undefined') return getDefaultTableLayoutState();
+
+  await refreshRuntimeScope('tenant');
+  const state = loadTableLayoutState();
+  emitChange();
+  return state;
 }
 
 export function subscribeToTableLayoutChanges(callback: () => void) {

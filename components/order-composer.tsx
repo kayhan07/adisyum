@@ -43,7 +43,7 @@ import { appendStoredFinanceAccountTransaction, buildFinanceTransaction } from '
 import { erpAccounts, type Account } from '@/lib/erp-engine';
 import { useSeedBusinessDataEnabled } from '@/lib/tenant-clean-start';
 import { appendPaymentJournalEntries, buildPaymentJournalEntry } from '@/lib/payment-journal-store';
-import { getDefaultTableLayoutState, loadTableLayoutState, subscribeToTableLayoutChanges } from '@/lib/table-layout-store';
+import { getDefaultTableLayoutState, loadTableLayoutState, refreshTableLayoutState, subscribeToTableLayoutChanges } from '@/lib/table-layout-store';
 import { createAutoProductMapping, getProductMapping, upsertProductMapping, validateProductMapping } from '@/lib/pos-mapping-store';
 import { queueOfflinePaymentSnapshot } from '@/lib/offline-sync-store';
 import { refreshAuthoritativeOrdersByTable, replaceAuthoritativeOrdersByTable } from '@/lib/client/authoritative-table-orders';
@@ -691,6 +691,42 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       unsubscribeCompany();
       unsubscribeAccess();
       unsubscribeTables();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let cancelled = false;
+
+    const refreshRemoteTableLayout = () => {
+      void refreshTableLayoutState()
+        .then((state) => {
+          if (cancelled) return;
+          setTableLayoutState(state);
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          logOrderFlow('table-layout-refresh-failed', {
+            message: error instanceof Error ? error.message : String(error),
+          });
+        });
+    };
+
+    const handleFocus = () => refreshRemoteTableLayout();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') refreshRemoteTableLayout();
+    };
+
+    refreshRemoteTableLayout();
+    const interval = window.setInterval(refreshRemoteTableLayout, 4000);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, []);
 

@@ -28,6 +28,7 @@ import { getDefaultSessionState, loadSessionState, subscribeToSessionChanges } f
 import {
   getDefaultTableLayoutState,
   loadTableLayoutState,
+  refreshTableLayoutState,
   saveTableLayoutState,
   subscribeToTableLayoutChanges,
   type StoredFloorTable,
@@ -436,6 +437,42 @@ export function FloorWorkspace() {
   useEffect(() => {
     setTableRows(initialTables);
   }, [initialTables]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let cancelled = false;
+
+    const refreshRemoteTableLayout = () => {
+      void refreshTableLayoutState()
+        .then((state) => {
+          if (cancelled) return;
+          setTableLayoutState(state);
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          logFloorFlow('table-layout-refresh-failed', {
+            message: error instanceof Error ? error.message : String(error),
+          });
+        });
+    };
+
+    const handleFocus = () => refreshRemoteTableLayout();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') refreshRemoteTableLayout();
+    };
+
+    refreshRemoteTableLayout();
+    const interval = window.setInterval(refreshRemoteTableLayout, 4000);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, []);
 
   useEffect(() => {
     const syncTableState = () => {
