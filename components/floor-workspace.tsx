@@ -493,6 +493,51 @@ export function FloorWorkspace() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let cancelled = false;
+
+    const syncAuthoritativeOrders = () => {
+      void refreshAuthoritativeOrdersByTable<OrderLine>()
+        .then((serverOrders) => {
+          if (cancelled) return;
+          setOrdersByTable(serverOrders);
+          replaceAuthoritativeOrdersByTable(serverOrders);
+          setLiveTotals(
+            Object.fromEntries(
+              Object.entries(serverOrders).map(([tableId, lines]) => [
+                tableId,
+                lines.reduce((sum, line) => sum + (line.complimentary ? 0 : line.qty * line.price * (line.isReturn ? -1 : 1)), 0),
+              ]),
+            ),
+          );
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          logFloorFlow('authoritative-orders-refresh-failed', {
+            message: error instanceof Error ? error.message : String(error),
+          });
+        });
+    };
+
+    const handleFocus = () => syncAuthoritativeOrders();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') syncAuthoritativeOrders();
+    };
+
+    syncAuthoritativeOrders();
+    const interval = window.setInterval(syncAuthoritativeOrders, 4000);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, []);
+
+  useEffect(() => {
     const refreshReservations = () => {
       setStoredReservations(loadStoredTableReservations());
     };

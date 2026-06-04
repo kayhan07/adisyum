@@ -46,7 +46,7 @@ import { appendPaymentJournalEntries, buildPaymentJournalEntry } from '@/lib/pay
 import { getDefaultTableLayoutState, loadTableLayoutState, subscribeToTableLayoutChanges } from '@/lib/table-layout-store';
 import { createAutoProductMapping, getProductMapping, upsertProductMapping, validateProductMapping } from '@/lib/pos-mapping-store';
 import { queueOfflinePaymentSnapshot } from '@/lib/offline-sync-store';
-import { replaceAuthoritativeOrdersByTable } from '@/lib/client/authoritative-table-orders';
+import { refreshAuthoritativeOrdersByTable, replaceAuthoritativeOrdersByTable } from '@/lib/client/authoritative-table-orders';
 import { type PosOrderReconciliationSource } from '@/lib/pos-order-reconciliation';
 import {
   appendOptimisticLine,
@@ -1271,10 +1271,42 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   useEffect(() => {
     if (!ordersHydrated || typeof window === 'undefined') return;
     if (isRuntimeAuthRequired()) return;
-    logOrderFlow('authoritative-orders-background-sync-disabled', {
-      reason: 'product-recovery-minimal-runtime',
-    });
-  }, [ordersHydrated]);
+    let cancelled = false;
+
+    const syncAuthoritativeOrders = (source: PosOrderReconciliationSource) => {
+      if (cancelled || isRuntimeAuthRequired()) return;
+      void refreshAuthoritativeOrdersByTable<OrderLine>()
+        .then((serverOrders) => {
+          if (cancelled) return;
+          const normalized = normalizeStoredOrders(serverOrders, sourceProducts);
+          setOrdersByTable((current) => reconcileAuthoritativeOrders(current, normalized, source));
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          logOrderFlow('authoritative-orders-background-sync-failed', {
+            source,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        });
+    };
+
+    const handleFocus = () => syncAuthoritativeOrders('focus');
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') syncAuthoritativeOrders('focus');
+    };
+
+    syncAuthoritativeOrders('manual-refresh');
+    const interval = window.setInterval(() => syncAuthoritativeOrders('interval'), 4000);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [ordersHydrated, reconcileAuthoritativeOrders, sourceProducts]);
 
   useEffect(() => {
     logOrderFlow('offline-auto-sync-disabled', {
