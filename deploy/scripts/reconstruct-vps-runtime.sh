@@ -637,11 +637,24 @@ rebuild_prisma_and_typecheck() {
 build_apps() {
   log "Building root app and website from clean artifacts"
   cd "${APP_DIR}"
+  rm -rf ".next" "apps/website/.next"
   run_app node node_modules/next/dist/bin/next build
   [[ -s ".next/BUILD_ID" ]] || fail "Root .next/BUILD_ID missing"
   [[ -d ".next/server" ]] || fail "Root .next/server missing"
   [[ -d ".next/static" ]] || fail "Root .next/static missing"
   [[ -s ".next/standalone/server.js" ]] || fail "Root standalone server missing"
+  node - <<'NODE'
+const fs = require('fs');
+const manifest = JSON.parse(fs.readFileSync('.next/prerender-manifest.json', 'utf8'));
+for (const route of ['/floor', '/orders']) {
+  if (manifest.routes?.[route]) {
+    throw new Error(`${route} must not be prerendered in production`);
+  }
+}
+NODE
+  if find ".next" -type f -name 'page-9eb4bafb6b86ab25.js' | grep -q .; then
+    fail "Clean root build still contains stale floor bundle page-9eb4bafb6b86ab25.js"
+  fi
   mkdir -p ".next/standalone/.next"
   rm -rf ".next/standalone/.next/static" ".next/standalone/public"
   mkdir -p ".next/standalone/.next/static" ".next/standalone/public"
