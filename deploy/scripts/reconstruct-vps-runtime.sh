@@ -906,7 +906,6 @@ server {
             image/x-icon ico;
         }
         default_type application/octet-stream;
-        try_files \$uri =404;
         access_log off;
         expires 1y;
         add_header Cache-Control "public, max-age=31536000, immutable" always;
@@ -940,7 +939,6 @@ server {
             image/x-icon ico;
         }
         default_type application/octet-stream;
-        try_files \$uri =404;
         access_log off;
         expires 1y;
         add_header Cache-Control "public, max-age=31536000, immutable" always;
@@ -974,7 +972,6 @@ server {
             image/x-icon ico;
         }
         default_type application/octet-stream;
-        try_files \$uri =404;
         access_log off;
         expires 1y;
         add_header Cache-Control "public, max-age=31536000, immutable" always;
@@ -1114,7 +1111,6 @@ validate_nginx() {
   grep -Fq "location ^~ ${WEBSITE_ASSET_PREFIX}/_next/static/" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing website static asset location ${WEBSITE_ASSET_PREFIX}/_next/static/"
   grep -Fq "alias ${ROOT_STATIC_DIR}/;" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing root static alias ${ROOT_STATIC_DIR}"
   grep -Fq "alias ${WEBSITE_STATIC_DIR}/;" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing website static alias ${WEBSITE_STATIC_DIR}"
-  grep -Fq 'try_files $uri =404;' "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Static asset locations must use try_files \$uri =404"
   grep -Eq "location[[:space:]]+=[[:space:]]+/adisyonsistemi" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing legacy redirect location = /adisyonsistemi"
   grep -Eq "location[[:space:]]+\\^~[[:space:]]+/adisyonsistemi/" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing legacy redirect location ^~ /adisyonsistemi/"
   awk '
