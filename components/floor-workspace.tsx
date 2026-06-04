@@ -272,6 +272,19 @@ function fallbackTableFromOrder(tableId: string, activeBranchId: string, lines: 
   };
 }
 
+function mergeTableRowsWithAuthoritativeOrders(
+  rows: LocalTableRecord[],
+  activeBranchId: string,
+  ordersByTable: Record<string, OrderLine[]>,
+) {
+  const existingIds = new Set(rows.map((table) => table.id));
+  const recoveredTables = Object.entries(ordersByTable)
+    .filter(([tableId, lines]) => !existingIds.has(tableId) && lines.some((line) => line.qty > 0))
+    .map(([tableId, lines]) => fallbackTableFromOrder(tableId, activeBranchId, lines));
+
+  return recoveredTables.length > 0 ? [...rows, ...recoveredTables] : rows;
+}
+
 function deriveGroupFromTableId(tableId: string) {
   const normalized = tableId.toLocaleUpperCase('tr-TR');
   if (normalized.includes('TERAS') || normalized.startsWith('T-')) return 'Teras';
@@ -539,6 +552,7 @@ export function FloorWorkspace() {
       .then((serverOrders) => {
         setOrderSyncDiagnostics(getAuthoritativeOrdersDiagnostics());
         setOrdersByTable(serverOrders);
+        setTableRows((current) => mergeTableRowsWithAuthoritativeOrders(current, activeBranchId, serverOrders));
         setLiveTotals(
           Object.fromEntries(
             Object.entries(serverOrders).map(([tableId, lines]) => [
@@ -551,6 +565,9 @@ export function FloorWorkspace() {
           tableCount: Object.keys(serverOrders).length,
           activeOrderTables: Object.entries(serverOrders).filter(([, lines]) => lines.length > 0).map(([tableId]) => tableId),
         });
+        if (Object.keys(serverOrders).length > 0) {
+          setActionMessage('Sunucudan açık adisyonlar yüklendi');
+        }
       })
       .catch((error) => {
         logFloorFlow('authoritative-orders-hydration-failed', {
@@ -576,6 +593,7 @@ export function FloorWorkspace() {
           setOrderSyncDiagnostics(getAuthoritativeOrdersDiagnostics());
           setOrdersByTable(serverOrders);
           replaceAuthoritativeOrdersByTable(serverOrders);
+          setTableRows((current) => mergeTableRowsWithAuthoritativeOrders(current, activeBranchId, serverOrders));
           setLiveTotals(
             Object.fromEntries(
               Object.entries(serverOrders).map(([tableId, lines]) => [
