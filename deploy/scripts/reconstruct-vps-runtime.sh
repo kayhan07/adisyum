@@ -60,8 +60,13 @@ validate_static_asset_dir() {
   local dir="$2"
 
   [[ -d "${dir}" ]] || fail "${label} static asset directory missing: ${dir}"
-  find "${dir}" -type f -name "*.js" | grep -q . || fail "${label} static JS assets missing from ${dir}"
-  find "${dir}" -type f -name "*.css" | grep -q . || fail "${label} static CSS assets missing from ${dir}"
+  [[ -n "$(find "${dir}" -type f -name "*.js" -print -quit)" ]] || fail "${label} static JS assets missing from ${dir}"
+  [[ -n "$(find "${dir}" -type f -name "*.css" -print -quit)" ]] || fail "${label} static CSS assets missing from ${dir}"
+}
+
+has_next_static_css_or_js() {
+  local dir="$1"
+  [[ -n "$(find "${dir}" -type f \( -name "*.css" -o -name "*.js" \) -print -quit)" ]]
 }
 
 user_home() {
@@ -661,7 +666,7 @@ for (const route of ['/floor', '/orders']) {
   }
 }
 NODE
-  if find ".next" -type f -name 'page-9eb4bafb6b86ab25.js' | grep -q .; then
+  if [[ -n "$(find ".next" -type f -name 'page-9eb4bafb6b86ab25.js' -print -quit)" ]]; then
     fail "Clean root build still contains stale floor bundle page-9eb4bafb6b86ab25.js"
   fi
   mkdir -p ".next/standalone/.next"
@@ -670,8 +675,8 @@ NODE
   cp -a ".next/static/." ".next/standalone/.next/static/"
   cp -a "public/." ".next/standalone/public/"
   local root_static_source=".next/static"
-  if ! find "${root_static_source}" -type f \( -name "*.css" -o -name "*.js" \) | grep -q .; then
-    if find ".next/standalone/.next/static" -type f \( -name "*.css" -o -name "*.js" \) | grep -q .; then
+  if ! has_next_static_css_or_js "${root_static_source}"; then
+    if has_next_static_css_or_js ".next/standalone/.next/static"; then
       root_static_source=".next/standalone/.next/static"
     else
       fail "Root build did not expose CSS/JS files under .next/static or standalone static"
@@ -693,7 +698,7 @@ NODE
   [[ -s "apps/website/.next/BUILD_ID" ]] || fail "Website .next/BUILD_ID missing"
   [[ -d "apps/website/.next/server" ]] || fail "Website .next/server missing"
   [[ -d "apps/website/.next/static" ]] || fail "Website .next/static missing"
-  find "apps/website/.next/static" -type f \( -name "*.css" -o -name "*.js" \) | grep -q . || fail "Website static CSS/JS assets missing"
+  has_next_static_css_or_js "apps/website/.next/static" || fail "Website static CSS/JS assets missing"
   rm -rf "${WEBSITE_STATIC_DIR}"
   mkdir -p "${WEBSITE_STATIC_DIR}"
   cp -a "apps/website/.next/static/." "${WEBSITE_STATIC_DIR}/"
