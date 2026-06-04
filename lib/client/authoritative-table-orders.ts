@@ -6,9 +6,17 @@ import { loadSessionState } from '@/lib/session-store';
 
 export type AuthoritativeOrdersByTable<T = unknown> = Record<string, T[]>;
 type OrdersListener = () => void;
+export type AuthoritativeOrdersDiagnostics = {
+  tenantId?: string;
+  openOrderCount?: number;
+  openItemCount?: number;
+  visibleTableCount?: number;
+  visibleLineCount?: number;
+};
 
 const listeners = new Set<OrdersListener>();
 let snapshot: AuthoritativeOrdersByTable = {};
+let diagnostics: AuthoritativeOrdersDiagnostics | null = null;
 let inflight: Promise<AuthoritativeOrdersByTable> | null = null;
 let activeTenantId = 'anonymous';
 
@@ -32,6 +40,7 @@ function ensureTenantIdentity() {
   if (activeTenantId === nextTenantId) return nextTenantId;
   activeTenantId = nextTenantId;
   snapshot = {};
+  diagnostics = null;
   inflight = null;
   emit();
   console.info('[authoritative-table-orders] tenant identity changed; snapshot cleared', {
@@ -43,6 +52,11 @@ function ensureTenantIdentity() {
 export function getAuthoritativeOrdersByTable<T>() {
   ensureTenantIdentity();
   return snapshot as AuthoritativeOrdersByTable<T>;
+}
+
+export function getAuthoritativeOrdersDiagnostics() {
+  ensureTenantIdentity();
+  return diagnostics;
 }
 
 export function replaceAuthoritativeOrdersByTable<T>(ordersByTable: AuthoritativeOrdersByTable<T>) {
@@ -73,6 +87,7 @@ export async function refreshAuthoritativeOrdersByTable<T>() {
         });
         return snapshot as AuthoritativeOrdersByTable<T>;
       }
+      diagnostics = payload.diagnostics ?? null;
       return replaceAuthoritativeOrdersByTable(payload.ordersByTable as AuthoritativeOrdersByTable<T>);
     })
     .finally(() => {

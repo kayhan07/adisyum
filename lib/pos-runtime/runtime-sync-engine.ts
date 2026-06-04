@@ -22,6 +22,13 @@ export type RuntimeSyncSnapshot<TLine extends RuntimeOrderLine = RuntimeOrderLin
 export type AuthoritativeTablePayload<TLine extends RuntimeOrderLine = RuntimeOrderLine> = {
   ordersByTable: Record<string, TLine[]>;
   source: 'db';
+  diagnostics?: {
+    tenantId?: string;
+    openOrderCount?: number;
+    openItemCount?: number;
+    visibleTableCount?: number;
+    visibleLineCount?: number;
+  };
 };
 
 export type OptimisticProtectionResult = {
@@ -87,6 +94,7 @@ export async function fetchAuthoritativeTablePayload<TLine extends RuntimeOrderL
   });
   const payload = await readJsonResponse(response) as {
     ordersByTable?: Record<string, TLine[]>;
+    diagnostics?: AuthoritativeTablePayload<TLine>['diagnostics'];
     message?: string;
     error?: string;
     traceId?: string;
@@ -100,6 +108,7 @@ export async function fetchAuthoritativeTablePayload<TLine extends RuntimeOrderL
   return {
     ordersByTable: payload.ordersByTable ?? {},
     source: 'db',
+    diagnostics: payload.diagnostics,
   } satisfies AuthoritativeTablePayload<TLine>;
 }
 

@@ -20,9 +20,11 @@ import {
   type StoredTableMeta,
 } from '@/lib/table-payment-state';
 import {
+  getAuthoritativeOrdersDiagnostics,
   refreshAuthoritativeOrdersByTable,
   replaceAuthoritativeOrdersByTable,
   subscribeToAuthoritativeOrders,
+  type AuthoritativeOrdersDiagnostics,
 } from '@/lib/client/authoritative-table-orders';
 import { getDefaultSessionState, loadSessionState, subscribeToSessionChanges } from '@/lib/session-store';
 import {
@@ -338,6 +340,7 @@ export function FloorWorkspace() {
   const [reservationDateFilter, setReservationDateFilter] = useState(todayDateInput());
   const [reportMethodFilter, setReportMethodFilter] = useState<'all' | 'cash' | 'card' | 'account' | 'meal' | 'euro' | 'dollar' | 'delivery' | 'manual'>('all');
   const [actionMessage, setActionMessage] = useState('Hazır');
+  const [orderSyncDiagnostics, setOrderSyncDiagnostics] = useState<AuthoritativeOrdersDiagnostics | null>(null);
   const [dailyAdvanceInput, setDailyAdvanceInput] = useState('');
   const [dailyExpenseInput, setDailyExpenseInput] = useState('');
   const [dailyExpenseNote, setDailyExpenseNote] = useState('');
@@ -534,6 +537,7 @@ export function FloorWorkspace() {
     syncTableState();
     void refreshAuthoritativeOrdersByTable<OrderLine>()
       .then((serverOrders) => {
+        setOrderSyncDiagnostics(getAuthoritativeOrdersDiagnostics());
         setOrdersByTable(serverOrders);
         setLiveTotals(
           Object.fromEntries(
@@ -569,6 +573,7 @@ export function FloorWorkspace() {
       void refreshAuthoritativeOrdersByTable<OrderLine>()
         .then((serverOrders) => {
           if (cancelled) return;
+          setOrderSyncDiagnostics(getAuthoritativeOrdersDiagnostics());
           setOrdersByTable(serverOrders);
           replaceAuthoritativeOrdersByTable(serverOrders);
           setLiveTotals(
@@ -2710,6 +2715,14 @@ export function FloorWorkspace() {
               <section className="rounded-2xl border border-slate-800 bg-[#111827] px-4 py-3">
                 <p className="text-sm font-semibold text-white">Son durum</p>
                 <p className="mt-1 text-xs text-slate-400">{actionMessage}</p>
+                {orderSyncDiagnostics ? (
+                  <p className="mt-2 text-xs text-slate-500">
+                    Sunucu açık adisyon: {orderSyncDiagnostics.openOrderCount ?? 0} ·
+                    Sunucu satır: {orderSyncDiagnostics.openItemCount ?? 0} ·
+                    Görünen masa: {orderSyncDiagnostics.visibleTableCount ?? 0} ·
+                    Görünen satır: {orderSyncDiagnostics.visibleLineCount ?? 0}
+                  </p>
+                ) : null}
               </section>
             </>
           ) : null}

@@ -599,6 +599,27 @@ async function loadAuthoritativeOrdersByTable(tenantId: string, branchId?: strin
   ) as Record<string, OrderLinePayload[]>;
 }
 
+async function loadAuthoritativeOrderDiagnostics(tenantId: string, ordersByTable: Record<string, OrderLinePayload[]>) {
+  const openOrders = await prisma.order.findMany({
+    where: { tenantId, status: 'open', orderNo: { startsWith: 'TABLE-' } },
+    select: { id: true },
+    take: 500,
+  });
+  const openOrderIds = openOrders.map((order) => order.id);
+  const openItemCount = openOrderIds.length > 0
+    ? await prisma.orderItem.count({ where: { tenantId, orderId: { in: openOrderIds } } })
+    : 0;
+  const visibleLineCount = Object.values(ordersByTable).reduce((sum, lines) => sum + lines.length, 0);
+
+  return {
+    tenantId,
+    openOrderCount: openOrders.length,
+    openItemCount,
+    visibleTableCount: Object.keys(ordersByTable).length,
+    visibleLineCount,
+  };
+}
+
 type PaymentLedgerOrder = {
   id: string;
   metadata: Prisma.JsonValue;
@@ -681,7 +702,8 @@ export async function GET(request: Request) {
   try {
     const tenant = await requireTenant(request);
     const ordersByTable = await loadAuthoritativeOrdersByTable(tenant.tenantId, tenant.branchId ?? undefined);
-    return NextResponse.json({ ok: true, ordersByTable, source: 'db' });
+    const diagnostics = await loadAuthoritativeOrderDiagnostics(tenant.tenantId, ordersByTable);
+    return NextResponse.json({ ok: true, ordersByTable, source: 'db', diagnostics });
   } catch (error) {
     return tenantAuthErrorResponse(error);
   }
