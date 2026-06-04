@@ -1,7 +1,10 @@
 ﻿import { AppShell } from '@/components/app-shell';
-import dynamic from 'next/dynamic';
+import nextDynamic from 'next/dynamic';
 
-const OrderComposer = dynamic(() => import('@/components/order-composer').then((mod) => mod.OrderComposer), {
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+const OrderComposer = nextDynamic(() => import('@/components/order-composer').then((mod) => mod.OrderComposer), {
   loading: () => <div className="rounded-[1.5rem] border border-white/10 bg-[#111827] p-5 text-sm text-slate-300">Adisyon yükleniyor...</div>,
 });
 
