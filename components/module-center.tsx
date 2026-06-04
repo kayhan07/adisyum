@@ -21,6 +21,8 @@ import { canPackageAccessModule, loadAuthToken } from '@/lib/saas-store';
 import { secureLogout } from '@/lib/client/secure-logout';
 import { DesktopSupportCenter } from '@/components/desktop-support-center';
 
+type PackageType = 'mini' | 'gold' | 'premium';
+
 type ModuleCard = {
   moduleId: string;
   href: string;
@@ -32,9 +34,24 @@ type ModuleCard = {
   tone: string;
 };
 
+const packageTypes = new Set(['mini', 'gold', 'premium']);
+
+function normalizePackageType(value: unknown): PackageType {
+  return typeof value === 'string' && packageTypes.has(value) ? value as PackageType : 'premium';
+}
+
+function canOpenModule(packageType: PackageType, moduleId: string, packageId?: string) {
+  try {
+    return canPackageAccessModule(packageType, moduleId, packageId);
+  } catch (error) {
+    console.error('[module-center] package access check failed', { packageType, moduleId, packageId, error });
+    return false;
+  }
+}
+
 const modules: ModuleCard[] = [
   { moduleId: 'floor', href: '/floor', label: 'Masalar', description: 'Salon yerleşimi ve masa içinden adisyon geçişi', icon: Grid2x2, color: 'from-[#2563EB] to-[#1D4ED8]', accent: 'shadow-[0_18px_38px_rgba(37,99,235,0.24)]', tone: 'blue' },
-  { moduleId: 'qr-menu', href: '/qr-menu', label: 'QR Menu', description: 'Masa QR menüsü ve dijital sipariş akışı', icon: QrCode, color: 'from-[#0EA5E9] to-[#0369A1]', accent: 'shadow-[0_18px_38px_rgba(14,165,233,0.22)]', tone: 'sky' },
+  { moduleId: 'qr-menu', href: '/qr-menu', label: 'QR Menü', description: 'Masa QR menüsü ve dijital sipariş akışı', icon: QrCode, color: 'from-[#0EA5E9] to-[#0369A1]', accent: 'shadow-[0_18px_38px_rgba(14,165,233,0.22)]', tone: 'sky' },
   { moduleId: 'products', href: '/products', label: 'Ürünler', description: 'Satış ürünleri, hammaddeler ve reçete', icon: Package2, color: 'from-[#F97316] to-[#EA580C]', accent: 'shadow-[0_18px_38px_rgba(249,115,22,0.22)]', tone: 'orange' },
   { moduleId: 'finance', href: '/finance', label: 'Finans', description: 'Cari, fatura, kasa ve tahsilat', icon: CreditCard, color: 'from-[#10B981] to-[#059669]', accent: 'shadow-[0_18px_38px_rgba(16,185,129,0.22)]', tone: 'green' },
   { moduleId: 'delivery', href: '/delivery', label: 'Paket Servis', description: 'Firma, kurye ve teslimat takibi', icon: Truck, color: 'from-[#0F766E] to-[#115E59]', accent: 'shadow-[0_18px_38px_rgba(15,118,110,0.22)]', tone: 'delivery' },
@@ -48,14 +65,20 @@ const modules: ModuleCard[] = [
 
 export function ModuleCenter() {
   const [blockedMessage, setBlockedMessage] = useState('');
-  const [packageType, setPackageType] = useState<'mini' | 'gold' | 'premium'>('premium');
+  const [packageType, setPackageType] = useState<PackageType>('premium');
   const [packageId, setPackageId] = useState<string | undefined>(undefined);
   const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
-    const token = loadAuthToken();
-    if (token?.package_type) setPackageType(token.package_type);
-    setPackageId(token?.package_id);
+    try {
+      const token = loadAuthToken();
+      setPackageType(normalizePackageType(token?.package_type));
+      setPackageId(typeof token?.package_id === 'string' ? token.package_id : undefined);
+    } catch (error) {
+      console.error('[module-center] auth token load failed', { error });
+      setPackageType('premium');
+      setPackageId(undefined);
+    }
   }, []);
 
   const packageLabel = useMemo(() => packageType.toUpperCase(), [packageType]);
@@ -78,7 +101,7 @@ export function ModuleCenter() {
           disabled={loggingOut}
           className="app-chip border border-rose-300/40 bg-rose-500/15 text-rose-100 hover:bg-rose-500/30 disabled:opacity-60"
         >
-          {loggingOut ? 'Çıkılıyor…' : 'Güvenli Çıkış'}
+          {loggingOut ? 'Çıkılıyor...' : 'Güvenli Çıkış'}
         </button>
       )}
     >
@@ -90,7 +113,7 @@ export function ModuleCenter() {
       <section className="grid w-full gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         {modules.map((module) => {
           const Icon = module.icon;
-          const allowed = canPackageAccessModule(packageType, module.moduleId, packageId);
+          const allowed = canOpenModule(packageType, module.moduleId, packageId);
           const className = `module-card group relative overflow-hidden rounded-[1.5rem] border border-white/10 bg-gradient-to-br ${module.color} p-6 text-white transition duration-200 ${allowed ? `hover:-translate-y-1 hover:scale-[1.01] ${module.accent}` : 'grayscale opacity-60'}`;
           const content = (
             <>
