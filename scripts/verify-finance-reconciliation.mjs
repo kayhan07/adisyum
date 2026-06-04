@@ -26,6 +26,9 @@ assert(ledgerRoute.includes('_sum: { debit: true, credit: true }'), 'Cari balanc
 assert(tableOrdersRoute.includes("type: 'SALE_DEBT'"), 'POS account sale must persist a debit ledger movement');
 assert(tableOrdersRoute.includes("reconciliationKey: `${reconciliationKey}:account-sale`"), 'POS account sale must use an idempotent reconciliation key');
 assert(tableOrdersRoute.includes("normalizedBody.payment.method === 'mixed'"), 'Mixed POS payment must persist only its account component');
+assert(tableOrdersRoute.includes('branchId: tenant.branchId'), 'POS payment cash/current account movements must carry branch scope in metadata');
+assert(tableOrdersRoute.includes("type: 'pos_payment'"), 'POS cash/card payment must persist a cash transaction');
+assert(tableOrdersRoute.includes('duplicate payment mutation ignored'), 'POS payment reconciliation must guard duplicate payment mutations');
 assert(financeStore.includes("runtimeFetch('/api/finance/current-account-movements'"), 'Browser cari store must hydrate from the tenant API');
 assert(financeWorkspace.includes('createAuthoritativeFinanceAccountMovement'), 'Finance collection UI must write through the authoritative cari API');
 assert(floorWorkspace.includes('createAuthoritativeFinanceAccountMovement'), 'Daily report cari action must write through the authoritative cari API');

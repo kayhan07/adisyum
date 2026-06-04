@@ -13,6 +13,7 @@ const AGENT_ONLINE_WINDOW_MS = 45_000;
 export async function POST(request: Request) {
   try {
     const tenant = await requireTenant(request);
+    const branchId = tenant.branchId ?? 'mrk';
     const body = await request.json().catch(() => null) as {
       printerName?: string;
       printerRole?: string;
@@ -30,12 +31,13 @@ export async function POST(request: Request) {
     });
 
     if (!validated.ok) {
-      return NextResponse.json({ ok: false, error: validated.errors.join(' ') }, { status: 400 });
+      return NextResponse.json({ ok: false, status: 'failed', tenantId: tenant.tenantId, branchId, error: validated.errors.join(' ') }, { status: 400 });
     }
 
     const activeDevice = await prisma.tenantDeviceRegistry.findFirst({
       where: {
         tenantId: tenant.tenantId,
+        OR: [{ branchId }, { branchId: null }],
         revokedAt: null,
         lastHeartbeatAt: { gte: new Date(Date.now() - AGENT_ONLINE_WINDOW_MS) },
         ...(validated.targetDeviceId ? { deviceId: validated.targetDeviceId } : {}),
@@ -46,6 +48,9 @@ export async function POST(request: Request) {
     if (!activeDevice) {
       return NextResponse.json({
         ok: false,
+        status: 'failed',
+        tenantId: tenant.tenantId,
+        branchId,
         code: 'agent_offline',
         error: 'Çevrimiçi Windows agent bulunamadı. Test baskısı kuyruğa alınamadı.',
       }, { status: 409 });
@@ -54,17 +59,27 @@ export async function POST(request: Request) {
     const job = await prisma.tenantPrintJob.create({
       data: {
         tenantId: tenant.tenantId,
-        branchId: tenant.branchId,
+        branchId,
         targetDeviceId: activeDevice.deviceId,
         printerName: validated.printerName,
-        printerRole: body?.printerRole ?? 'cashier',
+        printerRole: body?.printerRole ?? 'general',
         payload: JSON.parse(JSON.stringify({ bytesBase64: body?.bytesBase64 })) as Prisma.InputJsonValue,
         source: body?.source ?? 'cloud:test-print',
         mutationId,
       },
     });
 
-    return NextResponse.json({ ok: true, queued: true, job });
+    return NextResponse.json({
+      ok: true,
+      status: 'queued',
+      queued: true,
+      tenantId: tenant.tenantId,
+      branchId,
+      deviceId: activeDevice.deviceId,
+      printerName: job.printerName,
+      role: job.printerRole,
+      job,
+    });
   } catch (error) {
     return tenantAuthErrorResponse(error);
   }

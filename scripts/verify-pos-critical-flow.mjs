@@ -37,6 +37,16 @@ assert(tableOrdersRoute.includes('tenantProductIds'), 'Open-order hydration must
 assert(!/catalog\.items\.length === 0[\s\S]{0,120}return \{\}/.test(tableOrdersRoute), 'Open-order hydration must not disappear while the runtime catalog is rebuilding');
 assert(tableOrdersRoute.includes("normalizedBody.action === 'close_table_payment'"), 'Payment must close through the authoritative table-orders API');
 assert(tableOrdersRoute.includes("'order_not_found_for_payment'"), 'Payment close must fail safely when the table order is missing');
+assert(tableOrdersRoute.includes('persistAuthoritativeRuntimeTableState'), 'Payment close must persist authoritative runtime table state');
+assert(tableOrdersRoute.includes("status: closed ? 'paid' : 'open'"), 'Payment close must mark the order paid/closed on the server');
+assert(tableOrdersRoute.includes('if (closed) await tx.orderItem.deleteMany'), 'Payment close must remove active order lines from the authoritative table');
+assert(tableOrdersRoute.includes("type: 'pos_payment'"), 'Cash/card payment must create a tenant-scoped cash transaction');
+assert(tableOrdersRoute.includes("type: 'SALE_DEBT'"), 'Account payment must create a tenant-scoped current account movement');
+assert(tableOrdersRoute.includes('branchId: tenant.branchId'), 'Payment ledgers and runtime state must carry branch scope');
+assert(tableOrdersRoute.includes('runtimeTableStateKey'), 'Payment response must include the persisted runtime table-state key');
+assert(tableOrdersRoute.includes('duplicate payment mutation ignored'), 'Payment close must guard duplicate reconciliation keys');
+assert(tableOrdersRoute.includes('paymentCreated: transactionResult.paymentCreated'), 'Payment response must expose whether a payment was actually created');
+assert(tableOrdersRoute.includes('ordersByTable = await loadAuthoritativeOrdersByTable'), 'Payment response must reload authoritative orders from DB after mutation');
 assert(/table\.total > 0\) return 'occupied'/.test(floorWorkspace), 'Floor status must mark a table occupied when the authoritative total is positive');
 assert(localAgentRoute.includes('registered_printers_only'), 'Local-agent proxy must expose registered printers when the agent is missing');
 assert(localAgentRoute.includes('agent_offline_registered_printers'), 'Local-agent proxy must expose registered printers when the agent is offline');

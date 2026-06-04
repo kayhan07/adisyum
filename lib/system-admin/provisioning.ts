@@ -673,6 +673,29 @@ export async function provisionTenant(input: ProvisionTenantInput) {
   };
 }
 
+async function assertProvisionedTenantCleanStart(tenantId: string) {
+  const checks = await Promise.all([
+    prisma.productCategory.count({ where: { tenantId } }).then((count) => ['productCategory', count] as const),
+    prisma.product.count({ where: { tenantId } }).then((count) => ['product', count] as const),
+    prisma.recipe.count({ where: { tenantId } }).then((count) => ['recipe', count] as const),
+    prisma.stockMovement.count({ where: { tenantId } }).then((count) => ['stockMovement', count] as const),
+    prisma.cashRegister.count({ where: { tenantId } }).then((count) => ['cashRegister', count] as const),
+    prisma.cashTransaction.count({ where: { tenantId } }).then((count) => ['cashTransaction', count] as const),
+    prisma.currentAccountMovement.count({ where: { tenantId } }).then((count) => ['currentAccountMovement', count] as const),
+    prisma.order.count({ where: { tenantId } }).then((count) => ['order', count] as const),
+    prisma.payment.count({ where: { tenantId } }).then((count) => ['payment', count] as const),
+    prisma.printer.count({ where: { tenantId } }).then((count) => ['printer', count] as const),
+    prisma.runtimeState.count({ where: { tenantId } }).then((count) => ['runtimeState', count] as const),
+    prisma.tenantPrintJob.count({ where: { tenantId } }).then((count) => ['tenantPrintJob', count] as const),
+    prisma.tenantDeviceRegistry.count({ where: { tenantId } }).then((count) => ['tenantDeviceRegistry', count] as const),
+    prisma.report.count({ where: { tenantId } }).then((count) => ['report', count] as const),
+  ]);
+  const dirty = checks.filter(([, count]) => count > 0);
+  if (dirty.length > 0) {
+    throw new Error(`Tenant clean-start validation failed: ${dirty.map(([name, count]) => `${name}=${count}`).join(', ')}`);
+  }
+}
+
 export async function runProvisioningJob(jobId: string) {
   const job = await prisma.provisioningJob.findUnique({ where: { id: jobId } });
   if (!job) throw new Error('Provisioning job bulunamadı.');
@@ -699,6 +722,9 @@ export async function runProvisioningJob(jobId: string) {
   const startedAt = Date.now();
   try {
     const provisioned = await provisionTenant({ ...input, tenantId: job.targetTenantId });
+    if (!provisioned.idempotent) {
+      await assertProvisionedTenantCleanStart(provisioned.tenantId);
+    }
     await recordProvisioningEvents(jobId, provisioned.trace);
     await appendJobDiagnostic(jobId, 'completed', 'ok', startedAt, { tenantId: provisioned.tenantId, idempotent: provisioned.idempotent });
     await recordProvisioningEvent(jobId, {

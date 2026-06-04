@@ -24,8 +24,13 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       ok: true,
+      tenantId: tenant.tenantId,
+      branchId,
+      channel,
       catalog,
       safeMode: catalog.itemCount === 0,
+      demoFallbackUsed: false,
+      emptyCatalogReason: catalog.itemCount === 0 ? 'tenant_catalog_empty' : null,
       stale: deviceRevision ? deviceRevision !== catalog.catalogRevision : true,
     });
   } catch (error) {
@@ -69,7 +74,15 @@ export async function POST(request: Request) {
       });
     });
 
-    return NextResponse.json({ ok: true, catalog });
+    return NextResponse.json({
+      ok: true,
+      tenantId: tenant.tenantId,
+      branchId,
+      channel,
+      catalog,
+      demoFallbackUsed: false,
+      emptyCatalogReason: catalog.itemCount === 0 ? 'tenant_catalog_empty' : null,
+    });
   } catch (error) {
     return tenantAuthErrorResponse(error);
   }

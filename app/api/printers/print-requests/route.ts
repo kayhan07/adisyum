@@ -8,6 +8,7 @@ import { authenticateRegisteredDevice } from '@/lib/server/device-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
 const AGENT_ONLINE_WINDOW_MS = 45_000;
 
 export async function GET(request: Request) {
@@ -20,16 +21,18 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, error: 'Cihaz kimliği eşleşmiyor.' }, { status: 403 });
     }
     const deviceId = registeredDevice?.deviceId ?? requestedDeviceId;
+    const branchId = tenant.branchId ?? registeredDevice?.branchId ?? 'mrk';
     const jobs = await prisma.tenantPrintJob.findMany({
       where: {
         tenantId: tenant.tenantId,
+        OR: [{ branchId }, { branchId: null }],
         status: { in: ['pending', 'failed'] },
         ...(deviceId ? { targetDeviceId: deviceId } : {}),
       },
       orderBy: { createdAt: 'asc' },
       take: 100,
     });
-    return NextResponse.json({ ok: true, jobs });
+    return NextResponse.json({ ok: true, tenantId: tenant.tenantId, branchId, jobs });
   } catch (error) {
     return tenantAuthErrorResponse(error);
   }
@@ -38,6 +41,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const tenant = await requireTenant(request);
+    const branchId = tenant.branchId ?? 'mrk';
     const body = await request.json().catch(() => null) as {
       printerName?: string;
       printerRole?: string;
@@ -56,36 +60,52 @@ export async function POST(request: Request) {
       targetDeviceId: body?.targetDeviceId,
     });
     if (!validated.ok) {
-      return NextResponse.json({ ok: false, errors: validated.errors }, { status: 400 });
+      return NextResponse.json({ ok: false, tenantId: tenant.tenantId, branchId, errors: validated.errors }, { status: 400 });
     }
 
     const activeDevice = validated.targetDeviceId
-      ? await prisma.tenantDeviceRegistry.findFirst({ where: { tenantId: tenant.tenantId, deviceId: validated.targetDeviceId, status: 'online', revokedAt: null, lastHeartbeatAt: { gte: new Date(Date.now() - AGENT_ONLINE_WINDOW_MS) } } })
+      ? await prisma.tenantDeviceRegistry.findFirst({
+          where: {
+            tenantId: tenant.tenantId,
+            deviceId: validated.targetDeviceId,
+            OR: [{ branchId }, { branchId: null }],
+            status: 'online',
+            revokedAt: null,
+            lastHeartbeatAt: { gte: new Date(Date.now() - AGENT_ONLINE_WINDOW_MS) },
+          },
+        })
       : await prisma.tenantDeviceRegistry.findFirst({
-          where: { tenantId: tenant.tenantId, branchId: tenant.branchId ?? undefined, status: 'online', revokedAt: null, lastHeartbeatAt: { gte: new Date(Date.now() - AGENT_ONLINE_WINDOW_MS) } },
+          where: {
+            tenantId: tenant.tenantId,
+            OR: [{ branchId }, { branchId: null }],
+            status: 'online',
+            revokedAt: null,
+            lastHeartbeatAt: { gte: new Date(Date.now() - AGENT_ONLINE_WINDOW_MS) },
+          },
           orderBy: { lastHeartbeatAt: 'desc' },
         });
 
     if (!activeDevice) {
-      return NextResponse.json({ ok: false, error: 'No active printer bridge registered for tenant/branch.', code: 'no_active_bridge' }, { status: 409 });
+      return NextResponse.json({ ok: false, tenantId: tenant.tenantId, branchId, error: 'No active printer bridge registered for tenant/branch.', code: 'no_active_bridge' }, { status: 409 });
     }
 
     const job = await prisma.tenantPrintJob.upsert({
       where: { tenantId_mutationId: { tenantId: tenant.tenantId, mutationId: validated.mutationId } },
       update: {
+        branchId,
         targetDeviceId: activeDevice.deviceId,
         printerName: validated.printerName,
-        printerRole: body?.printerRole ?? 'cashier',
+        printerRole: body?.printerRole ?? 'general',
         payload: JSON.parse(JSON.stringify({ bytesBase64: body?.bytesBase64, metadata: body?.metadata ?? {} })) as Prisma.InputJsonValue,
         status: 'pending',
         lastError: null,
       },
       create: {
         tenantId: tenant.tenantId,
-        branchId: tenant.branchId,
+        branchId,
         targetDeviceId: activeDevice.deviceId,
         printerName: validated.printerName,
-        printerRole: body?.printerRole ?? 'cashier',
+        printerRole: body?.printerRole ?? 'general',
         payload: JSON.parse(JSON.stringify({ bytesBase64: body?.bytesBase64, metadata: body?.metadata ?? {} })) as Prisma.InputJsonValue,
         source: body?.source ?? 'cloud',
         mutationId: validated.mutationId,
@@ -102,6 +122,7 @@ export async function POST(request: Request) {
       console.warn('[print-requests] tenant event publish failed', {
         timestamp: new Date().toISOString(),
         tenantId: tenant.tenantId,
+        branchId,
         jobId: job.id,
         targetDeviceId: job.targetDeviceId,
         mutationId: job.mutationId,
@@ -109,7 +130,16 @@ export async function POST(request: Request) {
       });
     });
 
-    return NextResponse.json({ ok: true, job });
+    return NextResponse.json({
+      ok: true,
+      status: 'queued',
+      tenantId: tenant.tenantId,
+      branchId,
+      deviceId: activeDevice.deviceId,
+      printerName: job.printerName,
+      role: job.printerRole,
+      job,
+    });
   } catch (error) {
     return tenantAuthErrorResponse(error);
   }
@@ -132,9 +162,11 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ ok: false, error: 'Cihaz kimliği eşleşmiyor.' }, { status: 403 });
     }
 
+    const branchId = tenant.branchId ?? registeredDevice?.branchId ?? 'mrk';
     const job = await prisma.tenantPrintJob.updateMany({
       where: {
         tenantId: tenant.tenantId,
+        OR: [{ branchId }, { branchId: null }],
         id: body.jobId,
         targetDeviceId: body.deviceId,
       },
@@ -149,7 +181,7 @@ export async function PATCH(request: Request) {
     });
 
     if (job.count === 0) return NextResponse.json({ ok: false, error: 'Print job not found for this device.' }, { status: 404 });
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, tenantId: tenant.tenantId, branchId });
   } catch (error) {
     return tenantAuthErrorResponse(error);
   }

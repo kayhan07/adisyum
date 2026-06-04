@@ -20,16 +20,39 @@ function cleanMetadata(input: Record<string, unknown>): Prisma.InputJsonObject {
   return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as Prisma.InputJsonObject;
 }
 
+function companyPayload(input: {
+  tenantId: string;
+  branchId: string;
+  tradeName: string;
+  branchName: string;
+  taxNumber: string;
+  metadata: Record<string, unknown>;
+}) {
+  return {
+    tenantId: input.tenantId,
+    branchId: input.branchId,
+    tradeName: input.tradeName,
+    branchName: input.branchName,
+    logoUrl: stringField(input.metadata.logoUrl),
+    taxOffice: stringField(input.metadata.taxOffice),
+    taxNumber: input.taxNumber,
+    phone: stringField(input.metadata.phone),
+    email: stringField(input.metadata.email),
+    address: stringField(input.metadata.address),
+  };
+}
+
 export async function GET(request: Request) {
   try {
     const tenant = await requireTenant(request);
+    const branchId = tenant.branchId || 'mrk';
     const [tenantRecord, branch] = await Promise.all([
       prisma.tenant.findUnique({
         where: { tenantId: tenant.tenantId },
         select: { name: true, legalName: true, taxNumber: true, metadata: true },
       }),
       prisma.branch.findUnique({
-        where: { tenantId_branchId: { tenantId: tenant.tenantId, branchId: tenant.branchId || 'mrk' } },
+        where: { tenantId_branchId: { tenantId: tenant.tenantId, branchId } },
         select: { name: true },
       }).catch(() => null),
     ]);
@@ -38,19 +61,16 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, error: 'Tenant bulunamadı.' }, { status: 404 });
     }
 
-    const metadata = metadataObject(tenantRecord.metadata);
     return NextResponse.json({
       ok: true,
-      company: {
+      company: companyPayload({
+        tenantId: tenant.tenantId,
+        branchId,
         tradeName: tenantRecord.legalName || tenantRecord.name,
         branchName: branch?.name || 'Merkez Şube',
-        logoUrl: stringField(metadata.logoUrl),
-        taxOffice: stringField(metadata.taxOffice),
         taxNumber: tenantRecord.taxNumber || '',
-        phone: stringField(metadata.phone),
-        email: stringField(metadata.email),
-        address: stringField(metadata.address),
-      },
+        metadata: metadataObject(tenantRecord.metadata),
+      }),
     });
   } catch (error) {
     return tenantAuthErrorResponse(error);
@@ -60,6 +80,7 @@ export async function GET(request: Request) {
 export async function PUT(request: Request) {
   try {
     const tenant = await requireTenant(request);
+    const branchId = tenant.branchId || 'mrk';
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
     const current = await prisma.tenant.findUnique({
       where: { tenantId: tenant.tenantId },
@@ -80,6 +101,8 @@ export async function PUT(request: Request) {
       phone: stringField(body.phone) || undefined,
       email: stringField(body.email) || undefined,
       address: stringField(body.address) || undefined,
+      profileUpdatedAt: new Date().toISOString(),
+      profileUpdatedBy: tenant.userId,
     });
 
     const [updatedTenant, updatedBranch] = await prisma.$transaction([
@@ -94,11 +117,11 @@ export async function PUT(request: Request) {
         select: { name: true, legalName: true, taxNumber: true, metadata: true },
       }),
       prisma.branch.upsert({
-        where: { tenantId_branchId: { tenantId: tenant.tenantId, branchId: tenant.branchId || 'mrk' } },
+        where: { tenantId_branchId: { tenantId: tenant.tenantId, branchId } },
         update: branchName ? { name: branchName } : {},
         create: {
           tenantId: tenant.tenantId,
-          branchId: tenant.branchId || 'mrk',
+          branchId,
           name: branchName || 'Merkez Şube',
           active: true,
         },
@@ -106,19 +129,16 @@ export async function PUT(request: Request) {
       }),
     ]);
 
-    const nextMetadata = metadataObject(updatedTenant.metadata);
     return NextResponse.json({
       ok: true,
-      company: {
+      company: companyPayload({
+        tenantId: tenant.tenantId,
+        branchId,
         tradeName: updatedTenant.legalName || updatedTenant.name,
         branchName: updatedBranch.name,
-        logoUrl: stringField(nextMetadata.logoUrl),
-        taxOffice: stringField(nextMetadata.taxOffice),
         taxNumber: updatedTenant.taxNumber || '',
-        phone: stringField(nextMetadata.phone),
-        email: stringField(nextMetadata.email),
-        address: stringField(nextMetadata.address),
-      },
+        metadata: metadataObject(updatedTenant.metadata),
+      }),
     });
   } catch (error) {
     if (error instanceof Error) {

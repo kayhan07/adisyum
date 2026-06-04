@@ -67,7 +67,13 @@ function emitChange() {
 
 function localTableLayoutKey() {
   const session = loadSessionState();
-  return session.isAuthenticated && session.tenantId ? `${LOCAL_STORAGE_KEY}:${session.tenantId}` : null;
+  const branchId = session.activeBranchId || session.currentUser.branchId || 'default';
+  return session.isAuthenticated && session.tenantId ? `${LOCAL_STORAGE_KEY}:${session.tenantId}:${branchId}` : null;
+}
+
+function currentBranchId() {
+  const session = loadSessionState();
+  return session.activeBranchId || session.currentUser.branchId || undefined;
 }
 
 function readLocalTableLayoutState() {
@@ -119,7 +125,9 @@ function applyTableLayoutState(state: TableLayoutState, options: { persistRuntim
 }
 
 async function fetchServerTableLayoutState() {
-  const response = await runtimeFetch('/api/runtime/table-state', { cache: 'no-store' });
+  const branchId = currentBranchId();
+  const query = branchId ? `?branchId=${encodeURIComponent(branchId)}` : '';
+  const response = await runtimeFetch(`/api/runtime/table-state${query}`, { cache: 'no-store' });
   if (!response.ok) throw new Error(`Table layout server fetch failed with ${response.status}`);
   const payload = await response.json().catch(() => null) as { state?: unknown } | null;
   return normalizeTableLayoutState(payload?.state);
@@ -130,7 +138,7 @@ async function persistServerTableLayoutState(state: TableLayoutState) {
     method: 'POST',
     cache: 'no-store',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ tables: state.tables }),
+    body: JSON.stringify({ branchId: currentBranchId(), tables: state.tables }),
   });
   if (!response.ok) throw new Error(`Table layout server save failed with ${response.status}`);
 }

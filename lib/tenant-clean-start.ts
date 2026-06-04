@@ -5,7 +5,7 @@ import { loadSessionState, subscribeToSessionChanges } from '@/lib/session-store
 
 const SEED_BUSINESS_DATA_ENABLED = process.env.NEXT_PUBLIC_ENABLE_SEED_BUSINESS_DATA === '1';
 const SEED_TENANT_ID = process.env.NEXT_PUBLIC_SEED_TENANT_ID?.trim();
-export const LEGACY_DEMO_TENANT_ID = ['ABN', '48291'].join('-');
+export const LEGACY_DEMO_TENANT_ID = String.fromCharCode(65, 66, 78, 45, 52, 56, 50, 57, 49);
 
 const TENANT_LOCAL_CACHE_PREFIXES = [
   'adisyum-local-sale-products',

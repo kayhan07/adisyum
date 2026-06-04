@@ -653,6 +653,7 @@ build_apps() {
   cd "${APP_DIR}"
   rm -rf ".next" "apps/website/.next"
   run_app node node_modules/next/dist/bin/next build
+  run_app node scripts/sync-standalone-static-assets.mjs
   [[ -s ".next/BUILD_ID" ]] || fail "Root .next/BUILD_ID missing"
   [[ -d ".next/server" ]] || fail "Root .next/server missing"
   [[ -d ".next/static" ]] || fail "Root .next/static missing"

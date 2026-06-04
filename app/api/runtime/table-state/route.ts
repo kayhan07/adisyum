@@ -11,18 +11,26 @@ type SharedTablePaymentState = {
   tables: unknown[];
   paymentRequestedTableIds: string[];
   liveTotals: Record<string, number>;
+  ordersByTable: Record<string, unknown[]>;
   tableMeta: Record<string, unknown>;
+  stateMeta: Record<string, unknown> | null;
   updatedAt: string;
 };
 
 const TABLE_STATE_KEY = 'table-payment-state';
+
+function tableStateKey(branchId?: string | null) {
+  return `${TABLE_STATE_KEY}:${branchId || 'global'}`;
+}
 
 function getDefaultState(): SharedTablePaymentState {
   return {
     tables: [],
     paymentRequestedTableIds: [],
     liveTotals: {},
+    ordersByTable: {},
     tableMeta: {},
+    stateMeta: null,
     updatedAt: new Date(0).toISOString(),
   };
 }
@@ -30,36 +38,45 @@ function getDefaultState(): SharedTablePaymentState {
 export async function GET(request: Request) {
   try {
     const tenant = await requireTenant(request);
+    const url = new URL(request.url);
+    const branchId = url.searchParams.get('branchId') ?? tenant.branchId ?? null;
+    const key = tableStateKey(branchId);
     const stored = await prisma.runtimeState.findUnique({
-      where: runtimeStateTenantKey(tenant.tenantId, TABLE_STATE_KEY),
+      where: runtimeStateTenantKey(tenant.tenantId, key),
       select: { payload: true },
     }).catch(() => null);
 
-    if (stored?.payload && typeof stored.payload === 'object') {
-      return NextResponse.json({ ok: true, state: stored.payload });
-    }
-
-    return NextResponse.json({ ok: true, state: getDefaultState() });
+    return NextResponse.json({
+      ok: true,
+      tenantId: tenant.tenantId,
+      branchId,
+      key,
+      state: stored?.payload && typeof stored.payload === 'object'
+        ? stored.payload
+        : getDefaultState(),
+    });
   } catch (error) {
     return tenantAuthErrorResponse(error);
   }
 }
 
 export async function POST(request: Request) {
-  let tenantId = '';
+  let tenant: Awaited<ReturnType<typeof requireTenant>>;
   try {
-    tenantId = (await requireTenant(request)).tenantId;
+    tenant = await requireTenant(request);
   } catch (error) {
     return tenantAuthErrorResponse(error);
   }
 
-  const body = (await request.json().catch(() => null)) as Partial<SharedTablePaymentState> | null;
+  const body = (await request.json().catch(() => null)) as (Partial<SharedTablePaymentState> & { branchId?: string }) | null;
   if (!body) {
     return NextResponse.json({ ok: false, error: 'Geçersiz table state payload.' }, { status: 400 });
   }
 
+  const branchId = body.branchId ?? tenant.branchId ?? null;
+  const key = tableStateKey(branchId);
   const stored = await prisma.runtimeState.findUnique({
-    where: runtimeStateTenantKey(tenantId, TABLE_STATE_KEY),
+    where: runtimeStateTenantKey(tenant.tenantId, key),
     select: { payload: true },
   });
   const current = stored?.payload && typeof stored.payload === 'object'
@@ -75,18 +92,30 @@ export async function POST(request: Request) {
     liveTotals: body.liveTotals && typeof body.liveTotals === 'object'
       ? Object.fromEntries(Object.entries(body.liveTotals).filter((entry): entry is [string, number] => typeof entry[1] === 'number'))
       : current.liveTotals,
+    ordersByTable: body.ordersByTable && typeof body.ordersByTable === 'object'
+      ? Object.fromEntries(Object.entries(body.ordersByTable).filter((entry): entry is [string, unknown[]] => Array.isArray(entry[1])))
+      : current.ordersByTable,
     tableMeta: body.tableMeta && typeof body.tableMeta === 'object'
       ? body.tableMeta
       : current.tableMeta,
+    stateMeta: body.stateMeta && typeof body.stateMeta === 'object'
+      ? body.stateMeta
+      : current.stateMeta,
     updatedAt: new Date().toISOString(),
   };
   const persistedState = JSON.parse(JSON.stringify(nextState)) as Prisma.InputJsonValue;
 
   await prisma.runtimeState.upsert({
-    where: runtimeStateTenantKey(tenantId, TABLE_STATE_KEY),
+    where: runtimeStateTenantKey(tenant.tenantId, key),
     update: { payload: persistedState },
-    create: { tenantId, key: TABLE_STATE_KEY, payload: persistedState },
-  }).catch(() => undefined);
+    create: { tenantId: tenant.tenantId, key, payload: persistedState },
+  });
 
-  return NextResponse.json({ ok: true, state: nextState });
+  return NextResponse.json({
+    ok: true,
+    tenantId: tenant.tenantId,
+    branchId,
+    key,
+    state: nextState,
+  });
 }

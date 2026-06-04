@@ -24,7 +24,10 @@ function printerName(value: unknown) {
   return name.trim();
 }
 
-function mergePrinters(installedPrinters: unknown[], registeredPrinters: Array<{ name: string; type: string; endpoint: string | null; metadata: unknown }>) {
+function mergePrinters(
+  installedPrinters: unknown[],
+  registeredPrinters: Array<{ name: string; type: string; endpoint: string | null; metadata: unknown }>,
+) {
   const printers = new Map<string, unknown>();
 
   for (const printer of installedPrinters) {
@@ -47,13 +50,23 @@ function mergePrinters(installedPrinters: unknown[], registeredPrinters: Array<{
   return Array.from(printers.values());
 }
 
+function filterRegisteredPrintersByBranch<T extends { metadata: unknown }>(printers: T[], branchId: string) {
+  return printers.filter((printer) => {
+    const metadata = asRecord(printer.metadata);
+    const printerBranchId = typeof metadata.branchId === 'string' ? metadata.branchId : '';
+    return !printerBranchId || printerBranchId === branchId;
+  });
+}
+
 export async function GET(request: Request) {
   try {
     const tenant = await requireTenant(request);
+    const branchId = tenant.branchId ?? 'mrk';
     const [device, registeredPrinters] = await Promise.all([
       prisma.tenantDeviceRegistry.findFirst({
         where: {
           tenantId: tenant.tenantId,
+          OR: [{ branchId }, { branchId: null }],
           revokedAt: null,
         },
         orderBy: { lastHeartbeatAt: 'desc' },
@@ -73,12 +86,16 @@ export async function GET(request: Request) {
       }),
     ]);
 
+    const branchPrinters = filterRegisteredPrintersByBranch(registeredPrinters, branchId);
+
     if (!device) {
-      const printers = mergePrinters([], registeredPrinters);
+      const printers = mergePrinters([], branchPrinters);
       return NextResponse.json({
         ok: printers.length > 0,
+        tenantId: tenant.tenantId,
+        branchId,
         code: printers.length > 0 ? 'registered_printers_only' : 'agent_not_found',
-        message: registeredPrinters.length > 0
+        message: branchPrinters.length > 0
           ? 'Windows agent bağlı değil. Kayıtlı yazıcı eşleşmeleri gösteriliyor.'
           : 'Bu aboneye bağlı Windows agent bulunamadı.',
         agent: { found: false, online: false },
@@ -89,7 +106,7 @@ export async function GET(request: Request) {
     const metadata = asRecord(device.metadata);
     const printers = mergePrinters(
       Array.isArray(device.installedPrinters) ? device.installedPrinters : [],
-      registeredPrinters,
+      branchPrinters,
     );
     const online = Date.now() - device.lastHeartbeatAt.getTime() <= AGENT_ONLINE_WINDOW_MS;
     const agent = {
@@ -108,6 +125,8 @@ export async function GET(request: Request) {
     if (!online) {
       return NextResponse.json({
         ok: printers.length > 0,
+        tenantId: tenant.tenantId,
+        branchId,
         code: printers.length > 0 ? 'agent_offline_registered_printers' : 'agent_offline',
         message: printers.length > 0
           ? 'Windows agent çevrimdışı. Kayıtlı yazıcı eşleşmeleri gösteriliyor.'
@@ -119,6 +138,8 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       ok: true,
+      tenantId: tenant.tenantId,
+      branchId,
       code: printers.length > 0 ? 'printers_found' : 'no_printers',
       message: printers.length > 0
         ? `${printers.length} yazıcı bulundu.`

@@ -45,8 +45,11 @@ function filterPosFacingProducts(products: unknown[]) {
 
 export async function GET(request: Request) {
   let tenantId = '';
+  let branchId = 'mrk';
   try {
-    tenantId = (await requireTenant(request)).tenantId;
+    const tenant = await requireTenant(request);
+    tenantId = tenant.tenantId;
+    branchId = tenant.branchId ?? 'mrk';
   } catch (error) {
     return tenantAuthErrorResponse(error);
   }
@@ -55,7 +58,7 @@ export async function GET(request: Request) {
   const logsLimit = parseLimit(url.searchParams.get('logsLimit'), 200, 2000);
   const productsLimit = parseLimit(url.searchParams.get('productsLimit'), 500, 5000);
   const mappingsLimit = parseLimit(url.searchParams.get('mappingsLimit'), 500, 5000);
-  const cacheKey = tenantCacheKey(tenantId, 'pos-overview', `${logsLimit}:${productsLimit}:${mappingsLimit}`);
+  const cacheKey = tenantCacheKey(tenantId, 'pos-overview', `${branchId}:${logsLimit}:${productsLimit}:${mappingsLimit}`);
 
   const cached = await getTenantCache<unknown>(cacheKey).catch(() => null);
   if (cached) return NextResponse.json(cached);
@@ -80,6 +83,8 @@ export async function GET(request: Request) {
   const mappings = Array.isArray(mappingsPayload) ? mappingsPayload : (mappingsPayload.data ?? []);
 
   const responsePayload = {
+    tenantId,
+    branchId,
     backendAvailable: backendErrors.length === 0,
     backendErrors,
     devices: devicesPayload?.devices ?? [],

@@ -10,14 +10,16 @@ export async function POST(request: NextRequest) {
   let body: any = null;
 
   try {
-    tenantId = (await requireTenant(request)).tenantId;
+    const tenant = await requireTenant(request);
+    tenantId = tenant.tenantId;
+    const branchId = tenant.branchId ?? 'mrk';
     body = await request.json();
     const payload = await posBackendJson('/product-mappings/bulk', {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, tenantId, branchId }),
     }, 'Toplu POS eslestirme kaydedilemedi.');
 
-    return NextResponse.json(payload, { status: 201 });
+    return NextResponse.json({ ok: true, tenantId, branchId, result: payload }, { status: 201 });
   } catch (error) {
     if (!tenantId) return tenantAuthErrorResponse(error);
     const mappings = await bulkUpsertServerProductMappings(Array.isArray(body?.mappings) ? body.mappings : [], tenantId);

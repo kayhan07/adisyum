@@ -60,6 +60,12 @@ const integrationStore = read('lib/integration-store.ts');
 const productPage = read('app/products/page.tsx');
 const saasStore = read('lib/saas-store.ts');
 const systemAdminStore = read('lib/system-admin-store.ts');
+const companyRoute = read('app/api/settings/company/route.ts');
+const systemAdminTenantRoute = read('app/api/system-admin/tenants/route.ts');
+const requireTenant = read('lib/requireTenant.ts');
+const middleware = read('middleware.ts');
+const runtimeTableStateRoute = read('app/api/runtime/table-state/route.ts');
+const runtimePosCatalogRoute = read('app/api/runtime/pos-catalog/route.ts');
 
 assert(/NEXT_PUBLIC_ENABLE_SEED_BUSINESS_DATA === '1'/.test(tenantCleanStart), 'Seed business data must be explicitly disabled unless an env flag enables it');
 assert(!/DEFAULT_SEED_TENANT_ID/.test(tenantCleanStart), 'Seed business data must not use a hardcoded default tenant id');
@@ -82,6 +88,20 @@ assert(/const DEFAULT_TENANTS: TenantRecord\[\] = \[\];/.test(saasStore), 'SaaS 
 assert(/const DEFAULT_TENANT_CREDENTIALS: TenantCredential\[\] = \[\];/.test(saasStore), 'SaaS store must not seed demo credentials');
 assert(/return `TNT-\$\{random\}`;/.test(saasStore), 'New generated tenant ids should use the production tenant prefix');
 assert(/tenants: \[\]/.test(systemAdminStore), 'System Admin local fallback state must start with no demo tenants');
+assert(companyRoute.includes('tenantId: tenant.tenantId'), 'Company profile payload must expose the authenticated tenant id');
+assert(companyRoute.includes('branchId'), 'Company profile payload must expose the active branch id');
+assert(companyRoute.includes('where: { tenantId: tenant.tenantId }'), 'Company profile route must not query or update another tenant');
+assert(systemAdminTenantRoute.includes('await requireSystemAdmin(request)'), 'System Admin tenant lifecycle API must be protected by super admin auth');
+assert(systemAdminTenantRoute.includes('createProvisioningJob'), 'System Admin tenant creation must go through the provisioning lifecycle');
+assert(requireTenant.includes("session.role === 'super_admin'"), 'Tenant endpoints must explicitly reject super admin sessions');
+assert(requireTenant.includes('super_admin_session_on_tenant_endpoint'), 'Super admin tenant endpoint rejection must be visible in auth logs');
+assert(requireTenant.includes('super_admin_forbidden'), 'Super admin tenant endpoint rejection must return a stable forbidden code');
+assert(middleware.includes('function hasValidOrigin') && middleware.includes('logInvalidOrigin(request)'), 'Middleware must keep origin validation for mutating requests');
+assert(middleware.includes('invalid_origin'), 'Middleware must return a stable invalid_origin code for blocked mutating requests');
+assert(runtimeTableStateRoute.includes('tenantId: tenant.tenantId'), 'Runtime table-state response must include tenantId');
+assert(runtimeTableStateRoute.includes('branchId'), 'Runtime table-state response must include branchId');
+assert(runtimePosCatalogRoute.includes('tenantId: tenant.tenantId'), 'Runtime POS catalog response must include tenantId');
+assert(runtimePosCatalogRoute.includes('branchId'), 'Runtime POS catalog response must include branchId');
 
 if (failures.length > 0) {
   console.error('[tenant-identity-drift] FAIL');

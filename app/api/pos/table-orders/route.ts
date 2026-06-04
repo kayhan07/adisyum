@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
+import { runtimeStateTenantKey } from '@/lib/db/compound-keys';
 import { requireTenant, TenantAuthError, tenantAuthErrorResponse } from '@/lib/requireTenant';
 import { publishTenantEvent } from '@/lib/realtime/tenant-events';
 import { recordOperationalEvent } from '@/lib/operations/live-ops';
@@ -16,6 +17,7 @@ export const dynamic = 'force-dynamic';
 
 const VAT_RATE = 0.1;
 const ROUTE_BOOTED_AT = new Date().toISOString();
+const TABLE_PAYMENT_STATE_KEY = 'table-payment-state';
 
 console.info('[pos-table-orders] route initialized', {
   timestamp: ROUTE_BOOTED_AT,
@@ -226,6 +228,10 @@ function compactJsonObject(input: Record<string, unknown>): Prisma.InputJsonObje
       .map(([key, value]) => [key, compactJsonValue(value)] as const)
       .filter(([, value]) => value !== undefined),
   ) as Prisma.InputJsonObject;
+}
+
+function tablePaymentStateKey(branchId?: string | null) {
+  return `${TABLE_PAYMENT_STATE_KEY}:${branchId || 'global'}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -618,6 +624,48 @@ async function loadAuthoritativeOrderDiagnostics(tenantId: string, ordersByTable
     visibleTableCount: Object.keys(ordersByTable).length,
     visibleLineCount,
   };
+}
+
+async function persistAuthoritativeRuntimeTableState(input: {
+  tenantId: string;
+  branchId?: string | null;
+  ordersByTable: Record<string, OrderLinePayload[]>;
+  paymentState?: unknown;
+  source: string;
+}) {
+  const activeTableIds = Object.keys(input.ordersByTable).filter((tableId) => input.ordersByTable[tableId]?.length > 0);
+  const liveTotals = Object.fromEntries(
+    Object.entries(input.ordersByTable).map(([tableId, lines]) => [
+      tableId,
+      Number(lines.reduce((sum, line) => sum + getLineSubtotal(line), 0).toFixed(2)),
+    ]),
+  );
+  const stateMeta = {
+    version: Date.now(),
+    updatedAtMs: Date.now(),
+    clientId: 'server-pos-table-orders',
+    mutationId: `server-${Date.now()}`,
+    source: input.source,
+    activeOrderTables: activeTableIds,
+  };
+  const payload = JSON.parse(JSON.stringify({
+    paymentRequestedTableIds: [],
+    liveTotals,
+    ordersByTable: input.ordersByTable,
+    tableMeta: {},
+    stateMeta,
+    paymentState: input.paymentState ?? null,
+    updatedAt: new Date().toISOString(),
+  })) as Prisma.InputJsonObject;
+  const key = tablePaymentStateKey(input.branchId);
+
+  await prisma.runtimeState.upsert({
+    where: runtimeStateTenantKey(input.tenantId, key),
+    update: { payload },
+    create: { tenantId: input.tenantId, key, payload },
+  });
+
+  return { key, state: payload };
 }
 
 type PaymentLedgerOrder = {
@@ -1047,6 +1095,7 @@ export async function POST(request: Request) {
                   metadata: compactJsonObject({
                     source: 'pos-table-orders',
                     tableKey: tableId,
+                    branchId: tenant.branchId,
                     accountType: paymentMetadata.accountType,
                   }),
                 },
@@ -1101,6 +1150,7 @@ export async function POST(request: Request) {
             amount: paymentAmount,
             metadata: compactJsonObject({
               tableKey: tableId,
+              branchId: tenant.branchId,
               mutationId: normalizedBody.mutationId,
               reconciliationKey,
               paymentScope: normalizedBody.payment.scope,
@@ -1132,6 +1182,7 @@ export async function POST(request: Request) {
               metadata: compactJsonObject({
                 orderId: order.id,
                 tableKey: tableId,
+                branchId: tenant.branchId,
                 mutationId: normalizedBody.mutationId,
                 reconciliationKey,
                 paymentMethod: normalizedBody.payment.method,
@@ -1168,6 +1219,7 @@ export async function POST(request: Request) {
               description: `${tableId} masa adisyonu cari hesaba işlendi`,
               metadata: compactJsonObject({
                 tableKey: tableId,
+                branchId: tenant.branchId,
                 accountName: normalizedBody.payment.accountName,
                 accountType: normalizedBody.payment.accountType,
                 mutationId: normalizedBody.mutationId,
@@ -1197,6 +1249,7 @@ export async function POST(request: Request) {
             metadata: compactJsonObject({
               ...normalizeMetadata(order.metadata),
               tableKey: tableId,
+              branchId: tenant.branchId,
               lastMutationId: normalizedBody.mutationId,
               paymentAmount,
               paidTotal: persistedPaymentState.paidTotal,
@@ -1222,6 +1275,13 @@ export async function POST(request: Request) {
       });
 
       const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId, tenant.branchId ?? undefined);
+      const runtimeTableState = await persistAuthoritativeRuntimeTableState({
+        tenantId,
+        branchId: tenant.branchId,
+        ordersByTable,
+        paymentState: transactionResult.paymentState,
+        source: transactionResult.closed ? 'payment-closed' : 'partial-payment',
+      });
       return NextResponse.json({
         ok: true,
         source: 'db',
@@ -1230,7 +1290,12 @@ export async function POST(request: Request) {
         paymentCreated: transactionResult.paymentCreated,
         paymentState: transactionResult.paymentState,
         ordersByTable,
-        authoritativeState: { ordersByTable, paymentState: transactionResult.paymentState },
+        authoritativeState: {
+          ordersByTable,
+          paymentState: transactionResult.paymentState,
+          runtimeTableStateKey: runtimeTableState.key,
+          runtimeTableState: runtimeTableState.state,
+        },
       });
     }
 

@@ -5,6 +5,8 @@ import {
   replaceAuthoritativeOrdersByTable,
   subscribeToAuthoritativeOrders,
 } from '@/lib/client/authoritative-table-orders';
+import { runtimeFetch } from '@/lib/runtime/runtime-api';
+import { loadSessionState } from '@/lib/session-store';
 
 const STORAGE_KEY = 'aurelia-table-payment-requested';
 const TOTALS_STORAGE_KEY = 'aurelia-table-live-totals';
@@ -51,6 +53,11 @@ function canUseStorage() {
 
 function stableJson(value: unknown) {
   return JSON.stringify(value);
+}
+
+function currentBranchId() {
+  const session = loadSessionState();
+  return session.activeBranchId || session.currentUser.branchId || undefined;
 }
 
 function writeRuntimeJsonIfChanged(key: string, value: unknown, options: { persist?: boolean } = {}) {
@@ -125,6 +132,9 @@ function buildSnapshot(): SharedTablePaymentState {
 function applySnapshot(snapshot: Partial<SharedTablePaymentState>) {
   if (!canUseStorage()) return;
 
+  if (snapshot.ordersByTable && typeof snapshot.ordersByTable === 'object') {
+    replaceAuthoritativeOrdersByTable(snapshot.ordersByTable);
+  }
   if (Array.isArray(snapshot.paymentRequestedTableIds)) {
     writeRuntimeJsonIfChanged(STORAGE_KEY, snapshot.paymentRequestedTableIds, { persist: false });
   }
@@ -139,6 +149,12 @@ function applySnapshot(snapshot: Partial<SharedTablePaymentState>) {
   }
 }
 
+export function applyAuthoritativeTableStateSnapshot(snapshot: Partial<SharedTablePaymentState>) {
+  applySnapshot(snapshot);
+  emitChange();
+  return buildSnapshot();
+}
+
 export async function syncTableStateFromServer() {
   if (typeof window === 'undefined') return null;
   if (!serverBootstrapCompleted) {
@@ -146,6 +162,13 @@ export async function syncTableStateFromServer() {
     serverBootstrapCompleted = true;
   } else {
     await refreshRuntimeScope('tenant');
+  }
+  const branchId = currentBranchId();
+  const query = branchId ? `?branchId=${encodeURIComponent(branchId)}` : '';
+  const tableStateResponse = await runtimeFetch(`/api/runtime/table-state${query}` as `/api/${string}`, { cache: 'no-store' }).catch(() => null);
+  if (tableStateResponse?.ok) {
+    const payload = await tableStateResponse.json().catch(() => null) as { state?: Partial<SharedTablePaymentState> } | null;
+    if (payload?.state) applySnapshot(payload.state);
   }
   await refreshAuthoritativeOrdersByTable();
   tableStateSyncCounter += 1;
