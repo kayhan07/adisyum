@@ -501,9 +501,15 @@ function orderItemBelongsToCurrentCatalog(
   const snapshot = normalizeMetadata(metadata.productSnapshot as Prisma.JsonValue);
   const snapshotProductId = typeof snapshot.productId === 'string' ? snapshot.productId : undefined;
   const snapshotPosKey = typeof snapshot.posKey === 'string' ? snapshot.posKey : undefined;
+  const metadataSource = typeof metadata.source === 'string' ? metadata.source : undefined;
   const serverStampedTenantMatch = metadata.tenantId === tenantId
-    && metadata.runtimeIdentityMode === 'catalog'
-    && Boolean(snapshotPosKey);
+    && Boolean(posKey || snapshotPosKey || snapshotProductId || item.productId)
+    && (
+      metadata.runtimeIdentityMode === 'catalog'
+      || metadataSource === 'pos-table-orders'
+      || isRecord(metadata.productSnapshot)
+      || Boolean(snapshotPosKey)
+    );
 
   return Boolean(
     serverStampedTenantMatch
