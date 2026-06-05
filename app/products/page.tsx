@@ -474,6 +474,21 @@ function stripBulkHeader(rows: string[][], windowType: ProductWindow) {
   return isHeader ? rows.slice(1) : rows;
 }
 
+function isQuickCreateImportRowValid(cells: string[], windowType: 'raw' | 'sale') {
+  const name = (cells[0] ?? '').trim();
+  if (!name) return false;
+
+  if (windowType === 'raw') {
+    const purchasePriceText = (cells[2] ?? '').trim();
+    const minimumText = (cells[3] ?? '').trim();
+    const stockText = (cells[4] ?? '').trim();
+    return [purchasePriceText, minimumText, stockText].every((value) => !value || !Number.isNaN(Number(value.replace(',', '.'))));
+  }
+
+  const priceText = (cells[2] ?? '').trim();
+  return !priceText || !Number.isNaN(Number(priceText.replace(',', '.')));
+}
+
 function normalizeRawUnit(unit: string) {
   const lower = unit.trim().toLocaleLowerCase('tr-TR');
   if (lower === 'kg' || lower === 'kilogram') return { unit: 'kg' as const, multiplier: 1 };
@@ -1247,6 +1262,12 @@ function ProductsPageContent() {
   );
   const importWindow: 'raw' | 'sale' = quickCreateImportTarget;
   const deferredQuickCreateText = useDeferredValue(quickCreateEnabled ? bulkDrafts[importWindow] : '');
+
+  useEffect(() => {
+    if (activeWindow === 'raw' || activeWindow === 'sale') {
+      setQuickCreateImportTarget(activeWindow);
+    }
+  }, [activeWindow]);
 
   useEffect(() => {
     const domain = searchParams.get('domain');
@@ -3317,7 +3338,7 @@ function ProductsPageContent() {
   }
 
   function updateBulkDraft(value: string) {
-    setBulkDrafts((current) => ({ ...current, raw: value }));
+    setBulkDrafts((current) => ({ ...current, [importWindow]: value }));
   }
 
   function downloadQuickCreateTemplate() {
@@ -3416,22 +3437,25 @@ function ProductsPageContent() {
   }
 
   async function applyQuickCreate() {
-    if (quickCreateRows.length === 0) return;
-    if (quickCreateAnalysis.invalidCount > 0) {
+    const importRows = quickCreateRows.filter((cells) => isQuickCreateImportRowValid(cells, importWindow));
+    if (importRows.length === 0) {
       setSavedNotes((current) => [
-        `${quickCreateAnalysis.invalidCount} hatalı satır var. İçe aktarmadan önce dosyayı düzelt.`,
+        quickCreateRows.length === 0
+          ? 'İçe aktarılacak satır bulunamadı.'
+          : 'Dosyada geçerli satır bulunamadı. Kırmızı uyarıdaki satırları düzeltip tekrar deneyin.',
         ...current,
       ]);
       return;
     }
+    const skippedInvalidRows = quickCreateRows.length - importRows.length;
 
-    if (activeWindow === 'raw') {
+    if (importWindow === 'raw') {
       const existingNames = new Set(rawInventoryRows.map((row) => row.name.trim().toLocaleLowerCase('tr-TR')));
       const createdAt = Date.now();
       const additions: CreatedRawIngredient[] = [];
       let skipped = 0;
 
-      quickCreateRows.forEach((cells, index) => {
+      importRows.forEach((cells, index) => {
         const name = (cells[0] ?? '').trim();
         if (!name) return;
 
@@ -3483,7 +3507,7 @@ function ProductsPageContent() {
       }
 
       setSavedNotes((current) => [
-        `${additions.length} hammadde eklendi${skipped > 0 ? `, ${skipped} satır mevcut olduğu için atlandı` : ''}.`,
+        `${additions.length} hammadde eklendi${skipped > 0 ? `, ${skipped} satır mevcut olduğu için atlandı` : ''}${skippedInvalidRows > 0 ? `, ${skippedInvalidRows} hatalı satır atlandı` : ''}.`,
         ...current,
       ]);
       setBulkDrafts((current) => ({ ...current, raw: '' }));
@@ -3497,7 +3521,7 @@ function ProductsPageContent() {
     const newCategories = new Set<string>();
     let skipped = 0;
 
-    quickCreateRows.forEach((cells, index) => {
+    importRows.forEach((cells, index) => {
       const name = (cells[0] ?? '').trim();
       if (!name) return;
 
@@ -3581,7 +3605,7 @@ function ProductsPageContent() {
     }
 
     setSavedNotes((current) => [
-      `${additions.length} satış ürünü eklendi${skipped > 0 ? `, ${skipped} satır mevcut olduğu için atlandı` : ''}.`,
+      `${additions.length} satış ürünü eklendi${skipped > 0 ? `, ${skipped} satır mevcut olduğu için atlandı` : ''}${skippedInvalidRows > 0 ? `, ${skippedInvalidRows} hatalı satır atlandı` : ''}.`,
       ...current,
     ]);
     setBulkDrafts((current) => ({ ...current, sale: '' }));
@@ -4380,7 +4404,7 @@ function ProductsPageContent() {
                 <button
                   type="button"
                   onClick={applyQuickCreate}
-                  disabled={quickCreateRows.length === 0 || quickCreateAnalysis.invalidCount > 0}
+                  disabled={quickCreateAnalysis.validCount === 0}
                   className="h-14 w-full rounded-2xl bg-emerald-600 text-base font-semibold text-white shadow-[0_0_24px_rgba(16,185,129,0.22)] transition hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400 disabled:shadow-none"
                 >
                   {quickCreateTargetPluralLabel} içe aktar
