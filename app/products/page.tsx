@@ -223,6 +223,27 @@ type CreatedRawIngredient = {
 
 type BulkDrafts = Record<'raw' | 'sale' | 'recipe', string>;
 type BulkFileNames = Record<'raw' | 'sale' | 'recipe', string>;
+type ServerBulkProduct = {
+  id: string;
+  name: string;
+  posKey?: string | null;
+  legacyKey?: string | null;
+  revision?: number;
+  productType: 'sale_product' | 'combo_product' | 'stock_item';
+  price: number;
+  vatRate: VatRate;
+  unitType: string;
+  category: string;
+};
+type BulkProductInput = {
+  id?: string;
+  name: string;
+  category: string;
+  productType: 'sale_product' | 'combo_product' | 'stock_item';
+  price: string | number;
+  vatRate: VatRate;
+  unitType: string;
+};
 type ImportIssue = {
   rowNumber: number;
   message: string;
@@ -753,6 +774,69 @@ function saveRawStockCountOverrides(overrides: Record<string, RawStockCountOverr
 function parseAmount(value: string) {
   const parsed = Number(String(value).replace(',', '.'));
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function toVatRate(value: number): VatRate {
+  if (value === 1 || value === 10 || value === 20) return value;
+  return 10;
+}
+
+function serverProductToSaleProduct(product: ServerBulkProduct): SaleProductCard {
+  const price = String(product.price ?? 0);
+  const productType = product.productType === 'combo_product' ? 'combo_product' : 'sale_product';
+
+  return {
+    id: product.id,
+    name: product.name,
+    category: product.category || 'Mutfak',
+    productType,
+    salesUnit: product.unitType === 'kg' ? 'kg' : 'portion',
+    currentStock: '0',
+    stockProcurementType: 'recipe',
+    barStockMode: 'none',
+    glassesPerBottle: '6',
+    bottleVolumeCl: '70',
+    portionVolumeCl: '5',
+    initialBottleCount: '0',
+    dispensedPortions: '0',
+    openBottleSnapshots: [],
+    salePrice: price,
+    salePrice1: price,
+    salePrice2: price,
+    salePrice3: price,
+    price1WindowEnabled: true,
+    price1Start: '',
+    price1End: '',
+    price2WindowEnabled: false,
+    price2Start: '',
+    price2End: '',
+    allowComplimentary: true,
+    allowDiscount: true,
+    fixedMenu: false,
+    happyHourEligible: true,
+    eventPriceEligible: true,
+    vatRate: toVatRate(Number(product.vatRate)),
+    salesCount: 0,
+    recipeLines: [],
+    portionMultiplier: '1',
+    recipeOverrides: [],
+    wastePercentage: '0',
+    operationalCost: '0',
+    source: 'created',
+  };
+}
+
+function serverProductToRawIngredient(product: ServerBulkProduct): CreatedRawIngredient {
+  return {
+    id: product.id,
+    name: product.name,
+    productType: 'stock_item',
+    unit: normalizeRawUnit(product.unitType || 'adet').unit,
+    purchasePrice: String(product.price ?? 0),
+    minimumQuantity: '0',
+    currentQuantity: '0',
+    vatRate: toVatRate(Number(product.vatRate)),
+  };
 }
 
 function formatTimeInput(value: string) {
@@ -2118,6 +2202,80 @@ function ProductsPageContent() {
   useEffect(() => {
     if (!hydrated) return;
 
+    const controller = new AbortController();
+
+    async function hydrateServerProducts() {
+      try {
+        const response = await fetch('/api/products/bulk', {
+          credentials: 'include',
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        const payload = await response.json().catch(() => null) as { ok?: boolean; products?: ServerBulkProduct[]; error?: string } | null;
+        if (!response.ok || !payload?.ok || !Array.isArray(payload.products)) {
+          throw new Error(payload?.error ?? 'Server ürünleri yüklenemedi.');
+        }
+
+        const serverSaleProducts = payload.products
+          .filter((product) => product.productType === 'sale_product' || product.productType === 'combo_product')
+          .map(serverProductToSaleProduct);
+        const serverRawIngredients = payload.products
+          .filter((product) => product.productType === 'stock_item')
+          .map(serverProductToRawIngredient);
+
+        if (serverSaleProducts.length > 0) {
+          setSaleProducts((current) => {
+            const currentByName = new Map(current.map((product) => [product.name.trim().toLocaleLowerCase('tr-TR'), product]));
+            const merged = [...current];
+            serverSaleProducts.forEach((product) => {
+              const key = product.name.trim().toLocaleLowerCase('tr-TR');
+              const existingIndex = merged.findIndex((item) => item.name.trim().toLocaleLowerCase('tr-TR') === key);
+              if (existingIndex >= 0) {
+                merged[existingIndex] = {
+                  ...merged[existingIndex],
+                  ...product,
+                  salesCount: currentByName.get(key)?.salesCount ?? product.salesCount,
+                };
+              } else {
+                merged.unshift(product);
+              }
+            });
+            return merged;
+          });
+        }
+
+        if (serverRawIngredients.length > 0) {
+          setCreatedRawIngredients((current) => {
+            const merged = [...current];
+            serverRawIngredients.forEach((ingredient) => {
+              const key = ingredient.name.trim().toLocaleLowerCase('tr-TR');
+              const existingIndex = merged.findIndex((item) => item.name.trim().toLocaleLowerCase('tr-TR') === key);
+              if (existingIndex >= 0) {
+                merged[existingIndex] = { ...merged[existingIndex], ...ingredient };
+              } else {
+                merged.unshift(ingredient);
+              }
+            });
+            return merged;
+          });
+        }
+
+        setCategories((current) => mergeProductCategories(current, payload.products?.map((product) => product.category) ?? []));
+      } catch (error) {
+        if ((error as Error).name === 'AbortError') return;
+        console.error('[products] server product hydration failed', error);
+        setSavedNotes((current) => ['Server ürünleri yüklenemedi. Sayfayı yenileyip tekrar deneyin.', ...current]);
+      }
+    }
+
+    void hydrateServerProducts();
+
+    return () => controller.abort();
+  }, [hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+
     const syncSaleProductsFromRuntime = () => {
       const storedProducts = loadStoredSaleProducts();
       const hydratedProducts = buildInitialSaleProducts(storedProducts, includeSeedData).map((product, index) => ({
@@ -3240,7 +3398,24 @@ function ProductsPageContent() {
     event.target.value = '';
   }
 
-  function applyQuickCreate() {
+  async function persistBulkProductsToServer(products: BulkProductInput[]) {
+    if (products.length === 0) return { savedCount: 0 };
+
+    const response = await fetch('/api/products/bulk', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      credentials: 'include',
+      cache: 'no-store',
+      body: JSON.stringify({ source: 'excel-import', products }),
+    });
+    const payload = await response.json().catch(() => null) as { ok?: boolean; savedCount?: number; error?: string } | null;
+    if (!response.ok || !payload?.ok) {
+      throw new Error(payload?.error ?? 'Ürünler server tarafına kaydedilemedi.');
+    }
+    return { savedCount: payload.savedCount ?? products.length };
+  }
+
+  async function applyQuickCreate() {
     if (quickCreateRows.length === 0) return;
     if (quickCreateAnalysis.invalidCount > 0) {
       setSavedNotes((current) => [
@@ -3285,8 +3460,26 @@ function ProductsPageContent() {
       });
 
       if (additions.length > 0) {
-        setCreatedRawIngredients((current) => [...additions, ...current]);
-        setSelectedRawId(additions[0].id);
+        try {
+          await persistBulkProductsToServer(additions.map((ingredient) => ({
+            id: ingredient.id,
+            name: ingredient.name,
+            category: 'Hammadde',
+            productType: 'stock_item',
+            price: ingredient.purchasePrice,
+            vatRate: ingredient.vatRate,
+            unitType: ingredient.unit,
+          })));
+          setCreatedRawIngredients((current) => [...additions, ...current]);
+          setSelectedRawId(additions[0].id);
+        } catch (error) {
+          console.error('[products] raw excel import server save failed', error);
+          setSavedNotes((current) => [
+            error instanceof Error ? error.message : 'Hammaddeler server tarafına kaydedilemedi.',
+            ...current,
+          ]);
+          return;
+        }
       }
 
       setSavedNotes((current) => [
@@ -3364,9 +3557,27 @@ function ProductsPageContent() {
     });
 
     if (additions.length > 0) {
-      setSaleProducts((current) => [...additions, ...current]);
-      setSelectedProductId(additions[0].id);
-      setCategories((current) => Array.from(new Set([...current, ...Array.from(newCategories)])));
+      try {
+        await persistBulkProductsToServer(additions.map((product) => ({
+          id: product.id,
+          name: product.name,
+          category: product.category,
+          productType: product.productType,
+          price: product.salePrice1 || product.salePrice,
+          vatRate: product.vatRate,
+          unitType: product.salesUnit,
+        })));
+        setSaleProducts((current) => [...additions, ...current]);
+        setSelectedProductId(additions[0].id);
+        setCategories((current) => Array.from(new Set([...current, ...Array.from(newCategories)])));
+      } catch (error) {
+        console.error('[products] sale excel import server save failed', error);
+        setSavedNotes((current) => [
+          error instanceof Error ? error.message : 'Satış ürünleri server tarafına kaydedilemedi.',
+          ...current,
+        ]);
+        return;
+      }
     }
 
     setSavedNotes((current) => [
