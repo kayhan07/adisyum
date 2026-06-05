@@ -28,6 +28,8 @@ console.info('[pos-table-orders] route initialized', {
 
 type OrderLinePayload = {
   id: string;
+  tenantId?: string;
+  branchId?: string | null;
   clientMutationId?: string;
   orderRevision?: number;
   updatedAtMs?: number;
@@ -237,7 +239,7 @@ function tablePaymentStateKey(branchId?: string | null) {
 function branchMatches(metadata: Record<string, unknown>, branchId?: string | null) {
   if (!branchId) return true;
   const metadataBranchId = typeof metadata.branchId === 'string' ? metadata.branchId : null;
-  return !metadataBranchId || metadataBranchId === branchId;
+  return metadataBranchId === branchId;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -448,6 +450,8 @@ function itemToLine(item: {
   const metadata = normalizeMetadata(item.metadata);
   return {
     id: item.id,
+    tenantId: typeof metadata.tenantId === 'string' ? metadata.tenantId : undefined,
+    branchId: typeof metadata.branchId === 'string' ? metadata.branchId : null,
     clientMutationId: typeof metadata.mutationId === 'string' ? metadata.mutationId : undefined,
     orderRevision: typeof metadata.updatedAtMs === 'number' ? metadata.updatedAtMs : undefined,
     updatedAtMs: typeof metadata.updatedAtMs === 'number' ? metadata.updatedAtMs : undefined,
@@ -604,7 +608,11 @@ async function loadAuthoritativeOrdersByTable(tenantId: string, branchId?: strin
       return [
         tableId,
         (itemsByOrder.get(order.id) ?? [])
-          .filter((item) => orderItemBelongsToCurrentCatalog(item, catalogIndex, tenantProductIds, tenantId))
+          .filter((item) => {
+            const metadata = normalizeMetadata(item.metadata);
+            return branchMatches(metadata, branchId)
+              && orderItemBelongsToCurrentCatalog(item, catalogIndex, tenantProductIds, tenantId);
+          })
           .map(itemToLine),
       ] as const;
     })
@@ -762,7 +770,14 @@ export async function GET(request: Request) {
     const tenant = await requireTenant(request);
     const ordersByTable = await loadAuthoritativeOrdersByTable(tenant.tenantId, tenant.branchId ?? undefined);
     const diagnostics = await loadAuthoritativeOrderDiagnostics(tenant.tenantId, ordersByTable, tenant.branchId ?? undefined);
-    return NextResponse.json({ ok: true, ordersByTable, source: 'db', diagnostics });
+    return NextResponse.json({
+      ok: true,
+      tenantId: tenant.tenantId,
+      branchId: tenant.branchId ?? null,
+      ordersByTable,
+      source: 'db',
+      diagnostics,
+    });
   } catch (error) {
     return tenantAuthErrorResponse(error);
   }
@@ -865,7 +880,7 @@ export async function POST(request: Request) {
       });
 
       const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId, tenant.branchId ?? undefined);
-      return NextResponse.json({ ok: true, source: 'db', mutationId: normalizedBody.mutationId, ordersByTable, authoritativeState: { ordersByTable } });
+      return NextResponse.json({ ok: true, tenantId, branchId: tenant.branchId ?? null, source: 'db', mutationId: normalizedBody.mutationId, ordersByTable, authoritativeState: { ordersByTable } });
     }
 
     if (normalizedBody.action === 'clear_table' || normalizedBody.action === 'delete_table') {
@@ -930,6 +945,8 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         ok: true,
+        tenantId,
+        branchId: tenant.branchId ?? null,
         source: 'db',
         mutationId: normalizedBody.mutationId,
         ordersByTable,
@@ -1069,7 +1086,7 @@ export async function POST(request: Request) {
       });
 
       const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId, tenant.branchId ?? undefined);
-      return NextResponse.json({ ok: true, source: 'db', mutationId: normalizedBody.mutationId, ordersByTable, authoritativeState: { ordersByTable } });
+      return NextResponse.json({ ok: true, tenantId, branchId: tenant.branchId ?? null, source: 'db', mutationId: normalizedBody.mutationId, ordersByTable, authoritativeState: { ordersByTable } });
     }
 
     if (
@@ -1370,6 +1387,8 @@ export async function POST(request: Request) {
       });
       return NextResponse.json({
         ok: true,
+        tenantId,
+        branchId: tenant.branchId ?? null,
         source: 'db',
         mutationId: normalizedBody.mutationId,
         reconciliationKey,
@@ -1940,6 +1959,7 @@ export async function POST(request: Request) {
             metadata: compactJsonObject({
               ...normalizeMetadata(matching.metadata),
               tenantId,
+              branchId: tenant.branchId,
               productId: productInput.id || undefined,
               productKey: productInput.posKey,
               posKey: productInput.posKey,
@@ -2007,6 +2027,7 @@ export async function POST(request: Request) {
             notes: productInput.note || null,
             metadata: compactJsonObject({
               tenantId,
+              branchId: tenant.branchId,
               productId: productInput.id || undefined,
               productKey: productInput.posKey,
               posKey: productInput.posKey,
@@ -2085,6 +2106,7 @@ export async function POST(request: Request) {
           metadata: {
             ...normalizeMetadata(order.metadata),
             tableKey: tableId,
+            branchId: tenant.branchId,
             lastMutationId: mutationId,
             updatedAtMs: Date.now(),
           },
@@ -2156,7 +2178,7 @@ export async function POST(request: Request) {
       tableCount: Object.keys(ordersByTable).length,
       activeLineCount: ordersByTable[tableId]?.length ?? 0,
     });
-    return NextResponse.json({ ok: true, source: 'db', mutationId, ordersByTable, authoritativeState: { ordersByTable } });
+    return NextResponse.json({ ok: true, tenantId, branchId: tenant.branchId ?? null, source: 'db', mutationId, ordersByTable, authoritativeState: { ordersByTable } });
   } catch (error) {
     return mutationErrorResponse(error, traceId, tenantId, tableId);
   }

@@ -18,15 +18,28 @@ const listeners = new Set<OrdersListener>();
 let snapshot: AuthoritativeOrdersByTable = {};
 let diagnostics: AuthoritativeOrdersDiagnostics | null = null;
 let inflight: Promise<AuthoritativeOrdersByTable> | null = null;
-let activeTenantId = 'anonymous';
+let activeIdentity = 'anonymous:global';
 
 function emit() {
   listeners.forEach((listener) => listener());
 }
 
 function normalizeSnapshot<T>(ordersByTable: AuthoritativeOrdersByTable<T>) {
+  const tenantId = currentTenantId();
+  const branchId = currentBranchId();
   return Object.fromEntries(
-    Object.entries(ordersByTable).map(([tableId, lines]) => [tableId, Array.isArray(lines) ? lines : []]),
+    Object.entries(ordersByTable).map(([tableId, lines]) => [
+      tableId,
+      Array.isArray(lines)
+        ? lines.filter((line) => {
+            if (!line || typeof line !== 'object') return true;
+            const record = line as Record<string, unknown>;
+            const lineTenantId = typeof record.tenantId === 'string' ? record.tenantId : null;
+            const lineBranchId = typeof record.branchId === 'string' ? record.branchId : null;
+            return (!lineTenantId || lineTenantId === tenantId) && (!lineBranchId || lineBranchId === branchId);
+          })
+        : [],
+    ]),
   ) as AuthoritativeOrdersByTable<T>;
 }
 
@@ -35,18 +48,31 @@ function currentTenantId() {
   return session.isAuthenticated && session.tenantId ? session.tenantId : 'anonymous';
 }
 
+function currentBranchId() {
+  const session = loadSessionState();
+  return session.isAuthenticated
+    ? (session.activeBranchId || session.currentUser.branchId || 'global')
+    : 'global';
+}
+
+function currentIdentity() {
+  return `${currentTenantId()}:${currentBranchId()}`;
+}
+
 function ensureTenantIdentity() {
-  const nextTenantId = currentTenantId();
-  if (activeTenantId === nextTenantId) return nextTenantId;
-  activeTenantId = nextTenantId;
+  const nextIdentity = currentIdentity();
+  if (activeIdentity === nextIdentity) return nextIdentity;
+  activeIdentity = nextIdentity;
   snapshot = {};
   diagnostics = null;
   inflight = null;
   emit();
   console.info('[authoritative-table-orders] tenant identity changed; snapshot cleared', {
-    tenantId: nextTenantId,
+    identity: nextIdentity,
+    tenantId: currentTenantId(),
+    branchId: currentBranchId(),
   });
-  return nextTenantId;
+  return nextIdentity;
 }
 
 export function getAuthoritativeOrdersByTable<T>() {
@@ -72,7 +98,9 @@ export function subscribeToAuthoritativeOrders(callback: OrdersListener) {
 }
 
 export async function refreshAuthoritativeOrdersByTable<T>() {
-  const requestTenantId = ensureTenantIdentity();
+  const requestIdentity = ensureTenantIdentity();
+  const requestTenantId = currentTenantId();
+  const requestBranchId = currentBranchId();
   if (requestTenantId === 'anonymous') {
     return replaceAuthoritativeOrdersByTable({}) as AuthoritativeOrdersByTable<T>;
   }
@@ -80,10 +108,23 @@ export async function refreshAuthoritativeOrdersByTable<T>() {
 
   inflight = fetchAuthoritativeTablePayload<RuntimeOrderLine>()
     .then((payload) => {
-      if (ensureTenantIdentity() !== requestTenantId) {
+      if (ensureTenantIdentity() !== requestIdentity) {
         console.warn('[authoritative-table-orders] stale tenant payload discarded', {
+          requestIdentity,
+          activeIdentity,
           requestTenantId,
-          activeTenantId,
+        });
+        return snapshot as AuthoritativeOrdersByTable<T>;
+      }
+      if (
+        (payload.tenantId && payload.tenantId !== requestTenantId)
+        || (payload.branchId && payload.branchId !== requestBranchId)
+      ) {
+        console.error('[authoritative-table-orders] foreign tenant payload discarded', {
+          requestTenantId,
+          requestBranchId,
+          payloadTenantId: payload.tenantId,
+          payloadBranchId: payload.branchId,
         });
         return snapshot as AuthoritativeOrdersByTable<T>;
       }

@@ -20,6 +20,8 @@ export type RuntimeSyncSnapshot<TLine extends RuntimeOrderLine = RuntimeOrderLin
 };
 
 export type AuthoritativeTablePayload<TLine extends RuntimeOrderLine = RuntimeOrderLine> = {
+  tenantId?: string;
+  branchId?: string | null;
   ordersByTable: Record<string, TLine[]>;
   source: 'db';
   diagnostics?: {
@@ -93,6 +95,8 @@ export async function fetchAuthoritativeTablePayload<TLine extends RuntimeOrderL
     cache: 'no-store',
   });
   const payload = await readJsonResponse(response) as {
+    tenantId?: string;
+    branchId?: string | null;
     ordersByTable?: Record<string, TLine[]>;
     diagnostics?: AuthoritativeTablePayload<TLine>['diagnostics'];
     message?: string;
@@ -106,6 +110,8 @@ export async function fetchAuthoritativeTablePayload<TLine extends RuntimeOrderL
     throw new Error(`Authoritative order fetch failed with ${response.status}: ${payload.message ?? payload.error ?? 'unknown error'}${payload.traceId ? ` (${payload.traceId})` : ''}`);
   }
   return {
+    tenantId: typeof payload.tenantId === 'string' ? payload.tenantId : undefined,
+    branchId: typeof payload.branchId === 'string' ? payload.branchId : null,
     ordersByTable: payload.ordersByTable ?? {},
     source: 'db',
     diagnostics: payload.diagnostics,
