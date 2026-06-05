@@ -1055,6 +1055,7 @@ function ProductsPageContent() {
   const [activeWindow, setActiveWindow] = useState<ProductWindow>('raw');
   const [showNewItemForm, setShowNewItemForm] = useState(false);
   const [showQuickCreate, setShowQuickCreate] = useState(false);
+  const [quickCreateImportTarget, setQuickCreateImportTarget] = useState<'raw' | 'sale'>('raw');
   const [integrationState, setIntegrationState] = useState(() => getDefaultIntegrationState());
   const [categories, setCategories] = useState<string[]>([...DEFAULT_PRODUCT_CATEGORIES]);
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -1160,7 +1161,7 @@ function ProductsPageContent() {
     }),
     [activeDraftProductType, newItemDraft.category, newItemDraft.name, newItemDraft.salePrice],
   );
-  const importWindow: 'raw' | 'sale' = activeWindow === 'sale' ? 'sale' : 'raw';
+  const importWindow: 'raw' | 'sale' = quickCreateImportTarget;
   const deferredQuickCreateText = useDeferredValue(quickCreateEnabled ? bulkDrafts[importWindow] : '');
 
   useEffect(() => {
@@ -1172,6 +1173,12 @@ function ProductsPageContent() {
     // The query param is only an entry hint for split domain routes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
+
+  useEffect(() => {
+    if (activeWindow === 'raw' || activeWindow === 'sale') {
+      setQuickCreateImportTarget(activeWindow);
+    }
+  }, [activeWindow]);
 
   const saleStocks = useMemo(
     () => includeSeedData ? erpSnapshot.saleStockResult.stocks.filter((stock) => stock.branchId === branchId) : [],
@@ -3191,30 +3198,29 @@ function ProductsPageContent() {
         return;
       }
 
-      if (lowerName.endsWith('.xlsx')) {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('window', importWindow);
-
-        const response = await fetch('/api/products/import-excel', {
-          method: 'POST',
-          body: formData,
-          credentials: 'include',
-          cache: 'no-store',
-        });
-        const payload = await response.json().catch(() => null) as { ok?: boolean; rows?: string[][]; error?: string } | null;
-
-        if (!response.ok || !payload?.ok || !Array.isArray(payload.rows)) {
-          throw new Error(payload?.error ?? 'Excel dosyası içe aktarılamadı.');
-        }
-
-        const text = payload.rows.map((row) => row.join('\t')).join('\n');
-        updateBulkDraft(text);
-      } else {
-        const text = await file.text();
-        updateBulkDraft(text.replace(/^\uFEFF/, ''));
+      if (!lowerName.endsWith('.xlsx') && !lowerName.endsWith('.csv') && !lowerName.endsWith('.txt')) {
+        setSavedNotes((current) => ['Desteklenen dosya biçimleri: .xlsx, .csv, .txt', ...current]);
+        return;
       }
 
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('window', importWindow);
+
+      const response = await fetch('/api/products/import-excel', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => null) as { ok?: boolean; rows?: string[][]; error?: string } | null;
+
+      if (!response.ok || !payload?.ok || !Array.isArray(payload.rows)) {
+        throw new Error(payload?.error ?? 'Excel dosyası içe aktarılamadı.');
+      }
+
+      const text = payload.rows.map((row) => row.join('\t')).join('\n');
+      updateBulkDraft(text);
       setBulkFileNames((current) => ({ ...current, [importWindow]: file.name }));
       setSavedNotes((current) => [`${file.name} dosyası okundu. Önizlemeyi kontrol edip içe aktarabilirsiniz.`, ...current]);
     } catch (error) {
@@ -4050,6 +4056,31 @@ function ProductsPageContent() {
 
             <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_0.65fr]">
               <div>
+                <div className="mb-4 rounded-2xl border border-white/10 bg-[#0B1220]/70 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Aktarım hedefi</p>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {[
+                      { id: 'sale' as const, label: 'Satış ürünü', hint: 'POS ve masa menüsü' },
+                      { id: 'raw' as const, label: 'Hammadde', hint: 'Depo ve stok kalemi' },
+                    ].map((target) => {
+                      const selected = importWindow === target.id;
+                      return (
+                        <button
+                          key={target.id}
+                          type="button"
+                          onClick={() => {
+                            setQuickCreateImportTarget(target.id);
+                            changeActiveWindow(target.id);
+                          }}
+                          className={`rounded-2xl border px-4 py-3 text-left transition active:scale-[0.98] ${selected ? 'border-emerald-300/60 bg-emerald-500/15 text-white' : 'border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.06]'}`}
+                        >
+                          <span className="block text-sm font-semibold">{target.label}</span>
+                          <span className="mt-1 block text-xs text-slate-400">{target.hint}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
                 <div className="rounded-2xl border border-white/10 bg-[#0B1220]/70 p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">1. Şablonu indir</p>
                   <div className="mt-3 flex flex-wrap gap-3">

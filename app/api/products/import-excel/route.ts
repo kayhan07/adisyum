@@ -1,5 +1,6 @@
 import { inflateRawSync } from 'node:zlib';
 import { NextResponse } from 'next/server';
+import iconv from 'iconv-lite';
 import { requireTenant, TenantAuthError, tenantAuthErrorResponse } from '@/lib/requireTenant';
 
 export const runtime = 'nodejs';
@@ -19,6 +20,18 @@ function decodeXml(value: string) {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'");
+}
+
+function textDecodeScore(value: string) {
+  const replacementCount = (value.match(/\uFFFD/g) ?? []).length * 5;
+  const mojibakeCount = (value.match(/[ÃÄÅÂ]/g) ?? []).length * 2;
+  return replacementCount + mojibakeCount;
+}
+
+function decodeDelimitedBuffer(buffer: Buffer) {
+  const utf8 = buffer.toString('utf8');
+  const windows1254 = iconv.decode(buffer, 'win1254');
+  return textDecodeScore(windows1254) < textDecodeScore(utf8) ? windows1254 : utf8;
 }
 
 function parseDelimitedText(value: string) {
@@ -209,7 +222,7 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(await file.arrayBuffer());
     const rows = name.endsWith('.xlsx')
       ? parseXlsx(buffer)
-      : parseDelimitedText(buffer.toString('utf8'));
+      : parseDelimitedText(decodeDelimitedBuffer(buffer));
 
     return NextResponse.json({
       ok: true,
