@@ -1347,6 +1347,53 @@ export function FloorWorkspace() {
     replaceStoredTableMeta(nextMeta);
   }
 
+  async function syncTableClosureWithServer(tableId: string, action: 'clear_table' | 'delete_table') {
+    const mutationId = `${action}-${tableId}-${Date.now()}`;
+    try {
+      const response = await fetch('/api/pos/table-orders', {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action, tableId, mutationId }),
+      });
+      const payload = await response.json().catch(() => null) as {
+        ok?: boolean;
+        error?: string;
+        ordersByTable?: Record<string, OrderLine[]>;
+        authoritativeState?: { ordersByTable?: Record<string, OrderLine[]> };
+      } | null;
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error || `Masa sunucuda kapatılamadı (${response.status})`);
+      }
+      const authoritativeOrders = payload.authoritativeState?.ordersByTable ?? payload.ordersByTable;
+      if (authoritativeOrders) {
+        replaceAuthoritativeOrdersByTable(authoritativeOrders);
+        setOrdersByTable(authoritativeOrders);
+        setLiveTotals(
+          Object.fromEntries(
+            Object.entries(authoritativeOrders).map(([id, lines]) => [
+              id,
+              lines.reduce((sum, line) => sum + (line.complimentary ? 0 : line.qty * line.price * (line.isReturn ? -1 : 1)), 0),
+            ]),
+          ),
+        );
+      }
+      logFloorFlow('table-closure-authoritative-sync', {
+        tableId,
+        action,
+        activeOrderTables: Object.entries(authoritativeOrders ?? {}).filter(([, lines]) => lines.length > 0).map(([id]) => id),
+      });
+    } catch (error) {
+      console.error('[business-flow] table closure sync failed', {
+        tableId,
+        action,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      setActionMessage('Masa yerelde temizlendi ancak sunucu kapanışı doğrulanamadı. Sayfayı yenilemeden tekrar deneyin.');
+    }
+  }
+
   function openQuickNote(tableId: string) {
     const table = displayTableRows.find((item) => item.id === tableId);
     if (!table) {
@@ -1640,6 +1687,7 @@ export function FloorWorkspace() {
     );
     persistRows(nextRows);
     setActionMessage(`${target.name} hızlı temizlendi`);
+    void syncTableClosureWithServer(tableId, 'clear_table');
   }
 
   function startAction(type: 'move' | 'merge', tableId: string) {
@@ -2003,6 +2051,7 @@ export function FloorWorkspace() {
     setTablePaymentRequested(tableId, false);
     persistRows(tableRows.filter((table) => table.id !== tableId));
     setActionMessage(`${target.name} silindi.`);
+    void syncTableClosureWithServer(tableId, 'delete_table');
   }
 
   return (

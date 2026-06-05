@@ -22,6 +22,8 @@ const PRODUCT_RECOVERY_DISABLE_TABLE_RUNTIME_SERVER_PERSIST = true;
 
 type TableStateSyncMeta = {
   version: number;
+  tenantId?: string;
+  branchId?: string | null;
   updatedAtMs: number;
   clientId: string;
   mutationId: string;
@@ -60,6 +62,19 @@ function currentBranchId() {
   return session.activeBranchId || session.currentUser.branchId || undefined;
 }
 
+function currentTenantId() {
+  const session = loadSessionState();
+  return session.isAuthenticated && session.tenantId ? session.tenantId : undefined;
+}
+
+function tableStateIdentityMatches(tenantId?: string | null, branchId?: string | null) {
+  const activeTenantId = currentTenantId();
+  const activeBranchId = currentBranchId();
+  if (tenantId && activeTenantId && tenantId !== activeTenantId) return false;
+  if (branchId && activeBranchId && branchId !== activeBranchId) return false;
+  return true;
+}
+
 function writeRuntimeJsonIfChanged(key: string, value: unknown, options: { persist?: boolean } = {}) {
   const next = stableJson(value);
   if (readRuntimeItem('tenant', key) === next) {
@@ -86,6 +101,8 @@ function readTableStateSyncMeta() {
     if (typeof parsed.version !== 'number' || typeof parsed.updatedAtMs !== 'number') return null;
     return {
       version: parsed.version,
+      tenantId: typeof parsed.tenantId === 'string' ? parsed.tenantId : undefined,
+      branchId: typeof parsed.branchId === 'string' ? parsed.branchId : null,
       updatedAtMs: parsed.updatedAtMs,
       clientId: String(parsed.clientId ?? 'unknown'),
       mutationId: String(parsed.mutationId ?? 'unknown'),
@@ -105,6 +122,8 @@ function writeTableStateSyncMeta(source: string, ordersByTable: Record<string, u
   const now = Date.now();
   const next: TableStateSyncMeta = {
     version: Math.max(previous?.version ?? 0, now) + 1,
+    tenantId: currentTenantId(),
+    branchId: currentBranchId() ?? null,
     updatedAtMs: now,
     clientId: runtimeClientId,
     mutationId: `${runtimeClientId}-${now}-${Math.random().toString(36).slice(2, 8)}`,
@@ -131,6 +150,20 @@ function buildSnapshot(): SharedTablePaymentState {
 
 function applySnapshot(snapshot: Partial<SharedTablePaymentState>) {
   if (!canUseStorage()) return;
+  const snapshotMeta = snapshot.stateMeta;
+  if (
+    snapshotMeta
+    && typeof snapshotMeta === 'object'
+    && !tableStateIdentityMatches(snapshotMeta.tenantId, snapshotMeta.branchId)
+  ) {
+    console.warn('[adisyon-flow] stale table state snapshot discarded', {
+      snapshotTenantId: snapshotMeta.tenantId,
+      snapshotBranchId: snapshotMeta.branchId,
+      activeTenantId: currentTenantId(),
+      activeBranchId: currentBranchId(),
+    });
+    return;
+  }
 
   if (snapshot.ordersByTable && typeof snapshot.ordersByTable === 'object') {
     replaceAuthoritativeOrdersByTable(snapshot.ordersByTable);
@@ -167,8 +200,21 @@ export async function syncTableStateFromServer() {
   const query = branchId ? `?branchId=${encodeURIComponent(branchId)}` : '';
   const tableStateResponse = await runtimeFetch(`/api/runtime/table-state${query}` as `/api/${string}`, { cache: 'no-store' }).catch(() => null);
   if (tableStateResponse?.ok) {
-    const payload = await tableStateResponse.json().catch(() => null) as { state?: Partial<SharedTablePaymentState> } | null;
-    if (payload?.state) applySnapshot(payload.state);
+    const payload = await tableStateResponse.json().catch(() => null) as {
+      tenantId?: string;
+      branchId?: string | null;
+      state?: Partial<SharedTablePaymentState>;
+    } | null;
+    if (payload?.state && tableStateIdentityMatches(payload.tenantId, payload.branchId)) {
+      applySnapshot(payload.state);
+    } else if (payload?.state) {
+      console.warn('[adisyon-flow] stale table-state response discarded', {
+        responseTenantId: payload.tenantId,
+        responseBranchId: payload.branchId,
+        activeTenantId: currentTenantId(),
+        activeBranchId: currentBranchId(),
+      });
+    }
   }
   await refreshAuthoritativeOrdersByTable();
   tableStateSyncCounter += 1;

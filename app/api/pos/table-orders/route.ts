@@ -234,6 +234,12 @@ function tablePaymentStateKey(branchId?: string | null) {
   return `${TABLE_PAYMENT_STATE_KEY}:${branchId || 'global'}`;
 }
 
+function branchMatches(metadata: Record<string, unknown>, branchId?: string | null) {
+  if (!branchId) return true;
+  const metadataBranchId = typeof metadata.branchId === 'string' ? metadata.branchId : null;
+  return !metadataBranchId || metadataBranchId === branchId;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -587,6 +593,7 @@ async function loadAuthoritativeOrdersByTable(tenantId: string, branchId?: strin
 
   return Object.fromEntries(
     orders
+      .filter((order) => branchMatches(normalizeMetadata(order.metadata), branchId))
       .map((order) => {
       const metadata = normalizeMetadata(order.metadata);
       const tableId = typeof metadata.tableKey === 'string'
@@ -605,13 +612,15 @@ async function loadAuthoritativeOrdersByTable(tenantId: string, branchId?: strin
   ) as Record<string, OrderLinePayload[]>;
 }
 
-async function loadAuthoritativeOrderDiagnostics(tenantId: string, ordersByTable: Record<string, OrderLinePayload[]>) {
+async function loadAuthoritativeOrderDiagnostics(tenantId: string, ordersByTable: Record<string, OrderLinePayload[]>, branchId?: string | null) {
   const openOrders = await prisma.order.findMany({
     where: { tenantId, status: 'open', orderNo: { startsWith: 'TABLE-' } },
-    select: { id: true },
+    select: { id: true, metadata: true },
     take: 500,
   });
-  const openOrderIds = openOrders.map((order) => order.id);
+  const openOrderIds = openOrders
+    .filter((order) => branchMatches(normalizeMetadata(order.metadata), branchId))
+    .map((order) => order.id);
   const openItemCount = openOrderIds.length > 0
     ? await prisma.orderItem.count({ where: { tenantId, orderId: { in: openOrderIds } } })
     : 0;
@@ -642,6 +651,8 @@ async function persistAuthoritativeRuntimeTableState(input: {
   );
   const stateMeta = {
     version: Date.now(),
+    tenantId: input.tenantId,
+    branchId: input.branchId ?? null,
     updatedAtMs: Date.now(),
     clientId: 'server-pos-table-orders',
     mutationId: `server-${Date.now()}`,
@@ -750,7 +761,7 @@ export async function GET(request: Request) {
   try {
     const tenant = await requireTenant(request);
     const ordersByTable = await loadAuthoritativeOrdersByTable(tenant.tenantId, tenant.branchId ?? undefined);
-    const diagnostics = await loadAuthoritativeOrderDiagnostics(tenant.tenantId, ordersByTable);
+    const diagnostics = await loadAuthoritativeOrderDiagnostics(tenant.tenantId, ordersByTable, tenant.branchId ?? undefined);
     return NextResponse.json({ ok: true, ordersByTable, source: 'db', diagnostics });
   } catch (error) {
     return tenantAuthErrorResponse(error);
@@ -838,6 +849,7 @@ export async function POST(request: Request) {
             metadata: {
               ...normalizeMetadata(order.metadata),
               tableKey: tableId,
+              branchId: tenant.branchId,
               lastMutationId: normalizedBody.mutationId,
               savedAt: new Date().toISOString(),
               updatedAtMs: Date.now(),
@@ -854,6 +866,79 @@ export async function POST(request: Request) {
 
       const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId, tenant.branchId ?? undefined);
       return NextResponse.json({ ok: true, source: 'db', mutationId: normalizedBody.mutationId, ordersByTable, authoritativeState: { ordersByTable } });
+    }
+
+    if (normalizedBody.action === 'clear_table' || normalizedBody.action === 'delete_table') {
+      if (!tableId) {
+        return runtimeInsertionErrorResponse({
+          status: 400,
+          reason: 'missing_tableId',
+          traceId,
+          tenantId,
+          branchId: tenant.branchId,
+          tableId,
+        });
+      }
+
+      const orderNo = tableOrderNo(tableId);
+      const order = await prisma.order.findUnique({
+        where: { tenantId_orderNo: { tenantId, orderNo } },
+        select: { id: true, metadata: true, subtotal: true, total: true },
+      });
+
+      if (order && branchMatches(normalizeMetadata(order.metadata), tenant.branchId ?? undefined)) {
+        await prisma.$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${order.id}))`;
+          await tx.orderItem.deleteMany({ where: { tenantId, orderId: order.id } });
+          await tx.order.update({
+            where: { id: order.id, tenantId },
+            data: {
+              status: 'paid',
+              subtotal: 0,
+              discount: 0,
+              taxTotal: 0,
+              total: 0,
+              metadata: compactJsonObject({
+                ...normalizeMetadata(order.metadata),
+                tableKey: tableId,
+                branchId: tenant.branchId,
+                lastMutationId: normalizedBody.mutationId,
+                closedBy: normalizedBody.action,
+                clearedAt: new Date().toISOString(),
+                preClearSubtotal: decimalToNumber(order.subtotal),
+                preClearTotal: decimalToNumber(order.total),
+                updatedAtMs: Date.now(),
+              }),
+            },
+          });
+        });
+      }
+
+      publishTenantOrderEventBestEffort(tenantId, {
+        type: normalizedBody.action === 'delete_table' ? 'order.table_deleted' : 'order.cleared',
+        tableId,
+        mutationId: normalizedBody.mutationId,
+      });
+
+      const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId, tenant.branchId ?? undefined);
+      const runtimeTableState = await persistAuthoritativeRuntimeTableState({
+        tenantId,
+        branchId: tenant.branchId,
+        ordersByTable,
+        source: normalizedBody.action,
+      });
+
+      return NextResponse.json({
+        ok: true,
+        source: 'db',
+        mutationId: normalizedBody.mutationId,
+        ordersByTable,
+        authoritativeState: {
+          ordersByTable,
+          runtimeTableStateKey: runtimeTableState.key,
+          runtimeTableState: runtimeTableState.state,
+        },
+      });
     }
 
     if (normalizedBody.action === 'update_line_quantity' || normalizedBody.action === 'remove_line') {
@@ -967,6 +1052,7 @@ export async function POST(request: Request) {
             metadata: {
               ...normalizeMetadata(order.metadata),
               tableKey: tableId,
+              branchId: tenant.branchId,
               lastMutationId: normalizedBody.mutationId,
               updatedAtMs: Date.now(),
             },
@@ -1787,6 +1873,7 @@ export async function POST(request: Request) {
           status: 'open',
           metadata: {
             tableKey: tableId,
+            branchId: tenant.branchId,
             source: 'pos-table-orders',
             lastMutationId: mutationId,
             updatedAtMs: Date.now(),
@@ -1802,6 +1889,7 @@ export async function POST(request: Request) {
           total: 0,
           metadata: {
             tableKey: tableId,
+            branchId: tenant.branchId,
             source: 'pos-table-orders',
             lastMutationId: mutationId,
             updatedAtMs: Date.now(),

@@ -45,15 +45,16 @@ export async function GET(request: Request) {
       where: runtimeStateTenantKey(tenant.tenantId, key),
       select: { payload: true },
     }).catch(() => null);
+    const state = stored?.payload && typeof stored.payload === 'object'
+      ? stored.payload
+      : getDefaultState();
 
     return NextResponse.json({
       ok: true,
       tenantId: tenant.tenantId,
       branchId,
       key,
-      state: stored?.payload && typeof stored.payload === 'object'
-        ? stored.payload
-        : getDefaultState(),
+      state,
     });
   } catch (error) {
     return tenantAuthErrorResponse(error);
@@ -98,9 +99,13 @@ export async function POST(request: Request) {
     tableMeta: body.tableMeta && typeof body.tableMeta === 'object'
       ? body.tableMeta
       : current.tableMeta,
-    stateMeta: body.stateMeta && typeof body.stateMeta === 'object'
-      ? body.stateMeta
-      : current.stateMeta,
+    stateMeta: {
+      ...(current.stateMeta && typeof current.stateMeta === 'object' ? current.stateMeta : {}),
+      ...(body.stateMeta && typeof body.stateMeta === 'object' ? body.stateMeta : {}),
+      tenantId: tenant.tenantId,
+      branchId,
+      updatedAtMs: Date.now(),
+    },
     updatedAt: new Date().toISOString(),
   };
   const persistedState = JSON.parse(JSON.stringify(nextState)) as Prisma.InputJsonValue;
