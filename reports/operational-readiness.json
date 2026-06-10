@@ -1,0 +1,272 @@
+{
+  "timestamp": "2026-06-10T11:04:07.662Z",
+  "commitHash": "50ffdb7aac3999d599ba76559b344a0e9a8ae533",
+  "environment": {
+    "nodeEnv": "undefined",
+    "databaseMasked": null,
+    "productionLikeDatabase": false,
+    "simulationRequested": false
+  },
+  "summary": {
+    "operationalReady": true,
+    "blockingIssueCount": 0,
+    "highRiskCount": 1,
+    "warningCount": 0
+  },
+  "scenarios": {
+    "A_new_restaurant_setup": {
+      "status": "pass",
+      "checks": [
+        {
+          "passed": true,
+          "message": "Tenant modeli mevcut olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Branch modeli mevcut olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Subscription modeli mevcut olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "ProductCategory modeli mevcut olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Product modeli mevcut olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "TableGroup modeli mevcut olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "PosTable modeli mevcut olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "System admin tenant provisioning akışı route üzerinde olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "System admin subscription güncelleme aksiyonu route üzerinde olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Bulk ürün kaydında kategori oluşturma/eşleme akışı olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Bulk ürün kaydında ürün oluşturma akışı olmalı.",
+          "details": {}
+        }
+      ]
+    },
+    "B_pos_check_flow": {
+      "status": "pass",
+      "checks": [
+        {
+          "passed": true,
+          "message": "Masa adisyonu ödeme öncesi save_order ile kaydedilmeli.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Sipariş mutfağa gönderim sonrası mark_order_sent akışı olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Adet güncelleme UI aksiyonu olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Satır silme UI aksiyonu olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Masa ödeme kapanışı authoritative API üzerinde olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Kısmi ödeme aksiyonu API üzerinde olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Masa temizleme/taşıma sonrası available statüsü korunmalı.",
+          "details": {}
+        }
+      ]
+    },
+    "C_cash_and_payment_flow": {
+      "status": "pass",
+      "checks": [
+        {
+          "passed": true,
+          "message": "Ödeme kapanışında Payment kaydı oluşturulmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Nakit/kart ödemelerinde kasa transaction kaydı olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Ödeme mutasyonunda idempotency guard olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Günlük finans raporu endpoint entegrasyonu olmalı.",
+          "details": {}
+        }
+      ]
+    },
+    "D_current_account_flow": {
+      "status": "pass",
+      "checks": [
+        {
+          "passed": true,
+          "message": "Cari hareket modeli mevcut olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Cari mutabakat anahtarında tenant-scope unique olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Cari hareketlerde duplicate guard olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Cari bakiye debit/credit toplamından hesaplanmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Cari tahsilat/ödeme UI authoritative API üzerinden yazmalı.",
+          "details": {}
+        }
+      ]
+    },
+    "E_stock_and_recipe_flow": {
+      "status": "pass",
+      "checks": [
+        {
+          "passed": true,
+          "message": "Stok kartı modeli mevcut olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Stok hareket modeli mevcut olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Reçete modeli mevcut olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Reçete kalem modeli mevcut olmalı.",
+          "details": {}
+        }
+      ]
+    },
+    "F_reporting_consistency": {
+      "status": "pass",
+      "checks": [
+        {
+          "passed": true,
+          "message": "Rapor ekranı route dosyası mevcut olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Finans rapor ekranı route dosyası mevcut olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Ödeme raporu API proxy akışı mevcut olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Günlük ciro raporu API proxy akışı mevcut olmalı.",
+          "details": {}
+        }
+      ]
+    },
+    "G_system_admin_access_control": {
+      "status": "pass",
+      "checks": [
+        {
+          "passed": true,
+          "message": "Tenant erişimi merkezi assertTenantCanAccess üzerinden doğrulanmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Suspend/blocked tenant için uygulama erişimi engellenmeli.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "Süresi dolmuş abonelikte write erişimi engellenmeli.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "System admin tenant aktif/pasif aksiyonu mevcut olmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "App login giriş rotası middleware üzerinde korunmalı.",
+          "details": {}
+        },
+        {
+          "passed": true,
+          "message": "System-admin login giriş rotası middleware üzerinde korunmalı.",
+          "details": {}
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "level": "high-risk",
+      "module": "E_stock_and_recipe_flow",
+      "message": "POS ödeme kapanış akışında doğrudan stok düşüm hareketi görünmüyor.",
+      "details": {
+        "recommendation": "Satış sonrası stok düşümü için authoritative bir servis/worker doğrulaması ve test senaryosu eklenmeli."
+      }
+    }
+  ],
+  "notes": [
+    "Stok/reçete düşümü için route-level mutasyon görünmedi; bu alan operasyonel risk olarak işaretlendi.",
+    "DB simülasyonu çalıştırılmadı (OPERATIONAL_READINESS_DB_SIMULATE=1 değil)."
+  ]
+}
