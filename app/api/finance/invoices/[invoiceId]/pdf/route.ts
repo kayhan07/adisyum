@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { posBackendResponse } from '@/lib/server/pos-api';
+import { requireTenant, tenantAuthErrorResponse } from '@/lib/requireTenant';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,6 +10,7 @@ export async function GET(_request: Request, context: Context) {
   const { invoiceId } = await context.params;
 
   try {
+    await requireTenant(_request);
     const response = await posBackendResponse(`/finance/invoices/${invoiceId}/pdf`, { method: 'GET' });
     const buffer = await response.arrayBuffer();
 
@@ -23,7 +25,11 @@ export async function GET(_request: Request, context: Context) {
         'Content-Disposition': `inline; filename="invoice-${invoiceId}.pdf"`,
       },
     });
-  } catch {
+  } catch (error) {
+    const authResponse = tenantAuthErrorResponse(error);
+    if (authResponse.status === 401 || authResponse.status === 403) {
+      return authResponse;
+    }
     return NextResponse.json({ message: 'Invoice PDF could not be loaded.' }, { status: 500 });
   }
 }

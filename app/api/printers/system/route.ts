@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { NextResponse } from 'next/server';
+import { requireTenant, tenantAuthErrorResponse } from '@/lib/requireTenant';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -44,8 +45,9 @@ function runPowerShell(command: string) {
   });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    await requireTenant(request);
     let output = '';
 
     try {
@@ -77,6 +79,10 @@ export async function GET() {
         })),
     });
   } catch (error) {
+    const authResponse = tenantAuthErrorResponse(error);
+    if (authResponse.status === 401 || authResponse.status === 403) {
+      return authResponse;
+    }
     return NextResponse.json(
       {
         printers: [],

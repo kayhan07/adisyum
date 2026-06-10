@@ -1,0 +1,1916 @@
+{
+  "summary": {
+    "totalRoutes": 80,
+    "byClass": {
+      "auth-bootstrap": 18,
+      "tenant-protected": 40,
+      "internal-protected": 1,
+      "public-safe": 4,
+      "system-admin-protected": 17
+    },
+    "unsafeCandidates": 0,
+    "generatedAt": "2026-06-10T09:13:30.763Z",
+    "mode": "strict"
+  },
+  "routes": [
+    {
+      "file": "app/api/auth/login/route.ts",
+      "classification": "auth-bootstrap",
+      "guardSignals": [
+        "verifySessionToken"
+      ],
+      "riskSignals": [
+        "prisma.tenant",
+        "prisma.subscription",
+        "prisma.user",
+        "tenantId",
+        "branchId",
+        "request.json()",
+        "findFirst",
+        "findUnique",
+        "update("
+      ],
+      "reasons": [
+        "auth/session style route with DB access; validate strict payload trust rules"
+      ],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": true,
+        "hasTenantIdFromInput": true,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/auth/me/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "assertTenantCanAccess",
+        "getSessionFromRequest"
+      ],
+      "riskSignals": [
+        "prisma.branch",
+        "prisma.tenant",
+        "prisma.subscription",
+        "prisma.user",
+        "tenantId",
+        "branchId",
+        "findFirst",
+        "findUnique"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": true,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": true,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/auth/security-score/route.ts",
+      "classification": "auth-bootstrap",
+      "guardSignals": [
+        "getSessionFromRequest"
+      ],
+      "riskSignals": [
+        "tenantId"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/auth/session/route.ts",
+      "classification": "internal-protected",
+      "guardSignals": [
+        "getSessionFromRequest",
+        "verifySessionToken",
+        "x-internal-secret",
+        "INTERNAL_"
+      ],
+      "riskSignals": [
+        "prisma.tenant",
+        "prisma.subscription",
+        "prisma.user",
+        "tenantId",
+        "branchId",
+        "request.json()",
+        "body.tenantId",
+        "findFirst",
+        "findUnique"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": true,
+        "hasTenantIdFromInput": true,
+        "hasBranchIdFromInput": true,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": true
+      }
+    },
+    {
+      "file": "app/api/auth/system-admin/route.ts",
+      "classification": "auth-bootstrap",
+      "guardSignals": [
+        "verifySessionToken"
+      ],
+      "riskSignals": [
+        "prisma.branch",
+        "prisma.tenant",
+        "prisma.subscription",
+        "prisma.user",
+        "tenantId",
+        "branchId",
+        "request.json()",
+        "findFirst",
+        "update(",
+        "upsert(",
+        "create("
+      ],
+      "reasons": [
+        "auth/session style route with DB access; validate strict payload trust rules"
+      ],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": true,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/commercial/license/route.ts",
+      "classification": "auth-bootstrap",
+      "guardSignals": [
+        "getSessionFromRequest"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "request.json()",
+        "body.tenantId"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": true,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/commercial/provision/route.ts",
+      "classification": "auth-bootstrap",
+      "guardSignals": [
+        "getSessionFromRequest"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "request.json()",
+        "body.tenantId"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": true,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/commercial/remote-device/route.ts",
+      "classification": "auth-bootstrap",
+      "guardSignals": [
+        "getSessionFromRequest"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "request.json()",
+        "body.tenantId"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": true,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/commercial/support/route.ts",
+      "classification": "auth-bootstrap",
+      "guardSignals": [
+        "getSessionFromRequest"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "request.json()",
+        "body.tenantId"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": true,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/delivery/sync/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "request.json()"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/desktop-bridge/telemetry/route.ts",
+      "classification": "auth-bootstrap",
+      "guardSignals": [
+        "getSessionFromRequest"
+      ],
+      "riskSignals": [
+        "prisma.tenant",
+        "tenantId",
+        "branchId",
+        "request.json()",
+        "body.tenantId",
+        "upsert("
+      ],
+      "reasons": [
+        "auth/session style route with DB access; validate strict payload trust rules"
+      ],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": true,
+        "hasBranchIdFromInput": true,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/devices/registry/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "prisma.tenant",
+        "tenantId",
+        "branchId",
+        "request.json()",
+        "body.tenantId",
+        "findMany",
+        "upsert("
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": true,
+        "hasBranchIdFromInput": true,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/downloads/windows/metadata/route.ts",
+      "classification": "public-safe",
+      "guardSignals": [],
+      "riskSignals": [],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/downloads/windows/track/route.ts",
+      "classification": "public-safe",
+      "guardSignals": [],
+      "riskSignals": [
+        "request.json()"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/finance/current-account-movements/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "prisma.currentAccount",
+        "prisma.currentAccountMovement",
+        "tenantId",
+        "request.json()",
+        "findMany",
+        "findUnique",
+        "update(",
+        "create("
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": true,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/finance/daily-reports/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/finance/invoices/[invoiceId]/pdf/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/finance/invoices/[invoiceId]/retry/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/finance/invoices/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/finance/payments/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/gib/connect/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant",
+        "authorization"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "request.json()"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/kds/tickets/[ticketId]/status/route.ts",
+      "classification": "auth-bootstrap",
+      "guardSignals": [
+        "getSessionFromRequest"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "branchId",
+        "request.json()"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/kds/tickets/route.ts",
+      "classification": "auth-bootstrap",
+      "guardSignals": [
+        "getSessionFromRequest"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "branchId"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": true,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/media/delete/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "findFirst",
+        "deleteMany"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/media/list/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "findMany"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/media/upload/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "prisma.product",
+        "prisma.productCategory",
+        "tenantId",
+        "updateMany",
+        "create("
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": true,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/offline-sync/orders/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "request.json()",
+        "createMany"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/offline-sync/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "request.json()",
+        "createMany"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/operational-intelligence/route.ts",
+      "classification": "auth-bootstrap",
+      "guardSignals": [
+        "getSessionFromRequest"
+      ],
+      "riskSignals": [
+        "tenantId"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/pilot-field/ingest/route.ts",
+      "classification": "auth-bootstrap",
+      "guardSignals": [
+        "getSessionFromRequest"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "request.json()",
+        "body.tenantId"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": true,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/pos/device/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "request.json()"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/pos/logs/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/pos/mapping/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "request.json()"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/pos/table-orders/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "prisma.product",
+        "prisma.productCategory",
+        "prisma.order",
+        "prisma.orderItem",
+        "tenantId",
+        "branchId",
+        "request.json()",
+        "findMany",
+        "findFirst",
+        "findUnique",
+        "update(",
+        "delete(",
+        "deleteMany",
+        "upsert(",
+        "create("
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": true,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/pos/test/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "request.json()"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/printers/local-agent/print/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "prisma.tenant",
+        "tenantId",
+        "branchId",
+        "request.json()",
+        "findFirst",
+        "create("
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/printers/local-agent/printers/route.ts",
+      "classification": "public-safe",
+      "guardSignals": [],
+      "riskSignals": [],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/printers/local-agent/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "prisma.printer",
+        "prisma.tenant",
+        "tenantId",
+        "branchId",
+        "findMany",
+        "findFirst"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": true,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/printers/print-requests/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "prisma.tenant",
+        "tenantId",
+        "branchId",
+        "request.json()",
+        "findMany",
+        "findFirst",
+        "updateMany",
+        "upsert("
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/printers/system/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/products/bulk/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "prisma.product",
+        "prisma.productCategory",
+        "tenantId",
+        "branchId",
+        "request.json()",
+        "findMany",
+        "findFirst",
+        "update(",
+        "create("
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": true,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/products/import-excel/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/products/lifecycle/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "prisma.product",
+        "prisma.order",
+        "prisma.orderItem",
+        "prisma.recipe",
+        "tenantId",
+        "branchId",
+        "request.json()",
+        "findMany",
+        "findFirst",
+        "update(",
+        "upsert(",
+        "create("
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": true,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/runtime-build-id/route.ts",
+      "classification": "public-safe",
+      "guardSignals": [],
+      "riskSignals": [],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/runtime/heartbeat/route.ts",
+      "classification": "auth-bootstrap",
+      "guardSignals": [
+        "getSessionFromRequest"
+      ],
+      "riskSignals": [
+        "prisma.user",
+        "tenantId",
+        "branchId",
+        "request.json()",
+        "findUnique",
+        "update("
+      ],
+      "reasons": [
+        "auth/session style route with DB access; validate strict payload trust rules"
+      ],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": true,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/runtime/pos-catalog/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "branchId",
+        "request.json()",
+        "upsert("
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": true,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/runtime/state/[scope]/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant",
+        "getSessionFromRequest"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "request.json()",
+        "findUnique",
+        "update(",
+        "delete(",
+        "upsert("
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": true,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/runtime/table-state/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "branchId",
+        "request.json()",
+        "findUnique",
+        "upsert("
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": true,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/settings/company/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "prisma.branch",
+        "prisma.tenant",
+        "tenantId",
+        "branchId",
+        "request.json()",
+        "findUnique",
+        "update(",
+        "upsert("
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": true,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/settings/pos/devices/[deviceId]/print-test/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "branchId",
+        "request.json()"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/settings/pos/devices/[deviceId]/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "branchId",
+        "request.json()"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/settings/pos/devices/[deviceId]/test/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/settings/pos/devices/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "branchId",
+        "request.json()"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/settings/pos/mappings/bulk/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "branchId",
+        "request.json()"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/settings/pos/overview/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "branchId"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/settings/pos/retry/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/system-admin/audit/route.ts",
+      "classification": "system-admin-protected",
+      "guardSignals": [
+        "requireSystemAdmin"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "searchParams.get('tenantId')",
+        "findMany"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": true,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": true,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/system-admin/disaster-recovery/route.ts",
+      "classification": "system-admin-protected",
+      "guardSignals": [
+        "requireSystemAdmin"
+      ],
+      "riskSignals": [
+        "request.json()"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": true,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/system-admin/incidents/actions/route.ts",
+      "classification": "system-admin-protected",
+      "guardSignals": [
+        "requireSystemAdmin"
+      ],
+      "riskSignals": [
+        "request.json()"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": true,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/system-admin/incidents/route.ts",
+      "classification": "system-admin-protected",
+      "guardSignals": [
+        "requireSystemAdmin"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "searchParams.get('tenantId')"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": true,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": true,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/system-admin/jobs/route.ts",
+      "classification": "system-admin-protected",
+      "guardSignals": [
+        "requireSystemAdmin"
+      ],
+      "riskSignals": [
+        "request.json()"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": true,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/system-admin/jobs/stream/route.ts",
+      "classification": "system-admin-protected",
+      "guardSignals": [
+        "requireSystemAdmin"
+      ],
+      "riskSignals": [],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": true,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/system-admin/live-operations/history/route.ts",
+      "classification": "system-admin-protected",
+      "guardSignals": [
+        "requireSystemAdmin"
+      ],
+      "riskSignals": [],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": true,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/system-admin/live-operations/route.ts",
+      "classification": "system-admin-protected",
+      "guardSignals": [
+        "requireSystemAdmin"
+      ],
+      "riskSignals": [],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": true,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/system-admin/live-operations/stream/route.ts",
+      "classification": "system-admin-protected",
+      "guardSignals": [
+        "requireSystemAdmin"
+      ],
+      "riskSignals": [],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": true,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/system-admin/observability/actions/route.ts",
+      "classification": "system-admin-protected",
+      "guardSignals": [
+        "getSessionFromRequest"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "request.json()",
+        "body.tenantId"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": true,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/system-admin/observability/ingest/route.ts",
+      "classification": "system-admin-protected",
+      "guardSignals": [
+        "getSessionFromRequest"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "request.json()"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": true,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/system-admin/observability/route.ts",
+      "classification": "system-admin-protected",
+      "guardSignals": [
+        "getSessionFromRequest",
+        "authorization"
+      ],
+      "riskSignals": [],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/system-admin/operational-intelligence/route.ts",
+      "classification": "system-admin-protected",
+      "guardSignals": [
+        "requireSystemAdmin"
+      ],
+      "riskSignals": [],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": true,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/system-admin/operator-memory/route.ts",
+      "classification": "system-admin-protected",
+      "guardSignals": [
+        "requireSystemAdmin"
+      ],
+      "riskSignals": [
+        "request.json()"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": true,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/system-admin/release-operations/route.ts",
+      "classification": "system-admin-protected",
+      "guardSignals": [
+        "requireSystemAdmin"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "branchId",
+        "request.json()",
+        "body.tenantId"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": true,
+        "hasBranchIdFromInput": true,
+        "hasSessionGuard": false,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": true,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/system-admin/templates/route.ts",
+      "classification": "system-admin-protected",
+      "guardSignals": [
+        "requireSystemAdmin"
+      ],
+      "riskSignals": [
+        "request.json()"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": true,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/system-admin/tenants/route.ts",
+      "classification": "system-admin-protected",
+      "guardSignals": [
+        "requireSystemAdmin"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "branchId",
+        "request.json()",
+        "body.tenantId"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": true,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": true,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/templates/import/route.ts",
+      "classification": "auth-bootstrap",
+      "guardSignals": [
+        "getSessionFromRequest"
+      ],
+      "riskSignals": [
+        "request.json()"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/templates/packs/import/route.ts",
+      "classification": "auth-bootstrap",
+      "guardSignals": [
+        "getSessionFromRequest"
+      ],
+      "riskSignals": [
+        "request.json()"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/templates/packs/route.ts",
+      "classification": "auth-bootstrap",
+      "guardSignals": [
+        "getSessionFromRequest"
+      ],
+      "riskSignals": [],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/templates/preview/route.ts",
+      "classification": "auth-bootstrap",
+      "guardSignals": [
+        "getSessionFromRequest"
+      ],
+      "riskSignals": [
+        "request.json()"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/templates/products/route.ts",
+      "classification": "auth-bootstrap",
+      "guardSignals": [
+        "getSessionFromRequest"
+      ],
+      "riskSignals": [
+        "tenantId"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": true,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/v1/product-mappings/coverage/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "tenantId"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/v1/products/[productId]/mapping/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "tenantId"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireTenant, tenantAuthErrorResponse } from '@/lib/requireTenant';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -238,6 +239,7 @@ function normalizeOrders(payload: unknown) {
 
 export async function POST(request: NextRequest) {
   try {
+    await requireTenant(request);
     const body = await request.json() as { integration?: PartnerIntegrationPayload };
     const integration = body.integration;
 
@@ -291,6 +293,10 @@ export async function POST(request: NextRequest) {
       receivedAt: new Date().toISOString(),
     });
   } catch (error) {
+    const authResponse = tenantAuthErrorResponse(error);
+    if (authResponse.status === 401 || authResponse.status === 403) {
+      return authResponse;
+    }
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : 'Sipariş entegrasyonu çalıştırılamadı.',

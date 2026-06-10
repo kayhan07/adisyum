@@ -35,7 +35,22 @@ function getRequestIp(request: Request) {
     || null;
 }
 
+function isSessionBootstrapAllowed(request: Request) {
+  const secret = process.env.INTERNAL_SESSION_BOOTSTRAP_SECRET?.trim();
+  if (!secret) return false;
+  const header = request.headers.get('x-internal-secret')?.trim();
+  return Boolean(header) && header === secret;
+}
+
 export async function POST(request: Request) {
+  if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
+  }
+
+  if (!isSessionBootstrapAllowed(request)) {
+    return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 });
+  }
+
   const body = (await request.json().catch(() => null)) as LoginPayload | null;
   const ip = getRequestIp(request);
   const userAgent = request.headers.get('user-agent');
