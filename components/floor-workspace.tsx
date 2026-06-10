@@ -555,11 +555,15 @@ export function FloorWorkspace() {
         setOrderSyncDiagnostics(getAuthoritativeOrdersDiagnostics());
         setOrdersByTable(serverOrders);
         setTableRows((current) => mergeTableRowsWithAuthoritativeOrders(current, activeBranchId, serverOrders));
+        const allKnownTableIds = [...new Set([
+          ...tableRows.map((t) => t.id),
+          ...Object.keys(serverOrders),
+        ])];
         setLiveTotals(
           Object.fromEntries(
-            Object.entries(serverOrders).map(([tableId, lines]) => [
+            allKnownTableIds.map((tableId) => [
               tableId,
-              lines.reduce((sum, line) => sum + (line.complimentary ? 0 : line.qty * line.price * (line.isReturn ? -1 : 1)), 0),
+              (serverOrders[tableId] ?? []).reduce((sum, line) => sum + (line.complimentary ? 0 : line.qty * line.price * (line.isReturn ? -1 : 1)), 0),
             ]),
           ),
         );
@@ -597,11 +601,15 @@ export function FloorWorkspace() {
           setOrdersByTable(serverOrders);
           replaceAuthoritativeOrdersByTable(serverOrders);
           setTableRows((current) => mergeTableRowsWithAuthoritativeOrders(current, activeBranchId, serverOrders));
+          const allKnownTableIds = [...new Set([
+            ...tableRows.map((t) => t.id),
+            ...Object.keys(serverOrders),
+          ])];
           setLiveTotals(
             Object.fromEntries(
-              Object.entries(serverOrders).map(([tableId, lines]) => [
+              allKnownTableIds.map((tableId) => [
                 tableId,
-                lines.reduce((sum, line) => sum + (line.complimentary ? 0 : line.qty * line.price * (line.isReturn ? -1 : 1)), 0),
+                (serverOrders[tableId] ?? []).reduce((sum, line) => sum + (line.complimentary ? 0 : line.qty * line.price * (line.isReturn ? -1 : 1)), 0),
               ]),
             ),
           );
@@ -1670,6 +1678,7 @@ export function FloorWorkspace() {
         ? {
             ...table,
             guests: 0,
+            total: 0,
             reservationName: undefined,
             reservationPhone: undefined,
             reservationStatus: undefined,
@@ -1857,6 +1866,7 @@ export function FloorWorkspace() {
         return {
           ...table,
           guests: 0,
+          total: 0,
           reservationName: undefined,
           reservationPhone: undefined,
           reservationStatus: undefined,
