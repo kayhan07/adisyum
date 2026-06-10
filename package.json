@@ -9,6 +9,7 @@
     "pos:reconciliation-test": "tsx scripts/verify-pos-order-reconciliation.ts",
     "pos:critical-flow": "node scripts/verify-pos-critical-flow.mjs",
     "pos:backbone": "node scripts/verify-pos-backbone.mjs",
+    "pos:floor-table-regression": "node scripts/verify-floor-workspace-table-regression.mjs",
     "finance:reconciliation": "node scripts/verify-finance-reconciliation.mjs",
     "tenant:clean-start": "node scripts/verify-tenant-clean-start.mjs",
     "pos:cross-device": "node scripts/verify-pos-cross-device.mjs",

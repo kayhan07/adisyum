@@ -188,6 +188,25 @@ function getOrderGross(lines: OrderLine[]) {
   return Number(subtotal.toFixed(2));
 }
 
+function getAuthoritativeOrderGross(lines: OrderLine[]) {
+  const subtotal = lines.reduce((sum, line) => sum + (line.complimentary ? 0 : line.qty * line.price * (line.isReturn ? -1 : 1)), 0);
+  return Number(subtotal.toFixed(2));
+}
+
+function buildLiveTotalsForKnownTables(knownTables: Pick<LocalTableRecord, 'id'>[], serverOrders: Record<string, OrderLine[]>) {
+  const allKnownTableIds = [...new Set([
+    ...knownTables.map((table) => table.id),
+    ...Object.keys(serverOrders),
+  ])];
+
+  return Object.fromEntries(
+    allKnownTableIds.map((tableId) => [
+      tableId,
+      getAuthoritativeOrderGross(serverOrders[tableId] ?? []),
+    ]),
+  );
+}
+
 function formatTRY(value: number) {
   return new Intl.NumberFormat('tr-TR', {
     style: 'currency',
@@ -453,6 +472,7 @@ export function FloorWorkspace() {
         return {
           ...table,
           paymentRequested: paymentRequestedSet.has(table.id) || table.paymentRequested,
+          // Authoritative sync writes an explicit 0 for every known table so cleared tables never fall back to a stale layout total.
           total: liveTotals[table.id] ?? table.total,
           guests: activeReservation?.guestCount ?? table.guests,
           reservationName: activeReservation?.guestName,
@@ -554,19 +574,9 @@ export function FloorWorkspace() {
       .then((serverOrders) => {
         setOrderSyncDiagnostics(getAuthoritativeOrdersDiagnostics());
         setOrdersByTable(serverOrders);
-        setTableRows((current) => mergeTableRowsWithAuthoritativeOrders(current, activeBranchId, serverOrders));
-        const allKnownTableIds = [...new Set([
-          ...tableRows.map((t) => t.id),
-          ...Object.keys(serverOrders),
-        ])];
-        setLiveTotals(
-          Object.fromEntries(
-            allKnownTableIds.map((tableId) => [
-              tableId,
-              (serverOrders[tableId] ?? []).reduce((sum, line) => sum + (line.complimentary ? 0 : line.qty * line.price * (line.isReturn ? -1 : 1)), 0),
-            ]),
-          ),
-        );
+        const nextRows = mergeTableRowsWithAuthoritativeOrders(tableRows, activeBranchId, serverOrders);
+        setTableRows(nextRows);
+        setLiveTotals(buildLiveTotalsForKnownTables(nextRows, serverOrders));
         logFloorFlow('authoritative-orders-hydrated', {
           patchId: FLOOR_SYNC_PATCH_ID,
           tableCount: Object.keys(serverOrders).length,
@@ -600,19 +610,9 @@ export function FloorWorkspace() {
           setOrderSyncDiagnostics(getAuthoritativeOrdersDiagnostics());
           setOrdersByTable(serverOrders);
           replaceAuthoritativeOrdersByTable(serverOrders);
-          setTableRows((current) => mergeTableRowsWithAuthoritativeOrders(current, activeBranchId, serverOrders));
-          const allKnownTableIds = [...new Set([
-            ...tableRows.map((t) => t.id),
-            ...Object.keys(serverOrders),
-          ])];
-          setLiveTotals(
-            Object.fromEntries(
-              allKnownTableIds.map((tableId) => [
-                tableId,
-                (serverOrders[tableId] ?? []).reduce((sum, line) => sum + (line.complimentary ? 0 : line.qty * line.price * (line.isReturn ? -1 : 1)), 0),
-              ]),
-            ),
-          );
+          const nextRows = mergeTableRowsWithAuthoritativeOrders(tableRows, activeBranchId, serverOrders);
+          setTableRows(nextRows);
+          setLiveTotals(buildLiveTotalsForKnownTables(nextRows, serverOrders));
         })
         .catch((error) => {
           if (cancelled) return;
@@ -638,7 +638,7 @@ export function FloorWorkspace() {
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, []);
+  }, [activeBranchId, tableRows]);
 
   useEffect(() => {
     const refreshReservations = () => {
@@ -1378,14 +1378,7 @@ export function FloorWorkspace() {
       if (authoritativeOrders) {
         replaceAuthoritativeOrdersByTable(authoritativeOrders);
         setOrdersByTable(authoritativeOrders);
-        setLiveTotals(
-          Object.fromEntries(
-            Object.entries(authoritativeOrders).map(([id, lines]) => [
-              id,
-              lines.reduce((sum, line) => sum + (line.complimentary ? 0 : line.qty * line.price * (line.isReturn ? -1 : 1)), 0),
-            ]),
-          ),
-        );
+        setLiveTotals(buildLiveTotalsForKnownTables(sortedTableRows, authoritativeOrders));
       }
       logFloorFlow('table-closure-authoritative-sync', {
         tableId,
@@ -1677,6 +1670,7 @@ export function FloorWorkspace() {
       table.id === tableId
         ? {
             ...table,
+            status: 'available' as const,
             guests: 0,
             total: 0,
             reservationName: undefined,
@@ -1865,6 +1859,7 @@ export function FloorWorkspace() {
       if (table.id === sourceId) {
         return {
           ...table,
+          status: 'available' as const,
           guests: 0,
           total: 0,
           reservationName: undefined,
@@ -1884,7 +1879,9 @@ export function FloorWorkspace() {
       if (table.id === targetId) {
         return {
           ...table,
+          status: movedTotal > 0 ? 'occupied' as const : 'available' as const,
           guests: sourceTable.guests,
+          total: movedTotal,
           reservationName: sourceTable.reservationName,
           reservationPhone: sourceTable.reservationPhone,
           reservationStatus: sourceTable.reservationStatus,
