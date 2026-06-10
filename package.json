@@ -102,7 +102,9 @@
     "desktop:publish-windows": "node tools/release-governance/publish-windows-downloads.mjs",
     "desktop:release-windows": "npm --prefix apps/desktop install && npm --prefix apps/desktop run dist && npm run desktop:build-bridges && npm run desktop:publish-windows",
     "audit:api-guards:report": "node scripts/audit-api-route-guards.mjs --report-only",
-    "audit:api-guards": "node scripts/audit-api-route-guards.mjs"
+    "audit:api-guards": "node scripts/audit-api-route-guards.mjs",
+    "audit:prisma-tenant-scope:report": "node scripts/audit-prisma-tenant-scope.mjs --report-only",
+    "audit:prisma-tenant-scope": "node scripts/audit-prisma-tenant-scope.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
