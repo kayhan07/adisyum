@@ -1,0 +1,121 @@
+{
+  "timestamp": "2026-06-10T10:36:57.041Z",
+  "environment": {
+    "mode": "dry-run",
+    "nodeEnv": "production",
+    "productionTargetDetected": true,
+    "readOnlyFlag": "0"
+  },
+  "databaseTargetMasked": "postgresql://pos***ary/ad***od",
+  "commitHash": "07e9944cb9794c8f2c1720db190330651026cce1",
+  "counts": {
+    "tenants": null,
+    "activeTenants": null,
+    "inactiveTenants": null,
+    "demoTrialTenants": null,
+    "branches": null,
+    "users": null,
+    "products": null,
+    "categories": null,
+    "tables": null,
+    "orders": null,
+    "payments": null,
+    "currentAccountMovements": null,
+    "stockItems": null,
+    "stockMovements": null,
+    "recipes": null,
+    "printers": null
+  },
+  "severitySummary": {
+    "info": 1,
+    "warning": 0,
+    "high-risk": 0,
+    "critical": 0
+  },
+  "findings": [
+    {
+      "severity": "info",
+      "category": "general",
+      "check": "Production-like target blocked by READ_ONLY_DATA_AUDIT guard",
+      "count": 0,
+      "details": {
+        "reason": "Set READ_ONLY_DATA_AUDIT=1 to run against production-like DATABASE_URL."
+      }
+    }
+  ],
+  "sections": {
+    "1_general_health_summary": {
+      "summary": "Dry-run skipped by safety guard for production-like DB target."
+    },
+    "2_tenant_integrity_summary": [
+      {
+        "severity": "info",
+        "note": "Dry-run skipped by safety guard for production-like DB target."
+      }
+    ],
+    "3_product_category_findings": [
+      {
+        "severity": "info",
+        "note": "Dry-run skipped by safety guard for production-like DB target."
+      }
+    ],
+    "4_finance_findings": [
+      {
+        "severity": "info",
+        "note": "Dry-run skipped by safety guard for production-like DB target."
+      }
+    ],
+    "5_order_table_payment_findings": [
+      {
+        "severity": "info",
+        "note": "Dry-run skipped by safety guard for production-like DB target."
+      }
+    ],
+    "6_stock_recipe_findings": [
+      {
+        "severity": "info",
+        "note": "Dry-run skipped by safety guard for production-like DB target."
+      }
+    ],
+    "7_printer_runtime_findings": [
+      {
+        "severity": "info",
+        "note": "Dry-run skipped by safety guard for production-like DB target."
+      }
+    ],
+    "8_demo_seed_legacy_findings": [
+      {
+        "severity": "info",
+        "note": "Dry-run skipped by safety guard for production-like DB target."
+      }
+    ],
+    "9_critical_findings": [],
+    "10_high_risk_findings": [],
+    "11_warning_findings": [],
+    "12_recommended_backfill_plan": [
+      "READ_ONLY_DATA_AUDIT=1 set edilip production-dry-run komutu ile sadece okuma denetimi çalıştırılmalı.",
+      "Çıkan bulgulara göre staging üzerinde idempotent düzeltme planı hazırlanmalı.",
+      "Canlıda düzeltme öncesi bakım penceresi ve geri dönüş planı zorunlu."
+    ],
+    "13_do_not_auto_touch": [
+      "Ödeme ve cari mutabakat kayıtları.",
+      "Faturalı/kapatılmış sipariş zinciri.",
+      "Aktif runtime state kayıtları (rollback planı olmadan)."
+    ],
+    "14_executed_commands": [
+      "npm run audit:data-health:dry-run",
+      "npm run audit:api-guards",
+      "npm run audit:prisma-tenant-scope",
+      "npx tsc --noEmit",
+      "npm run build"
+    ],
+    "15_commit_hash": "07e9944cb9794c8f2c1720db190330651026cce1",
+    "16_validation": "Read-only guard kept; no DB mutation executed."
+  },
+  "productionDryRunSupport": {
+    "supported": true,
+    "command": "npm run audit:data-health:production-dry-run",
+    "requirement": "Production dry-run requires production-like DATABASE_URL and READ_ONLY_DATA_AUDIT=1",
+    "executedInThisRun": false
+  }
+}
