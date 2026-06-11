@@ -1,6 +1,7 @@
-﻿import { Prisma, type PrismaClient } from '@prisma/client';
+﻿import { OrderStatus, PaymentStatus, Prisma, type PrismaClient } from '@prisma/client';
 import { runtimeStateTenantKey } from '@/lib/db/compound-keys';
 import { isSellableProductType, resolvePosFacingProductDomainType } from '@/lib/product-domain';
+import { toPrismaJson } from '@/lib/db/prisma-json';
 import { prisma } from '@/lib/db/prisma';
 import type { TenantContext } from '@/lib/tenant';
 
@@ -20,6 +21,14 @@ function scoped<T extends object>(tenant: TenantContext, where?: T) {
   return { ...(where ?? {}), tenantId: tenant.tenantId } as T & { tenantId: string };
 }
 
+function orderStatus(value: string): OrderStatus {
+  return Object.values(OrderStatus).includes(value as OrderStatus) ? value as OrderStatus : OrderStatus.open;
+}
+
+function paymentStatus(value: string | undefined): PaymentStatus {
+  return value && Object.values(PaymentStatus).includes(value as PaymentStatus) ? value as PaymentStatus : PaymentStatus.paid;
+}
+
 export class TableRepository {
   constructor(private readonly db: DbClient = prisma) {}
 
@@ -36,7 +45,7 @@ export class TableRepository {
   updateStatus(tenant: TenantContext, id: string, status: string, metadata?: JsonValueLike) {
     return this.db.posTable.update({
       where: { id, tenantId: tenant.tenantId },
-      data: { status, ...(metadata === undefined ? {} : { metadata }) },
+      data: { status, ...(metadata === undefined ? {} : { metadata: toPrismaJson(metadata) }) },
     });
   }
 }
@@ -151,7 +160,7 @@ export class OrderRepository {
 
   list(tenant: TenantContext, options: PageOptions & { status?: OrderStatusLike } = {}) {
     return this.db.order.findMany({
-      where: scoped(tenant, options.status ? { status: options.status } : {}),
+      where: scoped(tenant, options.status ? { status: orderStatus(options.status) } : {}),
       orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
       take: take(options),
       skip: options.cursor ? 1 : options.skip ?? 0,
@@ -183,9 +192,9 @@ export class OrderRepository {
         discount: input.discount ?? 0,
         taxTotal: input.taxTotal ?? 0,
         total: input.total,
-        metadata: input.metadata ?? {},
+        metadata: toPrismaJson(input.metadata ?? {}),
       },
-    }).then(async (order: { id: string }) => {
+    }).then(async (order) => {
       if (input.items.length > 0) {
         await this.db.orderItem.createMany({
           data: input.items.map((item: { productId?: string | null; name: string; quantity: number; unitPrice: number; total: number; notes?: string | null }) => ({
@@ -205,7 +214,7 @@ export class OrderRepository {
   }
 
   updateStatus(tenant: TenantContext, id: string, status: OrderStatusLike) {
-    return this.db.order.update({ where: { id, tenantId: tenant.tenantId }, data: { status } });
+    return this.db.order.update({ where: { id, tenantId: tenant.tenantId }, data: { status: orderStatus(status) } });
   }
 }
 
@@ -219,8 +228,8 @@ export class PaymentRepository {
         orderId: input.orderId ?? null,
         method: input.method,
         amount: input.amount,
-        status: input.status ?? 'paid',
-        metadata: input.metadata ?? {},
+        status: paymentStatus(input.status),
+        metadata: toPrismaJson(input.metadata ?? {}),
       },
     });
   }
@@ -276,7 +285,7 @@ export class StockRepository {
         quantity: input.quantity,
         type: input.type,
         reason: input.reason ?? null,
-        metadata: input.metadata ?? {},
+        metadata: toPrismaJson(input.metadata ?? {}),
       },
     });
     return { item, movement };
@@ -344,7 +353,7 @@ export class ShiftRepository {
 
   list(tenant: TenantContext, options: PageOptions & { status?: string } = {}) {
     return this.db.shift.findMany({
-      where: scoped(tenant, options.status ? { status: options.status } : {}),
+      where: scoped(tenant, options.status ? { status: orderStatus(options.status) } : {}),
       orderBy: [{ openedAt: 'desc' }, { id: 'asc' }],
       take: take(options),
       skip: options.cursor ? 1 : options.skip ?? 0,
@@ -379,8 +388,8 @@ export class SettingsRepository {
   set(tenant: TenantContext, key: string, payload: JsonValueLike) {
     return this.db.runtimeState.upsert({
       where: runtimeStateTenantKey(tenant.tenantId, `settings:${key}`),
-      update: { payload },
-      create: { tenantId: tenant.tenantId, key: `settings:${key}`, payload },
+      update: { payload: toPrismaJson(payload) },
+      create: { tenantId: tenant.tenantId, key: `settings:${key}`, payload: toPrismaJson(payload) },
     });
   }
 }
@@ -408,5 +417,4 @@ export class UserRepository {
     });
   }
 }
-
 

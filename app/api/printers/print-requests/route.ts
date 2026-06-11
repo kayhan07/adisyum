@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
+import { toPrismaJson } from '@/lib/db/prisma-json';
 import { requireTenant, tenantAuthErrorResponse } from '@/lib/requireTenant';
 import { validateCloudPrintRequest } from '@/lib/device-runtime';
 import { publishTenantEvent } from '@/lib/realtime/tenant-events';
@@ -8,8 +9,6 @@ import { authenticateRegisteredDevice } from '@/lib/server/device-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-type JsonRecord = Record<string, unknown>;
 
 const AGENT_ONLINE_WINDOW_MS = 45_000;
 
@@ -98,7 +97,7 @@ export async function POST(request: Request) {
         targetDeviceId: activeDevice.deviceId,
         printerName: validated.printerName,
         printerRole: body?.printerRole ?? 'general',
-        payload: JSON.parse(JSON.stringify({ bytesBase64: body?.bytesBase64, metadata: body?.metadata ?? {} })) as JsonRecord,
+        payload: toPrismaJson({ bytesBase64: body?.bytesBase64, metadata: body?.metadata ?? {} }),
         status: 'pending',
         lastError: null,
       },
@@ -108,7 +107,7 @@ export async function POST(request: Request) {
         targetDeviceId: activeDevice.deviceId,
         printerName: validated.printerName,
         printerRole: body?.printerRole ?? 'general',
-        payload: JSON.parse(JSON.stringify({ bytesBase64: body?.bytesBase64, metadata: body?.metadata ?? {} })) as JsonRecord,
+        payload: toPrismaJson({ bytesBase64: body?.bytesBase64, metadata: body?.metadata ?? {} }),
         source: body?.source ?? 'cloud',
         mutationId: validated.mutationId,
       },

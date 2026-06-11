@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { runtimeStateTenantKey } from '@/lib/db/compound-keys';
 import { prisma } from '@/lib/db/prisma';
+import { toPrismaJson } from '@/lib/db/prisma-json';
 import { requireTenant, tenantAuthErrorResponse } from '@/lib/requireTenant';
 import { getSessionFromRequest, forbiddenResponse } from '@/lib/session';
 import { isSuperAdmin } from '@/lib/tenant';
@@ -12,8 +13,6 @@ import { filterSellableProducts } from '@/lib/product-domain';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-
-type JsonRecord = Record<string, unknown>;
 
 const SYSTEM_ADMIN_TENANT_ID = '__system_admin__';
 const SALE_PRODUCTS_RUNTIME_KEY = 'adisyon-sale-products';
@@ -165,7 +164,7 @@ async function applyRuntimeSnapshotGc(target: { tenantId: string; key: string },
 
   await prisma.runtimeState.update({
     where: runtimeStateTenantKey(target.tenantId, target.key),
-    data: { payload: JSON.parse(JSON.stringify(normalized.state)) as JsonRecord },
+    data: { payload: toPrismaJson(normalized.state) },
   }).catch((error: unknown) => {
     console.warn('[runtime-state] snapshot prune persistence skipped', {
       tenantId: target.tenantId,
@@ -281,8 +280,8 @@ export async function POST(request: Request, context: { params: Promise<{ scope:
 
     await prisma.runtimeState.upsert({
       where: runtimeStateTenantKey(target.tenantId, target.key),
-      update: { payload: JSON.parse(JSON.stringify(state)) as JsonRecord },
-      create: { tenantId: target.tenantId, key: target.key, payload: JSON.parse(JSON.stringify(state)) as JsonRecord },
+      update: { payload: toPrismaJson(state) },
+      create: { tenantId: target.tenantId, key: target.key, payload: toPrismaJson(state) },
     });
 
     recordRequestMetric({

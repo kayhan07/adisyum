@@ -3,11 +3,10 @@ import { Prisma } from '@prisma/client';
 import { requireTenant, tenantAuthErrorResponse } from '@/lib/requireTenant';
 import { runtimeStateTenantKey } from '@/lib/db/compound-keys';
 import { prisma } from '@/lib/db/prisma';
+import { toPrismaJson } from '@/lib/db/prisma-json';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-type JsonRecord = Record<string, unknown>;
 
 type SharedTablePaymentState = {
   tables: unknown[];
@@ -110,7 +109,7 @@ export async function POST(request: Request) {
     },
     updatedAt: new Date().toISOString(),
   };
-  const persistedState = JSON.parse(JSON.stringify(nextState)) as JsonRecord;
+  const persistedState = toPrismaJson(nextState);
 
   await prisma.runtimeState.upsert({
     where: runtimeStateTenantKey(tenant.tenantId, key),

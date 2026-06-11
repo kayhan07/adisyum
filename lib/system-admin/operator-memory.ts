@@ -1,9 +1,8 @@
 ﻿import { prisma } from '@/lib/db/prisma';
-
-type JsonValueLike = string | number | boolean | null | Record<string, unknown> | JsonValueLike[];
+import { toPrismaJson } from '@/lib/db/prisma-json';
 
 function json(value: unknown) {
-  return JSON.parse(JSON.stringify(value ?? {})) as JsonValueLike;
+  return toPrismaJson(value ?? {});
 }
 
 export async function listOperatorMemory(operatorId: string, kind?: string) {

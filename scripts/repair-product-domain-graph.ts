@@ -1,5 +1,6 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import { createRequire } from 'node:module';
+import { toPrismaJson } from '../lib/db/prisma-json';
 import { createPosKey, resolveProductIdentity } from '../lib/product-identity';
 import {
   CATEGORY_DOMAIN_PRESETS,
@@ -10,8 +11,6 @@ import {
   validateProductDomainGraph,
   type ExtendedProductDomainType,
 } from '../lib/product-domain-graph';
-
-type JsonValueLike = string | number | boolean | null | Record<string, unknown> | JsonValueLike[];
 
 const require = createRequire(import.meta.url);
 const { loadEnvConfig } = require('@next/env') as typeof import('@next/env');
@@ -44,7 +43,7 @@ async function ensureCategory(tenantId: string, name: string, productType: Exten
       await tx.productCategory.update({
         where: { id: existing.id },
         data: {
-          allowedProductTypes: mergedAllowed as JsonValueLike,
+          allowedProductTypes: toPrismaJson(mergedAllowed),
           active: true,
           visibleInPos: definition.visibleInPos,
           visibleInInventory: definition.visibleInInventory,
@@ -62,7 +61,7 @@ async function ensureCategory(tenantId: string, name: string, productType: Exten
     data: {
       tenantId,
       name: normalizedName,
-      allowedProductTypes: allowed as JsonValueLike,
+      allowedProductTypes: toPrismaJson(allowed),
       active: true,
       visibleInPos: definition.visibleInPos,
       visibleInInventory: definition.visibleInInventory,

@@ -1,4 +1,5 @@
-import { prisma } from '@/lib/db/prisma';
+﻿import { prisma } from '@/lib/db/prisma';
+import { toPrismaJson } from '@/lib/db/prisma-json';
 
 type JsonValueLike = string | number | boolean | null | Record<string, unknown> | JsonValueLike[];
 
@@ -6,7 +7,7 @@ type IncidentSeverity = 'info' | 'warning' | 'degraded' | 'critical' | 'outage';
 type IncidentStatus = 'open' | 'acknowledged' | 'escalated' | 'resolved';
 
 function json(value: unknown) {
-  return JSON.parse(JSON.stringify(value ?? {})) as JsonValueLike;
+  return toPrismaJson(value ?? {});
 }
 
 export async function openOrUpdateIncident(input: {

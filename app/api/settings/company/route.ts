@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
+import { normalizeJsonObject } from '@/lib/db/prisma-json';
 import { requireTenant, tenantAuthErrorResponse } from '@/lib/requireTenant';
 
 export const runtime = 'nodejs';
@@ -18,8 +19,8 @@ function stringField(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function cleanMetadata(input: Record<string, unknown>): JsonRecord {
-  return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as JsonRecord;
+function cleanMetadata(input: Record<string, unknown>) {
+  return normalizeJsonObject(input);
 }
 
 function companyPayload(input: {

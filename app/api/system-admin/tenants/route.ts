@@ -39,7 +39,8 @@ type ProvisioningJobRow = {
   currentStep: string;
   attemptCount: number;
   failureReason?: string | null;
-  updatedAt: string;
+  requestedBy?: string | null;
+  updatedAt: string | Date;
   [key: string]: unknown;
 };
 

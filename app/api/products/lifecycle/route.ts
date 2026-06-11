@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
+import { toNullablePrismaJson, toOptionalPrismaJson, toPrismaJson } from '@/lib/db/prisma-json';
 import { requireTenant, tenantAuthErrorResponse } from '@/lib/requireTenant';
 import {
   analyzeProductLifecycleAction,
@@ -13,8 +14,6 @@ import { invalidateRuntimePosCatalog } from '@/lib/server/runtime-pos-catalog';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-type JsonRecord = Record<string, unknown>;
 
 function readAction(value: unknown): ProductLifecycleAction | null {
   if (value === 'publish' || value === 'archive' || value === 'deprecate' || value === 'delete' || value === 'rollback' || value === 'activate') {
@@ -92,7 +91,7 @@ function snapshotPatch(snapshot: unknown, revision: number) {
     publishStatus: 'rolled_back',
     revision: revision + 1,
     metadata: source.metadata && typeof source.metadata === 'object'
-      ? JSON.parse(JSON.stringify(source.metadata)) as JsonRecord
+      ? toOptionalPrismaJson(source.metadata)
       : undefined,
   };
 }
@@ -122,7 +121,7 @@ async function applyLifecycleAction(
           revision: snapshot.revision,
         },
       },
-      update: { snapshot: JSON.parse(JSON.stringify(snapshot)) as JsonRecord },
+      update: { snapshot: toPrismaJson(snapshot) },
       create: {
         tenantId: tenant.tenantId,
         productId: product.id,
@@ -130,7 +129,7 @@ async function applyLifecycleAction(
         revision: snapshot.revision,
         lifecycleStatus: snapshot.lifecycleStatus,
         publishStatus: snapshot.publishStatus,
-        snapshot: JSON.parse(JSON.stringify(snapshot)) as JsonRecord,
+        snapshot: toPrismaJson(snapshot),
         createdBy: tenant.userId,
       },
     });
@@ -163,9 +162,9 @@ async function applyLifecycleAction(
         entity: audit.entity,
         entityId: audit.entityId,
         source: 'product-lifecycle',
-        before: JSON.parse(JSON.stringify(audit.before)) as JsonRecord,
-        after: JSON.parse(JSON.stringify({ ...audit.after, rollbackPatch: Boolean(rollbackPatch) })) as JsonRecord,
-        metadata: JSON.parse(JSON.stringify(audit.metadata)) as JsonRecord,
+        before: toNullablePrismaJson(audit.before),
+        after: toNullablePrismaJson({ ...audit.after, rollbackPatch: Boolean(rollbackPatch) }),
+        metadata: toPrismaJson(audit.metadata),
       },
     });
 
@@ -180,13 +179,13 @@ async function applyLifecycleAction(
         entity: 'product',
         entityId: product.id,
         source: 'product-lifecycle',
-        metadata: JSON.parse(JSON.stringify({
+        metadata: toPrismaJson({
           action,
           posKey: product.posKey,
           decision,
           catalogInvalidationRequired: true,
           marketplacePropagation: ['qr', 'kiosk', 'waiter_tablet', 'mobile_pos', 'yemeksepeti', 'trendyol', 'getir'],
-        })) as JsonRecord,
+        }),
       },
     });
 

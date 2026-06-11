@@ -2,13 +2,12 @@ import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { requireTenant, tenantAuthErrorResponse } from '@/lib/requireTenant';
 import { prisma } from '@/lib/db/prisma';
+import { toPrismaJson } from '@/lib/db/prisma-json';
 import { writeAuditLog } from '@/lib/db/audit';
 import { logError } from '@/lib/observability/structured-logger';
 import { recordRequestMetric, recordTenantError } from '@/lib/observability/metrics-store';
 
 export const dynamic = 'force-dynamic';
-
-type JsonRecord = Record<string, unknown>;
 
 export async function POST(request: Request) {
   const startedAt = Date.now();
@@ -32,7 +31,7 @@ export async function POST(request: Request) {
           data: orders.map((order: unknown, index: number) => ({
             tenantId,
             eventType: 'offline_order',
-            payload: JSON.parse(JSON.stringify(order)) as JsonRecord,
+            payload: toPrismaJson(order),
             deviceId: typeof body?.deviceId === 'string' ? body.deviceId : null,
             status: 'pending',
             createdAt: new Date(Date.now() + index),

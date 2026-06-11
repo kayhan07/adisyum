@@ -1,12 +1,11 @@
 import { Prisma } from '@prisma/client';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma';
+import { toPrismaJson } from '@/lib/db/prisma-json';
 import { writeAuditLog } from '@/lib/db/audit';
 import { requireTenant, tenantAuthErrorResponse } from '@/lib/requireTenant';
 
 export const dynamic = 'force-dynamic';
-
-type JsonRecord = Record<string, unknown>;
 
 type OfflineQueueOperation = {
   id?: string;
@@ -25,7 +24,7 @@ function normalizeOperation(operation: OfflineQueueOperation, index: number, ten
     eventType: typeof operation.operationType === 'string' && operation.operationType.trim().length > 0
       ? operation.operationType.trim()
       : 'offline_operation',
-    payload: JSON.parse(JSON.stringify(operation.payload ?? operation)) as JsonRecord,
+    payload: toPrismaJson(operation.payload ?? operation),
     deviceId: typeof operation.deviceId === 'string' && operation.deviceId.trim().length > 0
       ? operation.deviceId.trim()
       : null,

@@ -1,5 +1,6 @@
-import { createHash } from 'node:crypto';
+﻿import { createHash } from 'node:crypto';
 import { prisma } from '@/lib/db/prisma';
+import { toPrismaJson } from '@/lib/db/prisma-json';
 import { appendIncidentEvent, openOrUpdateIncident } from '@/lib/incidents/durable-incident-center';
 
 type JsonValueLike = string | number | boolean | null | Record<string, unknown> | JsonValueLike[];
@@ -15,7 +16,7 @@ type LiveOpsGlobalState = typeof globalThis & {
 const liveOpsGlobalState = globalThis as LiveOpsGlobalState;
 
 function json(value: unknown) {
-  return JSON.parse(JSON.stringify(value ?? {})) as JsonValueLike;
+  return toPrismaJson(value ?? {});
 }
 
 function sha256(value: string) {

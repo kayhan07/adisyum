@@ -1,5 +1,6 @@
 ﻿import { runtimeStateTenantKey } from '@/lib/db/compound-keys';
 import { prisma } from '@/lib/db/prisma';
+import { toPrismaJson } from '@/lib/db/prisma-json';
 import type { PosUnitType, ProductMapping, ProductMappingStatus } from '@/lib/pos-mapping-store';
 import { isSellableProductType, resolveProductDomainType } from '@/lib/product-domain';
 
@@ -48,8 +49,8 @@ async function readMappings(tenantId: string) {
 async function writeMappings(tenantId: string, mappings: ProductMapping[]) {
   await prisma.runtimeState.upsert({
     where: runtimeStateTenantKey(tenantId, RUNTIME_KEY),
-    update: { payload: JSON.parse(JSON.stringify(mappings)) as JsonValueLike },
-    create: { tenantId, key: RUNTIME_KEY, payload: JSON.parse(JSON.stringify(mappings)) as JsonValueLike },
+    update: { payload: toPrismaJson(mappings) },
+    create: { tenantId, key: RUNTIME_KEY, payload: toPrismaJson(mappings) },
   });
 }
 

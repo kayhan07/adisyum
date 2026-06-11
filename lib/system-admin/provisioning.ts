@@ -1,4 +1,4 @@
-﻿import { Prisma } from '@prisma/client';
+﻿import { Prisma, SubscriptionStatus, TenantStatus } from '@prisma/client';
 import { hashPassword } from '@/lib/auth/password';
 import { prisma } from '@/lib/db/prisma';
 import { writeAuditLog } from '@/lib/db/audit';
@@ -6,13 +6,11 @@ import { branchTenantBranchKey, roleTenantKey, userTenantUsernameKey } from '@/l
 import { getDefaultModulesForPackageType, type PackageModuleKey } from '@/lib/package-access-core';
 import type { PackageType } from '@/lib/saas-store';
 import { recordOperationalEvent } from '@/lib/operations/live-ops';
+import { normalizeJsonObject, toPrismaJson } from '@/lib/db/prisma-json';
 
-type TenantStatusLike = 'trial' | 'active' | 'suspended' | 'expired' | 'blocked' | 'demo' | 'cancelled';
-type SubscriptionStatusLike = 'trial' | 'active' | 'past_due' | 'canceled' | 'suspended' | 'expired' | 'demo' | 'cancelled';
-type JsonPrimitive = string | number | boolean | null;
-type JsonValue = JsonPrimitive | JsonObject | JsonArray;
-type JsonObject = { [key: string]: JsonValue };
-type JsonArray = JsonValue[];
+type TenantStatusLike = 'trial' | 'active' | 'suspended' | 'expired' | 'blocked' | 'demo';
+type SubscriptionStatusLike = 'trial' | 'active' | 'past_due' | 'canceled' | 'suspended' | 'expired' | 'demo';
+type JsonValue = Prisma.JsonValue;
 
 const ROLE_PERMISSIONS: Record<string, string[]> = {
   tenant_admin: [
@@ -196,8 +194,8 @@ function normalizeSubscriptionStatus(status: TenantStatusLike): SubscriptionStat
   return 'active';
 }
 
-function compactJson(input: Record<string, unknown>): JsonObject {
-  return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as JsonObject;
+function compactJson(input: Record<string, unknown>) {
+  return normalizeJsonObject(input);
 }
 
 function licenseLimits(packageType: PackageType) {
@@ -268,8 +266,8 @@ async function assertTenantProvisioningConflicts(input: ProvisionTenantInput) {
         deletedAt: null,
         OR: [
           ...(tenantId ? [{ tenantId }] : []),
-          ...(companyName ? [{ name: { equals: input.companyName.trim(), mode: 'insensitive' } }] : []),
-          ...(taxNumber ? [{ taxNumber: { equals: input.taxNumber?.trim(), mode: 'insensitive' } }] : []),
+          ...(companyName ? [{ name: { equals: input.companyName.trim(), mode: Prisma.QueryMode.insensitive } }] : []),
+          ...(taxNumber ? [{ taxNumber: { equals: input.taxNumber?.trim(), mode: Prisma.QueryMode.insensitive } }] : []),
         ],
       },
       select: { tenantId: true, name: true, taxNumber: true },
@@ -278,7 +276,7 @@ async function assertTenantProvisioningConflicts(input: ProvisionTenantInput) {
       ? prisma.user.findFirst({
           where: {
             deletedAt: null,
-            email: { equals: input.adminEmail?.trim(), mode: 'insensitive' },
+            email: { equals: input.adminEmail?.trim(), mode: Prisma.QueryMode.insensitive },
             tenantId: { not: 'system' },
           },
           select: { tenantId: true, email: true },
@@ -309,7 +307,7 @@ async function appendJobDiagnostic(jobId: string, step: string, status: 'ok' | '
   const current = Array.isArray(job?.diagnostics) ? job.diagnostics : [];
   await prisma.provisioningJob.update({
     where: { id: jobId },
-    data: { diagnostics: [...current, serializeDiagnostic(step, status, startedAt, detail)] as JsonValue },
+    data: { diagnostics: toPrismaJson([...current, serializeDiagnostic(step, status, startedAt, detail)]) },
   });
 }
 
@@ -349,14 +347,14 @@ export async function createProvisioningJob(input: ProvisionTenantInput) {
   return prisma.provisioningJob.upsert({
     where: { jobKey },
     update: {
-      input: input as JsonValue,
+      input: toPrismaJson(input),
       requestedBy: input.createdBy,
     },
     create: {
       jobKey,
       targetTenantId: (input.tenantId?.trim() || createTenantId()).toUpperCase(),
       requestedBy: input.createdBy,
-      input: input as JsonValue,
+      input: toPrismaJson(input),
     },
   });
 }
@@ -876,7 +874,7 @@ export async function listSaasTenants() {
   ]);
 
   const ordersByTenant = new Map(ordersToday.map((row: { tenantId: string; _count: { id: number } }) => [row.tenantId, row._count.id]));
-  const revenueByTenant = new Map(paymentsToday.map((row: { tenantId: string; _sum: { amount: number | null } }) => [row.tenantId, Number(row._sum.amount ?? 0)]));
+  const revenueByTenant = new Map(paymentsToday.map((row) => [row.tenantId, Number(row._sum.amount ?? 0)]));
   const tenantIds = tenants.map((tenant: { tenantId: string }) => tenant.tenantId);
   const forensicCounts = await Promise.all(
     tenantIds.map(async (tenantId: string) => {

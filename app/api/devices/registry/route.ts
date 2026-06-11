@@ -1,14 +1,13 @@
 import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
+import { toPrismaJson } from '@/lib/db/prisma-json';
 import { requireTenant, tenantAuthErrorResponse } from '@/lib/requireTenant';
 import { hashDeviceToken, normalizePrinterInventory, summarizeDeviceCapabilities } from '@/lib/device-runtime';
 import { authenticateRegisteredDevice, authenticateTenantSession } from '@/lib/server/device-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-type JsonRecord = Record<string, unknown>;
 
 export async function GET(request: Request) {
   try {
@@ -93,7 +92,7 @@ export async function POST(request: Request) {
         localIp: body?.localIp?.slice(0, 80),
         bridgeVersion: body?.bridgeVersion?.slice(0, 80),
         deviceTokenHash: hashDeviceToken(body?.deviceToken),
-        installedPrinters: JSON.parse(JSON.stringify(printers)) as JsonRecord,
+        installedPrinters: toPrismaJson(printers),
         status: 'online',
         reconnectCount: Math.max(0, Math.floor(Number(body?.reconnectCount ?? 0))),
         queueDepth: Math.max(0, Math.floor(Number(body?.queueDepth ?? 0))),
@@ -101,7 +100,7 @@ export async function POST(request: Request) {
         escposCapable: capabilities.escposCapable,
         fiscalCapable: Boolean(body?.fiscalCapable),
         lastHeartbeatAt: new Date(),
-        metadata: JSON.parse(JSON.stringify({ ...(body?.metadata ?? {}), capabilities })) as JsonRecord,
+        metadata: toPrismaJson({ ...(body?.metadata ?? {}), capabilities }),
       },
       create: {
         tenantId,
@@ -111,14 +110,14 @@ export async function POST(request: Request) {
         localIp: body?.localIp?.slice(0, 80),
         bridgeVersion: body?.bridgeVersion?.slice(0, 80),
         deviceTokenHash: hashDeviceToken(body?.deviceToken),
-        installedPrinters: JSON.parse(JSON.stringify(printers)) as JsonRecord,
+        installedPrinters: toPrismaJson(printers),
         status: 'online',
         reconnectCount: Math.max(0, Math.floor(Number(body?.reconnectCount ?? 0))),
         queueDepth: Math.max(0, Math.floor(Number(body?.queueDepth ?? 0))),
         spoolerHealth: body?.spoolerHealth ?? 'healthy',
         escposCapable: capabilities.escposCapable,
         fiscalCapable: Boolean(body?.fiscalCapable),
-        metadata: JSON.parse(JSON.stringify({ ...(body?.metadata ?? {}), capabilities })) as JsonRecord,
+        metadata: toPrismaJson({ ...(body?.metadata ?? {}), capabilities }),
       },
     });
 

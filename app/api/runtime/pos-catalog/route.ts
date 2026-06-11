@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma';
 import { runtimeStateTenantKey } from '@/lib/db/compound-keys';
+import { toPrismaJson } from '@/lib/db/prisma-json';
 import { requireTenant, tenantAuthErrorResponse } from '@/lib/requireTenant';
 import { publishTenantEvent } from '@/lib/realtime/tenant-events';
 import {
@@ -48,11 +49,11 @@ export async function POST(request: Request) {
 
     await prisma.runtimeState.upsert({
       where: runtimeStateTenantKey(tenant.tenantId, `${RUNTIME_POS_CATALOG_KEY}:${branchId ?? 'global'}:${channel}`),
-      update: { payload: cloneCatalogForRuntimeState(catalog) },
+      update: { payload: toPrismaJson(cloneCatalogForRuntimeState(catalog)) },
       create: {
         tenantId: tenant.tenantId,
         key: `${RUNTIME_POS_CATALOG_KEY}:${branchId ?? 'global'}:${channel}`,
-        payload: cloneCatalogForRuntimeState(catalog),
+        payload: toPrismaJson(cloneCatalogForRuntimeState(catalog)),
       },
     });
 

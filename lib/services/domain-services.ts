@@ -1,4 +1,4 @@
-﻿import { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '@/lib/db/prisma';
 import { writeAuditLog } from '@/lib/db/audit';
@@ -7,6 +7,7 @@ import { publishTenantEvent } from '@/lib/realtime/tenant-events';
 import type { TenantContext } from '@/lib/tenant';
 import { OrderRepository, PaymentRepository, StockRepository } from '@/lib/db/repositories';
 import { recordOperationalEvent } from '@/lib/operations/live-ops';
+import { toPrismaJson } from '@/lib/db/prisma-json';
 
 type JsonValueLike = string | number | boolean | null | Record<string, unknown> | JsonValueLike[];
 
@@ -101,7 +102,7 @@ export class PaymentService {
     return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const payment = await tx.payment.update({
         where: { id: paymentId, tenantId: tenant.tenantId },
-        data: { status: 'refunded', metadata },
+        data: { status: 'refunded', metadata: toPrismaJson(metadata) },
       });
       await writeAuditLog({ tenantId: tenant.tenantId, userId: tenant.userId, action: 'payment_refund', entity: 'payment', entityId: payment.id, db: tx });
       await invalidateTenantCache(tenant.tenantId, ['payments', 'reports']);

@@ -1,4 +1,5 @@
 ﻿import { prisma } from '@/lib/db/prisma';
+import { toPrismaJson } from '@/lib/db/prisma-json';
 
 type JsonValueLike = string | number | boolean | null | Record<string, unknown> | JsonValueLike[];
 
@@ -11,7 +12,7 @@ export const TELEMETRY_RETENTION = {
 const GLOBAL_TENANT_BUCKET = 'global';
 
 function json(value: unknown) {
-  return JSON.parse(JSON.stringify(value ?? {})) as JsonValueLike;
+  return toPrismaJson(value ?? {});
 }
 
 function startOfHour(value = new Date()) {
@@ -69,7 +70,7 @@ export async function aggregateOperationalTelemetry(now = new Date()) {
     eventCount: number;
     sampleCount: number;
     numericValue?: number | null;
-    metadata: JsonValueLike;
+    metadata: ReturnType<typeof toPrismaJson>;
   };
   const writes: MetricWrite[] = [
     ...hourlyEvents.map((row: { tenantId: string | null; type: string; _count: { id: number } }) => ({

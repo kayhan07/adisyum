@@ -1,13 +1,9 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
+import { toPrismaJson } from '@/lib/db/prisma-json';
 import { writeAuditLog } from '@/lib/db/audit';
 import type { TenantContext } from '@/lib/tenant';
 import { createPosKey } from '@/lib/product-identity';
-
-type JsonPrimitive = string | number | boolean | null;
-type JsonValue = JsonPrimitive | JsonObject | JsonArray;
-type JsonObject = { [key: string]: JsonValue };
-type JsonArray = JsonValue[];
 
 const SYSTEM_TENANT_ID = 'system';
 
@@ -201,8 +197,8 @@ const CANONICAL_PACKS: CanonicalPack[] = [
   },
 ];
 
-function json<T>(value: T): JsonValue {
-  return JSON.parse(JSON.stringify(value)) as JsonValue;
+function json<T>(value: T) {
+  return toPrismaJson(value);
 }
 
 function normalize(value: string) {

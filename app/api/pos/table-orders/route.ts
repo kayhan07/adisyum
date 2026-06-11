@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { runtimeStateTenantKey } from '@/lib/db/compound-keys';
+import { toPrismaJson } from '@/lib/db/prisma-json';
 import { requireTenant, TenantAuthError, tenantAuthErrorResponse } from '@/lib/requireTenant';
 import { publishTenantEvent } from '@/lib/realtime/tenant-events';
 import { recordOperationalEvent } from '@/lib/operations/live-ops';
@@ -228,12 +229,12 @@ function compactJsonValue(value: unknown): JsonValueLike | undefined {
   return undefined;
 }
 
-function compactJsonObject(input: Record<string, unknown>): JsonRecord {
+function compactJsonObject(input: Record<string, unknown>): JsonRecord & Prisma.InputJsonObject {
   return Object.fromEntries(
     Object.entries(input)
       .map(([key, value]) => [key, compactJsonValue(value)] as const)
       .filter(([, value]) => value !== undefined),
-  ) as JsonRecord;
+  ) as JsonRecord & Prisma.InputJsonObject;
 }
 
 function tablePaymentStateKey(branchId?: string | null) {
@@ -671,7 +672,7 @@ async function persistAuthoritativeRuntimeTableState(input: {
     source: input.source,
     activeOrderTables: activeTableIds,
   };
-  const payload = JSON.parse(JSON.stringify({
+  const payload = toPrismaJson({
     paymentRequestedTableIds: [],
     liveTotals,
     ordersByTable: input.ordersByTable,
@@ -679,7 +680,7 @@ async function persistAuthoritativeRuntimeTableState(input: {
     stateMeta,
     paymentState: input.paymentState ?? null,
     updatedAt: new Date().toISOString(),
-  })) as JsonRecord;
+  });
   const key = tablePaymentStateKey(input.branchId);
 
   await prisma.runtimeState.upsert({

@@ -1,5 +1,6 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { createRequire } from 'node:module';
+import { toPrismaJson } from '../lib/db/prisma-json';
 import { compileTenantPosCatalog } from '../lib/server/runtime-pos-catalog';
 import { isSellableProductType } from '../lib/product-domain';
 
@@ -17,6 +18,8 @@ function tableOrderNo(tableId: string) {
 function metadataObject(value: unknown) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
+
+type DecimalLike = number | string | { toString(): string };
 
 async function main() {
   const tenantId = process.env.POS_TRACE_TENANT_ID
@@ -54,7 +57,7 @@ async function main() {
       where: { tenantId_orderNo: { tenantId, orderNo } },
       update: {
         status: 'open',
-        metadata: { tableKey: tableId, source: 'products:trace-pos-insertion', lastMutationId: mutationId },
+        metadata: toPrismaJson({ tableKey: tableId, source: 'products:trace-pos-insertion', lastMutationId: mutationId }),
       },
       create: {
         tenantId,
@@ -64,7 +67,7 @@ async function main() {
         discount: 0,
         taxTotal: 0,
         total: 0,
-        metadata: { tableKey: tableId, source: 'products:trace-pos-insertion', lastMutationId: mutationId },
+        metadata: toPrismaJson({ tableKey: tableId, source: 'products:trace-pos-insertion', lastMutationId: mutationId }),
       },
     });
     orderId = order.id;
@@ -78,7 +81,7 @@ async function main() {
         quantity: 1,
         unitPrice: item.productSnapshot.price,
         total: item.productSnapshot.price,
-        metadata: {
+        metadata: toPrismaJson({
           productId: item.productSnapshot.productId,
           productKey: item.posKey,
           posKey: item.posKey,
@@ -89,13 +92,13 @@ async function main() {
           printCategory: item.printCategory ?? item.productSnapshot.category,
           sentQty: 0,
           mutationId,
-        },
+        }),
       },
     });
     itemId = created.id;
 
     const nextItems = await tx.orderItem.findMany({ where: { tenantId, orderId: order.id }, select: { quantity: true, unitPrice: true, metadata: true } });
-    const subtotal = nextItems.reduce((sum: number, row: { quantity: number; unitPrice: number; metadata: unknown }) => {
+    const subtotal = nextItems.reduce((sum: number, row: { quantity: DecimalLike; unitPrice: DecimalLike; metadata: unknown }) => {
       const metadata = metadataObject(row.metadata);
       if (metadata.complimentary) return sum;
       const sign = metadata.isReturn ? -1 : 1;
@@ -108,7 +111,7 @@ async function main() {
         subtotal,
         taxTotal,
         total: Number(subtotal.toFixed(2)),
-        metadata: { ...metadataObject(order.metadata), tableKey: tableId, lastMutationId: mutationId },
+        metadata: toPrismaJson({ ...metadataObject(order.metadata), tableKey: tableId, lastMutationId: mutationId }),
       },
     });
   });

@@ -1,5 +1,6 @@
 ﻿import { prisma } from '@/lib/db/prisma';
 import { Prisma, type PrismaClient } from '@prisma/client';
+import { toPrismaJson } from '@/lib/db/prisma-json';
 import type { TenantContext } from '@/lib/tenant';
 
 type JsonValueLike = string | number | boolean | null | Record<string, unknown> | JsonValueLike[];
@@ -21,7 +22,7 @@ export function tenantWhere<T extends object>(tenant: TenantContext, where?: T):
   } as T & TenantScopedWhere;
 }
 
-function isUnlimitedSubscription(metadata: JsonValue | null | undefined) {
+function isUnlimitedSubscription(metadata: Prisma.JsonValue | null | undefined) {
   return Boolean(metadata && typeof metadata === 'object' && !Array.isArray(metadata) && metadata.unlimitedLicense === true);
 }
 
@@ -167,7 +168,7 @@ export async function createTenantOrder(
           orderId: order.id,
           productId: item.productId,
           name: item.name,
-          quantity: item.quantity,
+          quantity: Number(item.quantity),
           unitPrice: item.unitPrice,
           total: item.total,
           notes: item.notes,
@@ -192,19 +193,17 @@ export async function cloneRecipeTemplateToTenant(tenant: TenantContext, templat
         name: template.name,
         yieldQuantity: template.yieldQuantity,
         unit: template.unit,
-        metadata: template.metadata === null
-          ? {}
-          : JSON.parse(JSON.stringify(template.metadata)) as JsonValueLike,
+        metadata: toPrismaJson(template.metadata ?? {}),
       },
     });
 
     if (items.length > 0) {
       await tx.recipeItem.createMany({
-        data: items.map((item: { name: string; quantity: number; unit: string }) => ({
+        data: items.map((item) => ({
           tenantId: tenant.tenantId,
           recipeId: recipe.id,
           name: item.name,
-          quantity: item.quantity,
+          quantity: Number(item.quantity),
           unit: item.unit,
         })),
       });

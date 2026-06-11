@@ -6,12 +6,11 @@ import { ingestPilotDiagnostics } from '@/lib/pilot-field/field-validation';
 import { isSessionActive } from '@/lib/server/session-guard';
 import { trackUpdateSecurityEvent } from '@/lib/security/security-telemetry';
 import { prisma } from '@/lib/db/prisma';
+import { toPrismaJson } from '@/lib/db/prisma-json';
 import { hashDeviceToken, normalizePrinterInventory, summarizeDeviceCapabilities } from '@/lib/device-runtime';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-type JsonRecord = Record<string, unknown>;
 
 type DesktopBridgeTelemetryPayload = {
   tenantId?: string;
@@ -223,7 +222,7 @@ export async function POST(request: Request) {
       localIp: body?.localIp?.slice(0, 80),
       bridgeVersion: body?.version?.slice(0, 80),
       deviceTokenHash: hashDeviceToken(body?.deviceToken),
-      installedPrinters: JSON.parse(JSON.stringify(printerInventory)) as JsonRecord,
+      installedPrinters: toPrismaJson(printerInventory),
       status: 'online',
       reconnectCount: boundedMetric(body?.websocket?.reconnects) + boundedMetric(body?.devices && 'reconnectAttempts' in body.devices ? body.devices.reconnectAttempts : 0),
       queueDepth: boundedMetric(body?.sync?.pending),
@@ -231,13 +230,13 @@ export async function POST(request: Request) {
       escposCapable: printerCapabilities.escposCapable,
       fiscalCapable: Boolean(body?.devices && 'inventory' in body.devices && Array.isArray(body.devices.inventory) && body.devices.inventory.some((device) => device.type === 'fiscal')),
       lastHeartbeatAt: new Date(),
-      metadata: JSON.parse(JSON.stringify({
+      metadata: toPrismaJson({
         printerCapabilities,
         resources: body?.resources,
         release: body?.release,
         sync: body?.sync,
         websocket: body?.websocket,
-      })) as JsonRecord,
+      }),
     },
     create: {
       tenantId,
@@ -247,20 +246,20 @@ export async function POST(request: Request) {
       localIp: body?.localIp?.slice(0, 80),
       bridgeVersion: body?.version?.slice(0, 80),
       deviceTokenHash: hashDeviceToken(body?.deviceToken),
-      installedPrinters: JSON.parse(JSON.stringify(printerInventory)) as JsonRecord,
+      installedPrinters: toPrismaJson(printerInventory),
       status: 'online',
       reconnectCount: boundedMetric(body?.websocket?.reconnects) + boundedMetric(body?.devices && 'reconnectAttempts' in body.devices ? body.devices.reconnectAttempts : 0),
       queueDepth: boundedMetric(body?.sync?.pending),
       spoolerHealth: syncFailed > 0 || boundedMetric(body?.printers?.failedJobs) > 0 ? 'degraded' : 'healthy',
       escposCapable: printerCapabilities.escposCapable,
       fiscalCapable: Boolean(body?.devices && 'inventory' in body.devices && Array.isArray(body.devices.inventory) && body.devices.inventory.some((device) => device.type === 'fiscal')),
-      metadata: JSON.parse(JSON.stringify({
+      metadata: toPrismaJson({
         printerCapabilities,
         resources: body?.resources,
         release: body?.release,
         sync: body?.sync,
         websocket: body?.websocket,
-      })) as JsonRecord,
+      }),
     },
   });
 
