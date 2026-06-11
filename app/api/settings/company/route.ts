@@ -6,6 +6,8 @@ import { requireTenant, tenantAuthErrorResponse } from '@/lib/requireTenant';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+type JsonRecord = Record<string, unknown>;
+
 function metadataObject(input: unknown): Record<string, unknown> {
   return input && typeof input === 'object' && !Array.isArray(input)
     ? { ...(input as Record<string, unknown>) }
@@ -16,8 +18,8 @@ function stringField(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function cleanMetadata(input: Record<string, unknown>): Prisma.InputJsonObject {
-  return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as Prisma.InputJsonObject;
+function cleanMetadata(input: Record<string, unknown>): JsonRecord {
+  return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as JsonRecord;
 }
 
 function companyPayload(input: {

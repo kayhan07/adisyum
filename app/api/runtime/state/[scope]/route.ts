@@ -13,6 +13,8 @@ import { filterSellableProducts } from '@/lib/product-domain';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+type JsonRecord = Record<string, unknown>;
+
 const SYSTEM_ADMIN_TENANT_ID = '__system_admin__';
 const SALE_PRODUCTS_RUNTIME_KEY = 'adisyon-sale-products';
 const SNAPSHOT_META_KEY = '__adisyumRuntimeSnapshotMeta';
@@ -150,7 +152,7 @@ async function applyRuntimeSnapshotGc(target: { tenantId: string; key: string },
   if (normalized.gcAction === 'delete') {
     await prisma.runtimeState.delete({
       where: runtimeStateTenantKey(target.tenantId, target.key),
-    }).catch((error) => {
+    }).catch((error: unknown) => {
       console.warn('[runtime-state] rejected snapshot delete skipped', {
         tenantId: target.tenantId,
         key: target.key,
@@ -163,8 +165,8 @@ async function applyRuntimeSnapshotGc(target: { tenantId: string; key: string },
 
   await prisma.runtimeState.update({
     where: runtimeStateTenantKey(target.tenantId, target.key),
-    data: { payload: JSON.parse(JSON.stringify(normalized.state)) as Prisma.InputJsonValue },
-  }).catch((error) => {
+    data: { payload: JSON.parse(JSON.stringify(normalized.state)) as JsonRecord },
+  }).catch((error: unknown) => {
     console.warn('[runtime-state] snapshot prune persistence skipped', {
       tenantId: target.tenantId,
       key: target.key,
@@ -279,8 +281,8 @@ export async function POST(request: Request, context: { params: Promise<{ scope:
 
     await prisma.runtimeState.upsert({
       where: runtimeStateTenantKey(target.tenantId, target.key),
-      update: { payload: JSON.parse(JSON.stringify(state)) as Prisma.InputJsonValue },
-      create: { tenantId: target.tenantId, key: target.key, payload: JSON.parse(JSON.stringify(state)) as Prisma.InputJsonValue },
+      update: { payload: JSON.parse(JSON.stringify(state)) as JsonRecord },
+      create: { tenantId: target.tenantId, key: target.key, payload: JSON.parse(JSON.stringify(state)) as JsonRecord },
     });
 
     recordRequestMetric({
@@ -318,7 +320,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ scop
     tenantId = target.tenantId;
     await prisma.runtimeState.delete({
       where: runtimeStateTenantKey(target.tenantId, target.key),
-    }).catch((deleteError) => {
+    }).catch((deleteError: unknown) => {
       console.warn('[runtime-state] delete skipped or failed', {
         timestamp: new Date().toISOString(),
         tenantId: target.tenantId,

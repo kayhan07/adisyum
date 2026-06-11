@@ -1,8 +1,9 @@
-import { Prisma } from '@prisma/client';
-import { runtimeStateTenantKey } from '@/lib/db/compound-keys';
+﻿import { runtimeStateTenantKey } from '@/lib/db/compound-keys';
 import { prisma } from '@/lib/db/prisma';
 import type { PosUnitType, ProductMapping, ProductMappingStatus } from '@/lib/pos-mapping-store';
 import { isSellableProductType, resolveProductDomainType } from '@/lib/product-domain';
+
+type JsonValueLike = string | number | boolean | null | Record<string, unknown> | JsonValueLike[];
 
 const RUNTIME_KEY = 'product-mappings';
 
@@ -17,7 +18,7 @@ function normalizeProductKey(value: string) {
     .trim()
     .toLocaleLowerCase('tr-TR')
     .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9ıüğüşöçİĞÜŞÖÇ-]/gi, '');
+    .replace(/[^a-z0-9Ä±Ã¼ÄŸÃ¼ÅŸÃ¶Ã§Ä°ÄÃœÅÃ–Ã‡-]/gi, '');
 }
 
 function validate(mapping: Partial<ProductMapping>) {
@@ -47,8 +48,8 @@ async function readMappings(tenantId: string) {
 async function writeMappings(tenantId: string, mappings: ProductMapping[]) {
   await prisma.runtimeState.upsert({
     where: runtimeStateTenantKey(tenantId, RUNTIME_KEY),
-    update: { payload: JSON.parse(JSON.stringify(mappings)) as Prisma.InputJsonValue },
-    create: { tenantId, key: RUNTIME_KEY, payload: JSON.parse(JSON.stringify(mappings)) as Prisma.InputJsonValue },
+    update: { payload: JSON.parse(JSON.stringify(mappings)) as JsonValueLike },
+    create: { tenantId, key: RUNTIME_KEY, payload: JSON.parse(JSON.stringify(mappings)) as JsonValueLike },
   });
 }
 
@@ -129,3 +130,4 @@ export async function getServerProductMappingCoverage(productIds: string[] = [],
     required: true,
   };
 }
+

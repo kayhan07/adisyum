@@ -103,7 +103,7 @@ async function main() {
   if (DRY_RUN || updates.length === 0) return;
 
   for (const update of updates) {
-    const current = products.find((product) => product.id === update.id);
+    const current = products.find((product: { id: string }) => product.id === update.id);
     const metadata = metadataObject(current?.metadata);
     await prisma.product.update({
       where: { id: update.id, tenantId: update.tenantId },

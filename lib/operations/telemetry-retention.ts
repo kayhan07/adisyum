@@ -1,5 +1,6 @@
-import { Prisma } from '@prisma/client';
-import { prisma } from '@/lib/db/prisma';
+﻿import { prisma } from '@/lib/db/prisma';
+
+type JsonValueLike = string | number | boolean | null | Record<string, unknown> | JsonValueLike[];
 
 export const TELEMETRY_RETENTION = {
   presenceDays: 90,
@@ -10,7 +11,7 @@ export const TELEMETRY_RETENTION = {
 const GLOBAL_TENANT_BUCKET = 'global';
 
 function json(value: unknown) {
-  return JSON.parse(JSON.stringify(value ?? {})) as Prisma.InputJsonValue;
+  return JSON.parse(JSON.stringify(value ?? {})) as JsonValueLike;
 }
 
 function startOfHour(value = new Date()) {
@@ -68,10 +69,10 @@ export async function aggregateOperationalTelemetry(now = new Date()) {
     eventCount: number;
     sampleCount: number;
     numericValue?: number | null;
-    metadata: Prisma.InputJsonValue;
+    metadata: JsonValueLike;
   };
   const writes: MetricWrite[] = [
-    ...hourlyEvents.map((row) => ({
+    ...hourlyEvents.map((row: { tenantId: string | null; type: string; _count: { id: number } }) => ({
       tenantId: row.tenantId ?? GLOBAL_TENANT_BUCKET,
       bucketStart: previousHourStart,
       bucketSize: 'hour',
@@ -80,7 +81,7 @@ export async function aggregateOperationalTelemetry(now = new Date()) {
       sampleCount: row._count.id,
       metadata: json({ type: row.type }),
     })),
-    ...hourlyPresence.map((row) => ({
+    ...hourlyPresence.map((row: { tenantId: string; status: string; _count: { id: number }; _avg: { heartbeatLatency: number | null } }) => ({
       tenantId: row.tenantId,
       bucketStart: previousHourStart,
       bucketSize: 'hour',
@@ -90,7 +91,7 @@ export async function aggregateOperationalTelemetry(now = new Date()) {
       numericValue: row._avg.heartbeatLatency ?? undefined,
       metadata: json({ status: row.status }),
     })),
-    ...hourlyDevices.map((row) => ({
+    ...hourlyDevices.map((row: { tenantId: string; status: string; _count: { id: number }; _avg: { latencyMs: number | null } }) => ({
       tenantId: row.tenantId,
       bucketStart: previousHourStart,
       bucketSize: 'hour',
@@ -100,7 +101,7 @@ export async function aggregateOperationalTelemetry(now = new Date()) {
       numericValue: row._avg.latencyMs ?? undefined,
       metadata: json({ status: row.status }),
     })),
-    ...dailyEvents.map((row) => ({
+    ...dailyEvents.map((row: { tenantId: string | null; severity: string; _count: { id: number } }) => ({
       tenantId: row.tenantId ?? GLOBAL_TENANT_BUCKET,
       bucketStart: previousDayStart,
       bucketSize: 'day',
@@ -179,3 +180,5 @@ export async function getHistoricalOperationalMetrics(days = 7) {
     take: 1000,
   });
 }
+
+

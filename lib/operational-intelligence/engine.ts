@@ -96,12 +96,12 @@ export async function buildTenantOperationalHealth(tenantId: string): Promise<Op
   ]);
 
   const issues: OperationalIssue[] = [];
-  const recipeProductIds = new Set(recipes.map((recipe) => recipe.productId).filter(Boolean));
-  const productsWithoutRecipes = products.filter((product) => !recipeProductIds.has(product.id)).length;
-  const recipeItemsWithoutStock = recipeItems.filter((item) => !item.stockItemId).length;
-  const negativeStockRisks = stockItems.filter((item) => Number(item.quantity) < Number(item.minLevel)).length;
-  const staleCategories = categories.filter((category) => category.updatedAt < staleCutoff).length;
-  const inactivePrinters = printers.filter((printer) => !printer.active || !printer.endpoint).length;
+  const recipeProductIds = new Set(recipes.map((recipe: { productId: string | null }) => recipe.productId).filter(Boolean));
+  const productsWithoutRecipes = products.filter((product: { id: string }) => !recipeProductIds.has(product.id)).length;
+  const recipeItemsWithoutStock = recipeItems.filter((item: { stockItemId: string | null }) => !item.stockItemId).length;
+  const negativeStockRisks = stockItems.filter((item: { quantity: unknown; minLevel: unknown }) => Number(item.quantity) < Number(item.minLevel)).length;
+  const staleCategories = categories.filter((category: { updatedAt: Date }) => category.updatedAt < staleCutoff).length;
+  const inactivePrinters = printers.filter((printer: { active: boolean; endpoint: string | null }) => !printer.active || !printer.endpoint).length;
 
   if (productsWithoutRecipes) issues.push({ code: 'products_without_recipes', severity: 'high', title: 'Reçetesiz ürünler', detail: 'Satış ürünleri stok düşümü yapamaz.', count: productsWithoutRecipes });
   if (recipeItemsWithoutStock) issues.push({ code: 'recipe_items_without_stock', severity: 'critical', title: 'Stok kartı olmayan reçete satırları', detail: 'Reçete tüketimi güvenilir değil.', count: recipeItemsWithoutStock });
@@ -109,15 +109,15 @@ export async function buildTenantOperationalHealth(tenantId: string): Promise<Op
   if (staleCategories) issues.push({ code: 'stale_categories', severity: 'low', title: 'Eski kategoriler', detail: 'Uzun süredir güncellenmeyen kategoriler var.', count: staleCategories });
   if (inactivePrinters) issues.push({ code: 'inactive_printers', severity: 'high', title: 'Yazıcı yapılandırma riski', detail: 'Pasif veya endpoint tanımsız yazıcılar var.', count: inactivePrinters });
 
-  const duplicateProducts = products.length - new Set(products.map((product) => product.name.trim().toLocaleLowerCase('tr-TR'))).size;
+  const duplicateProducts = products.length - new Set(products.map((product: { name: string }) => product.name.trim().toLocaleLowerCase('tr-TR'))).size;
   if (duplicateProducts) issues.push({ code: 'duplicate_products', severity: 'medium', title: 'Mükerrer ürün isimleri', detail: 'Aynı isimde birden fazla ürün var.', count: duplicateProducts });
 
-  const suspiciousStockMovements = recentStockMovements.filter((movement) =>
+  const suspiciousStockMovements = recentStockMovements.filter((movement: { quantity: unknown; reason?: string | null }) =>
     Number(movement.quantity) < 0 && !movement.reason?.trim(),
   ).length;
   if (suspiciousStockMovements) issues.push({ code: 'suspicious_stock_movements', severity: 'medium', title: 'Açıklamasız stok düşümleri', detail: 'Negatif hareketlerin bir kısmında neden yok.', count: suspiciousStockMovements });
 
-  const observability = buildTenantObservabilityRows().find((row) => row.tenantId === tenantId);
+  const observability = buildTenantObservabilityRows().find((row: { tenantId: string }) => row.tenantId === tenantId);
   if (observability?.syncFailures) issues.push({ code: 'sync_failures', severity: observability.syncFailures > 3 ? 'high' : 'medium', title: 'Senkronizasyon hataları', detail: 'Cihazlar arası senkronizasyon hataları tespit edildi.', count: observability.syncFailures });
   if (observability?.websocketHealth === 'degraded') issues.push({ code: 'websocket_degraded', severity: 'high', title: 'WebSocket kararsız', detail: 'Gerçek zamanlı bağlantı sağlığı bozulmuş.', count: 1 });
 
@@ -178,7 +178,7 @@ export async function buildTenantOperationalHealth(tenantId: string): Promise<Op
       peakHours: [...hourCounts.entries()].map(([hour, orders]) => ({ hour, orders })).sort((a, b) => b.orders - a.orders).slice(0, 5),
       categoryProfitability: [...categoryRevenue.entries()].map(([category, revenue]) => ({ category, revenue })).sort((a, b) => b.revenue - a.revenue).slice(0, 5),
       openOrders,
-      dailyRevenue: paymentsToday.reduce((sum, payment) => sum + Number(payment.amount), 0),
+      dailyRevenue: paymentsToday.reduce((sum: number, payment: { amount: unknown }) => sum + Number(payment.amount), 0),
     },
     generatedAt: now.toISOString(),
   };
@@ -186,6 +186,6 @@ export async function buildTenantOperationalHealth(tenantId: string): Promise<Op
 
 export async function buildAllTenantOperationalHealth() {
   const tenants = await getOperationalTenantIds();
-  const rows = await Promise.all(tenants.map((tenant) => buildTenantOperationalHealth(tenant.tenantId)));
+  const rows = await Promise.all(tenants.map((tenant: { tenantId: string }) => buildTenantOperationalHealth(tenant.tenantId)));
   return rows.filter((row): row is OperationalHealth => Boolean(row)).sort((a, b) => a.healthScore - b.healthScore);
 }

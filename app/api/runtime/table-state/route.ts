@@ -7,6 +7,8 @@ import { prisma } from '@/lib/db/prisma';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+type JsonRecord = Record<string, unknown>;
+
 type SharedTablePaymentState = {
   tables: unknown[];
   paymentRequestedTableIds: string[];
@@ -108,7 +110,7 @@ export async function POST(request: Request) {
     },
     updatedAt: new Date().toISOString(),
   };
-  const persistedState = JSON.parse(JSON.stringify(nextState)) as Prisma.InputJsonValue;
+  const persistedState = JSON.parse(JSON.stringify(nextState)) as JsonRecord;
 
   await prisma.runtimeState.upsert({
     where: runtimeStateTenantKey(tenant.tenantId, key),

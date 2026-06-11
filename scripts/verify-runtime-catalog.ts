@@ -38,10 +38,10 @@ async function main() {
       take: 10000,
     });
 
-    const saleProducts = products.filter((product) => product.productType === 'sale_product');
-    const comboProducts = products.filter((product) => product.productType === 'combo_product');
-    const stockItemsInCatalog = catalog.items.filter((item) => item.productType === 'stock_item' || item.productType === 'semi_product');
-    const missingFields = catalog.items.filter((item) => {
+    const saleProducts = products.filter((product: { productType: string }) => product.productType === 'sale_product');
+    const comboProducts = products.filter((product: { productType: string }) => product.productType === 'combo_product');
+    const stockItemsInCatalog = catalog.items.filter((item: { productType: string }) => item.productType === 'stock_item' || item.productType === 'semi_product');
+    const missingFields = catalog.items.filter((item: { posKey: string; catalogRevision: string; productSnapshot: unknown; price: number }) => {
       const snapshot = metadataObject(item.productSnapshot);
       return !item.posKey
         || !item.catalogRevision
@@ -51,19 +51,39 @@ async function main() {
         || !snapshot.posKey
         || snapshot.posKey !== item.posKey;
     });
-    const nonSellable = catalog.items.filter((item) => !isSellableProductType(item.productType));
-    const categoryIds = [...new Set(products.map((product) => product.categoryId).filter((id): id is string => Boolean(id)))];
+    const nonSellable = catalog.items.filter((item: { productType: string }) => !isSellableProductType(item.productType));
+    const categoryIds = [...new Set(products.map((product: { categoryId: string | null }) => product.categoryId).filter((id: string | null): id is string => Boolean(id)))];
     const categories = categoryIds.length
       ? await prisma.productCategory.findMany({ where: { tenantId: tenant.tenantId, id: { in: categoryIds } }, select: { id: true, name: true, allowedProductTypes: true } })
       : [];
-    const categoryById = new Map(categories.map((category) => [category.id, category]));
-    const invalidDomainGraph = products.filter((product) => {
+    const categoryById = new Map(categories.map((category: { id: string; name: string; allowedProductTypes: unknown }): [string, { id: string; name: string; allowedProductTypes: unknown }] => [category.id, category]));
+    const invalidDomainGraph = products.filter((product: {
+      id: string;
+      name: string;
+      categoryId: string | null;
+      productType: string;
+      price: { toString(): string };
+      posKey: string | null;
+      lifecycleStatus: string;
+      publishStatus: string;
+      active: boolean;
+      deletedAt: Date | null;
+      archivedAt: Date | null;
+    }) => {
       const category = categoryById.get(product.categoryId ?? '');
+      const categoryName = category && typeof category === 'object' && 'name' in category && typeof category.name === 'string'
+        ? category.name
+        : undefined;
+      const categoryAllowedProductTypes = category
+        && typeof category === 'object'
+        && 'allowedProductTypes' in category
+        ? category.allowedProductTypes
+        : undefined;
       return !validateProductDomainGraph({
         id: product.id,
         name: product.name,
-        category: category?.name,
-        categoryAllowedProductTypes: category?.allowedProductTypes,
+        category: categoryName,
+        categoryAllowedProductTypes,
         productType: product.productType,
         price: product.price.toString(),
         posKey: product.posKey,
@@ -95,7 +115,7 @@ async function main() {
     if (nonSellable.length > 0) errors.push(`${tenant.tenantId}: ${nonSellable.length} non-sellable catalog items found`);
     if (invalidDomainGraph.length > 0) errors.push(`${tenant.tenantId}: ${invalidDomainGraph.length} products violate category/productType governance`);
     if (invalidRuntimeSnapshots.length > 0) errors.push(`${tenant.tenantId}: ${invalidRuntimeSnapshots.length} runtime snapshots are malformed`);
-    assert.equal(catalog.items.every((item) => item.catalogRevision === catalog.catalogRevision), true);
+    assert.equal(catalog.items.every((item: { catalogRevision: string }) => item.catalogRevision === catalog.catalogRevision), true);
 
     results.push({
       tenantId: tenant.tenantId,
@@ -104,7 +124,7 @@ async function main() {
       itemCount: catalog.itemCount,
       saleProducts: saleProducts.length,
       comboProducts: comboProducts.length,
-      stockItemsExcluded: products.filter((product) => product.productType === 'stock_item' || product.productType === 'semi_product').length,
+      stockItemsExcluded: products.filter((product: { productType: string }) => product.productType === 'stock_item' || product.productType === 'semi_product').length,
       invalidCatalogItems: catalog.observability.invalidItemCount,
       missingFields: missingFields.length,
       invalidDomainGraph: invalidDomainGraph.length,

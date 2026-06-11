@@ -9,6 +9,8 @@ import { authenticateRegisteredDevice } from '@/lib/server/device-auth';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+type JsonRecord = Record<string, unknown>;
+
 const AGENT_ONLINE_WINDOW_MS = 45_000;
 
 export async function GET(request: Request) {
@@ -96,7 +98,7 @@ export async function POST(request: Request) {
         targetDeviceId: activeDevice.deviceId,
         printerName: validated.printerName,
         printerRole: body?.printerRole ?? 'general',
-        payload: JSON.parse(JSON.stringify({ bytesBase64: body?.bytesBase64, metadata: body?.metadata ?? {} })) as Prisma.InputJsonValue,
+        payload: JSON.parse(JSON.stringify({ bytesBase64: body?.bytesBase64, metadata: body?.metadata ?? {} })) as JsonRecord,
         status: 'pending',
         lastError: null,
       },
@@ -106,7 +108,7 @@ export async function POST(request: Request) {
         targetDeviceId: activeDevice.deviceId,
         printerName: validated.printerName,
         printerRole: body?.printerRole ?? 'general',
-        payload: JSON.parse(JSON.stringify({ bytesBase64: body?.bytesBase64, metadata: body?.metadata ?? {} })) as Prisma.InputJsonValue,
+        payload: JSON.parse(JSON.stringify({ bytesBase64: body?.bytesBase64, metadata: body?.metadata ?? {} })) as JsonRecord,
         source: body?.source ?? 'cloud',
         mutationId: validated.mutationId,
       },

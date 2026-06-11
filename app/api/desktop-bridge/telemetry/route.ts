@@ -7,10 +7,11 @@ import { isSessionActive } from '@/lib/server/session-guard';
 import { trackUpdateSecurityEvent } from '@/lib/security/security-telemetry';
 import { prisma } from '@/lib/db/prisma';
 import { hashDeviceToken, normalizePrinterInventory, summarizeDeviceCapabilities } from '@/lib/device-runtime';
-import { Prisma } from '@prisma/client';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+type JsonRecord = Record<string, unknown>;
 
 type DesktopBridgeTelemetryPayload = {
   tenantId?: string;
@@ -222,7 +223,7 @@ export async function POST(request: Request) {
       localIp: body?.localIp?.slice(0, 80),
       bridgeVersion: body?.version?.slice(0, 80),
       deviceTokenHash: hashDeviceToken(body?.deviceToken),
-      installedPrinters: JSON.parse(JSON.stringify(printerInventory)) as Prisma.InputJsonValue,
+      installedPrinters: JSON.parse(JSON.stringify(printerInventory)) as JsonRecord,
       status: 'online',
       reconnectCount: boundedMetric(body?.websocket?.reconnects) + boundedMetric(body?.devices && 'reconnectAttempts' in body.devices ? body.devices.reconnectAttempts : 0),
       queueDepth: boundedMetric(body?.sync?.pending),
@@ -236,7 +237,7 @@ export async function POST(request: Request) {
         release: body?.release,
         sync: body?.sync,
         websocket: body?.websocket,
-      })) as Prisma.InputJsonValue,
+      })) as JsonRecord,
     },
     create: {
       tenantId,
@@ -246,7 +247,7 @@ export async function POST(request: Request) {
       localIp: body?.localIp?.slice(0, 80),
       bridgeVersion: body?.version?.slice(0, 80),
       deviceTokenHash: hashDeviceToken(body?.deviceToken),
-      installedPrinters: JSON.parse(JSON.stringify(printerInventory)) as Prisma.InputJsonValue,
+      installedPrinters: JSON.parse(JSON.stringify(printerInventory)) as JsonRecord,
       status: 'online',
       reconnectCount: boundedMetric(body?.websocket?.reconnects) + boundedMetric(body?.devices && 'reconnectAttempts' in body.devices ? body.devices.reconnectAttempts : 0),
       queueDepth: boundedMetric(body?.sync?.pending),
@@ -259,7 +260,7 @@ export async function POST(request: Request) {
         release: body?.release,
         sync: body?.sync,
         websocket: body?.websocket,
-      })) as Prisma.InputJsonValue,
+      })) as JsonRecord,
     },
   });
 

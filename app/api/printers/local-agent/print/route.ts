@@ -8,6 +8,8 @@ import { requireTenant, tenantAuthErrorResponse } from '@/lib/requireTenant';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+type JsonRecord = Record<string, unknown>;
+
 const AGENT_ONLINE_WINDOW_MS = 45_000;
 
 export async function POST(request: Request) {
@@ -63,7 +65,7 @@ export async function POST(request: Request) {
         targetDeviceId: activeDevice.deviceId,
         printerName: validated.printerName,
         printerRole: body?.printerRole ?? 'general',
-        payload: JSON.parse(JSON.stringify({ bytesBase64: body?.bytesBase64 })) as Prisma.InputJsonValue,
+        payload: JSON.parse(JSON.stringify({ bytesBase64: body?.bytesBase64 })) as JsonRecord,
         source: body?.source ?? 'cloud:test-print',
         mutationId,
       },

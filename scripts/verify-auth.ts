@@ -1,4 +1,15 @@
-import { Prisma, PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
+
+type JsonArrayLike = (string | number | boolean | null | Record<string, unknown>)[];
+type UserUpdateData = {
+  active?: boolean;
+  passwordHash?: string;
+  role?: string;
+  branchId?: string;
+  permissions?: JsonArrayLike;
+  deletedAt?: Date | null;
+  metadata?: Record<string, unknown>;
+};
 import { createRequire } from 'node:module';
 import { branchTenantBranchKey, roleTenantKey, subscriptionTenantIdKey, userTenantUsernameKey } from '../lib/db/compound-keys.ts';
 import { hashPassword, verifyPassword } from '../lib/auth/password.ts';
@@ -153,10 +164,10 @@ async function ensureUser(input: {
     passwordHash,
     role: input.role,
     branchId: input.branchId,
-    permissions: ['*'] satisfies Prisma.InputJsonArray,
+    permissions: ['*'] satisfies JsonArrayLike,
     deletedAt: null,
     metadata: { bootstrap: true, authVerify: true, system: Boolean(input.system) },
-  } satisfies Prisma.UserUncheckedUpdateInput;
+  } satisfies UserUpdateData;
 
   const user = await prisma.user.upsert({
     where: userTenantUsernameKey(input.tenantId, input.username),

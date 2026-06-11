@@ -8,6 +8,8 @@ import { invalidateRuntimePosCatalog } from '@/lib/server/runtime-pos-catalog';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+type DecimalLike = number | string | { toString(): string };
+
 type BulkProductInput = {
   id?: string;
   name?: string;
@@ -100,20 +102,20 @@ export async function GET(request: Request) {
       },
       take: 10000,
     });
-    const categoryIds = [...new Set(products.map((product) => product.categoryId).filter((id): id is string => Boolean(id)))];
+    const categoryIds = [...new Set(products.map((product: { categoryId: string | null }) => product.categoryId).filter((id: string | null): id is string => Boolean(id)))];
     const categories = categoryIds.length > 0
       ? await prisma.productCategory.findMany({
           where: { tenantId: tenant.tenantId, id: { in: categoryIds }, deletedAt: null },
           select: { id: true, name: true },
         })
       : [];
-    const categoryById = new Map(categories.map((category) => [category.id, category.name]));
+    const categoryById = new Map(categories.map((category: { id: string; name: string }) => [category.id, category.name]));
 
     return NextResponse.json({
       ok: true,
       tenantId: tenant.tenantId,
       branchId: tenant.branchId,
-      products: products.map((product) => ({
+      products: products.map((product: { id: string; name: string; posKey: string | null; legacyKey: string | null; revision: number; productType: string; price: DecimalLike; vatRate: number; unitType: string; categoryId: string | null; metadata: unknown }) => ({
         id: product.id,
         name: product.name,
         posKey: product.posKey,
@@ -144,7 +146,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'Kaydedilecek ürün bulunamadı.' }, { status: 400 });
     }
 
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const saved = [];
       let skipped = 0;
 

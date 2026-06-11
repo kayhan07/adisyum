@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db/prisma';
+import type { Prisma } from '@prisma/client';
 import { requireTenant, TenantAuthError, tenantAuthErrorResponse } from '@/lib/requireTenant';
 
 export const runtime = 'nodejs';
@@ -66,7 +67,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'Cari hesap, tutar ve mutabakat anahtarı zorunludur.' }, { status: 400 });
     }
 
-    const movement = await prisma.$transaction(async (tx) => {
+    const movement = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tenant.tenantId}), hashtext(${accountId}))`;
       const duplicate = await tx.currentAccountMovement.findUnique({
         where: { tenantId_reconciliationKey: { tenantId: tenant.tenantId, reconciliationKey } },

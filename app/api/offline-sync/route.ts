@@ -6,6 +6,8 @@ import { requireTenant, tenantAuthErrorResponse } from '@/lib/requireTenant';
 
 export const dynamic = 'force-dynamic';
 
+type JsonRecord = Record<string, unknown>;
+
 type OfflineQueueOperation = {
   id?: string;
   operationType?: string;
@@ -23,7 +25,7 @@ function normalizeOperation(operation: OfflineQueueOperation, index: number, ten
     eventType: typeof operation.operationType === 'string' && operation.operationType.trim().length > 0
       ? operation.operationType.trim()
       : 'offline_operation',
-    payload: JSON.parse(JSON.stringify(operation.payload ?? operation)) as Prisma.InputJsonValue,
+    payload: JSON.parse(JSON.stringify(operation.payload ?? operation)) as JsonRecord,
     deviceId: typeof operation.deviceId === 'string' && operation.deviceId.trim().length > 0
       ? operation.deviceId.trim()
       : null,
@@ -51,7 +53,7 @@ export async function POST(request: Request) {
 
   const normalized = operations.map((operation, index) => normalizeOperation(operation, index, tenantId));
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     if (normalized.length > 0) {
       await tx.offlineEvent.createMany({
         data: normalized.map((operation) => ({

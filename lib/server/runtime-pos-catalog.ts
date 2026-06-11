@@ -1,9 +1,10 @@
-import { Prisma } from '@prisma/client';
 import { compileCanonicalPosCatalog, type CanonicalPosCatalog, type CatalogChannel } from '@/lib/canonical-pos-catalog';
 import { prisma } from '@/lib/db/prisma';
 import { resolvePosFacingProductDomainType } from '@/lib/product-domain';
 import { validateProductDomainGraph } from '@/lib/product-domain-graph';
 import { resolveProductIdentity } from '@/lib/product-identity';
+
+type JsonValueLike = string | number | boolean | null | Record<string, unknown> | JsonValueLike[];
 
 export const RUNTIME_POS_CATALOG_KEY = 'runtime:pos-catalog';
 
@@ -12,7 +13,7 @@ export function readRuntimeCatalogChannel(value: string | null | undefined): Cat
   return 'pos';
 }
 
-function resolveBranchCategoryVisibility(value: Prisma.JsonValue | undefined, branchId?: string) {
+function resolveBranchCategoryVisibility(value: JsonValueLike | undefined, branchId?: string) {
   if (!branchId || !value || typeof value !== 'object' || Array.isArray(value)) return true;
   const visibility = value as Record<string, unknown>;
   const branchValue = visibility[branchId];
@@ -59,16 +60,38 @@ export async function compileTenantPosCatalog(tenantId: string, branchId?: strin
     take: 10000,
   });
 
-  const categoryIds = [...new Set(products.map((product) => product.categoryId).filter((id): id is string => Boolean(id)))];
+  const categoryIds = [...new Set(products.map((product: { categoryId: string | null }) => product.categoryId).filter((id: string | null): id is string => Boolean(id)))];
   const categories = categoryIds.length > 0
     ? await prisma.productCategory.findMany({
         where: { tenantId, id: { in: categoryIds }, active: true, deletedAt: null },
         select: { id: true, name: true, allowedProductTypes: true, visibleInPos: true, visibleInInventory: true, visibleInProduction: true, branchVisibility: true },
       })
     : [];
-  const categoryById = new Map(categories.map((category) => [category.id, category]));
+  const categoryById = new Map<string, { id: string; name: string; allowedProductTypes: unknown; visibleInPos: boolean; visibleInInventory: boolean; visibleInProduction: boolean; branchVisibility: JsonValueLike | null }>(
+    categories.map((category: { id: string; name: string; allowedProductTypes: unknown; visibleInPos: boolean; visibleInInventory: boolean; visibleInProduction: boolean; branchVisibility: JsonValueLike | null }) => [category.id, category]),
+  );
 
-  const items = products.flatMap((product) => {
+  const items = products.flatMap((product: {
+    id: string;
+    name: string;
+    sku: string | null;
+    barcode: string | null;
+    posKey: string | null;
+    externalId: string | null;
+    legacyKey: string | null;
+    revision: number;
+    lifecycleStatus: string;
+    publishStatus: string;
+    deletedAt: Date | null;
+    price: { toString(): string };
+    vatRate: number;
+    unitType: string;
+    productType: string;
+    categoryId: string | null;
+    imageUrl: string | null;
+    thumbnailUrl: string | null;
+    description: string | null;
+  }) => {
     const categoryRow = categoryById.get(product.categoryId ?? '');
     const category = categoryRow?.name ?? 'Mutfak';
     const identity = resolveProductIdentity({
@@ -153,8 +176,8 @@ export async function compileTenantPosCatalog(tenantId: string, branchId?: strin
   });
 }
 
-export function cloneCatalogForRuntimeState(catalog: CanonicalPosCatalog): Prisma.InputJsonValue {
-  return JSON.parse(JSON.stringify(catalog)) as Prisma.InputJsonValue;
+export function cloneCatalogForRuntimeState(catalog: CanonicalPosCatalog): JsonValueLike {
+  return JSON.parse(JSON.stringify(catalog)) as JsonValueLike;
 }
 
 export async function invalidateRuntimePosCatalog(tenantId: string, reason: string, branchId?: string) {
@@ -165,7 +188,7 @@ export async function invalidateRuntimePosCatalog(tenantId: string, reason: stri
         ? { startsWith: `${RUNTIME_POS_CATALOG_KEY}:${branchId}:` }
         : { startsWith: RUNTIME_POS_CATALOG_KEY },
     },
-  }).catch((error) => {
+  }).catch((error: unknown) => {
     console.error('[runtime-pos-catalog] cache invalidation failed', {
       tenantId,
       branchId,

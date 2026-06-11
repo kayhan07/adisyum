@@ -22,6 +22,27 @@ import { enqueueProvisioningRun } from '@/lib/queue/orchestration';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+type SaasTenantRow = {
+  status: string;
+  subscriptionStatus: string;
+  branchCount: number;
+  activeUsers: number;
+  dailyOrders: number;
+  dailyRevenue: number;
+  [key: string]: unknown;
+};
+
+type ProvisioningJobRow = {
+  id: string;
+  targetTenantId: string;
+  status: string;
+  currentStep: string;
+  attemptCount: number;
+  failureReason?: string | null;
+  updatedAt: string;
+  [key: string]: unknown;
+};
+
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
@@ -51,12 +72,12 @@ export async function GET(request: Request) {
       provisioningMetrics,
       summary: {
         totalTenants: tenants.length,
-        activeTenants: tenants.filter((tenant) => tenant.status === 'active' || tenant.status === 'trial' || tenant.status === 'demo').length,
-        expiredTenants: tenants.filter((tenant) => tenant.status === 'expired' || tenant.subscriptionStatus === 'expired').length,
-        totalBranches: tenants.reduce((sum, tenant) => sum + tenant.branchCount, 0),
-        activeUsers: tenants.reduce((sum, tenant) => sum + tenant.activeUsers, 0),
-        dailyOrders: tenants.reduce((sum, tenant) => sum + tenant.dailyOrders, 0),
-        liveRevenue: tenants.reduce((sum, tenant) => sum + tenant.dailyRevenue, 0),
+        activeTenants: tenants.filter((tenant: SaasTenantRow) => tenant.status === 'active' || tenant.status === 'trial' || tenant.status === 'demo').length,
+        expiredTenants: tenants.filter((tenant: SaasTenantRow) => tenant.status === 'expired' || tenant.subscriptionStatus === 'expired').length,
+        totalBranches: tenants.reduce((sum: number, tenant: SaasTenantRow) => sum + tenant.branchCount, 0),
+        activeUsers: tenants.reduce((sum: number, tenant: SaasTenantRow) => sum + tenant.activeUsers, 0),
+        dailyOrders: tenants.reduce((sum: number, tenant: SaasTenantRow) => sum + tenant.dailyOrders, 0),
+        liveRevenue: tenants.reduce((sum: number, tenant: SaasTenantRow) => sum + tenant.dailyRevenue, 0),
       },
       generatedAt: new Date().toISOString(),
     });
@@ -207,7 +228,7 @@ export async function POST(request: Request) {
       queued: queueScheduled,
       provisioned: inlineProvisioned,
       warning: queueWarning,
-      job: jobs.find((item) => item.id === job.id) ?? job,
+      job: jobs.find((item: ProvisioningJobRow) => item.id === job.id) ?? job,
       tenants,
       jobs,
       provisioningMetrics,
@@ -378,7 +399,7 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ ok: false, error: 'Gecersiz tenant aksiyonu.' }, { status: 400 });
     }
     const existing = await listProvisioningJobs();
-    const current = existing.find((item) => item.id === body.jobId);
+    const current = existing.find((item: ProvisioningJobRow) => item.id === body.jobId);
     if (!current) return NextResponse.json({ ok: false, error: 'Provisioning job bulunamadı.' }, { status: 404 });
     if (body.action === 'rollback') {
       await enqueueProvisioningRun({
@@ -403,7 +424,7 @@ export async function PATCH(request: Request) {
       source: 'system-admin-api',
     });
     const [jobs, provisioningMetrics] = await Promise.all([listProvisioningJobs(), getProvisioningMetrics()]);
-    return NextResponse.json({ ok: true, job: jobs.find((item) => item.id === body.jobId), jobs, provisioningMetrics }, { status: 202 });
+    return NextResponse.json({ ok: true, job: jobs.find((item: ProvisioningJobRow) => item.id === body.jobId), jobs, provisioningMetrics }, { status: 202 });
   } catch (error) {
     if (isRouteResponse(error)) return error;
     console.error('[system-admin/tenants] provisioning action failed', error);

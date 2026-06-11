@@ -11,6 +11,8 @@ import {
   type ExtendedProductDomainType,
 } from '../lib/product-domain-graph';
 
+type JsonValueLike = string | number | boolean | null | Record<string, unknown> | JsonValueLike[];
+
 const require = createRequire(import.meta.url);
 const { loadEnvConfig } = require('@next/env') as typeof import('@next/env');
 loadEnvConfig(process.cwd(), true);
@@ -24,7 +26,7 @@ function metadataObject(value: unknown) {
 
 type ProductDomainGraphDb = Pick<PrismaClient, 'productCategory'>;
 
-async function ensureCategory(tenantId: string, name: string, productType: ExtendedProductDomainType, tx: ProductDomainGraphDb = prisma) {
+async function ensureCategory(tenantId: string, name: string, productType: ExtendedProductDomainType, tx: ProductDomainGraphDb = prisma): Promise<string> {
   const normalizedName = normalizeCategoryName(name);
   const existing = await tx.productCategory.findFirst({
     where: { tenantId, name: { equals: normalizedName, mode: 'insensitive' } },
@@ -37,12 +39,12 @@ async function ensureCategory(tenantId: string, name: string, productType: Exten
 
   if (existing) {
     const currentAllowed = Array.isArray(existing.allowedProductTypes) ? existing.allowedProductTypes : [];
-    const mergedAllowed = Array.from(new Set([...currentAllowed.filter((item): item is string => typeof item === 'string'), ...allowed]));
+    const mergedAllowed = Array.from(new Set([...currentAllowed.filter((item: unknown): item is string => typeof item === 'string'), ...allowed]));
     if (!DRY_RUN && JSON.stringify(currentAllowed) !== JSON.stringify(mergedAllowed)) {
       await tx.productCategory.update({
         where: { id: existing.id },
         data: {
-          allowedProductTypes: mergedAllowed as Prisma.InputJsonValue,
+          allowedProductTypes: mergedAllowed as JsonValueLike,
           active: true,
           visibleInPos: definition.visibleInPos,
           visibleInInventory: definition.visibleInInventory,
@@ -60,7 +62,7 @@ async function ensureCategory(tenantId: string, name: string, productType: Exten
     data: {
       tenantId,
       name: normalizedName,
-      allowedProductTypes: allowed as Prisma.InputJsonValue,
+      allowedProductTypes: allowed as JsonValueLike,
       active: true,
       visibleInPos: definition.visibleInPos,
       visibleInInventory: definition.visibleInInventory,
@@ -99,13 +101,13 @@ async function main() {
     take: 50000,
   });
 
-  const categoryIds = [...new Set(products.map((product) => product.categoryId).filter((id): id is string => Boolean(id)))];
+  const categoryIds = [...new Set(products.map((product: { categoryId: string | null }) => product.categoryId).filter((id: string | null): id is string => Boolean(id)))];
   const categories = categoryIds.length
     ? await prisma.productCategory.findMany({ where: { id: { in: categoryIds } }, select: { id: true, name: true, allowedProductTypes: true } })
     : [];
-  const categoryById = new Map(categories.map((category) => [category.id, category]));
+  const categoryById = new Map(categories.map((category: { id: string; name: string; allowedProductTypes: unknown }): [string, { id: string; name: string; allowedProductTypes: unknown }] => [category.id, category]));
 
-  const tenantIds = [...new Set(products.map((product) => product.tenantId))];
+  const tenantIds: string[] = [...new Set<string>(products.map((product: { tenantId: string }) => product.tenantId))];
   const categoryCreates = [];
   for (const tenantId of tenantIds) {
     for (const preset of CATEGORY_DOMAIN_PRESETS) {
@@ -130,8 +132,16 @@ async function main() {
   for (const product of products) {
     const metadata = metadataObject(product.metadata);
     const categoryRow = categoryById.get(product.categoryId ?? '');
+    const categoryName = categoryRow && typeof categoryRow === 'object' && 'name' in categoryRow && typeof categoryRow.name === 'string'
+      ? categoryRow.name
+      : undefined;
+    const categoryAllowedProductTypes = categoryRow
+      && typeof categoryRow === 'object'
+      && 'allowedProductTypes' in categoryRow
+      ? (categoryRow.allowedProductTypes as unknown)
+      : undefined;
     const metadataCategory = typeof metadata.category === 'string' ? metadata.category : undefined;
-    const currentCategory = categoryRow?.name ?? metadataCategory ?? null;
+    const currentCategory = categoryName ?? metadataCategory ?? null;
     const productType = normalizeProductTypeForDomainGraph({
       id: product.id,
       name: product.name,
@@ -159,7 +169,7 @@ async function main() {
       id: product.id,
       name: product.name,
       category: currentCategory,
-      categoryAllowedProductTypes: categoryRow?.allowedProductTypes,
+      categoryAllowedProductTypes,
       productType: product.productType,
       price: product.price.toString(),
       posKey: product.posKey,
@@ -185,7 +195,7 @@ async function main() {
         toProductType: productType,
         fromPosKey: product.posKey,
         toPosKey: nextPosKey,
-        issues: validation.issues.map((issue) => issue.code),
+        issues: validation.issues.map((issue: { code: string }) => issue.code),
       });
     }
   }
@@ -209,9 +219,9 @@ async function main() {
   }
 
   for (const update of updates) {
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const categoryId = await ensureCategory(update.tenantId, update.toCategory, update.toProductType, tx);
-      const current = products.find((product) => product.id === update.id);
+      const current = products.find((product: { id: string }) => product.id === update.id);
       const metadata = metadataObject(current?.metadata);
       await tx.product.update({
         where: { id: update.id },

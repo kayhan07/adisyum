@@ -1,4 +1,26 @@
-import { Prisma, PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
+
+type JsonArrayLike = (string | number | boolean | null | Record<string, unknown>)[];
+type UserUpdateData = {
+  active?: boolean;
+  passwordHash?: string;
+  role?: string;
+  branchId?: string;
+  permissions?: JsonArrayLike;
+  deletedAt?: Date | null;
+  metadata?: Record<string, unknown>;
+};
+type UserCreateData = {
+  tenantId: string;
+  username: string;
+  name: string;
+  passwordHash: string;
+  role: string;
+  branchId: string;
+  active?: boolean;
+  permissions?: JsonArrayLike;
+  metadata?: Record<string, unknown>;
+};
 import { createRequire } from 'node:module';
 import { branchTenantBranchKey, roleTenantKey, subscriptionTenantIdKey, userTenantUsernameKey } from '../lib/db/compound-keys.ts';
 import { hashPassword } from '../lib/auth/password.ts';
@@ -137,7 +159,7 @@ async function ensureSubscription(tenantId: string, years = 1) {
 }
 
 async function ensureRole(input: { tenantId: string; key: string; name: string; system?: boolean }) {
-  const permissions = ['*'] satisfies Prisma.InputJsonArray;
+  const permissions = ['*'] satisfies JsonArrayLike;
 
   const role = await prisma.role.upsert({
     where: roleTenantKey(input.tenantId, input.key),
@@ -171,7 +193,7 @@ async function ensureUser(input: {
   system?: boolean;
 }) {
   const passwordHash = await hashPassword(input.plainPassword);
-  const permissions = ['*'] satisfies Prisma.InputJsonArray;
+  const permissions = ['*'] satisfies JsonArrayLike;
   const update = {
     active: true,
     passwordHash,
@@ -180,7 +202,7 @@ async function ensureUser(input: {
     permissions,
     deletedAt: null,
     metadata: { bootstrap: true, system: Boolean(input.system) },
-  } satisfies Prisma.UserUncheckedUpdateInput;
+  } satisfies UserUpdateData;
   const create = {
     tenantId: input.tenantId,
     username: input.username,
@@ -191,7 +213,7 @@ async function ensureUser(input: {
     active: true,
     permissions,
     metadata: { bootstrap: true, system: Boolean(input.system) },
-  } satisfies Prisma.UserUncheckedCreateInput;
+  } satisfies UserCreateData;
 
   const user = await prisma.user.upsert({
     where: userTenantUsernameKey(input.tenantId, input.username),

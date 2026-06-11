@@ -8,6 +8,8 @@ import { authenticateRegisteredDevice, authenticateTenantSession } from '@/lib/s
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+type JsonRecord = Record<string, unknown>;
+
 export async function GET(request: Request) {
   try {
     const tenant = await requireTenant(request);
@@ -91,7 +93,7 @@ export async function POST(request: Request) {
         localIp: body?.localIp?.slice(0, 80),
         bridgeVersion: body?.bridgeVersion?.slice(0, 80),
         deviceTokenHash: hashDeviceToken(body?.deviceToken),
-        installedPrinters: JSON.parse(JSON.stringify(printers)) as Prisma.InputJsonValue,
+        installedPrinters: JSON.parse(JSON.stringify(printers)) as JsonRecord,
         status: 'online',
         reconnectCount: Math.max(0, Math.floor(Number(body?.reconnectCount ?? 0))),
         queueDepth: Math.max(0, Math.floor(Number(body?.queueDepth ?? 0))),
@@ -99,7 +101,7 @@ export async function POST(request: Request) {
         escposCapable: capabilities.escposCapable,
         fiscalCapable: Boolean(body?.fiscalCapable),
         lastHeartbeatAt: new Date(),
-        metadata: JSON.parse(JSON.stringify({ ...(body?.metadata ?? {}), capabilities })) as Prisma.InputJsonValue,
+        metadata: JSON.parse(JSON.stringify({ ...(body?.metadata ?? {}), capabilities })) as JsonRecord,
       },
       create: {
         tenantId,
@@ -109,14 +111,14 @@ export async function POST(request: Request) {
         localIp: body?.localIp?.slice(0, 80),
         bridgeVersion: body?.bridgeVersion?.slice(0, 80),
         deviceTokenHash: hashDeviceToken(body?.deviceToken),
-        installedPrinters: JSON.parse(JSON.stringify(printers)) as Prisma.InputJsonValue,
+        installedPrinters: JSON.parse(JSON.stringify(printers)) as JsonRecord,
         status: 'online',
         reconnectCount: Math.max(0, Math.floor(Number(body?.reconnectCount ?? 0))),
         queueDepth: Math.max(0, Math.floor(Number(body?.queueDepth ?? 0))),
         spoolerHealth: body?.spoolerHealth ?? 'healthy',
         escposCapable: capabilities.escposCapable,
         fiscalCapable: Boolean(body?.fiscalCapable),
-        metadata: JSON.parse(JSON.stringify({ ...(body?.metadata ?? {}), capabilities })) as Prisma.InputJsonValue,
+        metadata: JSON.parse(JSON.stringify({ ...(body?.metadata ?? {}), capabilities })) as JsonRecord,
       },
     });
 

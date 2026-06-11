@@ -1,4 +1,4 @@
-﻿import { Prisma, type TenantStatus, type SubscriptionStatus } from '@prisma/client';
+﻿import { Prisma } from '@prisma/client';
 import { hashPassword } from '@/lib/auth/password';
 import { prisma } from '@/lib/db/prisma';
 import { writeAuditLog } from '@/lib/db/audit';
@@ -6,6 +6,13 @@ import { branchTenantBranchKey, roleTenantKey, userTenantUsernameKey } from '@/l
 import { getDefaultModulesForPackageType, type PackageModuleKey } from '@/lib/package-access-core';
 import type { PackageType } from '@/lib/saas-store';
 import { recordOperationalEvent } from '@/lib/operations/live-ops';
+
+type TenantStatusLike = 'trial' | 'active' | 'suspended' | 'expired' | 'blocked' | 'demo' | 'cancelled';
+type SubscriptionStatusLike = 'trial' | 'active' | 'past_due' | 'canceled' | 'suspended' | 'expired' | 'demo' | 'cancelled';
+type JsonPrimitive = string | number | boolean | null;
+type JsonValue = JsonPrimitive | JsonObject | JsonArray;
+type JsonObject = { [key: string]: JsonValue };
+type JsonArray = JsonValue[];
 
 const ROLE_PERMISSIONS: Record<string, string[]> = {
   tenant_admin: [
@@ -64,7 +71,7 @@ export type TenantManagementInput =
       addMonths?: number;
       addYears?: number;
       unlimitedLicense?: boolean;
-      status?: SubscriptionStatus;
+      status?: SubscriptionStatusLike;
       billingPeriod?: 'monthly' | 'quarterly' | 'yearly';
       packageType?: PackageType;
       requestedBy: string;
@@ -107,7 +114,7 @@ export type TenantManagementInput =
   | {
       action: 'restore_tenant';
       tenantId: string;
-      status?: TenantStatus | 'disabled';
+      status?: TenantStatusLike | 'disabled';
       requestedBy: string;
     }
   | {
@@ -119,7 +126,7 @@ export type TenantManagementInput =
   | {
       action: 'update_status';
       tenantId: string;
-      status: TenantStatus | 'disabled';
+      status: TenantStatusLike | 'disabled';
       requestedBy: string;
     };
 
@@ -174,14 +181,14 @@ function durationDays(period: ProvisionTenantInput['billingPeriod'], trialDays =
   return 30;
 }
 
-function normalizeTenantStatus(value: ProvisionTenantInput['status'], trialDays: number): TenantStatus {
+function normalizeTenantStatus(value: ProvisionTenantInput['status'], trialDays: number): TenantStatusLike {
   if (value === 'suspended') return 'suspended';
   if (value === 'cancelled') return 'expired';
   if (value === 'active') return 'active';
   return trialDays > 0 ? 'trial' : 'active';
 }
 
-function normalizeSubscriptionStatus(status: TenantStatus): SubscriptionStatus {
+function normalizeSubscriptionStatus(status: TenantStatusLike): SubscriptionStatusLike {
   if (status === 'suspended') return 'past_due';
   if (status === 'expired') return 'canceled';
   if (status === 'blocked') return 'suspended';
@@ -189,8 +196,8 @@ function normalizeSubscriptionStatus(status: TenantStatus): SubscriptionStatus {
   return 'active';
 }
 
-function compactJson(input: Record<string, unknown>): Prisma.InputJsonObject {
-  return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as Prisma.InputJsonObject;
+function compactJson(input: Record<string, unknown>): JsonObject {
+  return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as JsonObject;
 }
 
 function licenseLimits(packageType: PackageType) {
@@ -261,8 +268,8 @@ async function assertTenantProvisioningConflicts(input: ProvisionTenantInput) {
         deletedAt: null,
         OR: [
           ...(tenantId ? [{ tenantId }] : []),
-          ...(companyName ? [{ name: { equals: input.companyName.trim(), mode: Prisma.QueryMode.insensitive } }] : []),
-          ...(taxNumber ? [{ taxNumber: { equals: input.taxNumber?.trim(), mode: Prisma.QueryMode.insensitive } }] : []),
+          ...(companyName ? [{ name: { equals: input.companyName.trim(), mode: 'insensitive' } }] : []),
+          ...(taxNumber ? [{ taxNumber: { equals: input.taxNumber?.trim(), mode: 'insensitive' } }] : []),
         ],
       },
       select: { tenantId: true, name: true, taxNumber: true },
@@ -271,7 +278,7 @@ async function assertTenantProvisioningConflicts(input: ProvisionTenantInput) {
       ? prisma.user.findFirst({
           where: {
             deletedAt: null,
-            email: { equals: input.adminEmail?.trim(), mode: Prisma.QueryMode.insensitive },
+            email: { equals: input.adminEmail?.trim(), mode: 'insensitive' },
             tenantId: { not: 'system' },
           },
           select: { tenantId: true, email: true },
@@ -302,7 +309,7 @@ async function appendJobDiagnostic(jobId: string, step: string, status: 'ok' | '
   const current = Array.isArray(job?.diagnostics) ? job.diagnostics : [];
   await prisma.provisioningJob.update({
     where: { id: jobId },
-    data: { diagnostics: [...current, serializeDiagnostic(step, status, startedAt, detail)] as Prisma.InputJsonValue },
+    data: { diagnostics: [...current, serializeDiagnostic(step, status, startedAt, detail)] as JsonValue },
   });
 }
 
@@ -342,14 +349,14 @@ export async function createProvisioningJob(input: ProvisionTenantInput) {
   return prisma.provisioningJob.upsert({
     where: { jobKey },
     update: {
-      input: input as Prisma.InputJsonValue,
+      input: input as JsonValue,
       requestedBy: input.createdBy,
     },
     create: {
       jobKey,
       targetTenantId: (input.tenantId?.trim() || createTenantId()).toUpperCase(),
       requestedBy: input.createdBy,
-      input: input as Prisma.InputJsonValue,
+      input: input as JsonValue,
     },
   });
 }
@@ -388,25 +395,25 @@ export async function getProvisioningMetrics() {
       _count: { _all: true },
     }),
   ]);
-  const completed = jobs.filter((job) => job.status === 'completed');
+  const completed = jobs.filter((job: { status: string }) => job.status === 'completed');
   const durations = completed
-    .map((job) => job.startedAt && job.completedAt ? job.completedAt.getTime() - job.startedAt.getTime() : null)
-    .filter((duration): duration is number => duration !== null);
-  const retries = jobs.filter((job) => job.attemptCount > 1).length;
-  const rollbacks = jobs.filter((job) => Boolean(job.rollbackAt)).length;
+    .map((job: { startedAt: Date | null; completedAt: Date | null }) => job.startedAt && job.completedAt ? job.completedAt.getTime() - job.startedAt.getTime() : null)
+    .filter((duration: number | null): duration is number => duration !== null);
+  const retries = jobs.filter((job: { attemptCount: number }) => job.attemptCount > 1).length;
+  const rollbacks = jobs.filter((job: { rollbackAt: Date | null }) => Boolean(job.rollbackAt)).length;
   return {
     totalJobs: jobs.length,
     completedJobs: completed.length,
-    failedJobs: jobs.filter((job) => job.status === 'failed').length,
-    activeJobs: jobs.filter((job) => job.status === 'pending' || job.status === 'provisioning').length,
+    failedJobs: jobs.filter((job: { status: string }) => job.status === 'failed').length,
+    activeJobs: jobs.filter((job: { status: string }) => job.status === 'pending' || job.status === 'provisioning').length,
     retryCount: retries,
     rollbackCount: rollbacks,
     successRate: jobs.length ? Math.round((completed.length / jobs.length) * 100) : 0,
     retryRate: jobs.length ? Math.round((retries / jobs.length) * 100) : 0,
     rollbackRate: jobs.length ? Math.round((rollbacks / jobs.length) * 100) : 0,
-    averageDurationMs: durations.length ? Math.round(durations.reduce((sum, duration) => sum + duration, 0) / durations.length) : 0,
-    failuresByStep: failuresByStep.map((row) => ({ step: row.currentStep, count: row._count._all })),
-    eventCounts: eventCounts.map((row) => ({ type: row.type, severity: row.severity, count: row._count._all })),
+    averageDurationMs: durations.length ? Math.round(durations.reduce((sum: number, duration: number) => sum + duration, 0) / durations.length) : 0,
+    failuresByStep: failuresByStep.map((row: { currentStep: string | null; _count: { _all: number } }) => ({ step: row.currentStep, count: row._count._all })),
+    eventCounts: eventCounts.map((row: { type: string; severity: string; _count: { _all: number } }) => ({ type: row.type, severity: row.severity, count: row._count._all })),
   };
 }
 
@@ -426,7 +433,7 @@ export async function provisionTenant(input: ProvisionTenantInput) {
   const passwordHash = await hashPassword(adminPassword);
   const trace: ProvisioningTraceEvent[] = [];
 
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const existing = await tx.tenant.findUnique({
       where: { tenantId },
       select: {
@@ -675,20 +682,20 @@ export async function provisionTenant(input: ProvisionTenantInput) {
 
 async function assertProvisionedTenantCleanStart(tenantId: string) {
   const checks = await Promise.all([
-    prisma.productCategory.count({ where: { tenantId } }).then((count) => ['productCategory', count] as const),
-    prisma.product.count({ where: { tenantId } }).then((count) => ['product', count] as const),
-    prisma.recipe.count({ where: { tenantId } }).then((count) => ['recipe', count] as const),
-    prisma.stockMovement.count({ where: { tenantId } }).then((count) => ['stockMovement', count] as const),
-    prisma.cashRegister.count({ where: { tenantId } }).then((count) => ['cashRegister', count] as const),
-    prisma.cashTransaction.count({ where: { tenantId } }).then((count) => ['cashTransaction', count] as const),
-    prisma.currentAccountMovement.count({ where: { tenantId } }).then((count) => ['currentAccountMovement', count] as const),
-    prisma.order.count({ where: { tenantId } }).then((count) => ['order', count] as const),
-    prisma.payment.count({ where: { tenantId } }).then((count) => ['payment', count] as const),
-    prisma.printer.count({ where: { tenantId } }).then((count) => ['printer', count] as const),
-    prisma.runtimeState.count({ where: { tenantId } }).then((count) => ['runtimeState', count] as const),
-    prisma.tenantPrintJob.count({ where: { tenantId } }).then((count) => ['tenantPrintJob', count] as const),
-    prisma.tenantDeviceRegistry.count({ where: { tenantId } }).then((count) => ['tenantDeviceRegistry', count] as const),
-    prisma.report.count({ where: { tenantId } }).then((count) => ['report', count] as const),
+    prisma.productCategory.count({ where: { tenantId } }).then((count: number) => ['productCategory', count] as const),
+    prisma.product.count({ where: { tenantId } }).then((count: number) => ['product', count] as const),
+    prisma.recipe.count({ where: { tenantId } }).then((count: number) => ['recipe', count] as const),
+    prisma.stockMovement.count({ where: { tenantId } }).then((count: number) => ['stockMovement', count] as const),
+    prisma.cashRegister.count({ where: { tenantId } }).then((count: number) => ['cashRegister', count] as const),
+    prisma.cashTransaction.count({ where: { tenantId } }).then((count: number) => ['cashTransaction', count] as const),
+    prisma.currentAccountMovement.count({ where: { tenantId } }).then((count: number) => ['currentAccountMovement', count] as const),
+    prisma.order.count({ where: { tenantId } }).then((count: number) => ['order', count] as const),
+    prisma.payment.count({ where: { tenantId } }).then((count: number) => ['payment', count] as const),
+    prisma.printer.count({ where: { tenantId } }).then((count: number) => ['printer', count] as const),
+    prisma.runtimeState.count({ where: { tenantId } }).then((count: number) => ['runtimeState', count] as const),
+    prisma.tenantPrintJob.count({ where: { tenantId } }).then((count: number) => ['tenantPrintJob', count] as const),
+    prisma.tenantDeviceRegistry.count({ where: { tenantId } }).then((count: number) => ['tenantDeviceRegistry', count] as const),
+    prisma.report.count({ where: { tenantId } }).then((count: number) => ['report', count] as const),
   ]);
   const dirty = checks.filter(([, count]) => count > 0);
   if (dirty.length > 0) {
@@ -767,7 +774,7 @@ export async function rollbackProvisioningJob(jobId: string) {
   });
   await prisma.provisioningJob.update({ where: { id: jobId }, data: { status: 'rollback_pending', currentStep: 'rollback_pending' } });
   try {
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.tenantPrintJob.deleteMany({ where: { tenantId: job.targetTenantId } });
       await tx.tenantDeviceRegistry.deleteMany({ where: { tenantId: job.targetTenantId } });
       await tx.templatePackImport.deleteMany({ where: { tenantId: job.targetTenantId } });
@@ -868,11 +875,11 @@ export async function listSaasTenants() {
     }),
   ]);
 
-  const ordersByTenant = new Map(ordersToday.map((row) => [row.tenantId, row._count.id]));
-  const revenueByTenant = new Map(paymentsToday.map((row) => [row.tenantId, Number(row._sum.amount ?? 0)]));
-  const tenantIds = tenants.map((tenant) => tenant.tenantId);
+  const ordersByTenant = new Map(ordersToday.map((row: { tenantId: string; _count: { id: number } }) => [row.tenantId, row._count.id]));
+  const revenueByTenant = new Map(paymentsToday.map((row: { tenantId: string; _sum: { amount: number | null } }) => [row.tenantId, Number(row._sum.amount ?? 0)]));
+  const tenantIds = tenants.map((tenant: { tenantId: string }) => tenant.tenantId);
   const forensicCounts = await Promise.all(
-    tenantIds.map(async (tenantId) => {
+    tenantIds.map(async (tenantId: string) => {
       const [
         productCount,
         categoryCount,
@@ -932,9 +939,40 @@ export async function listSaasTenants() {
       ] as const;
     }),
   );
-  const countsByTenant = new Map(forensicCounts);
+  const countsByTenant = new Map<string, {
+    productCount: number;
+    categoryCount: number;
+    stockCount: number;
+    recipeCount: number;
+    tableCount: number;
+    orderCount: number;
+    paymentCount: number;
+    salesTotal: number;
+    currentAccountCount: number;
+    cashRecordCount: number;
+    reportCount: number;
+    printerCount: number;
+    runtimeSnapshotCount: number;
+    lastOrderAt: string | null;
+    lastPaymentAt: string | null;
+  }>(forensicCounts);
 
-  return tenants.map((tenant) => {
+  return tenants.map((tenant: {
+    tenantId: string;
+    name: string;
+    legalName: string | null;
+    taxNumber: string | null;
+    status: string;
+    deletedAt: Date | null;
+    packageType: string;
+    subscriptions: Array<{ id: string; packageType: string; billingPeriod: string; startsAt: Date; updatedAt: Date; endsAt: Date; status: string; metadata: JsonValue | null }>;
+    metadata: JsonValue | null;
+    users: Array<{ username: string; role: string; email: string | null; active: boolean; metadata: JsonValue | null; updatedAt: Date; lastLoginAt: Date | null }>;
+    branches: Array<{ active: boolean }>;
+    mainBranchId: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }) => {
     const subscription = tenant.subscriptions[0] ?? null;
     const metadata = tenant.metadata && typeof tenant.metadata === 'object' && !Array.isArray(tenant.metadata)
       ? tenant.metadata as Record<string, unknown>
@@ -943,7 +981,7 @@ export async function listSaasTenants() {
       ? subscription.metadata as Record<string, unknown>
       : {};
     const counts = countsByTenant.get(tenant.tenantId);
-    const adminUser = tenant.users.find((user) => user.username === 'admin') ?? tenant.users.find((user) => user.role.toLowerCase() === 'admin') ?? tenant.users[0] ?? null;
+    const adminUser = tenant.users.find((user: { username: string }) => user.username === 'admin') ?? tenant.users.find((user: { role: string }) => user.role.toLowerCase() === 'admin') ?? tenant.users[0] ?? null;
     return {
       tenantId: tenant.tenantId,
       companyName: tenant.name,
@@ -963,10 +1001,10 @@ export async function listSaasTenants() {
       adminPasswordResetRequired: metadataObject(adminUser?.metadata).resetRequired === true,
       adminUpdatedAt: adminUser?.updatedAt.toISOString() ?? null,
       branchCount: tenant.branches.length,
-      activeBranchCount: tenant.branches.filter((branch) => branch.active).length,
-      activeUsers: tenant.users.filter((user) => user.active).length,
-      lastActivity: tenant.users.map((user) => user.lastLoginAt?.toISOString()).filter(Boolean).sort().at(-1) ?? tenant.updatedAt.toISOString(),
-      lastLogin: tenant.users.map((user) => user.lastLoginAt?.toISOString()).filter(Boolean).sort().at(-1) ?? null,
+      activeBranchCount: tenant.branches.filter((branch: { active: boolean }) => branch.active).length,
+      activeUsers: tenant.users.filter((user: { active: boolean }) => user.active).length,
+      lastActivity: tenant.users.map((user: { lastLoginAt: Date | null }) => user.lastLoginAt?.toISOString()).filter(Boolean).sort().at(-1) ?? tenant.updatedAt.toISOString(),
+      lastLogin: tenant.users.map((user: { lastLoginAt: Date | null }) => user.lastLoginAt?.toISOString()).filter(Boolean).sort().at(-1) ?? null,
       expiresAt: subscription?.endsAt.toISOString() ?? null,
       subscriptionStatus: subscription?.status ?? 'none',
       balance: Number(metadata.initialBalance ?? subscriptionMetadata.initialBalance ?? 0),
@@ -1036,7 +1074,7 @@ export async function exportTenantData(tenantIdInput: string) {
   });
 }
 
-function metadataObject(input: Prisma.JsonValue | null | undefined): Record<string, unknown> {
+function metadataObject(input: JsonValue | null | undefined): Record<string, unknown> {
   return input && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, unknown> : {};
 }
 
@@ -1078,7 +1116,7 @@ export async function updateTenantSubscription(input: Extract<TenantManagementIn
     lastSystemAdminUpdatedBy: input.requestedBy,
   });
 
-  const updated = await prisma.$transaction(async (tx) => {
+  const updated = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const subscription = await tx.subscription.update({
       where: { tenantId_id: { tenantId, id: current.id } },
       data: {
@@ -1125,7 +1163,7 @@ export async function updateTenantPassword(input: Extract<TenantManagementInput,
   const user = await prisma.user.findUnique({ where: userTenantUsernameKey(tenantId, username) });
   if (!user || user.deletedAt) throw new Error('Kullanıcı bulunamadı.');
   const passwordHash = password ? await hashPassword(password) : user.passwordHash;
-  return prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const updated = await tx.user.update({
       where: userTenantUsernameKey(tenantId, username),
       data: {
@@ -1170,7 +1208,7 @@ export async function updateTenantInfo(input: Extract<TenantManagementInput, { a
     profileUpdatedAt: new Date().toISOString(),
     profileUpdatedBy: input.requestedBy,
   });
-  return prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const updated = await tx.tenant.update({
       where: { tenantId },
       data: {
@@ -1201,7 +1239,7 @@ export async function updateTenantUserStatus(input: Extract<TenantManagementInpu
   if (tenant.deletedAt) throw new Error('Silinmiş tenant üzerinde bu işlem yapılamaz.');
   const user = await prisma.user.findUnique({ where: userTenantUsernameKey(tenantId, username) });
   if (!user || user.deletedAt) throw new Error('Kullanıcı bulunamadı.');
-  return prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const updated = await tx.user.update({
       where: userTenantUsernameKey(tenantId, username),
       data: {
@@ -1230,12 +1268,12 @@ export async function updateTenantUserStatus(input: Extract<TenantManagementInpu
 
 export async function updateTenantStatus(input: Extract<TenantManagementInput, { action: 'update_status' }>) {
   const tenantId = input.tenantId.trim().toUpperCase();
-  const status = (input.status === 'disabled' ? 'blocked' : input.status) as TenantStatus;
+  const status = (input.status === 'disabled' ? 'blocked' : input.status) as TenantStatusLike;
   if (!tenantId) throw new Error('tenantId zorunludur.');
   const existing = await prisma.tenant.findUnique({ where: { tenantId }, select: { deletedAt: true } });
   if (!existing) throw new Error('Tenant bulunamadı.');
   if (existing.deletedAt) throw new Error('Silinmiş tenant üzerinde bu işlem yapılamaz.');
-  return prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const latestSubscription = await tx.subscription.findFirst({
       where: { tenantId, deletedAt: null },
       orderBy: { endsAt: 'desc' },
@@ -1275,7 +1313,7 @@ export async function softDeleteTenant(input: Extract<TenantManagementInput, { a
   const existing = await prisma.tenant.findUnique({ where: { tenantId }, select: { tenantId: true, deletedAt: true, metadata: true } });
   if (!existing) throw new Error('Tenant bulunamadı.');
   if (existing.deletedAt) throw new Error('Tenant zaten silinmiş durumda.');
-  return prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const deletedAt = new Date();
     const tenant = await tx.tenant.update({
       where: { tenantId },
@@ -1307,11 +1345,11 @@ export async function softDeleteTenant(input: Extract<TenantManagementInput, { a
 export async function restoreTenant(input: Extract<TenantManagementInput, { action: 'restore_tenant' }>) {
   const tenantId = input.tenantId.trim().toUpperCase();
   if (!tenantId) throw new Error('tenantId zorunludur.');
-  const status = (input.status === 'disabled' ? 'blocked' : input.status ?? 'suspended') as TenantStatus;
+  const status = (input.status === 'disabled' ? 'blocked' : input.status ?? 'suspended') as TenantStatusLike;
   const existing = await prisma.tenant.findUnique({ where: { tenantId }, select: { tenantId: true, deletedAt: true, metadata: true } });
   if (!existing) throw new Error('Tenant bulunamadı.');
   if (!existing.deletedAt) throw new Error('Tenant zaten aktif listede.');
-  return prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const tenant = await tx.tenant.update({
       where: { tenantId },
       data: {
@@ -1344,7 +1382,7 @@ export async function runTenantIntegrationAction(input: Extract<TenantManagement
   if (!existing) throw new Error('Tenant bulunamadı.');
   if (existing.deletedAt) throw new Error('Silinmiş tenant üzerinde bu işlem yapılamaz.');
 
-  return prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     let affected = 0;
     if (input.operation === 'clear_printer_mappings') {
       const result = await tx.printer.updateMany({
@@ -1375,3 +1413,8 @@ export async function runTenantIntegrationAction(input: Extract<TenantManagement
     return { tenantId, operation: input.operation, affected };
   });
 }
+
+
+
+
+

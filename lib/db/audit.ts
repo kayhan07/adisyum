@@ -1,6 +1,9 @@
 import { prisma } from '@/lib/db/prisma';
 import { Prisma } from '@prisma/client';
 
+type JsonRecord = Record<string, unknown>;
+type JsonValueLike = string | number | boolean | null | JsonRecord | JsonValueLike[];
+
 export type AuditAction =
   | 'login'
   | 'logout'
@@ -61,11 +64,11 @@ export async function writeAuditLog(input: {
       deviceId: input.deviceId ?? null,
       route: input.route ?? null,
       source: input.source ?? 'runtime',
-      before: input.before === undefined ? undefined : JSON.parse(JSON.stringify(input.before)) as Prisma.InputJsonValue,
-      after: input.after === undefined ? undefined : JSON.parse(JSON.stringify(input.after)) as Prisma.InputJsonValue,
+      before: input.before === undefined ? undefined : JSON.parse(JSON.stringify(input.before)) as JsonValueLike,
+      after: input.after === undefined ? undefined : JSON.parse(JSON.stringify(input.after)) as JsonValueLike,
       metadata: input.metadata === undefined || input.metadata === null
         ? {}
-        : JSON.parse(JSON.stringify(input.metadata)) as Prisma.InputJsonValue,
+        : JSON.parse(JSON.stringify(input.metadata)) as JsonValueLike,
     },
   });
 }

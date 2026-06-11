@@ -1,7 +1,14 @@
 ﻿import { prisma } from '@/lib/db/prisma';
-import { Prisma } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import type { TenantContext } from '@/lib/tenant';
+
+type JsonValueLike = string | number | boolean | null | Record<string, unknown> | JsonValueLike[];
 import { isSellableProductType, resolvePosFacingProductDomainType } from '@/lib/product-domain';
+
+type JsonPrimitive = string | number | boolean | null;
+type JsonValue = JsonPrimitive | JsonObject | JsonArray;
+type JsonObject = { [key: string]: JsonValue };
+type JsonArray = JsonValue[];
 
 type TenantScopedWhere = {
   tenantId: string;
@@ -14,7 +21,7 @@ export function tenantWhere<T extends object>(tenant: TenantContext, where?: T):
   } as T & TenantScopedWhere;
 }
 
-function isUnlimitedSubscription(metadata: Prisma.JsonValue | null | undefined) {
+function isUnlimitedSubscription(metadata: JsonValue | null | undefined) {
   return Boolean(metadata && typeof metadata === 'object' && !Array.isArray(metadata) && metadata.unlimitedLicense === true);
 }
 
@@ -75,14 +82,16 @@ export async function listTenantProducts(tenant: TenantContext, options: { take?
     },
   });
 
-  const categoryIds = [...new Set(products.map((product) => product.categoryId).filter((id): id is string => Boolean(id)))];
+  const categoryIds = [...new Set(products.map((product: { categoryId: string | null }) => product.categoryId).filter((id: string | null): id is string => Boolean(id)))];
   const categories = categoryIds.length > 0
     ? await prisma.productCategory.findMany({ where: { tenantId: tenant.tenantId, id: { in: categoryIds } }, select: { id: true, name: true } })
     : [];
-  const categoryById = new Map(categories.map((category) => [category.id, category.name]));
+  const categoryById = new Map<string, string>(
+    categories.map((category: { id: string; name: string }) => [category.id, category.name] as [string, string]),
+  );
 
   const filtered = products
-    .map((product) => {
+    .map((product: { id: string; posKey: string | null; name: string; categoryId: string | null; productType: string; price: { toString(): string }; legacyKey: string | null }) => {
       const productType = resolvePosFacingProductDomainType({
         id: product.id,
         posKey: product.posKey,
@@ -98,13 +107,13 @@ export async function listTenantProducts(tenant: TenantContext, options: { take?
         legacyKey: product.legacyKey ?? product.name,
       };
     })
-    .filter((product) => isSellableProductType(product.productType));
+    .filter((product: { productType: string }) => isSellableProductType(product.productType));
 
   if (products.length > 0 && filtered.length === 0) {
     console.error('[pos-catalog] tenant product catalog empty after productType filtering', {
       tenantId: tenant.tenantId,
       scanned: products.length,
-      sample: products.slice(0, 20).map((product) => ({
+      sample: products.slice(0, 20).map((product: { id: string; name: string; productType: string; categoryId: string | null }) => ({
         id: product.id,
         name: product.name,
         productType: product.productType,
@@ -137,7 +146,7 @@ export async function createTenantOrder(
     total: number;
   },
 ) {
-  return prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const order = await tx.order.create({
       data: {
         tenantId: tenant.tenantId,
@@ -153,7 +162,7 @@ export async function createTenantOrder(
 
     if (input.items.length > 0) {
       await tx.orderItem.createMany({
-        data: input.items.map((item) => ({
+        data: input.items.map((item: { productId?: string | null; name: string; quantity: number; unitPrice: number; total: number; notes?: string }) => ({
           tenantId: tenant.tenantId,
           orderId: order.id,
           productId: item.productId,
@@ -171,7 +180,7 @@ export async function createTenantOrder(
 }
 
 export async function cloneRecipeTemplateToTenant(tenant: TenantContext, templateId: string) {
-  return prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const template = await tx.recipeTemplate.findUnique({ where: { id: templateId } });
     if (!template) throw new Error('Reçete şablonu bulunamadı.');
 
@@ -185,13 +194,13 @@ export async function cloneRecipeTemplateToTenant(tenant: TenantContext, templat
         unit: template.unit,
         metadata: template.metadata === null
           ? {}
-          : JSON.parse(JSON.stringify(template.metadata)) as Prisma.InputJsonValue,
+          : JSON.parse(JSON.stringify(template.metadata)) as JsonValueLike,
       },
     });
 
     if (items.length > 0) {
       await tx.recipeItem.createMany({
-        data: items.map((item) => ({
+        data: items.map((item: { name: string; quantity: number; unit: string }) => ({
           tenantId: tenant.tenantId,
           recipeId: recipe.id,
           name: item.name,

@@ -25,20 +25,23 @@ async function main() {
     },
   });
 
-  const categoryIds = [...new Set(products.map((product) => product.categoryId).filter((id): id is string => Boolean(id)))];
+  const categoryIds = [...new Set(products.map((product: { categoryId: string | null }) => product.categoryId).filter((id: string | null): id is string => Boolean(id)))];
   const categories = categoryIds.length > 0
     ? await prisma.productCategory.findMany({ where: { id: { in: categoryIds } }, select: { id: true, name: true } })
     : [];
-  const categoryById = new Map(categories.map((category) => [category.id, category.name]));
+  const categoryById = new Map(categories.map((category: { id: string; name: string | null }): [string, string | null] => [category.id, category.name]));
 
   let changed = 0;
   for (const product of products) {
     const metadata = metadataObject(product.metadata);
-    const category = categoryById.get(product.categoryId ?? '') ?? (typeof metadata.category === 'string' ? metadata.category : null);
+    const categoryValue = categoryById.get(product.categoryId ?? '');
+    const category = typeof categoryValue === 'string'
+      ? categoryValue
+      : (typeof metadata.category === 'string' ? metadata.category : null);
     const price = Number(product.price);
     const suspiciousInventoryType = isInventoryOnlyProductType(product.productType)
       && Boolean(category)
-      && !isRawMaterialCategory(category)
+      && !isRawMaterialCategory(category as string)
       && Number.isFinite(price)
       && price > 0;
     const explicit = suspiciousInventoryType

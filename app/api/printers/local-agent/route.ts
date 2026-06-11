@@ -26,7 +26,7 @@ function printerName(value: unknown) {
 
 function mergePrinters(
   installedPrinters: unknown[],
-  registeredPrinters: Array<{ name: string; type: string; endpoint: string | null; metadata: unknown }>,
+  registeredPrinters: Array<{ name?: string; type?: string; endpoint?: string | null; metadata: unknown }>,
 ) {
   const printers = new Map<string, unknown>();
 
@@ -36,12 +36,13 @@ function mergePrinters(
   }
 
   for (const printer of registeredPrinters) {
-    const key = printer.name.trim().toLocaleLowerCase('tr-TR');
+    const name = typeof printer.name === 'string' ? printer.name.trim() : '';
+    const key = name.toLocaleLowerCase('tr-TR');
     if (!key || printers.has(key)) continue;
     printers.set(key, {
-      name: printer.name,
-      type: printer.type,
-      endpoint: printer.endpoint,
+      name,
+      type: typeof printer.type === 'string' ? printer.type : 'network',
+      endpoint: typeof printer.endpoint === 'string' ? printer.endpoint : null,
       registered: true,
       ...asRecord(printer.metadata),
     });

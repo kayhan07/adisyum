@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
-import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { appendIncidentEvent, openOrUpdateIncident } from '@/lib/incidents/durable-incident-center';
+
+type JsonValueLike = string | number | boolean | null | Record<string, unknown> | JsonValueLike[];
 
 const ONLINE_WINDOW_MS = 90_000;
 const IDLE_WINDOW_MS = 5 * 60_000;
@@ -14,7 +15,7 @@ type LiveOpsGlobalState = typeof globalThis & {
 const liveOpsGlobalState = globalThis as LiveOpsGlobalState;
 
 function json(value: unknown) {
-  return JSON.parse(JSON.stringify(value ?? {})) as Prisma.InputJsonValue;
+  return JSON.parse(JSON.stringify(value ?? {})) as JsonValueLike;
 }
 
 function sha256(value: string) {
@@ -223,20 +224,20 @@ async function buildLiveOperationsSnapshot() {
     prisma.order.count({ where: { status: 'open' } }),
     prisma.auditLog.count({ where: { action: 'failed_login', createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } } }),
   ]);
-  const onlinePresence = presence.filter((item) => item.status === 'online');
+  const onlinePresence = presence.filter((item: { status: string }) => item.status === 'online');
   return {
     summary: {
-      onlineTenants: new Set(onlinePresence.map((item) => item.tenantId)).size,
+      onlineTenants: new Set(onlinePresence.map((item: { tenantId: string }) => item.tenantId)).size,
       onlineUsers: onlinePresence.length,
-      onlineBranches: new Set(onlinePresence.map((item) => `${item.tenantId}:${item.branchId ?? '-'}`)).size,
-      activeDevices: devices.filter((item) => item.status === 'online').length,
-      activeTables: activeTables.reduce((sum, item) => sum + item._count.id, 0),
+      onlineBranches: new Set(onlinePresence.map((item: { tenantId: string; branchId?: string | null }) => `${item.tenantId}:${item.branchId ?? '-'}`)).size,
+      activeDevices: devices.filter((item: { status: string }) => item.status === 'online').length,
+      activeTables: activeTables.reduce((sum: number, item: { _count: { id: number } }) => sum + item._count.id, 0),
       activeOrders,
       failedLogins24h: failedLogins,
     },
     presence,
     devices,
     events,
-    activeTablesByTenant: activeTables.map((item) => ({ tenantId: item.tenantId, count: item._count.id })),
+    activeTablesByTenant: activeTables.map((item: { tenantId: string; _count: { id: number } }) => ({ tenantId: item.tenantId, count: item._count.id })),
   };
 }

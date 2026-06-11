@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { createRequire } from 'node:module';
 import { compileTenantPosCatalog } from '../lib/server/runtime-pos-catalog';
 import { isSellableProductType } from '../lib/product-domain';
@@ -49,7 +49,7 @@ async function main() {
   let orderId = '';
   let itemId = '';
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const order = await tx.order.upsert({
       where: { tenantId_orderNo: { tenantId, orderNo } },
       update: {
@@ -95,7 +95,7 @@ async function main() {
     itemId = created.id;
 
     const nextItems = await tx.orderItem.findMany({ where: { tenantId, orderId: order.id }, select: { quantity: true, unitPrice: true, metadata: true } });
-    const subtotal = nextItems.reduce((sum, row) => {
+    const subtotal = nextItems.reduce((sum: number, row: { quantity: number; unitPrice: number; metadata: unknown }) => {
       const metadata = metadataObject(row.metadata);
       if (metadata.complimentary) return sum;
       const sign = metadata.isReturn ? -1 : 1;

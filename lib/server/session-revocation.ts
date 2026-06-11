@@ -1,7 +1,8 @@
-import { Prisma } from '@prisma/client';
 import { runtimeStateTenantKey } from '@/lib/db/compound-keys';
 import { prisma } from '@/lib/db/prisma';
 import type { SessionPayload } from '@/lib/auth';
+
+type JsonValueLike = string | number | boolean | null | Record<string, unknown> | JsonValueLike[];
 
 const REVOCATION_KEY = 'auth:session-revocation';
 const MAX_ACTIVE_SESSIONS = 500;
@@ -150,11 +151,11 @@ async function writeState(tenantId: string, state: RevocationState) {
   pruneState(state);
   await prisma.runtimeState.upsert({
     where: runtimeStateTenantKey(tenantId, REVOCATION_KEY),
-    update: { payload: JSON.parse(JSON.stringify(state)) as Prisma.InputJsonValue },
+    update: { payload: JSON.parse(JSON.stringify(state)) as JsonValueLike },
     create: {
       tenantId,
       key: REVOCATION_KEY,
-      payload: JSON.parse(JSON.stringify(state)) as Prisma.InputJsonValue,
+      payload: JSON.parse(JSON.stringify(state)) as JsonValueLike,
     },
   });
 }

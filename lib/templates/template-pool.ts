@@ -4,6 +4,11 @@ import { writeAuditLog } from '@/lib/db/audit';
 import type { TenantContext } from '@/lib/tenant';
 import { createPosKey } from '@/lib/product-identity';
 
+type JsonPrimitive = string | number | boolean | null;
+type JsonValue = JsonPrimitive | JsonObject | JsonArray;
+type JsonObject = { [key: string]: JsonValue };
+type JsonArray = JsonValue[];
+
 const SYSTEM_TENANT_ID = 'system';
 
 type CanonicalTemplate = {
@@ -196,8 +201,8 @@ const CANONICAL_PACKS: CanonicalPack[] = [
   },
 ];
 
-function json<T>(value: T): Prisma.InputJsonValue {
-  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+function json<T>(value: T): JsonValue {
+  return JSON.parse(JSON.stringify(value)) as JsonValue;
 }
 
 function normalize(value: string) {
@@ -205,7 +210,7 @@ function normalize(value: string) {
 }
 
 export async function ensureSystemTemplatePool() {
-  return prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const productByKey = new Map<string, { id: string }>();
     for (const template of CANONICAL_TEMPLATES) {
       const category = await tx.categoryTemplate.upsert({
@@ -376,10 +381,20 @@ export async function getSystemTemplateCatalog() {
     prisma.templatePackItem.findMany({ orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] }),
   ]);
   const recipeItems = await prisma.recipeTemplateItem.findMany({
-    where: { templateId: { in: recipes.map((recipe) => recipe.id) } },
+    where: { templateId: { in: recipes.map((recipe: { id: string }) => recipe.id) } },
     orderBy: [{ createdAt: 'asc' }],
   });
-  return { templates, recipes, recipeItems, stocks, categories, packs, packItems: packItems.filter((item) => packs.some((pack) => pack.id === item.packId)) };
+  return {
+    templates,
+    recipes,
+    recipeItems,
+    stocks,
+    categories,
+    packs,
+    packItems: packItems.filter(
+      (item: { packId: string }) => packs.some((pack: { id: string }) => pack.id === item.packId),
+    ),
+  };
 }
 
 export type ProductTemplateInput = {
@@ -486,7 +501,7 @@ export async function saveRecipeTemplate(input: {
   unit?: string;
   items?: Array<{ stockTemplateId?: string | null; name: string; quantity: number; unit: string }>;
 }) {
-  return prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const recipe = input.id
       ? await tx.recipeTemplate.update({
         where: { id: input.id },
@@ -512,7 +527,7 @@ export async function saveRecipeTemplate(input: {
       await tx.recipeTemplateItem.deleteMany({ where: { templateId: recipe.id } });
       if (input.items.length > 0) {
         await tx.recipeTemplateItem.createMany({
-          data: input.items.map((item) => ({
+          data: input.items.map((item: { stockTemplateId?: string | null; name: string; quantity: number; unit: string }) => ({
             templateId: recipe.id,
             stockTemplateId: item.stockTemplateId ?? null,
             name: item.name,
@@ -538,7 +553,7 @@ export async function saveTemplatePack(input: {
   description?: string | null;
   productTemplateIds?: string[];
 }) {
-  return prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const pack = input.id
       ? await tx.templatePack.update({
         where: { id: input.id },
@@ -586,7 +601,7 @@ export async function importProductTemplatesToTenant(tenant: TenantContext, temp
   const uniqueTemplateIds = [...new Set(templateIds)];
   if (uniqueTemplateIds.length === 0) return [];
 
-  return prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const templates = await tx.productTemplate.findMany({
       where: { id: { in: uniqueTemplateIds }, tenantId: SYSTEM_TENANT_ID, active: true },
     });
@@ -750,11 +765,11 @@ export async function getTemplateImportStats() {
     _count: { id: true },
   });
   const templates = await prisma.productTemplate.findMany({
-    where: { id: { in: grouped.map((item) => item.productTemplateId) } },
+    where: { id: { in: grouped.map((item: { productTemplateId: string }) => item.productTemplateId) } },
     select: { id: true, name: true, restaurantType: true, version: true },
   });
-  return grouped.map((item) => ({
-    template: templates.find((template) => template.id === item.productTemplateId) ?? null,
+  return grouped.map((item: { productTemplateId: string; _count: { id: number } }) => ({
+    template: templates.find((template: { id: string }) => template.id === item.productTemplateId) ?? null,
     importCount: item._count.id,
   }));
 }
@@ -792,9 +807,9 @@ export async function previewTemplatePackImport(tenant: TenantContext, packIds: 
     where: { id: { in: [...new Set(packIds)] }, tenantId: SYSTEM_TENANT_ID, active: true, deprecated: false },
   });
   const packItems = await prisma.templatePackItem.findMany({
-    where: { packId: { in: packs.map((pack) => pack.id) } },
+    where: { packId: { in: packs.map((pack: { id: string }) => pack.id) } },
   });
-  const productTemplateIds = [...new Set(packItems.map((item) => item.productTemplateId))];
+  const productTemplateIds: string[] = [...new Set(packItems.map((item: { productTemplateId: string }) => item.productTemplateId))] as string[];
   const [existingImports, recipeTemplates, existingStocks] = await Promise.all([
     prisma.templateImport.findMany({
       where: { tenantId: tenant.tenantId, productTemplateId: { in: productTemplateIds } },
@@ -810,16 +825,16 @@ export async function previewTemplatePackImport(tenant: TenantContext, packIds: 
     }),
   ]);
   const recipeItems = await prisma.recipeTemplateItem.findMany({
-    where: { templateId: { in: recipeTemplates.map((recipe) => recipe.id) } },
+    where: { templateId: { in: recipeTemplates.map((recipe: { id: string }) => recipe.id) } },
   });
   const stockTemplates = await prisma.stockTemplate.findMany({
-    where: { id: { in: recipeItems.map((item) => item.stockTemplateId).filter((id): id is string => Boolean(id)) } },
+    where: { id: { in: recipeItems.map((item: { stockTemplateId: string | null }) => item.stockTemplateId).filter((id: string | null): id is string => Boolean(id)) } },
   });
-  const existingImportIds = new Set(existingImports.map((item) => item.productTemplateId));
-  const normalizedExistingStocks = existingStocks.map((stock) => ({ ...stock, normalized: normalizeStockKey(stock.name) }));
-  const stockMatches = stockTemplates.map((template) => {
+  const existingImportIds = new Set(existingImports.map((item: { productTemplateId: string }) => item.productTemplateId));
+  const normalizedExistingStocks = existingStocks.map((stock: { id: string; name: string }) => ({ ...stock, normalized: normalizeStockKey(stock.name) }));
+  const stockMatches = stockTemplates.map((template: { id: string; key: string; name: string }) => {
     const aliases = aliasesForStockTemplate(template.key, template.name);
-    const matched = normalizedExistingStocks.find((stock) => aliases.includes(stock.normalized));
+    const matched = normalizedExistingStocks.find((stock: { normalized: string }) => aliases.includes(stock.normalized));
     return {
       stockTemplateId: template.id,
       templateName: template.name,
@@ -836,12 +851,12 @@ export async function previewTemplatePackImport(tenant: TenantContext, packIds: 
       products: productTemplateIds.length,
       recipes: recipeTemplates.length,
       recipeItems: recipeItems.length,
-      stockItemsToCreate: stockMatches.filter((item) => item.suggestion === 'create').length,
-      stockMatches: stockMatches.filter((item) => item.suggestion === 'reuse').length,
-      duplicateImports: productTemplateIds.filter((id) => existingImportIds.has(id)).length,
+      stockItemsToCreate: stockMatches.filter((item: { suggestion: string }) => item.suggestion === 'create').length,
+      stockMatches: stockMatches.filter((item: { suggestion: string }) => item.suggestion === 'reuse').length,
+      duplicateImports: productTemplateIds.filter((id: string) => existingImportIds.has(id)).length,
     },
     conflicts: {
-      duplicateProductTemplateIds: productTemplateIds.filter((id) => existingImportIds.has(id)),
+      duplicateProductTemplateIds: productTemplateIds.filter((id: string) => existingImportIds.has(id)),
       stockMatches,
     },
   };
@@ -854,11 +869,11 @@ export async function importTemplatePacksToTenant(
 ) {
   const preview = await previewTemplatePackImport(tenant, packIds);
   const packItems = await prisma.templatePackItem.findMany({
-    where: { packId: { in: preview.packs.map((pack) => pack.id) } },
+    where: { packId: { in: preview.packs.map((pack: { id: string }) => pack.id) } },
   });
-  const productTemplateIds = [...new Set(packItems.map((item) => item.productTemplateId))];
+  const productTemplateIds: string[] = [...new Set(packItems.map((item: { productTemplateId: string }) => item.productTemplateId))] as string[];
   const imported = await importProductTemplatesToTenant(tenant, productTemplateIds);
-  await prisma.$transaction(preview.packs.map((pack) =>
+  await prisma.$transaction(preview.packs.map((pack: { id: string; version: number }) =>
     prisma.templatePackImport.upsert({
       where: { tenantId_templatePackId: { tenantId: tenant.tenantId, templatePackId: pack.id } },
       update: {
@@ -894,7 +909,7 @@ export async function importTemplatePacksToTenant(
                 ? currentSettings.onboarding as Record<string, unknown>
                 : {}),
               packImported: true,
-              importedTemplateCount: imported.filter((item) => item.status === 'imported').length,
+              importedTemplateCount: imported.filter((item: { status: string }) => item.status === 'imported').length,
             },
             serviceDefaults: {
               takeawayEnabled: configuration.takeawayEnabled ?? true,

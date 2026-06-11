@@ -40,11 +40,11 @@ async function main() {
     orderBy: [{ tenantId: 'asc' }, { name: 'asc' }],
   });
 
-  const categoryIds = [...new Set(products.map((product) => product.categoryId).filter((id): id is string => Boolean(id)))];
+  const categoryIds = [...new Set(products.map((product: { categoryId: string | null }) => product.categoryId).filter((id: string | null): id is string => Boolean(id)))];
   const categories = categoryIds.length
     ? await prisma.productCategory.findMany({ where: { id: { in: categoryIds } }, select: { id: true, name: true } })
     : [];
-  const categoryById = new Map(categories.map((category) => [category.id, category.name]));
+  const categoryById = new Map(categories.map((category: { id: string; name: string | null }): [string, string | null] => [category.id, category.name]));
 
   const sellable = [];
   const blocked = [];
@@ -54,7 +54,8 @@ async function main() {
   const duplicateBarcodes = new Map<string, typeof products>();
 
   for (const product of products) {
-    const category = categoryById.get(product.categoryId ?? '') ?? null;
+    const categoryValue = categoryById.get(product.categoryId ?? '');
+    const category = typeof categoryValue === 'string' ? categoryValue : null;
     const resolvedType = resolvePosFacingProductDomainType({
       id: product.id,
       name: product.name,
@@ -68,7 +69,7 @@ async function main() {
     if (
       isInventoryOnlyProductType(product.productType)
       && category
-      && !isRawMaterialCategory(category)
+      && !isRawMaterialCategory(category as string)
       && Number(product.price) > 0
       && isSellableProductType(resolvedType)
     ) {
@@ -90,12 +91,12 @@ async function main() {
     }
   }
 
-  const duplicatedPosKeys = [...duplicateRuntimeKeys.entries()].filter(([, entries]) => entries.length > 1);
-  const duplicatedBarcodes = [...duplicateBarcodes.entries()].filter(([, entries]) => entries.length > 1);
+  const duplicatedPosKeys = [...duplicateRuntimeKeys.entries()].filter(([, entries]: [string, typeof products]) => entries.length > 1);
+  const duplicatedBarcodes = [...duplicateBarcodes.entries()].filter(([, entries]: [string, typeof products]) => entries.length > 1);
 
   console.log(JSON.stringify({
     ok: true,
-    groupedProductTypes: grouped.map((row) => ({ productType: row.productType, count: row._count._all })),
+    groupedProductTypes: grouped.map((row: { productType: string | null; _count: { _all: number } }) => ({ productType: row.productType, count: row._count._all })),
     activeProductsScanned: products.length,
     posVisibleAfterFailsafe: sellable.length,
     inventoryBlocked: blocked.length,
@@ -103,7 +104,7 @@ async function main() {
     missingPosKey: missingPosKey.length,
     duplicatedPosKeys: duplicatedPosKeys.length,
     duplicatedBarcodes: duplicatedBarcodes.length,
-    suspiciousLegacySample: suspiciousLegacy.slice(0, 30).map((product) => ({
+    suspiciousLegacySample: suspiciousLegacy.slice(0, 30).map((product: { tenantId: string; id: string; name: string; category: string | null; productType: string; resolvedType: string }) => ({
       tenantId: product.tenantId,
       id: product.id,
       name: product.name,
@@ -111,7 +112,7 @@ async function main() {
       productType: product.productType,
       resolvedType: product.resolvedType,
     })),
-    missingPosKeySample: missingPosKey.slice(0, 30).map((product) => ({
+    missingPosKeySample: missingPosKey.slice(0, 30).map((product: { tenantId: string; id: string; name: string; category: string | null; productType: string; resolvedType: string }) => ({
       tenantId: product.tenantId,
       id: product.id,
       name: product.name,
@@ -119,9 +120,9 @@ async function main() {
       productType: product.productType,
       resolvedType: product.resolvedType,
     })),
-    duplicatedPosKeySample: duplicatedPosKeys.slice(0, 10).map(([key, entries]) => ({
+    duplicatedPosKeySample: duplicatedPosKeys.slice(0, 10).map(([key, entries]: [string, typeof products]) => ({
       key,
-      products: entries.map((product) => ({ id: product.id, name: product.name })),
+      products: entries.map((product: { id: string; name: string }) => ({ id: product.id, name: product.name })),
     })),
   }, null, 2));
 }

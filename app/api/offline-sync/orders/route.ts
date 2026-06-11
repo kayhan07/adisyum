@@ -8,6 +8,8 @@ import { recordRequestMetric, recordTenantError } from '@/lib/observability/metr
 
 export const dynamic = 'force-dynamic';
 
+type JsonRecord = Record<string, unknown>;
+
 export async function POST(request: Request) {
   const startedAt = Date.now();
   let tenantId = '';
@@ -24,13 +26,13 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const orders: unknown[] = Array.isArray(body?.orders) ? body.orders : [];
 
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       if (orders.length > 0) {
         await tx.syncQueue.createMany({
           data: orders.map((order: unknown, index: number) => ({
             tenantId,
             eventType: 'offline_order',
-            payload: JSON.parse(JSON.stringify(order)) as Prisma.InputJsonValue,
+            payload: JSON.parse(JSON.stringify(order)) as JsonRecord,
             deviceId: typeof body?.deviceId === 'string' ? body.deviceId : null,
             status: 'pending',
             createdAt: new Date(Date.now() + index),

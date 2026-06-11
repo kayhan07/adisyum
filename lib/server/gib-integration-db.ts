@@ -1,7 +1,8 @@
 import crypto from 'crypto';
-import { Prisma } from '@prisma/client';
 import { runtimeStateTenantKey } from '@/lib/db/compound-keys';
 import { prisma } from '@/lib/db/prisma';
+
+type JsonValueLike = string | number | boolean | null | Record<string, unknown> | JsonValueLike[];
 
 export type GibProvider = 'Uyumsoft' | 'Foriba' | 'EDM' | 'NES';
 export type GibIntegrationStatus = 'idle' | 'connected' | 'error';
@@ -52,8 +53,8 @@ export async function upsertGibIntegration(record: GibIntegrationRecord) {
 
   await prisma.runtimeState.upsert({
     where: runtimeStateTenantKey(record.tenantId, runtimeKey()),
-    update: { payload: encryptedRecord as Prisma.InputJsonValue },
-    create: { tenantId: record.tenantId, key: runtimeKey(), payload: encryptedRecord as Prisma.InputJsonValue },
+    update: { payload: encryptedRecord as JsonValueLike },
+    create: { tenantId: record.tenantId, key: runtimeKey(), payload: encryptedRecord as JsonValueLike },
   });
 
   return {

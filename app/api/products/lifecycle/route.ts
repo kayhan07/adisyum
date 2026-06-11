@@ -14,6 +14,8 @@ import { invalidateRuntimePosCatalog } from '@/lib/server/runtime-pos-catalog';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+type JsonRecord = Record<string, unknown>;
+
 function readAction(value: unknown): ProductLifecycleAction | null {
   if (value === 'publish' || value === 'archive' || value === 'deprecate' || value === 'delete' || value === 'rollback' || value === 'activate') {
     return value;
@@ -32,7 +34,7 @@ async function buildDependencyGraph(tenantId: string, productId: string) {
             where: { tenantId, status: { in: ['open', 'preparing', 'ready', 'served'] } },
             select: { id: true },
             take: 5000,
-          })).map((order) => order.id),
+          })).map((order: { id: string }) => order.id),
         },
       },
     }),
@@ -78,19 +80,19 @@ function lifecyclePatch(action: ProductLifecycleAction, revision: number) {
   return {};
 }
 
-function snapshotPatch(snapshot: Prisma.JsonValue | null | undefined, revision: number) {
+function snapshotPatch(snapshot: unknown, revision: number) {
   if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return null;
   const source = snapshot as Record<string, unknown>;
   return {
     name: typeof source.name === 'string' ? source.name : undefined,
-    price: source.price === null || source.price === undefined ? undefined : new Prisma.Decimal(String(source.price)),
+    price: source.price === null || source.price === undefined ? undefined : String(source.price),
     vatRate: typeof source.vatRate === 'number' ? source.vatRate : undefined,
     categoryId: typeof source.categoryId === 'string' ? source.categoryId : undefined,
     lifecycleStatus: typeof source.lifecycleStatus === 'string' ? source.lifecycleStatus : undefined,
     publishStatus: 'rolled_back',
     revision: revision + 1,
     metadata: source.metadata && typeof source.metadata === 'object'
-      ? JSON.parse(JSON.stringify(source.metadata)) as Prisma.InputJsonValue
+      ? JSON.parse(JSON.stringify(source.metadata)) as JsonRecord
       : undefined,
   };
 }
@@ -111,7 +113,7 @@ async function applyLifecycleAction(
   }
 
   const snapshot = createProductRevisionSnapshot(product);
-  const next = await prisma.$transaction(async (tx) => {
+  const next = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.productRevision.upsert({
       where: {
         tenantId_productId_revision: {
@@ -120,7 +122,7 @@ async function applyLifecycleAction(
           revision: snapshot.revision,
         },
       },
-      update: { snapshot: JSON.parse(JSON.stringify(snapshot)) as Prisma.InputJsonValue },
+      update: { snapshot: JSON.parse(JSON.stringify(snapshot)) as JsonRecord },
       create: {
         tenantId: tenant.tenantId,
         productId: product.id,
@@ -128,7 +130,7 @@ async function applyLifecycleAction(
         revision: snapshot.revision,
         lifecycleStatus: snapshot.lifecycleStatus,
         publishStatus: snapshot.publishStatus,
-        snapshot: JSON.parse(JSON.stringify(snapshot)) as Prisma.InputJsonValue,
+        snapshot: JSON.parse(JSON.stringify(snapshot)) as JsonRecord,
         createdBy: tenant.userId,
       },
     });
@@ -161,9 +163,9 @@ async function applyLifecycleAction(
         entity: audit.entity,
         entityId: audit.entityId,
         source: 'product-lifecycle',
-        before: JSON.parse(JSON.stringify(audit.before)) as Prisma.InputJsonValue,
-        after: JSON.parse(JSON.stringify({ ...audit.after, rollbackPatch: Boolean(rollbackPatch) })) as Prisma.InputJsonValue,
-        metadata: JSON.parse(JSON.stringify(audit.metadata)) as Prisma.InputJsonValue,
+        before: JSON.parse(JSON.stringify(audit.before)) as JsonRecord,
+        after: JSON.parse(JSON.stringify({ ...audit.after, rollbackPatch: Boolean(rollbackPatch) })) as JsonRecord,
+        metadata: JSON.parse(JSON.stringify(audit.metadata)) as JsonRecord,
       },
     });
 
@@ -184,7 +186,7 @@ async function applyLifecycleAction(
           decision,
           catalogInvalidationRequired: true,
           marketplacePropagation: ['qr', 'kiosk', 'waiter_tablet', 'mobile_pos', 'yemeksepeti', 'trendyol', 'getir'],
-        })) as Prisma.InputJsonValue,
+        })) as JsonRecord,
       },
     });
 

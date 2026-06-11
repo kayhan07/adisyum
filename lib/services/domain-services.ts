@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+﻿import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '@/lib/db/prisma';
 import { writeAuditLog } from '@/lib/db/audit';
@@ -7,6 +7,8 @@ import { publishTenantEvent } from '@/lib/realtime/tenant-events';
 import type { TenantContext } from '@/lib/tenant';
 import { OrderRepository, PaymentRepository, StockRepository } from '@/lib/db/repositories';
 import { recordOperationalEvent } from '@/lib/operations/live-ops';
+
+type JsonValueLike = string | number | boolean | null | Record<string, unknown> | JsonValueLike[];
 
 const orderLineSchema = z.object({
   productId: z.string().uuid().nullable().optional(),
@@ -31,7 +33,7 @@ export const createOrderSchema = z.object({
 export class OrderService {
   async createOrder(tenant: TenantContext, input: z.input<typeof createOrderSchema>) {
     const parsed = createOrderSchema.parse(input);
-    return prisma.$transaction(async (tx) => {
+    return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const order = await new OrderRepository(tx).create(tenant, parsed);
       if (parsed.tableId) {
         await tx.posTable.update({
@@ -55,7 +57,7 @@ export class OrderService {
   }
 
   async cancelOrder(tenant: TenantContext, orderId: string) {
-    return prisma.$transaction(async (tx) => {
+    return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const order = await new OrderRepository(tx).updateStatus(tenant, orderId, 'cancelled');
       await writeAuditLog({ tenantId: tenant.tenantId, userId: tenant.userId, action: 'order_cancel', entity: 'order', entityId: order.id, db: tx });
       await invalidateTenantCache(tenant.tenantId, ['orders', 'reports']);
@@ -67,7 +69,7 @@ export class OrderService {
 
 export class PaymentService {
   async takePayment(tenant: TenantContext, input: { orderId: string; amount: number; method: string; closeOrder?: boolean }) {
-    return prisma.$transaction(async (tx) => {
+    return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const payment = await new PaymentRepository(tx).create(tenant, {
         orderId: input.orderId,
         amount: input.amount,
@@ -95,8 +97,8 @@ export class PaymentService {
     });
   }
 
-  async refundPayment(tenant: TenantContext, paymentId: string, metadata: Prisma.InputJsonValue = {}) {
-    return prisma.$transaction(async (tx) => {
+  async refundPayment(tenant: TenantContext, paymentId: string, metadata: JsonValueLike = {}) {
+    return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const payment = await tx.payment.update({
         where: { id: paymentId, tenantId: tenant.tenantId },
         data: { status: 'refunded', metadata },
@@ -111,7 +113,7 @@ export class PaymentService {
 
 export class StockService {
   async adjustStock(tenant: TenantContext, input: { stockItemId: string; warehouseId?: string | null; quantity: number; type: string; reason?: string | null }) {
-    return prisma.$transaction(async (tx) => {
+    return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const result = await new StockRepository(tx).adjust(tenant, input);
       await writeAuditLog({ tenantId: tenant.tenantId, userId: tenant.userId, action: 'stock_edit', entity: 'stock_item', entityId: input.stockItemId, metadata: input, db: tx });
       await invalidateTenantCache(tenant.tenantId, ['stock', 'reports']);
@@ -146,3 +148,9 @@ export class ReportService {
     return { date: start.toISOString().slice(0, 10), orders, payments };
   }
 }
+
+
+
+
+
+

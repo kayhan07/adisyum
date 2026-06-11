@@ -15,6 +15,10 @@ import type { CanonicalPosCatalog, CanonicalPosCatalogItem } from '@/lib/canonic
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+type JsonRecord = Record<string, unknown>;
+type JsonValueLike = string | number | boolean | null | JsonRecord | JsonValueLike[];
+type DecimalLike = number | string | { toString(): string };
+
 const VAT_RATE = 0.1;
 const ROUTE_BOOTED_AT = new Date().toISOString();
 const TABLE_PAYMENT_STATE_KEY = 'table-payment-state';
@@ -187,7 +191,7 @@ function mutationErrorResponse(error: unknown, traceId: string, tenantId: string
   );
 }
 
-function decimalToNumber(value: Prisma.Decimal | number | string | null | undefined) {
+function decimalToNumber(value: DecimalLike | null | undefined) {
   if (value == null) return 0;
   return Number(value);
 }
@@ -202,13 +206,13 @@ function extractIncludedVat(grossTotal: number) {
   return Number((grossTotal - (grossTotal / (1 + VAT_RATE))).toFixed(2));
 }
 
-function normalizeMetadata(input: Prisma.JsonValue | null | undefined) {
+function normalizeMetadata(input: JsonValueLike | null | undefined) {
   return input && typeof input === 'object' && !Array.isArray(input)
     ? input as Record<string, unknown>
     : {};
 }
 
-function compactJsonValue(value: unknown): Prisma.InputJsonValue | undefined {
+function compactJsonValue(value: unknown): JsonValueLike | undefined {
   if (value === undefined) return undefined;
   if (value === null) return undefined;
   if (typeof value === 'string' || typeof value === 'boolean') return value;
@@ -216,7 +220,7 @@ function compactJsonValue(value: unknown): Prisma.InputJsonValue | undefined {
   if (Array.isArray(value)) {
     return value
       .map((item) => compactJsonValue(item))
-      .filter((item): item is Prisma.InputJsonValue => item !== undefined);
+      .filter((item): item is JsonValueLike => item !== undefined);
   }
   if (typeof value === 'object') {
     return compactJsonObject(value as Record<string, unknown>);
@@ -224,12 +228,12 @@ function compactJsonValue(value: unknown): Prisma.InputJsonValue | undefined {
   return undefined;
 }
 
-function compactJsonObject(input: Record<string, unknown>): Prisma.InputJsonObject {
+function compactJsonObject(input: Record<string, unknown>): JsonRecord {
   return Object.fromEntries(
     Object.entries(input)
       .map(([key, value]) => [key, compactJsonValue(value)] as const)
       .filter(([, value]) => value !== undefined),
-  ) as Prisma.InputJsonObject;
+  ) as JsonRecord;
 }
 
 function tablePaymentStateKey(branchId?: string | null) {
@@ -442,10 +446,10 @@ function itemToLine(item: {
   id: string;
   productId: string | null;
   name: string;
-  quantity: Prisma.Decimal;
-  unitPrice: Prisma.Decimal;
+  quantity: DecimalLike;
+  unitPrice: DecimalLike;
   notes: string | null;
-  metadata: Prisma.JsonValue;
+  metadata: JsonValueLike;
 }): OrderLinePayload {
   const metadata = normalizeMetadata(item.metadata);
   return {
@@ -463,7 +467,7 @@ function itemToLine(item: {
         : undefined,
     catalogRevision: typeof metadata.catalogRevision === 'string' ? metadata.catalogRevision : undefined,
     productRevision: typeof metadata.productRevision === 'number' ? metadata.productRevision : undefined,
-    productSnapshot: normalizeMetadata(metadata.productSnapshot as Prisma.JsonValue),
+    productSnapshot: normalizeMetadata(metadata.productSnapshot as JsonValueLike),
     name: item.name,
     qty: decimalToNumber(item.quantity),
     note: item.notes ?? '',
@@ -502,7 +506,7 @@ function buildCatalogIdentityIndex(catalog: CanonicalPosCatalog) {
 function orderItemBelongsToCurrentCatalog(
   item: {
     productId: string | null;
-    metadata: Prisma.JsonValue;
+    metadata: JsonValueLike;
   },
   catalogIndex: ReturnType<typeof buildCatalogIdentityIndex>,
   tenantProductIds: Set<string>,
@@ -514,7 +518,7 @@ function orderItemBelongsToCurrentCatalog(
     : typeof metadata.productKey === 'string'
       ? metadata.productKey
       : undefined;
-  const snapshot = normalizeMetadata(metadata.productSnapshot as Prisma.JsonValue);
+  const snapshot = normalizeMetadata(metadata.productSnapshot as JsonValueLike);
   const snapshotProductId = typeof snapshot.productId === 'string' ? snapshot.productId : undefined;
   const snapshotPosKey = typeof snapshot.posKey === 'string' ? snapshot.posKey : undefined;
   const metadataSource = typeof metadata.source === 'string' ? metadata.source : undefined;
@@ -553,7 +557,7 @@ async function loadAuthoritativeOrdersByTable(tenantId: string, branchId?: strin
     take: 500,
   });
 
-  const orderIds = orders.map((order) => order.id);
+  const orderIds = orders.map((order: { id: string }) => order.id);
   const items = orderIds.length > 0
     ? await prisma.orderItem.findMany({
         where: { tenantId, orderId: { in: orderIds } },
@@ -572,8 +576,8 @@ async function loadAuthoritativeOrdersByTable(tenantId: string, branchId?: strin
     : [];
   const linkedProductIds = Array.from(new Set(
     items
-      .map((item) => item.productId)
-      .filter((productId): productId is string => Boolean(productId)),
+      .map((item: { productId: string | null }) => item.productId)
+      .filter((productId: string | null): productId is string => Boolean(productId)),
   ));
   const tenantProducts = linkedProductIds.length > 0
     ? await prisma.product.findMany({
@@ -586,7 +590,7 @@ async function loadAuthoritativeOrdersByTable(tenantId: string, branchId?: strin
         select: { id: true },
       })
     : [];
-  const tenantProductIds = new Set(tenantProducts.map((product) => product.id));
+  const tenantProductIds: Set<string> = new Set<string>(tenantProducts.map((product: { id: string }) => product.id));
 
   const itemsByOrder = new Map<string, typeof items>();
   for (const item of items) {
@@ -597,8 +601,8 @@ async function loadAuthoritativeOrdersByTable(tenantId: string, branchId?: strin
 
   return Object.fromEntries(
     orders
-      .filter((order) => branchMatches(normalizeMetadata(order.metadata), branchId))
-      .map((order) => {
+      .filter((order: { metadata: JsonValueLike }) => branchMatches(normalizeMetadata(order.metadata), branchId))
+      .map((order: { id: string; tableId: string | null; orderNo: string; metadata: JsonValueLike }) => {
       const metadata = normalizeMetadata(order.metadata);
       const tableId = typeof metadata.tableKey === 'string'
         ? metadata.tableKey
@@ -608,7 +612,7 @@ async function loadAuthoritativeOrdersByTable(tenantId: string, branchId?: strin
       return [
         tableId,
         (itemsByOrder.get(order.id) ?? [])
-          .filter((item) => {
+          .filter((item: { productId: string | null; metadata: JsonValueLike }) => {
             const metadata = normalizeMetadata(item.metadata);
             return branchMatches(metadata, branchId)
               && orderItemBelongsToCurrentCatalog(item, catalogIndex, tenantProductIds, tenantId);
@@ -616,7 +620,7 @@ async function loadAuthoritativeOrdersByTable(tenantId: string, branchId?: strin
           .map(itemToLine),
       ] as const;
     })
-      .filter(([, lines]) => lines.length > 0),
+      .filter((entry: readonly [string, OrderLinePayload[]]) => entry[1].length > 0),
   ) as Record<string, OrderLinePayload[]>;
 }
 
@@ -627,12 +631,12 @@ async function loadAuthoritativeOrderDiagnostics(tenantId: string, ordersByTable
     take: 500,
   });
   const openOrderIds = openOrders
-    .filter((order) => branchMatches(normalizeMetadata(order.metadata), branchId))
-    .map((order) => order.id);
+    .filter((order: { metadata: JsonValueLike }) => branchMatches(normalizeMetadata(order.metadata), branchId))
+    .map((order: { id: string }) => order.id);
   const openItemCount = openOrderIds.length > 0
     ? await prisma.orderItem.count({ where: { tenantId, orderId: { in: openOrderIds } } })
     : 0;
-  const visibleLineCount = Object.values(ordersByTable).reduce((sum, lines) => sum + lines.length, 0);
+  const visibleLineCount = Object.values(ordersByTable).reduce((sum: number, lines: OrderLinePayload[]) => sum + lines.length, 0);
 
   return {
     tenantId,
@@ -654,7 +658,7 @@ async function persistAuthoritativeRuntimeTableState(input: {
   const liveTotals = Object.fromEntries(
     Object.entries(input.ordersByTable).map(([tableId, lines]) => [
       tableId,
-      Number(lines.reduce((sum, line) => sum + getLineSubtotal(line), 0).toFixed(2)),
+      Number(lines.reduce((sum: number, line: OrderLinePayload) => sum + getLineSubtotal(line), 0).toFixed(2)),
     ]),
   );
   const stateMeta = {
@@ -675,7 +679,7 @@ async function persistAuthoritativeRuntimeTableState(input: {
     stateMeta,
     paymentState: input.paymentState ?? null,
     updatedAt: new Date().toISOString(),
-  })) as Prisma.InputJsonObject;
+  })) as JsonRecord;
   const key = tablePaymentStateKey(input.branchId);
 
   await prisma.runtimeState.upsert({
@@ -689,10 +693,10 @@ async function persistAuthoritativeRuntimeTableState(input: {
 
 type PaymentLedgerOrder = {
   id: string;
-  metadata: Prisma.JsonValue;
+  metadata: JsonValueLike;
   status: string;
-  subtotal: Prisma.Decimal;
-  total: Prisma.Decimal;
+  subtotal: DecimalLike;
+  total: DecimalLike;
 };
 
 async function loadPaymentState(
@@ -726,7 +730,7 @@ async function loadPaymentState(
     || decimalToNumber(order.subtotal)
     || decimalToNumber(order.total)
   ).toFixed(2));
-  const paidTotal = Number(payments.reduce((sum, payment) => sum + decimalToNumber(payment.amount), 0).toFixed(2));
+  const paidTotal = Number(payments.reduce((sum: number, payment: { amount: DecimalLike }) => sum + decimalToNumber(payment.amount), 0).toFixed(2));
   const remainingTotal = order.status === 'paid'
     ? 0
     : Number(Math.max(orderTotal - paidTotal, 0).toFixed(2));
@@ -737,7 +741,7 @@ async function loadPaymentState(
     orderTotal,
     paidTotal,
     remainingTotal,
-    payments: payments.map((payment) => {
+    payments: payments.map((payment: { id: string; method: string; amount: DecimalLike; metadata: JsonValueLike; createdAt: Date }) => {
       const metadata = normalizeMetadata(payment.metadata);
       return {
         id: payment.id,
@@ -833,14 +837,14 @@ export async function POST(request: Request) {
         });
       }
 
-      await prisma.$transaction(async (tx) => {
+      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         const items = await tx.orderItem.findMany({
           where: { tenantId, orderId: order.id },
           select: { id: true, quantity: true, metadata: true },
         });
 
         if (normalizedBody.action === 'mark_order_sent') {
-          await Promise.all(items.map((item) => {
+          await Promise.all(items.map((item: { id: string; quantity: DecimalLike; metadata: JsonValueLike }) => {
             const metadata = normalizeMetadata(item.metadata);
             return tx.orderItem.update({
               where: { id: item.id, tenantId },
@@ -902,7 +906,7 @@ export async function POST(request: Request) {
       });
 
       if (order && branchMatches(normalizeMetadata(order.metadata), tenant.branchId ?? undefined)) {
-        await prisma.$transaction(async (tx) => {
+        await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
           await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${order.id}))`;
           await tx.orderItem.deleteMany({ where: { tenantId, orderId: order.id } });
           await tx.order.update({
@@ -1010,7 +1014,7 @@ export async function POST(request: Request) {
         });
       }
 
-      await prisma.$transaction(async (tx) => {
+      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         const existingItem = await tx.orderItem.findFirst({
           where: { tenantId, orderId: order.id, id: lineId },
           select: { id: true, unitPrice: true, metadata: true },
@@ -1049,7 +1053,7 @@ export async function POST(request: Request) {
           where: { tenantId, orderId: order.id },
           select: { quantity: true, unitPrice: true, metadata: true },
         });
-        const subtotal = nextItems.reduce((sum, item) => {
+        const subtotal = nextItems.reduce((sum: number, item: { quantity: DecimalLike; unitPrice: DecimalLike; metadata: JsonValueLike }) => {
           const metadata = normalizeMetadata(item.metadata);
           return sum + getLineSubtotal({
             qty: decimalToNumber(item.quantity),
@@ -1132,12 +1136,12 @@ export async function POST(request: Request) {
 
       const reconciliationKey = normalizedBody.payment.reconciliationKey || normalizedBody.mutationId || traceId;
       const receivedAt = normalizedBody.payment.receivedAt || new Date().toISOString();
-      const transactionResult = await prisma.$transaction(async (tx) => {
+      const transactionResult = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${order.id}))`;
         let currentState = await loadPaymentState(tx, tenantId, order);
 
         if (normalizedBody.action === 'cancel_partial_payment') {
-          const matchingPayment = currentState.payments.find((payment) => payment.reconciliationKey === reconciliationKey);
+          const matchingPayment = currentState.payments.find((payment: { reconciliationKey: string }) => payment.reconciliationKey === reconciliationKey);
           if (!matchingPayment) throw new Error('İptal edilecek parçalı tahsilat bulunamadı.');
           if (currentState.orderStatus === 'paid') throw new Error('Kapanmış adisyonda tahsilat iptal edilemez.');
           await tx.payment.update({
@@ -1222,7 +1226,7 @@ export async function POST(request: Request) {
           return { paymentCreated: false, paymentState: currentState, closed: false };
         }
 
-        const duplicatePayment = currentState.payments.find((payment) => payment.reconciliationKey === reconciliationKey);
+        const duplicatePayment = currentState.payments.find((payment: { reconciliationKey: string }) => payment.reconciliationKey === reconciliationKey);
         if (duplicatePayment) {
           console.warn('[pos-table-orders] duplicate payment mutation ignored', {
             timestamp: new Date().toISOString(),
@@ -1503,7 +1507,7 @@ export async function POST(request: Request) {
 
     const clientCatalogRevision = product?.catalogRevision?.trim();
     const runtimeCatalog = await compileTenantPosCatalog(tenantId, tenant.branchId ?? undefined, 'pos');
-    let catalogItem = runtimeCatalog.items.find((item) => item.posKey === identity.posKey);
+    let catalogItem = runtimeCatalog.items.find((item: CanonicalPosCatalogItem) => item.posKey === identity.posKey);
     let catalogItemRecoveredFromPayload = false;
     if (!productSnapshot && catalogItem) {
       productSnapshot = catalogItem.productSnapshot as Record<string, unknown>;
@@ -1885,7 +1889,7 @@ export async function POST(request: Request) {
       mutationId,
     });
 
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const order = await tx.order.upsert({
         where: { tenantId_orderNo: { tenantId, orderNo } },
         update: {
@@ -1928,7 +1932,7 @@ export async function POST(request: Request) {
           select: { id: true, name: true, unitPrice: true, notes: true, quantity: true, metadata: true },
       });
 
-      const matching = existingItems.find((item) => {
+      const matching = existingItems.find((item: { name: string; unitPrice: DecimalLike; notes: string | null; metadata: JsonValueLike }) => {
         const metadata = normalizeMetadata(item.metadata);
         return item.name === productInput.name &&
           decimalToNumber(item.unitPrice) === price &&
@@ -2087,7 +2091,7 @@ export async function POST(request: Request) {
         where: { tenantId, orderId: order.id },
         select: { quantity: true, unitPrice: true, metadata: true },
       });
-      const subtotal = nextItems.reduce((sum, item) => {
+      const subtotal = nextItems.reduce((sum: number, item: { quantity: DecimalLike; unitPrice: DecimalLike; metadata: JsonValueLike }) => {
         const metadata = normalizeMetadata(item.metadata);
         return sum + getLineSubtotal({
           qty: decimalToNumber(item.quantity),

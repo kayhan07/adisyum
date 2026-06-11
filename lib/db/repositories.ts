@@ -1,8 +1,13 @@
-import { OrderStatus, PaymentStatus, Prisma, type PrismaClient } from '@prisma/client';
+﻿import { Prisma, type PrismaClient } from '@prisma/client';
 import { runtimeStateTenantKey } from '@/lib/db/compound-keys';
 import { isSellableProductType, resolvePosFacingProductDomainType } from '@/lib/product-domain';
 import { prisma } from '@/lib/db/prisma';
 import type { TenantContext } from '@/lib/tenant';
+
+type JsonRecord = Record<string, unknown>;
+type JsonValueLike = string | number | boolean | null | JsonRecord | JsonValueLike[];
+type OrderStatusLike = string;
+type PaymentStatusLike = string;
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
 type PageOptions = { take?: number; skip?: number; cursor?: string };
@@ -28,7 +33,7 @@ export class TableRepository {
     });
   }
 
-  updateStatus(tenant: TenantContext, id: string, status: string, metadata?: Prisma.InputJsonValue) {
+  updateStatus(tenant: TenantContext, id: string, status: string, metadata?: JsonValueLike) {
     return this.db.posTable.update({
       where: { id, tenantId: tenant.tenantId },
       data: { status, ...(metadata === undefined ? {} : { metadata }) },
@@ -64,19 +69,23 @@ export class ProductRepository {
       },
     });
 
-    const categoryIds = [...new Set(products.map((product) => product.categoryId).filter((id): id is string => Boolean(id)))];
+    const categoryIds = [...new Set(products.map((product: { categoryId: string | null }) => product.categoryId).filter((id: string | null): id is string => Boolean(id)))];
     const categories = categoryIds.length > 0
       ? await this.db.productCategory.findMany({ where: { tenantId: tenant.tenantId, id: { in: categoryIds } }, select: { id: true, name: true } })
       : [];
-    const categoryById = new Map(categories.map((category) => [category.id, category.name]));
+    const categoryById = new Map<string, string>(
+      categories.map((category: { id: string; name: string }) => [category.id, category.name] as [string, string]),
+    );
 
     const filtered = products
-      .map((product) => {
+      .map((product: { id: string; posKey: string | null; name: string; categoryId: string | null; productType: string; price: { toString(): string }; legacyKey: string | null }) => {
+        const categoryValue = categoryById.get(product.categoryId ?? '');
+        const category = typeof categoryValue === 'string' ? categoryValue : undefined;
         const productType = resolvePosFacingProductDomainType({
           id: product.id,
           posKey: product.posKey,
           name: product.name,
-          category: categoryById.get(product.categoryId ?? '') ?? null,
+          category,
           productType: product.productType,
           price: product.price.toString(),
         });
@@ -87,13 +96,13 @@ export class ProductRepository {
           legacyKey: product.legacyKey ?? product.name,
         };
       })
-      .filter((product) => isSellableProductType(product.productType));
+      .filter((product: { productType: string }) => isSellableProductType(product.productType));
 
     if (products.length > 0 && filtered.length === 0) {
       console.error('[pos-catalog] product repository returned empty sellable catalog after filtering', {
         tenantId: tenant.tenantId,
         scanned: products.length,
-        sample: products.slice(0, 20).map((product) => ({
+        sample: products.slice(0, 20).map((product: { id: string; name: string; productType: string; categoryId: string | null }) => ({
           id: product.id,
           name: product.name,
           productType: product.productType,
@@ -140,7 +149,7 @@ export class CategoryRepository {
 export class OrderRepository {
   constructor(private readonly db: DbClient = prisma) {}
 
-  list(tenant: TenantContext, options: PageOptions & { status?: OrderStatus } = {}) {
+  list(tenant: TenantContext, options: PageOptions & { status?: OrderStatusLike } = {}) {
     return this.db.order.findMany({
       where: scoped(tenant, options.status ? { status: options.status } : {}),
       orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
@@ -161,7 +170,7 @@ export class OrderRepository {
       taxTotal?: number;
       total: number;
       items: Array<{ productId?: string | null; name: string; quantity: number; unitPrice: number; total: number; notes?: string | null }>;
-      metadata?: Prisma.InputJsonValue;
+      metadata?: JsonValueLike;
     },
   ) {
     return this.db.order.create({
@@ -176,10 +185,10 @@ export class OrderRepository {
         total: input.total,
         metadata: input.metadata ?? {},
       },
-    }).then(async (order) => {
+    }).then(async (order: { id: string }) => {
       if (input.items.length > 0) {
         await this.db.orderItem.createMany({
-          data: input.items.map((item) => ({
+          data: input.items.map((item: { productId?: string | null; name: string; quantity: number; unitPrice: number; total: number; notes?: string | null }) => ({
             tenantId: tenant.tenantId,
             orderId: order.id,
             productId: item.productId ?? null,
@@ -195,7 +204,7 @@ export class OrderRepository {
     });
   }
 
-  updateStatus(tenant: TenantContext, id: string, status: OrderStatus) {
+  updateStatus(tenant: TenantContext, id: string, status: OrderStatusLike) {
     return this.db.order.update({ where: { id, tenantId: tenant.tenantId }, data: { status } });
   }
 }
@@ -203,7 +212,7 @@ export class OrderRepository {
 export class PaymentRepository {
   constructor(private readonly db: DbClient = prisma) {}
 
-  create(tenant: TenantContext, input: { orderId?: string | null; method: string; amount: number; status?: PaymentStatus; metadata?: Prisma.InputJsonValue }) {
+  create(tenant: TenantContext, input: { orderId?: string | null; method: string; amount: number; status?: PaymentStatusLike; metadata?: JsonValueLike }) {
     return this.db.payment.create({
       data: {
         tenantId: tenant.tenantId,
@@ -254,7 +263,7 @@ export class StockRepository {
     });
   }
 
-  async adjust(tenant: TenantContext, input: { stockItemId: string; warehouseId?: string | null; quantity: number; type: string; reason?: string | null; metadata?: Prisma.InputJsonValue }) {
+  async adjust(tenant: TenantContext, input: { stockItemId: string; warehouseId?: string | null; quantity: number; type: string; reason?: string | null; metadata?: JsonValueLike }) {
     const item = await this.db.stockItem.update({
       where: { id: input.stockItemId, tenantId: tenant.tenantId },
       data: { quantity: { increment: input.quantity } },
@@ -367,7 +376,7 @@ export class SettingsRepository {
     });
   }
 
-  set(tenant: TenantContext, key: string, payload: Prisma.InputJsonValue) {
+  set(tenant: TenantContext, key: string, payload: JsonValueLike) {
     return this.db.runtimeState.upsert({
       where: runtimeStateTenantKey(tenant.tenantId, `settings:${key}`),
       update: { payload },
@@ -399,3 +408,5 @@ export class UserRepository {
     });
   }
 }
+
+

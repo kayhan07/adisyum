@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
-import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import type { SessionPayload } from '@/lib/auth';
+
+type JsonValueLike = string | number | boolean | null | Record<string, unknown> | JsonValueLike[];
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -14,7 +15,7 @@ function sha256(value: string) {
 }
 
 function json(value: unknown) {
-  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+  return JSON.parse(JSON.stringify(value)) as JsonValueLike;
 }
 
 export async function createDbSession(input: {

@@ -1,8 +1,9 @@
-import { Prisma } from '@prisma/client';
-import { prisma } from '@/lib/db/prisma';
+﻿import { prisma } from '@/lib/db/prisma';
+
+type JsonValueLike = string | number | boolean | null | Record<string, unknown> | JsonValueLike[];
 
 function json(value: unknown) {
-  return JSON.parse(JSON.stringify(value ?? {})) as Prisma.InputJsonValue;
+  return JSON.parse(JSON.stringify(value ?? {})) as JsonValueLike;
 }
 
 export async function listOperatorMemory(operatorId: string, kind?: string) {
@@ -38,3 +39,6 @@ export async function deleteOperatorMemory(input: { operatorId: string; kind: st
     where: { operatorId_kind_key: input },
   });
 }
+
+
+
