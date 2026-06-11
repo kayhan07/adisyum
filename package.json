@@ -8,6 +8,7 @@
     "pos:trace-reconciliation": "node scripts/pos-trace-reconciliation.mjs",
     "pos:reconciliation-test": "tsx scripts/verify-pos-order-reconciliation.ts",
     "pos:critical-flow": "node scripts/verify-pos-critical-flow.mjs",
+    "acceptance:critical": "node scripts/verify-live-acceptance-critical.mjs",
     "pos:backbone": "node scripts/verify-pos-backbone.mjs",
     "pos:floor-table-regression": "node scripts/verify-floor-workspace-table-regression.mjs",
     "finance:reconciliation": "node scripts/verify-finance-reconciliation.mjs",
