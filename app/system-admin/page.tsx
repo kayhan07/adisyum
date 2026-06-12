@@ -1663,6 +1663,22 @@ function DrawerTenantManagement({ activeTab, tenantId, tenant, presence, devices
           <button disabled={loading || tenant?.unlimitedLicense !== true} type="button" onClick={() => submitAction({ action: 'update_subscription', unlimitedLicense: false, subscriptionStatus: 'active' })} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold disabled:opacity-60">Limitsiz Lisansı Kaldır</button>
         </div>
       </div>
+      <div className="mt-5 rounded-2xl border border-rose-400/25 bg-rose-950/20 p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-rose-100">Abone silme</p>
+            <p className="mt-1 text-xs leading-5 text-rose-100/75">Aboneyi pasife alır ve giriş/API erişimini kapatır. Veriler korunur; geri alma Tehlikeli İşlemler veya Durum sekmesinden yapılır.</p>
+          </div>
+          {tenant?.deletedAt ? (
+            <button disabled={loading} type="button" onClick={() => submitAction({ action: 'restore_tenant', tenantStatus: 'suspended' })} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-100">Aboneyi Geri Al</button>
+          ) : (
+            <div className="grid min-w-[min(100%,22rem)] gap-2">
+              <input value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} placeholder={tenantId} className="input-dark" aria-label="Abone silme onayı" />
+              <button disabled={loading || deleteConfirmation.trim().toUpperCase() !== tenantId.toUpperCase()} type="button" onClick={() => submitAction({ action: 'soft_delete_tenant', confirmationTenantId: deleteConfirmation.trim() })} className="rounded-xl bg-rose-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">Aboneyi Sil</button>
+            </div>
+          )}
+        </div>
+      </div>
     </article> : null}
 
     {activeTab === 'password' ? <article className="rounded-[1.35rem] border border-white/10 bg-slate-900 p-5">

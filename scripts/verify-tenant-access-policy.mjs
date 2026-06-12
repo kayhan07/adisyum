@@ -72,6 +72,8 @@ expect(systemAdminPage, /Sonraki Girişte Şifre Değiştir/, 'system-admin UI e
 expect(systemAdminPage, /Geçici Şifre Oluştur/, 'system-admin UI exposes temporary password action');
 expect(systemAdminPage, /Tehlikeli İşlemler/, 'system-admin UI exposes dangerous operations tab');
 expect(systemAdminPage, /Aboneyi Sil/, 'system-admin UI exposes soft delete action');
+expect(systemAdminPage, /Abone silme/, 'system-admin subscription tab exposes subscriber delete section');
+expect(systemAdminPage, /Abone silme onayı/, 'system-admin subscription delete action requires tenant-code confirmation');
 expect(systemAdminPage, /Aboneyi Geri Al/, 'system-admin UI exposes restore action');
 expect(systemAdminPage, /Silinmişten Geri Al/, 'system-admin UI exposes restore action inside status tab');
 expect(systemAdminPage, /console\.error\('\[system-admin\] tenant management action failed'/, 'system-admin UI logs failed tenant management actions with context');
