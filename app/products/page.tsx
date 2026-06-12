@@ -3516,6 +3516,7 @@ function ProductsPageContent() {
     }
 
     const existingNames = new Set(saleProducts.map((product) => product.name.trim().toLocaleLowerCase('tr-TR')));
+    const existingCategoryKeys = new Set(categories.map((category) => category.trim().toLocaleLowerCase('tr-TR')));
     const createdAt = Date.now();
     const additions: SaleProductCard[] = [];
     const newCategories = new Set<string>();
@@ -3580,6 +3581,11 @@ function ProductsPageContent() {
       existingNames.add(normalizedName);
     });
 
+    const importedCategories = Array.from(newCategories);
+    const autoCreatedCategoryCount = importedCategories.filter(
+      (category) => !existingCategoryKeys.has(category.trim().toLocaleLowerCase('tr-TR')),
+    ).length;
+
     if (additions.length > 0) {
       try {
         await persistBulkProductsToServer(additions.map((product) => ({
@@ -3593,7 +3599,11 @@ function ProductsPageContent() {
         })));
         setSaleProducts((current) => [...additions, ...current]);
         setSelectedProductId(additions[0].id);
-        setCategories((current) => Array.from(new Set([...current, ...Array.from(newCategories)])));
+        setCategories((current) => {
+          const nextCategories = mergeProductCategories(current, importedCategories);
+          saveStoredProductCategories(nextCategories);
+          return nextCategories;
+        });
       } catch (error) {
         console.error('[products] sale excel import server save failed', error);
         setSavedNotes((current) => [
@@ -3605,7 +3615,7 @@ function ProductsPageContent() {
     }
 
     setSavedNotes((current) => [
-      `${additions.length} satış ürünü eklendi${skipped > 0 ? `, ${skipped} satır mevcut olduğu için atlandı` : ''}${skippedInvalidRows > 0 ? `, ${skippedInvalidRows} hatalı satır atlandı` : ''}.`,
+      `${additions.length} satış ürünü eklendi${additions.length > 0 && autoCreatedCategoryCount > 0 ? `, ${autoCreatedCategoryCount} kategori otomatik oluşturuldu` : ''}${skipped > 0 ? `, ${skipped} satır mevcut olduğu için atlandı` : ''}${skippedInvalidRows > 0 ? `, ${skippedInvalidRows} hatalı satır atlandı` : ''}.`,
       ...current,
     ]);
     setBulkDrafts((current) => ({ ...current, sale: '' }));

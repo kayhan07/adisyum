@@ -27,6 +27,7 @@
     "tenant:identity-drift": "node scripts/verify-tenant-identity-drift.mjs",
     "demo:purity": "node scripts/verify-demo-purity.mjs",
     "product:recovery-validate": "node scripts/verify-product-recovery.mjs",
+    "verify:excel-sale-import-categories": "node scripts/verify-excel-sale-import-categories.mjs",
     "env:audit-production": "node scripts/audit-production-env.mjs",
     "deploy:verify-runtime": "node scripts/verify-deploy-runtime.mjs",
     "recomposition:phase1-validate": "node scripts/verify-enterprise-recomposition-phase1.mjs",
