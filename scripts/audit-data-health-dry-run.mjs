@@ -209,22 +209,22 @@ async function run() {
         {
           severity: 'info',
           category: 'general',
-          check: 'DATABASE_URL missing; dry-run skipped',
+          check: 'Database connection env missing; dry-run skipped',
           count: 0,
-          details: { reason: 'Set DATABASE_URL for data health dry-run.' },
+          details: { reason: 'Set database connection env for data health dry-run.' },
         },
       ],
       sections: buildSkippedSections(reason, commitHash),
       productionDryRunSupport: {
         supported: true,
         command: 'npm run audit:data-health:production-dry-run',
-        requirement: 'Production dry-run requires production-like DATABASE_URL and READ_ONLY_DATA_AUDIT=1',
+        requirement: 'Production dry-run requires production-like database connection env and READ_ONLY_DATA_AUDIT=1',
         executedInThisRun: isProductionMode,
       },
     };
     fs.mkdirSync(path.dirname(reportPath), { recursive: true });
     fs.writeFileSync(reportPath, JSON.stringify(skipped, null, 2));
-    console.log('[audit-data-health-dry-run] DATABASE_URL missing, report generated in skipped mode.');
+    console.log('[audit-data-health-dry-run] database connection env missing, report generated in skipped mode.');
     return;
   }
 

@@ -74,8 +74,8 @@ export function ModuleCenter() {
       const token = loadAuthToken();
       setPackageType(normalizePackageType(token?.package_type));
       setPackageId(typeof token?.package_id === 'string' ? token.package_id : undefined);
-    } catch (error) {
-      console.error('[module-center] auth token load failed', { error });
+    } catch {
+      console.error('[module-center] auth context load failed');
       setPackageType('premium');
       setPackageId(undefined);
     }

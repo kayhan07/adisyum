@@ -40,14 +40,14 @@ function inspectDatabaseUrl(raw) {
   if (!raw) {
     return {
       ok: false,
-      reason: 'DATABASE_URL is missing',
+      reason: 'Database connection env is missing',
     };
   }
 
   if (raw.includes('${') || /\$DATABASE_URL/.test(raw)) {
     return {
       ok: false,
-      reason: 'DATABASE_URL contains unresolved variable syntax',
+      reason: 'Database connection env contains unresolved variable syntax',
     };
   }
 
@@ -71,7 +71,7 @@ function inspectDatabaseUrl(raw) {
   } catch (error) {
     return {
       ok: false,
-      reason: error instanceof Error ? error.message : 'DATABASE_URL parse failed',
+      reason: error instanceof Error ? error.message : 'Database connection env parse failed',
     };
   }
 }
@@ -86,5 +86,5 @@ if (!inspected.ok) {
   process.exit(1);
 }
 
-console.log('[db:inspect-env] DATABASE_URL');
+console.log('[db:inspect-env] database connection env');
 console.log(JSON.stringify(inspected, null, 2));

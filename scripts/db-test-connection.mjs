@@ -33,9 +33,9 @@ function loadEnvFiles() {
 }
 
 function inspectUrl(raw) {
-  if (!raw) return { ok: false, stage: 'env', message: 'DATABASE_URL is missing' };
+  if (!raw) return { ok: false, stage: 'env', message: 'Database connection env is missing' };
   if (raw.includes('${') || /\$DATABASE_URL/.test(raw)) {
-    return { ok: false, stage: 'env', message: 'DATABASE_URL contains unresolved variable syntax' };
+    return { ok: false, stage: 'env', message: 'Database connection env contains unresolved variable syntax' };
   }
   try {
     const url = new URL(raw);
@@ -48,7 +48,7 @@ function inspectUrl(raw) {
       passwordPresent: Boolean(url.password),
     };
   } catch (error) {
-    return { ok: false, stage: 'env', message: error instanceof Error ? error.message : 'DATABASE_URL parse failed' };
+    return { ok: false, stage: 'env', message: error instanceof Error ? error.message : 'Database connection env parse failed' };
   }
 }
 

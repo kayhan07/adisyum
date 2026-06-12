@@ -109,7 +109,8 @@
     "audit:prisma-tenant-scope": "node scripts/audit-prisma-tenant-scope.mjs",
     "audit:data-health:dry-run": "node scripts/audit-data-health-dry-run.mjs",
     "audit:data-health:production-dry-run": "node scripts/audit-data-health-dry-run.mjs --production",
-    "verify:live-pos-business-flow": "node scripts/verify-live-pos-business-flow.mjs"
+    "verify:live-pos-business-flow": "node scripts/verify-live-pos-business-flow.mjs",
+    "audit:saas-security-integrity": "node scripts/audit-saas-security-integrity.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
