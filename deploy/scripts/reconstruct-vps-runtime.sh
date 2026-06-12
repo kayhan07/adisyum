@@ -1294,7 +1294,7 @@ validate_next_page_asset() {
   local html_file asset_path asset_url code content_type
   html_file="$(mktemp)"
 
-  curl -ksS --max-time 15 "${page_url}" -o "${html_file}" || {
+  curl -kLsS --max-time 15 "${page_url}" -o "${html_file}" || {
     rm -f "${html_file}"
     fail "Could not fetch page HTML for asset validation: ${page_url}"
   }
@@ -1373,24 +1373,29 @@ validate_runtime_routes() {
 
   wait_for_healthy_route "http://127.0.0.1:${ROOT_PORT}"
   wait_for_healthy_route "http://127.0.0.1:${ROOT_PORT}/app"
+  wait_for_healthy_route "http://127.0.0.1:${ROOT_PORT}/app/login"
   wait_for_healthy_route "http://127.0.0.1:${ROOT_PORT}/system-admin"
+  wait_for_healthy_route "http://127.0.0.1:${ROOT_PORT}/system-admin/login"
   wait_for_healthy_route "http://127.0.0.1:${WEBSITE_PORT}"
   wait_for_route_status "POST" "http://127.0.0.1:${ROOT_PORT}/api/pos/table-orders" "401"
   wait_for_route_not_404 "GET" "http://127.0.0.1:${ROOT_PORT}/api/runtime/pos-catalog"
   wait_for_route_not_404 "GET" "http://127.0.0.1:${ROOT_PORT}/api/runtime-build-id"
   validate_runtime_build_identity "http://127.0.0.1:${ROOT_PORT}/api/runtime-build-id"
-  validate_next_page_asset "http://127.0.0.1:${ROOT_PORT}/app" "http://127.0.0.1:${ROOT_PORT}" "${ROOT_ASSET_PREFIX}"
+  validate_next_page_asset "http://127.0.0.1:${ROOT_PORT}/app/login" "http://127.0.0.1:${ROOT_PORT}" "${ROOT_ASSET_PREFIX}"
+  validate_next_page_asset "http://127.0.0.1:${ROOT_PORT}/system-admin/login" "http://127.0.0.1:${ROOT_PORT}" "${ROOT_ASSET_PREFIX}"
   validate_live_floor_bundle "http://127.0.0.1:${ROOT_PORT}/floor"
 
   wait_for_healthy_route "https://${DOMAIN}"
   wait_for_healthy_route "https://${DOMAIN}/app"
+  wait_for_healthy_route "https://${DOMAIN}/app/login"
   wait_for_healthy_route "https://${DOMAIN}/system-admin"
+  wait_for_healthy_route "https://${DOMAIN}/system-admin/login"
   wait_for_healthy_route "https://${DOMAIN}/adisyonsistemi"
   wait_for_route_status "POST" "https://${DOMAIN}/api/pos/table-orders" "401"
   wait_for_route_not_404 "GET" "https://${DOMAIN}/api/runtime-build-id"
   validate_runtime_build_identity "https://${DOMAIN}/api/runtime-build-id"
   validate_next_page_asset "https://${DOMAIN}/" "https://${DOMAIN}" ""
-  validate_next_page_asset "https://${DOMAIN}/app" "https://${DOMAIN}" ""
+  validate_next_page_asset "https://${DOMAIN}/app/login" "https://${DOMAIN}" ""
   validate_next_page_asset "https://${DOMAIN}/system-admin/login" "https://${DOMAIN}" ""
   validate_live_floor_bundle "https://${DOMAIN}/floor"
 }
