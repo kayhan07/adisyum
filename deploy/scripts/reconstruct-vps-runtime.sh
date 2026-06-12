@@ -1119,13 +1119,54 @@ validate_nginx() {
   grep -Fq "alias ${WEBSITE_STATIC_DIR}/;" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing website static alias ${WEBSITE_STATIC_DIR}"
   grep -Eq "location[[:space:]]+=[[:space:]]+/adisyonsistemi" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing legacy redirect location = /adisyonsistemi"
   grep -Eq "location[[:space:]]+\\^~[[:space:]]+/adisyonsistemi/" "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Missing legacy redirect location ^~ /adisyonsistemi/"
-  awk '
-    /location[[:space:]]+=[[:space:]]+\/api[[:space:]]*\{/ { in_api=1; exact=1; next }
-    /location[[:space:]]+\^~[[:space:]]+\/api\// { in_api=1; prefix=1; next }
-    in_api && /proxy_pass[[:space:]]+http:\/\/127\.0\.0\.1:'"${ROOT_PORT}"';/ { root_api=1 }
-    in_api && /proxy_pass[[:space:]]+http:\/\/127\.0\.0\.1:'"${WEBSITE_PORT}"';/ { website_api=1 }
-    in_api && /^\s*\}/ { in_api=0 }
-    END { if (!exact || !prefix || !root_api || website_api) exit 1 }
+  awk -v root_port="${ROOT_PORT}" -v website_port="${WEBSITE_PORT}" '
+    function brace_delta(line, tmp, opens, closes) {
+      tmp = line
+      opens = gsub(/\{/, "", tmp)
+      tmp = line
+      closes = gsub(/\}/, "", tmp)
+      return opens - closes
+    }
+    function finish_api_block() {
+      if (api_kind == "exact") {
+        exact = 1
+        if (saw_root_proxy) exact_root = 1
+      }
+      if (api_kind == "prefix") {
+        prefix = 1
+        if (saw_root_proxy) prefix_root = 1
+      }
+      if (saw_website_proxy) website_api = 1
+      in_api = 0
+      api_kind = ""
+      saw_root_proxy = 0
+      saw_website_proxy = 0
+      depth = 0
+    }
+    function start_api_block(kind) {
+      in_api = 1
+      api_kind = kind
+      saw_root_proxy = 0
+      saw_website_proxy = 0
+      depth = brace_delta($0)
+      if (depth <= 0) finish_api_block()
+    }
+    /^[[:space:]]*location[[:space:]]+=[[:space:]]+\/api[[:space:]]*\{/ {
+      start_api_block("exact")
+      next
+    }
+    /^[[:space:]]*location[[:space:]]+\^~[[:space:]]+\/api\/[[:space:]]*\{/ {
+      start_api_block("prefix")
+      next
+    }
+    in_api {
+      if ($0 ~ ("proxy_pass[[:space:]]+http://127\\.0\\.0\\.1:" root_port ";")) saw_root_proxy = 1
+      if ($0 ~ ("proxy_pass[[:space:]]+http://127\\.0\\.0\\.1:" website_port ";")) saw_website_proxy = 1
+      depth += brace_delta($0)
+      if (depth <= 0) finish_api_block()
+      next
+    }
+    END { if (!exact || !prefix || !exact_root || !prefix_root || website_api) exit 1 }
   ' "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "NGINX /api namespace must proxy only to root app port ${ROOT_PORT}, never website port ${WEBSITE_PORT}"
   awk '
     /location[[:space:]]+=[[:space:]]+\/adisyonsistemi[[:space:]]*\{/ { in_legacy=1; exact=1; next }
