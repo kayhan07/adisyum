@@ -1505,7 +1505,13 @@ function TenantOperationsDrawer({ tenantId, tenant, liveOps, provisioningJobs, s
                 setManagementMessage(payload?.error ?? 'İşlem başarısız.');
                 return;
               }
-              setManagementMessage(body.action === 'soft_delete_tenant' ? 'Abone silindi. Veriler korunuyor.' : 'İşlem başarılı.');
+              setManagementMessage(
+                body.action === 'soft_delete_tenant'
+                  ? 'Abone silindi. Veriler korunuyor.'
+                  : body.action === 'reset_tenant_data'
+                    ? 'Tenant verisi temizlendi. Abone, abonelik, şube ve admin kullanıcı korunuyor.'
+                    : 'İşlem başarılı.',
+              );
               await onRefresh();
               if (body.action === 'soft_delete_tenant') onClose();
             } catch (error) {
@@ -1562,6 +1568,7 @@ function DrawerTenantManagement({ activeTab, tenantId, tenant, presence, devices
   const [tempPassword, setTempPassword] = useState('');
   const [oneTimePassword, setOneTimePassword] = useState('');
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [dataResetConfirmation, setDataResetConfirmation] = useState('');
   const [profileDraft, setProfileDraft] = useState({
     companyName: tenant?.companyName ?? '',
     legalName: tenant?.legalName ?? '',
@@ -1576,6 +1583,7 @@ function DrawerTenantManagement({ activeTab, tenantId, tenant, presence, devices
   useEffect(() => {
     setManualEndsAt(tenant?.expiresAt?.slice(0, 10) ?? '');
     setDeleteConfirmation('');
+    setDataResetConfirmation('');
     setTempPassword('');
     setOneTimePassword('');
     setProfileDraft({
@@ -1719,7 +1727,21 @@ function DrawerTenantManagement({ activeTab, tenantId, tenant, presence, devices
       </div>
     </article> : null}
 
-    {activeTab === 'data' ? <TenantDataSummary tenant={tenant} /> : null}
+    {activeTab === 'data' ? <div className="grid gap-5">
+      <TenantDataSummary tenant={tenant} />
+      <article className="rounded-[1.35rem] border border-amber-400/30 bg-amber-950/20 p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-amber-100">Tenant Veri Temizleme</h3>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-amber-100/80">Bu işlem sipariş, ödeme, kasa, ürün, stok, reçete, masa, yazıcı, cihaz kuyruğu, rapor ve runtime verilerini temizler. Abone kaydı, abonelik, şube ve admin kullanıcı korunur; tenant boş veriyle yeniden kullanılabilir.</p>
+          </div>
+          <div className="grid min-w-[min(100%,24rem)] gap-2">
+            <input value={dataResetConfirmation} onChange={(event) => setDataResetConfirmation(event.target.value)} placeholder={tenantId} className="input-dark" aria-label="Tenant veri temizleme onayı" />
+            <button disabled={loading || Boolean(tenant?.deletedAt) || dataResetConfirmation.trim().toUpperCase() !== tenantId.toUpperCase()} type="button" onClick={() => submitAction({ action: 'reset_tenant_data', confirmationTenantId: dataResetConfirmation.trim() })} className="rounded-xl border border-amber-400/40 bg-amber-500/20 px-4 py-3 text-sm font-semibold text-amber-100 disabled:opacity-50">Tenant Verisini Temizle</button>
+          </div>
+        </div>
+      </article>
+    </div> : null}
     {activeTab === 'export' ? <TenantExportPanel tenantId={tenantId} loading={loading} /> : null}
     {activeTab === 'danger' ? <article className="rounded-[1.35rem] border border-rose-400/30 bg-rose-950/30 p-5">
       <h3 className="text-lg font-semibold text-rose-100">Tehlikeli İşlemler</h3>

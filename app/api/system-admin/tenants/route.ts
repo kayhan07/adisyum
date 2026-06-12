@@ -7,6 +7,7 @@ import {
   listProvisioningJobs,
   listSaasTenants,
   recordProvisioningEvent,
+  resetTenantBusinessData,
   restoreTenant,
   runProvisioningJob,
   runTenantIntegrationAction,
@@ -249,7 +250,7 @@ export async function PATCH(request: Request) {
   try {
     const admin = await requireSystemAdmin(request);
     const body = await request.json().catch(() => ({})) as {
-      action?: 'retry' | 'rollback' | 'update_subscription' | 'update_password' | 'update_status' | 'update_tenant_info' | 'update_user_status' | 'soft_delete_tenant' | 'restore_tenant' | 'integration_action';
+      action?: 'retry' | 'rollback' | 'update_subscription' | 'update_password' | 'update_status' | 'update_tenant_info' | 'update_user_status' | 'soft_delete_tenant' | 'reset_tenant_data' | 'restore_tenant' | 'integration_action';
       jobId?: string;
       tenantId?: string;
       startsAt?: string;
@@ -367,6 +368,18 @@ export async function PATCH(request: Request) {
       });
       const [tenants, jobs, provisioningMetrics] = await Promise.all([listSaasTenants(), listProvisioningJobs(), getProvisioningMetrics()]);
       return NextResponse.json({ ok: true, tenant, tenants, jobs, provisioningMetrics });
+    }
+
+    if (body.action === 'reset_tenant_data') {
+      if (!body.tenantId || !body.confirmationTenantId) return NextResponse.json({ ok: false, error: 'Abone kodu doğrulaması zorunludur.' }, { status: 400 });
+      const reset = await resetTenantBusinessData({
+        action: 'reset_tenant_data',
+        tenantId: body.tenantId,
+        confirmationTenantId: body.confirmationTenantId,
+        requestedBy: admin.userId,
+      });
+      const [tenants, jobs, provisioningMetrics] = await Promise.all([listSaasTenants(), listProvisioningJobs(), getProvisioningMetrics()]);
+      return NextResponse.json({ ok: true, reset, tenant: reset.tenant, tenants, jobs, provisioningMetrics });
     }
 
     if (body.action === 'restore_tenant') {
