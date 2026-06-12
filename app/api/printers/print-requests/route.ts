@@ -90,28 +90,48 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, tenantId: tenant.tenantId, branchId, error: 'No active printer bridge registered for tenant/branch.', code: 'no_active_bridge' }, { status: 409 });
     }
 
-    const job = await prisma.tenantPrintJob.upsert({
+    const existingJob = await prisma.tenantPrintJob.findUnique({
       where: { tenantId_mutationId: { tenantId: tenant.tenantId, mutationId: validated.mutationId } },
-      update: {
-        branchId,
-        targetDeviceId: activeDevice.deviceId,
-        printerName: validated.printerName,
-        printerRole: body?.printerRole ?? 'general',
-        payload: toPrismaJson({ bytesBase64: body?.bytesBase64, metadata: body?.metadata ?? {} }),
-        status: 'pending',
-        lastError: null,
-      },
-      create: {
+    });
+    if (existingJob && !['pending', 'failed'].includes(existingJob.status)) {
+      return NextResponse.json({
+        ok: true,
+        status: existingJob.status,
+        duplicate: true,
         tenantId: tenant.tenantId,
         branchId,
-        targetDeviceId: activeDevice.deviceId,
-        printerName: validated.printerName,
-        printerRole: body?.printerRole ?? 'general',
-        payload: toPrismaJson({ bytesBase64: body?.bytesBase64, metadata: body?.metadata ?? {} }),
-        source: body?.source ?? 'cloud',
-        mutationId: validated.mutationId,
-      },
-    });
+        deviceId: existingJob.targetDeviceId,
+        printerName: existingJob.printerName,
+        role: existingJob.printerRole,
+        job: existingJob,
+      });
+    }
+
+    const job = existingJob
+      ? await prisma.tenantPrintJob.update({
+          where: { tenantId_mutationId: { tenantId: tenant.tenantId, mutationId: validated.mutationId } },
+          data: {
+            branchId,
+            targetDeviceId: activeDevice.deviceId,
+            printerName: validated.printerName,
+            printerRole: body?.printerRole ?? 'general',
+            payload: toPrismaJson({ bytesBase64: body?.bytesBase64, metadata: body?.metadata ?? {} }),
+            status: 'pending',
+            lastError: null,
+          },
+        })
+      : await prisma.tenantPrintJob.create({
+          data: {
+            tenantId: tenant.tenantId,
+            branchId,
+            targetDeviceId: activeDevice.deviceId,
+            printerName: validated.printerName,
+            printerRole: body?.printerRole ?? 'general',
+            payload: toPrismaJson({ bytesBase64: body?.bytesBase64, metadata: body?.metadata ?? {} }),
+            source: body?.source ?? 'cloud',
+            mutationId: validated.mutationId,
+          },
+        });
 
     await publishTenantEvent(tenant.tenantId, 'system', {
       type: 'printer.job.queued',
