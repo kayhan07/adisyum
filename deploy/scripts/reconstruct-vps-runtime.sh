@@ -4,6 +4,7 @@ set -Eeuo pipefail
 APP_DIR="${APP_DIR:-/root/adisyum}"
 APP_USER="${APP_USER:-root}"
 DOMAIN="${DOMAIN:-adisyum.com}"
+PUBLIC_RESOLVE_IP="${PUBLIC_RESOLVE_IP:-127.0.0.1}"
 ROOT_PORT="${ROOT_PORT:-3000}"
 WEBSITE_PORT="${WEBSITE_PORT:-3010}"
 ROOT_ASSET_PREFIX="${ROOT_ASSET_PREFIX:-/adisyum-root-assets}"
@@ -19,6 +20,7 @@ TS="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="${BACKUP_ROOT}/${TS}"
 LOG_DIR="${APP_DIR}/deploy/logs"
 LOG_FILE="${LOG_DIR}/reconstruct-vps-runtime-${TS}.log"
+CURL_PUBLIC_RESOLVE_ARGS=(--resolve "${DOMAIN}:443:${PUBLIC_RESOLVE_IP}" --resolve "www.${DOMAIN}:443:${PUBLIC_RESOLVE_IP}")
 
 mkdir -p "${LOG_DIR}" "${BACKUP_DIR}"
 exec > >(tee -a "${LOG_FILE}") 2>&1
@@ -791,17 +793,22 @@ validate_runtime_build_identity() {
   log "Validating runtime build identity against active source"
   cd "${APP_DIR}"
   local url="${1:-http://127.0.0.1:${ROOT_PORT}/api/runtime-build-id}"
-  local expected_build_id expected_commit
+  local expected_build_id expected_commit proof_file
   expected_build_id="$(cat .next/BUILD_ID)"
   expected_commit="${GIT_COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || true)}"
-  node - "${expected_build_id}" "${expected_commit}" "${url}" <<'NODE'
-const [expectedBuildId, expectedCommit, url] = process.argv.slice(2);
+  proof_file="$(mktemp)"
+  curl -ksS "${CURL_PUBLIC_RESOLVE_ARGS[@]}" --max-time 15 "${url}" -o "${proof_file}" || {
+    rm -f "${proof_file}"
+    fail "${url} did not return runtime proof"
+  }
+  node - "${expected_build_id}" "${expected_commit}" "${url}" "${proof_file}" <<'NODE'
+const fs = require('node:fs');
+const [expectedBuildId, expectedCommit, url, proofFile] = process.argv.slice(2);
 
 async function main() {
-  const response = await fetch(url, { cache: 'no-store' });
-  const body = await response.json().catch(() => null);
-  if (!response.ok || !body?.ok) {
-    throw new Error(`${url} did not return runtime proof: HTTP ${response.status}`);
+  const body = JSON.parse(fs.readFileSync(proofFile, 'utf8'));
+  if (!body?.ok) {
+    throw new Error(`${url} did not return runtime proof`);
   }
   if (body.buildId !== expectedBuildId) {
     throw new Error(`Runtime BUILD_ID mismatch: live=${body.buildId} expected=${expectedBuildId}`);
@@ -829,6 +836,7 @@ main().catch((error) => {
   process.exit(1);
 });
 NODE
+  rm -f "${proof_file}"
 }
 
 write_nginx() {
@@ -1233,10 +1241,10 @@ wait_for_healthy_route() {
   local url="$1"
   local code="" final_code="" final_url=""
   for _ in $(seq 1 45); do
-    code="$(curl -ksS -o /dev/null -w '%{http_code}' --max-time 8 "${url}" || true)"
+    code="$(curl -ks "${CURL_PUBLIC_RESOLVE_ARGS[@]}" -o /dev/null -w '%{http_code}' --max-time 8 "${url}" || true)"
     if is_healthy_http_status "${code}"; then
-      final_code="$(curl -kLsS -o /dev/null -w '%{http_code}' --max-time 15 "${url}" || true)"
-      final_url="$(curl -kLsS -o /dev/null -w '%{url_effective}' --max-time 15 "${url}" || true)"
+      final_code="$(curl -kLs "${CURL_PUBLIC_RESOLVE_ARGS[@]}" -o /dev/null -w '%{http_code}' --max-time 15 "${url}" || true)"
+      final_url="$(curl -kLs "${CURL_PUBLIC_RESOLVE_ARGS[@]}" -o /dev/null -w '%{url_effective}' --max-time 15 "${url}" || true)"
 
       if [[ "${code}" =~ ^30[12378]$ ]]; then
         if is_healthy_http_status "${final_code}"; then
@@ -1258,7 +1266,7 @@ wait_for_route_not_404() {
   local url="$2"
   local code=""
   for _ in $(seq 1 30); do
-    code="$(curl -ksS -X "${method}" -o /dev/null -w '%{http_code}' --max-time 8 "${url}" || true)"
+    code="$(curl -ks "${CURL_PUBLIC_RESOLVE_ARGS[@]}" -X "${method}" -o /dev/null -w '%{http_code}' --max-time 8 "${url}" || true)"
     if [[ -n "${code}" && "${code}" != "000" && "${code}" != "404" ]]; then
       log "${method} ${url} HTTP ${code} (route registered)"
       return 0
@@ -1274,7 +1282,7 @@ wait_for_route_status() {
   local expected="$3"
   local code=""
   for _ in $(seq 1 30); do
-    code="$(curl -ksS -X "${method}" -o /dev/null -w '%{http_code}' --max-time 8 "${url}" || true)"
+    code="$(curl -ks "${CURL_PUBLIC_RESOLVE_ARGS[@]}" -X "${method}" -o /dev/null -w '%{http_code}' --max-time 8 "${url}" || true)"
     if [[ "${code}" == "${expected}" ]]; then
       log "${method} ${url} HTTP ${code} (expected)"
       return 0
@@ -1294,7 +1302,7 @@ validate_next_page_asset() {
   local html_file asset_path asset_url code content_type
   html_file="$(mktemp)"
 
-  curl -kLsS --max-time 15 "${page_url}" -o "${html_file}" || {
+  curl -kLsS "${CURL_PUBLIC_RESOLVE_ARGS[@]}" --max-time 15 "${page_url}" -o "${html_file}" || {
     rm -f "${html_file}"
     fail "Could not fetch page HTML for asset validation: ${page_url}"
   }
@@ -1313,9 +1321,9 @@ validate_next_page_asset() {
   fi
 
   asset_url="${base_url}${asset_path}"
-  code="$(curl -ksS -o /dev/null -w '%{http_code}' --max-time 15 "${asset_url}" || true)"
+  code="$(curl -ksS "${CURL_PUBLIC_RESOLVE_ARGS[@]}" -o /dev/null -w '%{http_code}' --max-time 15 "${asset_url}" || true)"
   [[ "${code}" == "200" ]] || fail "Next.js page asset is not reachable: ${asset_url} HTTP ${code:-none}"
-  content_type="$(curl -ksSI --max-time 15 "${asset_url}" | awk -F': ' 'tolower($1)=="content-type"{print tolower($2); exit}' | tr -d '\r' || true)"
+  content_type="$(curl -ksSI "${CURL_PUBLIC_RESOLVE_ARGS[@]}" --max-time 15 "${asset_url}" | awk -F': ' 'tolower($1)=="content-type"{print tolower($2); exit}' | tr -d '\r' || true)"
   [[ -n "${content_type}" ]] || fail "Next.js page asset has no content-type: ${asset_url}"
   if [[ "${content_type}" == text/html* ]]; then
     fail "Next.js page asset returned HTML instead of a static file: ${asset_url} content-type=${content_type}"
