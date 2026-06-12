@@ -1169,12 +1169,53 @@ validate_nginx() {
     END { if (!exact || !prefix || !exact_root || !prefix_root || website_api) exit 1 }
   ' "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "NGINX /api namespace must proxy only to root app port ${ROOT_PORT}, never website port ${WEBSITE_PORT}"
   awk '
-    /location[[:space:]]+=[[:space:]]+\/adisyonsistemi[[:space:]]*\{/ { in_legacy=1; exact=1; next }
-    /location[[:space:]]+\^~[[:space:]]+\/adisyonsistemi\// { in_legacy=1; prefix=1; next }
-    in_legacy && /return[[:space:]]+308[[:space:]]+\/app;/ { redirect=1 }
-    in_legacy && /proxy_pass[[:space:]]+http:\/\/127\.0\.0\.1:/ { proxy=1 }
-    in_legacy && /^\s*\}/ { in_legacy=0 }
-    END { if (!exact || !prefix || !redirect || proxy) exit 1 }
+    function brace_delta(line, tmp, opens, closes) {
+      tmp = line
+      opens = gsub(/\{/, "", tmp)
+      tmp = line
+      closes = gsub(/\}/, "", tmp)
+      return opens - closes
+    }
+    function finish_legacy_block() {
+      if (legacy_kind == "exact") {
+        exact = 1
+        if (saw_redirect) exact_redirect = 1
+      }
+      if (legacy_kind == "prefix") {
+        prefix = 1
+        if (saw_redirect) prefix_redirect = 1
+      }
+      if (saw_proxy) proxy = 1
+      in_legacy = 0
+      legacy_kind = ""
+      saw_redirect = 0
+      saw_proxy = 0
+      depth = 0
+    }
+    function start_legacy_block(kind) {
+      in_legacy = 1
+      legacy_kind = kind
+      saw_redirect = 0
+      saw_proxy = 0
+      depth = brace_delta($0)
+      if (depth <= 0) finish_legacy_block()
+    }
+    /^[[:space:]]*location[[:space:]]+=[[:space:]]+\/adisyonsistemi[[:space:]]*\{/ {
+      start_legacy_block("exact")
+      next
+    }
+    /^[[:space:]]*location[[:space:]]+\^~[[:space:]]+\/adisyonsistemi\/[[:space:]]*\{/ {
+      start_legacy_block("prefix")
+      next
+    }
+    in_legacy {
+      if ($0 ~ /return[[:space:]]+(301|308)[[:space:]]+\/app;/) saw_redirect = 1
+      if ($0 ~ /proxy_pass[[:space:]]+http:\/\/127\.0\.0\.1:/) saw_proxy = 1
+      depth += brace_delta($0)
+      if (depth <= 0) finish_legacy_block()
+      next
+    }
+    END { if (!exact || !prefix || !exact_redirect || !prefix_redirect || proxy) exit 1 }
   ' "${BACKUP_DIR}/nginx/nginx-T.after.txt" || fail "Legacy /adisyonsistemi must redirect to /app and must not proxy to any runtime"
 
   systemctl reload nginx
