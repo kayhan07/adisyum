@@ -117,16 +117,16 @@ export function AppShell({ title, subtitle, actions, children, immersiveMode = f
           {immersiveMode ? (
             <>
               {showBack ? (
-                <div className="app-shell-header sticky top-0 z-30 px-4 py-3 backdrop-blur lg:px-5">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="flex flex-col gap-3">
+                <div className="app-shell-header sticky top-0 z-30 px-3 py-2 backdrop-blur sm:px-4 sm:py-3 lg:px-5">
+                  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex flex-col gap-2 sm:gap-3">
                       <div>
                         <BackButton href={resolvedBackHref} label={resolvedBackLabel} />
                       </div>
                       <div>
-                        <h1 className="app-shell-title text-xl font-semibold tracking-tight">{title}</h1>
-                        <p className="app-shell-subtitle mt-1 text-sm leading-5">{subtitle}</p>
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <h1 className="app-shell-title text-lg font-semibold tracking-tight sm:text-xl">{title}</h1>
+                        {subtitle ? <p className="app-shell-subtitle mt-1 hidden text-sm leading-5 sm:block">{subtitle}</p> : null}
+                        <div className="mt-2 flex flex-wrap items-center gap-2 sm:mt-3">
                           <button
                             type="button"
                             onClick={() => void handleLogout('manual')}
@@ -138,7 +138,7 @@ export function AppShell({ title, subtitle, actions, children, immersiveMode = f
                         </div>
                       </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-3">
+                    <div className="-mx-1 flex max-w-full flex-nowrap items-center gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:gap-3 sm:overflow-visible sm:px-0 sm:pb-0">
                       <span className="app-chip">{tenantLabel}</span>
                       <span className="app-chip">{activeBranch.label}</span>
                       <span className="app-chip">{currentUser.role}</span>
@@ -159,18 +159,18 @@ export function AppShell({ title, subtitle, actions, children, immersiveMode = f
             </>
           ) : (
             <>
-              <header className="app-shell-header px-5 py-4 backdrop-blur lg:px-7 lg:py-5">
-                <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                  <div className="flex flex-col gap-3">
+              <header className="app-shell-header px-3 py-2 backdrop-blur sm:px-5 sm:py-4 lg:px-7 lg:py-5">
+                <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+                  <div className="flex flex-col gap-2 sm:gap-3">
                     {showBack ? (
                       <div>
                         <BackButton href={resolvedBackHref} label={resolvedBackLabel} />
                       </div>
                     ) : null}
                     <div>
-                      <h1 className="app-shell-title text-2xl font-semibold tracking-tight">{title}</h1>
-                      <p className="app-shell-subtitle mt-1.5 text-sm leading-6">{subtitle}</p>
-                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <h1 className="app-shell-title text-lg font-semibold tracking-tight sm:text-2xl">{title}</h1>
+                      {subtitle ? <p className="app-shell-subtitle mt-1.5 hidden text-sm leading-6 sm:block">{subtitle}</p> : null}
+                      <div className="mt-2 flex flex-wrap items-center gap-2 sm:mt-3">
                         <button
                           type="button"
                           onClick={() => void handleLogout('manual')}
@@ -182,7 +182,7 @@ export function AppShell({ title, subtitle, actions, children, immersiveMode = f
                       </div>
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-3">
+                  <div className="-mx-1 flex max-w-full flex-nowrap items-center gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:gap-3 sm:overflow-visible sm:px-0 sm:pb-0">
                     <span className="app-chip">{tenantLabel}</span>
                     <span className="app-chip">{activeBranch.label}</span>
                     <span className="app-chip">{currentUser.role}</span>
@@ -202,7 +202,7 @@ export function AppShell({ title, subtitle, actions, children, immersiveMode = f
                   </div>
                 ) : null}
               </header>
-              <div className="flex-1 w-full overflow-auto p-5 lg:p-7">{children}</div>
+              <div className="flex-1 w-full overflow-auto p-3 sm:p-5 lg:p-7">{children}</div>
             </>
           )}
         </div>

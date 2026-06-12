@@ -3837,7 +3837,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         </div>
       </div>
 
-      <div className={`grid min-h-0 flex-1 gap-2.5 overflow-hidden px-3 py-2.5 sm:px-4 ${paymentExpanded ? 'xl:grid-cols-[minmax(0,1fr)_290px]' : ''}`}>
+      <div className={`grid min-h-0 flex-1 gap-2.5 overflow-y-auto px-3 py-2.5 pb-28 sm:px-4 ${paymentExpanded ? 'xl:grid-cols-[minmax(0,1fr)_290px]' : ''}`}>
         <div className="grid content-start gap-2.5">
           <div className="rounded-2xl border border-white/10 bg-[#111827] p-2.5">
             <div className="grid gap-2.5">
@@ -4321,7 +4321,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
             </div>
           </div>
 
-          <div className="grid gap-2.5">
+          <div className="sticky bottom-0 z-20 -mx-3 grid gap-2.5 border-t border-white/10 bg-[#0B1220]/95 px-3 py-3 shadow-[0_-18px_36px_rgba(11,18,32,0.55)] backdrop-blur [padding-bottom:calc(env(safe-area-inset-bottom)+0.75rem)] sm:-mx-4 sm:px-4">
             <button
               type="button"
               onClick={completePayment}
@@ -4340,7 +4340,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           </div>
         </div>
         ) : (
-          <div className="grid content-start gap-2">
+          <div className="sticky bottom-0 z-20 -mx-3 grid content-start gap-2 border-t border-white/10 bg-[#0B1220]/95 px-3 py-3 shadow-[0_-18px_36px_rgba(11,18,32,0.55)] backdrop-blur [padding-bottom:calc(env(safe-area-inset-bottom)+0.75rem)] sm:-mx-4 sm:px-4">
             <button
               type="button"
               onClick={completePayment}
@@ -4358,7 +4358,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   return (
     <>
     <div className="dark-pos grid min-h-0 w-full gap-4 xl:grid-cols-[minmax(0,1fr)_420px] xl:h-[calc(100vh-2rem)] xl:min-h-[720px]">
-      <section className="app-panel pos-products-panel flex min-h-0 flex-col overflow-hidden rounded-[1.4rem]">
+      <section className={`app-panel pos-products-panel flex min-h-0 flex-col overflow-hidden rounded-[1.4rem] ${paymentOpen ? 'h-[calc(100dvh-7rem)] max-h-[calc(100dvh-7rem)] sm:h-auto sm:max-h-none' : ''}`}>
         {paymentOpen ? paymentPanel : (
         <>
         <div className="border-b border-slate-200 px-5 py-4">

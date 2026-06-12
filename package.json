@@ -110,7 +110,9 @@
     "audit:data-health:dry-run": "node scripts/audit-data-health-dry-run.mjs",
     "audit:data-health:production-dry-run": "node scripts/audit-data-health-dry-run.mjs --production",
     "verify:live-pos-business-flow": "node scripts/verify-live-pos-business-flow.mjs",
-    "audit:saas-security-integrity": "node scripts/audit-saas-security-integrity.mjs"
+    "audit:saas-security-integrity": "node scripts/audit-saas-security-integrity.mjs",
+    "verify:restaurant-real-usage-flow": "node scripts/verify-restaurant-real-usage-flow.mjs",
+    "verify:mobile-pos-ui": "node scripts/verify-mobile-pos-ui.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
