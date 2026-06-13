@@ -27,11 +27,19 @@ function functionBody(source, name) {
   return source.slice(start, next < 0 ? undefined : next);
 }
 
+function componentBody(source, name) {
+  const start = source.indexOf(`function ${name}`);
+  if (start < 0) throw new Error(`${name} missing`);
+  const next = source.indexOf('\nfunction ', start + 1);
+  return source.slice(start, next < 0 ? undefined : next);
+}
+
 const provisioning = read('lib/system-admin/provisioning.ts');
 const tenantsRoute = read('app/api/system-admin/tenants/route.ts');
 const systemAdminPage = read('app/system-admin/page.tsx');
 
 const resetBody = functionBody(provisioning, 'resetTenantBusinessData');
+const tenantsModuleBody = componentBody(systemAdminPage, 'TenantsModule');
 
 assertContains(provisioning, "action: 'reset_tenant_data';", 'Tenant management action type');
 assertContains(resetBody, 'confirmationTenantId.trim().toUpperCase() !== tenantId', 'Tenant data reset confirmation guard');
@@ -57,5 +65,9 @@ assertContains(tenantsRoute, 'confirmationTenantId: body.confirmationTenantId', 
 assertContains(systemAdminPage, 'Tenant Veri Temizleme', 'System-admin drawer exposes data reset panel');
 assertContains(systemAdminPage, "action: 'reset_tenant_data'", 'System-admin drawer submits data reset action');
 assertContains(systemAdminPage, 'dataResetConfirmation.trim().toUpperCase() !== tenantId.toUpperCase()', 'System-admin drawer requires tenant id confirmation');
+assertContains(tenantsModuleBody, 'confirmReset', 'Tenant list exposes explicit reset confirmation path');
+assertContains(tenantsModuleBody, 'Veriyi Temizle', 'Tenant list exposes data reset action per subscriber');
+assertContains(tenantsModuleBody, 'lg:grid-cols-[minmax(14rem,1.15fr)_minmax(12rem,0.8fr)_minmax(12rem,0.8fr)_minmax(16rem,1fr)]', 'Tenant list uses responsive card rows');
+assertNotContains(tenantsModuleBody, '<DataTable', 'Tenant list no longer uses horizontally scrolling DataTable');
 
 console.log('PASS system-admin tenant data reset keeps tenant shell and clears business data');

@@ -1129,8 +1129,18 @@ function TenantsModule({ saasTenants, liveOps, onOpenTenant, onTenantAction, ten
     ['Silinmiş Abone', String(saasTenants.filter((tenant: SaasTenantRow) => tenant.deletedAt).length)],
   ];
 
-  async function quickAction(tenant: SaasTenantRow, actionBody: Record<string, unknown>, options?: { confirmDelete?: boolean }) {
+  async function quickAction(tenant: SaasTenantRow, actionBody: Record<string, unknown>, options?: { confirmDelete?: boolean; confirmReset?: boolean }) {
     setLocalMessage('');
+    if (options?.confirmReset) {
+      const confirmation = window.prompt('Bu işlem abonenin restoran verisini temizler. Abone, abonelik, şube ve admin kullanıcı korunur. Devam etmek için abone kodunu yazın.');
+      if (confirmation === null) return;
+      if (confirmation.trim().toUpperCase() !== tenant.tenantId.toUpperCase()) {
+        setLocalMessage('Abone kodu doğrulanmadı. Veri temizleme yapılmadı.');
+        return;
+      }
+      await onTenantAction?.(tenant.tenantId, { ...actionBody, confirmationTenantId: confirmation.trim() });
+      return;
+    }
     if (options?.confirmDelete) {
       const confirmation = window.prompt('Bu işlem abonenin erişimini kapatır. Veriler korunur. Devam etmek için abone kodunu yazın.');
       if (confirmation === null) return;
@@ -1186,35 +1196,52 @@ function TenantsModule({ saasTenants, liveOps, onOpenTenant, onTenantAction, ten
       {tenantActionMessage ? <p className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">{tenantActionMessage}</p> : null}
       {localMessage ? <p className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">{localMessage}</p> : null}
 
-      <DataTable
-        headers={['Abone Kodu', 'Firma Adı', 'Admin E-posta', 'Telefon', 'Vergi No', 'Durum', 'Abonelik', 'Bitiş Tarihi', 'Kalan Gün', 'Limitsiz', 'Son Giriş', 'İşlemler']}
-        rows={visibleSubscriptions.map((tenant: SaasTenantRow) => {
+      <div className="grid gap-3">
+        {visibleSubscriptions.map((tenant: SaasTenantRow) => {
           const remaining = tenantRemainingDays(tenant);
           const rowBusy = typeof tenantActionLoading === 'string' && tenantActionLoading.startsWith(`${tenant.tenantId}:`);
-          return [
-            <button key={`${tenant.tenantId}-code`} type="button" onClick={() => onOpenTenant?.(tenant.tenantId)} className="font-semibold text-cyan-100">{tenant.tenantId}</button>,
-            <button key={`${tenant.tenantId}-company`} type="button" onClick={() => onOpenTenant?.(tenant.tenantId)} className="block rounded-xl px-3 py-2 text-left transition hover:bg-white/5">
-              <p className="font-semibold">{tenant.companyName}</p>
-              <p className="text-xs text-slate-400">{tenant.taxNumber || tenant.plan}</p>
-            </button>,
-            tenant.adminEmail ?? tenant.email ?? '-',
-            tenant.phone ?? '-',
-            tenant.taxNumber ?? '-',
-            <StatusPill key={`${tenant.tenantId}-status`} status={tenant.status} />,
-            tenant.unlimitedLicense ? 'Limitsiz' : tenant.subscriptionStatus,
-            formatDate(tenant.expiresAt),
-            tenant.unlimitedLicense ? 'Limitsiz' : remaining ?? '-',
-            tenant.unlimitedLicense ? 'Evet' : 'Hayır',
-            formatDate(tenant.lastLogin),
-            <div key={`${tenant.tenantId}-actions`} className="flex min-w-[220px] flex-wrap gap-2">
-              <button type="button" onClick={() => onOpenTenant?.(tenant.tenantId)} className="rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-100">Yönet</button>
-              <button disabled={rowBusy || Boolean(tenant.deletedAt) || tenant.status === 'suspended'} type="button" onClick={() => void quickAction(tenant, { action: 'update_status', tenantStatus: 'suspended' })} className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs font-semibold text-amber-100 disabled:opacity-50">Askıya Al</button>
-              <button disabled={rowBusy || Boolean(tenant.deletedAt) || tenant.status === 'active'} type="button" onClick={() => void quickAction(tenant, { action: 'update_status', tenantStatus: 'active' })} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-xs font-semibold text-emerald-100 disabled:opacity-50">Aktif Yap</button>
-              <button disabled={rowBusy || Boolean(tenant.deletedAt)} type="button" onClick={() => void quickAction(tenant, { action: 'soft_delete_tenant' }, { confirmDelete: true })} className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-xs font-semibold text-rose-100 disabled:opacity-50">Sil</button>
-            </div>,
-          ];
+          return (
+            <article key={tenant.tenantId} className="grid gap-4 rounded-[1.35rem] border border-white/10 bg-slate-900 p-4 lg:grid-cols-[minmax(14rem,1.15fr)_minmax(12rem,0.8fr)_minmax(12rem,0.8fr)_minmax(16rem,1fr)]">
+              <div>
+                <button type="button" onClick={() => onOpenTenant?.(tenant.tenantId)} className="text-left">
+                  <p className="font-semibold text-cyan-100">{tenant.companyName}</p>
+                  <p className="mt-1 text-sm font-semibold text-white">{tenant.tenantId}</p>
+                </button>
+                <p className="mt-2 text-xs text-slate-400">{tenant.plan} paket{tenant.taxNumber ? ` · VKN ${tenant.taxNumber}` : ''}</p>
+              </div>
+              <div className="grid gap-2 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs uppercase tracking-[0.16em] text-slate-500">Durum</span>
+                  <StatusPill status={tenant.status} />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-400">Abonelik</span>
+                  <span className="font-semibold">{tenant.unlimitedLicense ? 'Limitsiz' : tenant.subscriptionStatus}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-400">Kalan gün</span>
+                  <span className="font-semibold">{tenant.unlimitedLicense ? 'Limitsiz' : remaining ?? '-'}</span>
+                </div>
+              </div>
+              <div className="grid gap-2 text-sm">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500">İletişim</p>
+                  <p className="mt-1 break-words font-semibold">{tenant.adminEmail ?? tenant.email ?? '-'}</p>
+                </div>
+                <p className="text-slate-400">{tenant.phone ?? '-'}</p>
+                <p className="text-slate-400">Son giriş: {formatDate(tenant.lastLogin)}</p>
+              </div>
+              <div className="flex flex-wrap content-start gap-2">
+                <button type="button" onClick={() => onOpenTenant?.(tenant.tenantId)} className="rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-100">Yönet</button>
+                <button disabled={rowBusy || Boolean(tenant.deletedAt) || tenant.status === 'suspended'} type="button" onClick={() => void quickAction(tenant, { action: 'update_status', tenantStatus: 'suspended' })} className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs font-semibold text-amber-100 disabled:opacity-50">Askıya Al</button>
+                <button disabled={rowBusy || Boolean(tenant.deletedAt) || tenant.status === 'active'} type="button" onClick={() => void quickAction(tenant, { action: 'update_status', tenantStatus: 'active' })} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-xs font-semibold text-emerald-100 disabled:opacity-50">Aktif Yap</button>
+                <button disabled={rowBusy || Boolean(tenant.deletedAt)} type="button" onClick={() => void quickAction(tenant, { action: 'reset_tenant_data' }, { confirmReset: true })} className="rounded-xl border border-amber-400/40 bg-amber-500/15 px-3 py-2 text-xs font-semibold text-amber-100 disabled:opacity-50">Veriyi Temizle</button>
+                <button disabled={rowBusy || Boolean(tenant.deletedAt)} type="button" onClick={() => void quickAction(tenant, { action: 'soft_delete_tenant' }, { confirmDelete: true })} className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-xs font-semibold text-rose-100 disabled:opacity-50">Sil</button>
+              </div>
+            </article>
+          );
         })}
-      />
+      </div>
       <p className="text-sm text-slate-400">{visibleSubscriptions.length} abonelik gösteriliyor.</p>
     </div>
   );
