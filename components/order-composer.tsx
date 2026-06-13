@@ -194,17 +194,29 @@ type OrderComposerProps = {
   autoOpenPayment?: boolean;
 };
 
-const categories: Category[] = [
-  { id: 'all', label: 'T\u00fcm\u00fc' },
-  { id: 'kahve', label: 'Kahve' },
-  { id: 'mutfak', label: 'Mutfak' },
-  { id: 'icecek', label: '\u0130\u00e7ecek' },
-  { id: 'tatli', label: 'Tatl\u0131' },
-];
 const VAT_RATE = 0.1;
 const RECENT_ACCOUNT_KEY = 'adisyon-recent-charge-accounts';
 const EMPTY_ORDER_LINES: OrderLine[] = [];
 const EMPTY_ORDERS_BY_TABLE: Record<string, OrderLine[]> = {};
+
+function normalizeCategoryKey(category: string) {
+  return category.trim().toLocaleLowerCase('tr-TR');
+}
+
+function deriveSaleProductCategories(products: ProductCard[]): Category[] {
+  const seen = new Map<string, string>();
+  products.forEach((product) => {
+    if (product.productType !== 'sale_product' && product.productType !== 'combo_product') return;
+    const category = product.category.trim();
+    if (!category) return;
+    const key = normalizeCategoryKey(category);
+    if (!seen.has(key)) seen.set(key, category);
+  });
+  return [
+    { id: 'all', label: 'Tümü' },
+    ...Array.from(seen.values()).map((category) => ({ id: category, label: category })),
+  ];
+}
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat('tr-TR', {
@@ -513,11 +525,11 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const [accessState, setAccessState] = useState(() => getDefaultAccessState());
   const [tableLayoutState, setTableLayoutState] = useState(() => getDefaultTableLayoutState());
   const [integrationState, setIntegrationState] = useState(() => getDefaultIntegrationState());
-  const sourceCategories = categories;
   const [storedCatalogProducts, setStoredCatalogProducts] = useState<ProductCard[]>([]);
   const [storedSaleProducts, setStoredSaleProducts] = useState<StoredSaleProduct[]>([]);
   const [eventPricingEnabled, setEventPricingEnabled] = useState(false);
   const sourceProducts = storedCatalogProducts;
+  const sourceCategories = useMemo(() => deriveSaleProductCategories(sourceProducts), [sourceProducts]);
   const runtimeSession = useMemo(
     () => hydrateRuntimeSessionContext({
       session: sessionState,
@@ -938,8 +950,15 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
   const filteredProducts = useMemo(() => {
     if (selectedCategory === 'all') return sourceProducts;
-    return sourceProducts.filter((product) => product.category === selectedCategory);
+    const selectedKey = normalizeCategoryKey(selectedCategory);
+    return sourceProducts.filter((product) => normalizeCategoryKey(product.category) === selectedKey);
   }, [selectedCategory, sourceProducts]);
+  useEffect(() => {
+    if (selectedCategory === 'all') return;
+    if (!sourceCategories.some((category) => category.id === selectedCategory)) {
+      setSelectedCategory('all');
+    }
+  }, [selectedCategory, sourceCategories]);
 
   const searchSuggestions = useMemo(() => {
     const query = deferredProductSearch.trim().toLocaleLowerCase('tr-TR');

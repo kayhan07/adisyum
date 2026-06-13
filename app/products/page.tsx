@@ -2244,44 +2244,20 @@ function ProductsPageContent() {
           .filter((product) => product.productType === 'stock_item')
           .map(serverProductToRawIngredient);
 
-        if (serverSaleProducts.length > 0) {
-          setSaleProducts((current) => {
-            const currentByName = new Map(current.map((product) => [product.name.trim().toLocaleLowerCase('tr-TR'), product]));
-            const merged = [...current];
-            serverSaleProducts.forEach((product) => {
-              const key = product.name.trim().toLocaleLowerCase('tr-TR');
-              const existingIndex = merged.findIndex((item) => item.name.trim().toLocaleLowerCase('tr-TR') === key);
-              if (existingIndex >= 0) {
-                merged[existingIndex] = {
-                  ...merged[existingIndex],
-                  ...product,
-                  salesCount: currentByName.get(key)?.salesCount ?? product.salesCount,
-                };
-              } else {
-                merged.unshift(product);
-              }
-            });
-            return merged;
-          });
-        }
+        setSaleProducts(serverSaleProducts);
+        setSelectedProductId((current) =>
+          serverSaleProducts.some((product) => product.id === current) ? current : serverSaleProducts[0]?.id ?? '',
+        );
+        saveStoredSaleProducts(serverSaleProducts as StoredSaleProduct[]);
+        setCreatedRawIngredients(serverRawIngredients);
+        saveStoredRawIngredients(serverRawIngredients);
 
-        if (serverRawIngredients.length > 0) {
-          setCreatedRawIngredients((current) => {
-            const merged = [...current];
-            serverRawIngredients.forEach((ingredient) => {
-              const key = ingredient.name.trim().toLocaleLowerCase('tr-TR');
-              const existingIndex = merged.findIndex((item) => item.name.trim().toLocaleLowerCase('tr-TR') === key);
-              if (existingIndex >= 0) {
-                merged[existingIndex] = { ...merged[existingIndex], ...ingredient };
-              } else {
-                merged.unshift(ingredient);
-              }
-            });
-            return merged;
-          });
-        }
-
-        setCategories((current) => mergeProductCategories(current, payload.products?.map((product) => product.category) ?? []));
+        setCategories((current) => mergeProductCategories(
+          includeSeedData ? DEFAULT_PRODUCT_CATEGORIES : [],
+          payload.products?.map((product) => product.category) ?? [],
+          recipePool.map((recipe) => recipe.category || inferCategory(recipe.name)),
+          current.filter((category) => payload.products?.some((product) => product.category === category)),
+        ));
       } catch (error) {
         if ((error as Error).name === 'AbortError') return;
         console.error('[products] server product hydration failed', error);
@@ -2292,7 +2268,7 @@ function ProductsPageContent() {
     void hydrateServerProducts();
 
     return () => controller.abort();
-  }, [hydrated]);
+  }, [hydrated, includeSeedData, recipePool]);
 
   useEffect(() => {
     if (!hydrated) return;
