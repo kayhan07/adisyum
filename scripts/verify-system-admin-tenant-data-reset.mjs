@@ -76,10 +76,14 @@ assertContains(resetDataRoute, 'confirmationTenantId', 'Reset data endpoint requ
 
 assertContains(systemAdminPage, 'Tenant Veri Temizleme', 'System-admin drawer exposes data reset panel');
 assertContains(systemAdminPage, "action: 'reset_tenant_data'", 'System-admin drawer submits data reset action');
-assertContains(systemAdminPage, 'dataResetConfirmation.trim().toUpperCase() !== tenantId.toUpperCase()', 'System-admin drawer requires tenant id confirmation');
+assertContains(systemAdminPage, 'dataResetTenantConfirmed', 'System-admin drawer requires tenant id confirmation');
 assertContains(systemAdminPage, 'TENANT_DATA_RESET_MODULE_OPTIONS', 'System-admin drawer exposes module checklist');
 assertContains(systemAdminPage, 'Dry-run Önizle', 'System-admin drawer exposes dry-run button');
 assertContains(systemAdminPage, 'dataResetModules.length === 0', 'System-admin drawer starts with no selected modules');
+assertContains(systemAdminPage, 'Tüm modülleri seç', 'System-admin drawer lets operators select all reset modules');
+assertContains(systemAdminPage, 'Seçimi temizle', 'System-admin drawer lets operators clear reset module selection');
+assertContains(systemAdminPage, 'dataResetHint', 'System-admin drawer explains why reset action is disabled');
+assertContains(systemAdminPage, 'dataResetReady', 'System-admin drawer computes explicit reset readiness');
 assertContains(tenantsModuleBody, 'confirmReset', 'Tenant list exposes explicit reset confirmation path');
 assertContains(tenantsModuleBody, 'Veriyi Temizle', 'Tenant list exposes data reset action per subscriber');
 assertContains(tenantsModuleBody, 'lg:grid-cols-[minmax(14rem,1.15fr)_minmax(12rem,0.8fr)_minmax(12rem,0.8fr)_minmax(16rem,1fr)]', 'Tenant list uses responsive card rows');
