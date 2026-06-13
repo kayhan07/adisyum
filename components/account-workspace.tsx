@@ -421,11 +421,19 @@ export function AccountWorkspace() {
                 Yeni cari oluştur
               </button>
               <button type="button" onClick={downloadAccountTemplate} className="h-12 rounded-2xl border border-white/10 px-5 text-sm font-semibold text-slate-200 transition hover:bg-white/5">
-                Şablon İndir
+                1. Şablon indir
               </button>
-              <label className="flex h-12 cursor-pointer items-center rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-5 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/15">
-                Excel'den Cari Aktar
-                <input type="file" accept=".csv,.txt,.tsv" className="hidden" onChange={(event) => void previewAccountImport(event.target.files?.[0] ?? null)} />
+              <label className="relative flex h-12 cursor-pointer items-center overflow-hidden rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-5 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/15">
+                2. Doldurulmuş şablonu yükle
+                <input
+                  type="file"
+                  accept=".csv,.txt,.tsv"
+                  className="absolute inset-0 cursor-pointer opacity-0"
+                  onChange={(event) => {
+                    void previewAccountImport(event.target.files?.[0] ?? null);
+                    event.currentTarget.value = '';
+                  }}
+                />
               </label>
             </div>
           </div>
@@ -434,7 +442,13 @@ export function AccountWorkspace() {
               <option value="skip">Duplicate: atla</option>
               <option value="update">Duplicate: güncelle</option>
             </select>
-            <p className="text-sm text-slate-400">{importPreview ? `${importPreview.valid ?? 0} geçerli satır hazır.` : 'CSV/Excel şablonunu doldurun, dosyayı seçince önce önizleme alınır.'}</p>
+            <p className="text-sm text-slate-400">
+              {importPreview
+                ? `${importFile?.name ?? 'Dosya'}: ${importPreview.valid ?? 0} geçerli satır hazır.`
+                : importFile
+                  ? `${importFile.name} seçildi, önizleme alınıyor.`
+                  : 'Excel uyumlu CSV şablonunu indirin, doldurun, sonra geri yükleyin.'}
+            </p>
             <button disabled={!importFile || !importPreview || importLoading} type="button" onClick={() => void commitAccountImport()} className="h-11 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white disabled:opacity-50">
               {importLoading ? 'İşleniyor...' : 'Geçerli Satırları İçe Aktar'}
             </button>

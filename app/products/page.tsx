@@ -1155,6 +1155,7 @@ function ProductsPageContent() {
   const [activeWindow, setActiveWindow] = useState<ProductWindow>('raw');
   const [showNewItemForm, setShowNewItemForm] = useState(false);
   const [showQuickCreate, setShowQuickCreate] = useState(false);
+  const [productStudioOpen, setProductStudioOpen] = useState(false);
   const [quickCreateImportTarget, setQuickCreateImportTarget] = useState<'raw' | 'sale'>('raw');
   const [integrationState, setIntegrationState] = useState(() => getDefaultIntegrationState());
   const [categories, setCategories] = useState<string[]>([...DEFAULT_PRODUCT_CATEGORIES]);
@@ -3317,8 +3318,15 @@ function ProductsPageContent() {
     setSavedNotes((current) => [`${selectedPoolRecipe.name} reçetesi silindi.`, ...current]);
   }
 
-  function updateBulkDraft(value: string) {
-    setBulkDrafts((current) => ({ ...current, [importWindow]: value }));
+  function updateBulkDraft(value: string, target: 'raw' | 'sale' = importWindow) {
+    setBulkDrafts((current) => ({ ...current, [target]: value }));
+  }
+
+  function openQuickCreateImport(target: 'raw' | 'sale') {
+    setQuickCreateImportTarget(target);
+    changeActiveWindow(target);
+    setShowNewItemForm(false);
+    setShowQuickCreate(true);
   }
 
   function downloadQuickCreateTemplate() {
@@ -3350,6 +3358,9 @@ function ProductsPageContent() {
   async function importQuickCreateFile(file: File) {
     if (!quickCreateEnabled) return;
     const lowerName = file.name.toLocaleLowerCase('tr-TR');
+    const targetWindow = importWindow;
+    setBulkFileNames((current) => ({ ...current, [targetWindow]: file.name }));
+    setSavedNotes((current) => [`${file.name} seçildi. Dosya okunuyor...`, ...current]);
 
     try {
       if (lowerName.endsWith('.xls') && !lowerName.endsWith('.xlsx')) {
@@ -3364,7 +3375,7 @@ function ProductsPageContent() {
 
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('window', importWindow);
+      formData.append('window', targetWindow);
 
       const response = await fetch('/api/products/import-excel', {
         method: 'POST',
@@ -3379,11 +3390,10 @@ function ProductsPageContent() {
       }
 
       const text = payload.rows.map((row) => row.join('\t')).join('\n');
-      updateBulkDraft(text);
-      setBulkFileNames((current) => ({ ...current, [importWindow]: file.name }));
+      updateBulkDraft(text, targetWindow);
       setSavedNotes((current) => [`${file.name} dosyası okundu. Önizlemeyi kontrol edip içe aktarabilirsiniz.`, ...current]);
     } catch (error) {
-      console.error('[products] excel import failed', { fileName: file.name, importWindow, error });
+      console.error('[products] excel import failed', { fileName: file.name, importWindow: targetWindow, error });
       setSavedNotes((current) => [
         error instanceof Error ? error.message : 'Excel dosyası içe aktarılamadı.',
         ...current,
@@ -4184,38 +4194,59 @@ function ProductsPageContent() {
         <section className="rounded-[1.75rem] border border-white/10 bg-[#101B30] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_18px_42px_rgba(2,6,23,0.28)]">
           <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-blue-300">Product Creation Studio</p>
-              <h2 className="mt-2 text-2xl font-semibold text-white">Ne oluşturmak istiyorsunuz?</h2>
-              <p className="mt-2 text-sm text-slate-400">Her domain kendi kurallarıyla açılır; hammadde POS'a, satış ürünü stok girişine karışmaz.</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-blue-300">Hızlı ürün işlemleri</p>
+              <h2 className="mt-2 text-2xl font-semibold text-white">Ürün ekleme</h2>
+              <p className="mt-2 text-sm text-slate-400">En sık kullanılan işlemler önde. Gelişmiş ürün tipleri gerekirse ayrıca açılır.</p>
             </div>
-            <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-100">
-              productType kilitli
-            </span>
+            <button
+              type="button"
+              onClick={() => setProductStudioOpen((current) => !current)}
+              className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
+            >
+              {productStudioOpen ? 'Gelişmiş tipleri gizle' : 'Gelişmiş tipleri göster'}
+            </button>
           </div>
 
-          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {productCreationOptions.map((option) => {
-              const Icon = option.icon;
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() => openProductCreationStudio(option.id)}
-                  className={`rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 active:scale-[0.98] ${option.tone}`}
-                >
-                  <span className="flex items-start gap-3">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10">
-                      <Icon className="h-5 w-5" />
-                    </span>
-                    <span>
-                      <span className="block font-semibold">{option.title}</span>
-                      <span className="mt-1 block text-xs leading-5 text-current/75">{option.subtitle}</span>
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <button type="button" onClick={() => openProductCreationStudio('sale')} className="rounded-2xl border border-blue-400/30 bg-blue-500/12 p-4 text-left text-blue-50 transition hover:bg-blue-500/18 active:scale-[0.98]">
+              <span className="flex items-center gap-3"><Package className="h-5 w-5" /><span><span className="block font-semibold">Tek satış ürünü ekle</span><span className="mt-1 block text-xs text-blue-100/75">POS ve adisyon ürünü</span></span></span>
+            </button>
+            <button type="button" onClick={() => openQuickCreateImport('sale')} className="rounded-2xl border border-emerald-400/30 bg-emerald-500/12 p-4 text-left text-emerald-50 transition hover:bg-emerald-500/18 active:scale-[0.98]">
+              <span className="flex items-center gap-3"><Upload className="h-5 w-5" /><span><span className="block font-semibold">Excel ile satış ürünü ekle</span><span className="mt-1 block text-xs text-emerald-100/75">Şablon indir, doldur, yükle</span></span></span>
+            </button>
+            <button type="button" onClick={() => openProductCreationStudio('raw')} className="rounded-2xl border border-cyan-400/25 bg-cyan-500/10 p-4 text-left text-cyan-50 transition hover:bg-cyan-500/15 active:scale-[0.98]">
+              <span className="flex items-center gap-3"><Boxes className="h-5 w-5" /><span><span className="block font-semibold">Hammadde ekle</span><span className="mt-1 block text-xs text-cyan-100/75">Stok ve reçete kalemi</span></span></span>
+            </button>
+            <button type="button" onClick={() => openQuickCreateImport('raw')} className="rounded-2xl border border-slate-400/20 bg-white/[0.04] p-4 text-left text-slate-100 transition hover:bg-white/[0.07] active:scale-[0.98]">
+              <span className="flex items-center gap-3"><Upload className="h-5 w-5" /><span><span className="block font-semibold">Excel ile hammadde ekle</span><span className="mt-1 block text-xs text-slate-300">Toplu stok kartı</span></span></span>
+            </button>
           </div>
+
+          {productStudioOpen ? (
+            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {productCreationOptions.map((option) => {
+                const Icon = option.icon;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => openProductCreationStudio(option.id)}
+                    className={`rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 active:scale-[0.98] ${option.tone}`}
+                  >
+                    <span className="flex items-start gap-3">
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10">
+                        <Icon className="h-5 w-5" />
+                      </span>
+                      <span>
+                        <span className="block font-semibold">{option.title}</span>
+                        <span className="mt-1 block text-xs leading-5 text-current/75">{option.subtitle}</span>
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
         </section>
 
         {showNewItemForm ? (

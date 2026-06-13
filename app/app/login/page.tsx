@@ -34,17 +34,30 @@ type AuthMeResponse = {
   error?: string;
 };
 
+const REMEMBER_LOGIN_KEY = 'adisyum:remember-login';
+
 export default function AppLoginPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [tenantId, setTenantId] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     purgeLegacyDemoTenantClientState();
+    try {
+      const remembered = window.localStorage.getItem(REMEMBER_LOGIN_KEY);
+      if (!remembered) return;
+      const parsed = JSON.parse(remembered) as { tenantId?: string; username?: string };
+      setTenantId(parsed.tenantId ?? '');
+      setUsername(parsed.username ?? '');
+      setRememberMe(Boolean(parsed.tenantId || parsed.username));
+    } catch {
+      window.localStorage.removeItem(REMEMBER_LOGIN_KEY);
+    }
   }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -88,6 +101,14 @@ export default function AppLoginPage() {
       setAuthSnapshotFromSession(sessionPayload.session);
       resetTenantBusinessCachesForLogin(sessionPayload.session.tenantId);
       hydrateCompanyStateFromTenantProfile(sessionPayload.session.companyProfile);
+      if (rememberMe) {
+        window.localStorage.setItem(REMEMBER_LOGIN_KEY, JSON.stringify({
+          tenantId: tenantId.trim(),
+          username: username.trim(),
+        }));
+      } else {
+        window.localStorage.removeItem(REMEMBER_LOGIN_KEY);
+      }
       queryClient.setQueryData(authQueryKeys.session(), sessionPayload);
       await queryClient.invalidateQueries({ queryKey: authQueryKeys.session() });
       router.replace('/app');
@@ -144,6 +165,19 @@ export default function AppLoginPage() {
               className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none focus:border-blue-300"
               placeholder="••••"
             />
+          </label>
+
+          <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(event) => setRememberMe(event.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-white/20 bg-[#0F172A]"
+            />
+            <span>
+              <span className="block font-semibold">Beni hatırla</span>
+              <span className="mt-1 block text-xs text-slate-400">Abone kodu ve kullanıcı adı bu cihazda hatırlanır. Şifreyi tarayıcının parola yöneticisi saklayabilir.</span>
+            </span>
           </label>
 
           {error ? (
