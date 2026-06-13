@@ -27,7 +27,9 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
       backHref="/floor"
       backLabel="Masalara don"
     >
-      <OrderComposer initialTableId={params?.tableId} autoOpenPayment={params?.payment === '1'} />
+      <div className="mobile-pos-focus">
+        <OrderComposer initialTableId={params?.tableId} autoOpenPayment={params?.payment === '1'} />
+      </div>
     </AppShell>
   );
 }

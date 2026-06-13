@@ -26,6 +26,12 @@ type ImportRow = {
 };
 
 function decodeDelimitedBuffer(buffer: Buffer) {
+  if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xfe) {
+    return buffer.subarray(2).toString('utf16le').replace(/^\uFEFF/, '');
+  }
+  if (buffer.length >= 2 && buffer[0] === 0xfe && buffer[1] === 0xff) {
+    return buffer.subarray(2).swap16().toString('utf16le').replace(/^\uFEFF/, '');
+  }
   return buffer.toString('utf8').replace(/^\uFEFF/, '');
 }
 

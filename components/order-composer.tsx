@@ -4434,69 +4434,79 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
           </div>
         </div>
 
-        <div className="border-b border-slate-200 px-5 py-5">
-          <div className="flex flex-wrap gap-2.5">
-            {sourceCategories.map((category) => {
-              const active = selectedCategory === category.id;
-              return (
+        <div className="min-h-0 flex-1 overflow-hidden p-3">
+          <div className="grid h-full min-h-0 gap-3 lg:grid-cols-[190px_minmax(0,1fr)]">
+            <aside className="rounded-[1rem] border border-slate-200 bg-white p-3 shadow-sm lg:min-h-0 lg:overflow-auto">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Kategoriler</p>
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-500">{sourceCategories.length}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-1">
+                {sourceCategories.map((category) => {
+                  const active = selectedCategory === category.id;
+                  return (
+                    <button
+                      key={category.id}
+                      onClick={() => setSelectedCategory(category.id)}
+                      className={active ? 'app-button-primary min-h-[42px] justify-start px-3 py-2 text-sm lg:w-full' : 'app-button-secondary min-h-[42px] justify-start px-3 py-2 text-sm lg:w-full'}
+                    >
+                      {category.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-3 border-t border-slate-200 pt-3">
                 <button
-                  key={category.id}
-                  onClick={() => setSelectedCategory(category.id)}
-                  className={active ? 'app-button-primary min-h-[42px] px-4 py-2.5 text-sm' : 'app-button-secondary min-h-[42px] px-4 py-2.5 text-sm'}
-                >
-                  {category.label}
-                </button>
-              );
-            })}
-            <button
-              type="button"
-              onClick={() => setEventPricingEnabled((current) => !current)}
-              className={eventPricingEnabled ? 'app-button-primary min-h-[42px] px-4 py-2.5 text-sm' : 'app-button-secondary min-h-[42px] px-4 py-2.5 text-sm'}
-            >
-              Event fiyat modu
-            </button>
-          </div>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-auto p-3">
-          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-            {filteredProducts.map((product) => {
-              const activeFlash = lastAddedId === product.id;
-              return (
-                <button
-                  key={product.id}
                   type="button"
-                  onClick={() => addProductToOrder(product, 'product-grid')}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      addProductToOrder(product, 'product-grid');
-                    }
-                  }}
-                  aria-disabled={!currentTable || !hasPermission('orders.create')}
-                  data-pos-key={product.posKey ?? product.id}
-                  data-catalog-revision={product.catalogRevision ?? ''}
-                  data-snapshot-status={getProductSnapshotStatus(product)}
-                  className={`${activeFlash ? 'border-[#60A5FA] bg-[#EFF6FF] shadow-[0_1px_2px_rgba(37,99,235,0.08),0_12px_22px_rgba(37,99,235,0.12)] pos-pop-in' : 'border-slate-200 bg-white hover:-translate-y-[1px] hover:border-slate-300 hover:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_12px_20px_rgba(15,23,42,0.08)] active:scale-[0.97]'} app-card app-card-interactive pos-product-tile flex min-h-[122px] flex-col justify-between rounded-[0.95rem] border p-3 text-left transition duration-150 ${!currentTable || !hasPermission('orders.create') ? 'cursor-not-allowed opacity-60' : ''}`}
-                  aria-label={`${normalizeProductName(product.name)} ekle`}
+                  onClick={() => setEventPricingEnabled((current) => !current)}
+                  className={eventPricingEnabled ? 'app-button-primary min-h-[42px] w-full justify-start px-3 py-2 text-sm' : 'app-button-secondary min-h-[42px] w-full justify-start px-3 py-2 text-sm'}
                 >
-                  <div className="space-y-1">
-                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-[#EFF6FF] text-[#2563EB] shadow-sm">
-                      <Plus className="h-3.5 w-3.5" />
-                    </span>
-                    <p className="line-clamp-2 font-semibold tracking-tight text-[#0F172A] text-[0.88rem]">
-                      {normalizeProductName(product.name)}
-                    </p>
-                  </div>
-
-                  <div className="pt-1">
-                    <p className="font-semibold tracking-tight text-[#2563EB] text-[1rem]">
-                      {formatGrossMoney(product.price)}
-                    </p>
-                  </div>
+                  Event fiyat modu
                 </button>
-              );
-            })}
+              </div>
+            </aside>
+
+            <div className="min-h-0 overflow-auto">
+              <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+                {filteredProducts.map((product) => {
+                  const activeFlash = lastAddedId === product.id;
+                  return (
+                    <button
+                      key={product.id}
+                      type="button"
+                      onClick={() => addProductToOrder(product, 'product-grid')}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          addProductToOrder(product, 'product-grid');
+                        }
+                      }}
+                      aria-disabled={!currentTable || !hasPermission('orders.create')}
+                      data-pos-key={product.posKey ?? product.id}
+                      data-catalog-revision={product.catalogRevision ?? ''}
+                      data-snapshot-status={getProductSnapshotStatus(product)}
+                      className={`${activeFlash ? 'border-[#60A5FA] bg-[#EFF6FF] shadow-[0_1px_2px_rgba(37,99,235,0.08),0_12px_22px_rgba(37,99,235,0.12)] pos-pop-in' : 'border-slate-200 bg-white hover:-translate-y-[1px] hover:border-slate-300 hover:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_12px_20px_rgba(15,23,42,0.08)] active:scale-[0.97]'} app-card app-card-interactive pos-product-tile flex min-h-[122px] flex-col justify-between rounded-[0.95rem] border p-3 text-left transition duration-150 ${!currentTable || !hasPermission('orders.create') ? 'cursor-not-allowed opacity-60' : ''}`}
+                      aria-label={`${normalizeProductName(product.name)} ekle`}
+                    >
+                      <div className="space-y-1">
+                        <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-[#EFF6FF] text-[#2563EB] shadow-sm">
+                          <Plus className="h-3.5 w-3.5" />
+                        </span>
+                        <p className="line-clamp-2 font-semibold tracking-tight text-[#0F172A] text-[0.88rem]">
+                          {normalizeProductName(product.name)}
+                        </p>
+                      </div>
+
+                      <div className="pt-1">
+                        <p className="font-semibold tracking-tight text-[#2563EB] text-[1rem]">
+                          {formatGrossMoney(product.price)}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
         </>

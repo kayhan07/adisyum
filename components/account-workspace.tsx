@@ -261,13 +261,24 @@ export function AccountWorkspace() {
   }
 
   function downloadAccountTemplate() {
-    const header = 'Cari Adı / Ünvan;Tip;Telefon;E-posta;Vergi No;Vergi Dairesi;Adres;Açılış Bakiyesi;Bakiye Yönü;Para Birimi;Not;Etiket / Grup';
-    const sample = 'Örnek Müşteri;müşteri;05550000000;musteri@example.com;1234567890;Kadıköy;Adres;1000;borç;TRY;Açılış bakiyesi;VIP';
-    const blob = new Blob([`${header}\n${sample}\n`], { type: 'text/csv;charset=utf-8' });
+    const rows = [
+      ['Cari Adı / Ünvan', 'Tip', 'Telefon', 'E-posta', 'Vergi No', 'Vergi Dairesi', 'Adres', 'Açılış Bakiyesi', 'Bakiye Yönü', 'Para Birimi', 'Not', 'Etiket / Grup'],
+      ['Örnek Müşteri', 'müşteri', '0555 000 00 00', 'musteri@example.com', '1234567890', 'Kadıköy', 'Adres', '1000', 'borç', 'TRY', 'Açılış bakiyesi', 'VIP'],
+    ];
+    const content = `${rows.map((row) => row.join('\t')).join('\r\n')}\r\n`;
+    const bytes = new Uint8Array(2 + content.length * 2);
+    bytes[0] = 0xff;
+    bytes[1] = 0xfe;
+    for (let index = 0; index < content.length; index += 1) {
+      const code = content.charCodeAt(index);
+      bytes[2 + index * 2] = code & 0xff;
+      bytes[3 + index * 2] = code >> 8;
+    }
+    const blob = new Blob([bytes], { type: 'application/vnd.ms-excel;charset=utf-16le' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = 'cari-hesap-import-sablonu.csv';
+    anchor.download = 'cari-hesap-import-sablonu.xls';
     anchor.click();
     URL.revokeObjectURL(url);
   }
@@ -421,13 +432,13 @@ export function AccountWorkspace() {
                 Yeni cari oluştur
               </button>
               <button type="button" onClick={downloadAccountTemplate} className="h-12 rounded-2xl border border-white/10 px-5 text-sm font-semibold text-slate-200 transition hover:bg-white/5">
-                1. Şablon indir
+                1. Şablon İndir
               </button>
               <label className="relative flex h-12 cursor-pointer items-center overflow-hidden rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-5 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/15">
-                2. Doldurulmuş şablonu yükle
+                2. Excel'den Cari Aktar
                 <input
                   type="file"
-                  accept=".csv,.txt,.tsv"
+                  accept=".csv,.txt,.tsv,.xls"
                   className="absolute inset-0 cursor-pointer opacity-0"
                   onChange={(event) => {
                     void previewAccountImport(event.target.files?.[0] ?? null);

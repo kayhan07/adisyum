@@ -1895,3 +1895,17 @@ html:not([data-theme='light']) .branch-secondary-action {
 .btn-green { background: #059669; }
 .btn-blue { background: #2563eb; }
 .btn-violet { background: #7c3aed; }
+
+@media (max-width: 640px) {
+  .app-shell-header:has(+ div .mobile-pos-focus) {
+    display: none;
+  }
+
+  .app-shell-header + div:has(.mobile-pos-focus) {
+    padding: 0.5rem !important;
+  }
+
+  .mobile-pos-focus .dark-pos {
+    gap: 0.5rem;
+  }
+}
