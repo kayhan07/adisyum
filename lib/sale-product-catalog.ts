@@ -12,6 +12,7 @@ import {
   type ProductDomainType,
 } from '@/lib/product-domain';
 import { resolveProductIdentity } from '@/lib/product-identity';
+import { normalizeProductName } from '@/lib/product-name-normalization';
 
 export type VatRate = 1 | 10 | 20;
 export type SaleUnitType = 'portion' | 'kg' | 'bottle' | 'glass';
@@ -204,7 +205,8 @@ export function normalizeStoredSaleProduct(product: Partial<StoredSaleProduct> &
   const salePrice1 = String(product.salePrice1 ?? product.salePrice ?? '0');
   const salePrice2 = String(product.salePrice2 ?? salePrice1);
   const salePrice3 = String(product.salePrice3 ?? salePrice1);
-  const identity = resolveProductIdentity(product);
+  const productName = normalizeProductName(product.name);
+  const identity = resolveProductIdentity({ ...product, name: productName });
 
   return {
     id: product.id,
@@ -218,9 +220,9 @@ export function normalizeStoredSaleProduct(product: Partial<StoredSaleProduct> &
     publishStatus: product.publishStatus ?? 'published',
     deletedAt: product.deletedAt ?? null,
     archivedAt: product.archivedAt ?? null,
-    name: product.name,
+    name: productName,
     category: product.category,
-    productType: inferProductDomainType({ name: product.name, category: product.category, explicitType: product.productType }),
+    productType: inferProductDomainType({ name: productName, category: product.category, explicitType: product.productType }),
     salesUnit: product.salesUnit ?? 'portion',
     currentStock: product.currentStock ?? '0',
     lastCountedAt: product.lastCountedAt,

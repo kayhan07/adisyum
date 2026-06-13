@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
+import { normalizeProductName } from '@/lib/product-name-normalization';
 import { requireTenant, TenantAuthError, tenantAuthErrorResponse } from '@/lib/requireTenant';
 import { invalidateRuntimePosCatalog } from '@/lib/server/runtime-pos-catalog';
 
@@ -117,7 +118,7 @@ export async function GET(request: Request) {
       branchId: tenant.branchId,
       products: products.map((product: { id: string; name: string; posKey: string | null; legacyKey: string | null; revision: number; productType: string; price: DecimalLike; vatRate: number; unitType: string; categoryId: string | null; metadata: unknown }) => ({
         id: product.id,
-        name: product.name,
+        name: normalizeProductName(product.name),
         posKey: product.posKey,
         legacyKey: product.legacyKey,
         revision: product.revision,
@@ -151,7 +152,7 @@ export async function POST(request: Request) {
       let skipped = 0;
 
       for (const [index, input] of products.entries()) {
-        const name = cleanText(input.name);
+        const name = normalizeProductName(cleanText(input.name));
         if (!name) {
           skipped += 1;
           continue;
@@ -177,6 +178,7 @@ export async function POST(request: Request) {
           const updated = await tx.product.update({
             where: { id: existing.id },
             data: {
+              name,
               categoryId,
               price,
               vatRate,

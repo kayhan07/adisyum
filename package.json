@@ -32,6 +32,7 @@
     "verify:system-admin-tenant-data-reset": "node scripts/verify-system-admin-tenant-data-reset.mjs",
     "verify:current-accounts-excel-import": "node scripts/verify-current-accounts-excel-import.mjs",
     "verify:pos-catalog-categories": "node scripts/verify-pos-catalog-categories-from-sale-products.mjs",
+    "verify:product-name-uppercase": "node scripts/verify-product-name-uppercase-normalization.mjs",
     "env:audit-production": "node scripts/audit-production-env.mjs",
     "deploy:verify-runtime": "node scripts/verify-deploy-runtime.mjs",
     "recomposition:phase1-validate": "node scripts/verify-enterprise-recomposition-phase1.mjs",

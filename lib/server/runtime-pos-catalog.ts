@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db/prisma';
 import { resolvePosFacingProductDomainType } from '@/lib/product-domain';
 import { validateProductDomainGraph } from '@/lib/product-domain-graph';
 import { resolveProductIdentity } from '@/lib/product-identity';
+import { normalizeProductName } from '@/lib/product-name-normalization';
 
 type JsonValueLike = string | number | boolean | null | Record<string, unknown> | JsonValueLike[];
 
@@ -94,6 +95,7 @@ export async function compileTenantPosCatalog(tenantId: string, branchId?: strin
   }) => {
     const categoryRow = categoryById.get(product.categoryId ?? '');
     const category = categoryRow?.name ?? 'Mutfak';
+    const productName = normalizeProductName(product.name);
     const identity = resolveProductIdentity({
       id: product.id,
       posKey: product.posKey,
@@ -101,19 +103,19 @@ export async function compileTenantPosCatalog(tenantId: string, branchId?: strin
       barcode: product.barcode,
       externalId: product.externalId,
       legacyKey: product.legacyKey,
-      name: product.name,
+      name: productName,
     });
     const productType = resolvePosFacingProductDomainType({
       id: product.id,
       posKey: identity.posKey,
-      name: product.name,
+      name: productName,
       category,
       productType: product.productType,
       price: product.price.toString(),
     });
     const graph = validateProductDomainGraph({
       id: product.id,
-      name: product.name,
+      name: productName,
       category,
       categoryId: product.categoryId,
       categoryAllowedProductTypes: categoryRow?.allowedProductTypes,
@@ -133,7 +135,7 @@ export async function compileTenantPosCatalog(tenantId: string, branchId?: strin
         branchId,
         productId: product.id,
         posKey: identity.posKey,
-        name: product.name,
+        name: productName,
         category,
         productType,
         issues: graph.issues,
@@ -147,12 +149,12 @@ export async function compileTenantPosCatalog(tenantId: string, branchId?: strin
       sku: product.sku ?? undefined,
       barcode: product.barcode ?? undefined,
       externalId: product.externalId ?? undefined,
-      legacyKey: product.legacyKey ?? product.name,
+      legacyKey: product.legacyKey ?? productName,
       revision: product.revision,
       lifecycleStatus: product.lifecycleStatus as 'active' | 'published',
       publishStatus: product.publishStatus as 'published',
       deletedAt: product.deletedAt?.toISOString() ?? null,
-      name: product.name,
+      name: productName,
       category,
       productType,
       printCategory: category,

@@ -25,6 +25,7 @@ import {
   type VatRate,
 } from '@/lib/sale-product-catalog';
 import { isSellableProductType, type SellableProductDomainType } from '@/lib/product-domain';
+import { normalizeProductName, normalizeProductNameKey } from '@/lib/product-name-normalization';
 import {
   coerceCategoryForProductType,
   getCategoryDomainDefinition,
@@ -802,7 +803,7 @@ function serverProductToSaleProduct(product: ServerBulkProduct): SaleProductCard
 
   return {
     id: product.id,
-    name: product.name,
+    name: normalizeProductName(product.name),
     category: product.category || 'Mutfak',
     productType,
     salesUnit: product.unitType === 'kg' ? 'kg' : 'portion',
@@ -844,7 +845,7 @@ function serverProductToSaleProduct(product: ServerBulkProduct): SaleProductCard
 function serverProductToRawIngredient(product: ServerBulkProduct): CreatedRawIngredient {
   return {
     id: product.id,
-    name: product.name,
+    name: normalizeProductName(product.name),
     productType: 'stock_item',
     unit: normalizeRawUnit(product.unitType || 'adet').unit,
     purchasePrice: String(product.price ?? 0),
@@ -888,18 +889,18 @@ function getCompatibleUnits(unit: Ingredient['unit']) {
 
 function buildInitialSaleProducts(storedProducts: StoredSaleProduct[] | null, includeSeedData = true) {
   const sellableStoredProducts = (storedProducts ?? []).filter((product) => isSellableProductType(product.productType));
-  const storedByName = new Map(sellableStoredProducts.map((product) => [product.name, product]));
-  const baseByName = new Map(includeSeedData ? DEFAULT_SALE_PRODUCT_BASE.map((product) => [product.name, product]) : []);
+  const storedByName = new Map(sellableStoredProducts.map((product) => [normalizeProductNameKey(product.name), product]));
+  const baseByName = new Map(includeSeedData ? DEFAULT_SALE_PRODUCT_BASE.map((product) => [normalizeProductNameKey(product.name), product]) : []);
   const seedRecipes = includeSeedData ? productRecipes : [];
-  const recipeProductNames = new Set(seedRecipes.map((recipe) => recipe.productName));
+  const recipeProductNames = new Set(seedRecipes.map((recipe) => normalizeProductNameKey(recipe.productName)));
 
   const recipeBasedProducts = seedRecipes.map((recipe) => {
     const estimatedCost = recipe.ingredients.reduce((sum, line) => {
       const stock = erpSnapshot.invoiceStockResult.stocks.find((item) => item.branchId === branchId && item.ingredientId === line.ingredientId);
       return sum + (stock?.averageCost ?? 0) * line.quantity;
     }, 0);
-    const stored = storedByName.get(recipe.productName);
-    const base = baseByName.get(recipe.productName);
+    const stored = storedByName.get(normalizeProductNameKey(recipe.productName));
+    const base = baseByName.get(normalizeProductNameKey(recipe.productName));
     const category = stored?.category ?? base?.category ?? inferCategory(recipe.productName);
     const defaultDirect = inferDirectStockDefault(recipe.productName, category);
     const defaultBottleMode = inferBarBottleGlassDefault(recipe.productName, category);
@@ -907,7 +908,7 @@ function buildInitialSaleProducts(storedProducts: StoredSaleProduct[] | null, in
 
     return {
       id: stored?.id ?? recipe.productName,
-      name: stored?.name ?? recipe.productName,
+      name: normalizeProductName(stored?.name ?? recipe.productName),
       category,
       productType: (stored?.productType === 'combo_product' ? 'combo_product' : 'sale_product') as SellableProductDomainType,
       salesUnit: stored?.salesUnit ?? 'portion',
@@ -965,14 +966,14 @@ function buildInitialSaleProducts(storedProducts: StoredSaleProduct[] | null, in
   });
 
   const storedOnlyProducts = sellableStoredProducts
-    .filter((stored) => !recipeProductNames.has(stored.name))
+    .filter((stored) => !recipeProductNames.has(normalizeProductNameKey(stored.name)))
     .map((stored) => {
       const defaultDirect = inferDirectStockDefault(stored.name, stored.category);
       const defaultBottleMode = inferBarBottleGlassDefault(stored.name, stored.category);
 
       return {
         id: stored.id,
-        name: stored.name,
+        name: normalizeProductName(stored.name),
         category: stored.category,
         productType: (stored.productType === 'combo_product' ? 'combo_product' : 'sale_product') as SellableProductDomainType,
         salesUnit: stored.salesUnit ?? 'portion',
@@ -2552,7 +2553,10 @@ function ProductsPageContent() {
     if (!selectedProduct) return;
     setSaleProducts((current) => current.map((product) => {
       if (product.id !== selectedProduct.id) return product;
-      const next = { ...product, ...patch };
+      const normalizedPatch = patch.name !== undefined
+        ? { ...patch, name: normalizeProductName(patch.name) }
+        : patch;
+      const next = { ...product, ...normalizedPatch };
       next.category = coerceCategoryForProductType(next.category, next.productType, categories);
       return next;
     }));
@@ -3426,16 +3430,16 @@ function ProductsPageContent() {
     const skippedInvalidRows = quickCreateRows.length - importRows.length;
 
     if (importWindow === 'raw') {
-      const existingNames = new Set(rawInventoryRows.map((row) => row.name.trim().toLocaleLowerCase('tr-TR')));
+      const existingNames = new Set(rawInventoryRows.map((row) => normalizeProductNameKey(row.name)));
       const createdAt = Date.now();
       const additions: CreatedRawIngredient[] = [];
       let skipped = 0;
 
       importRows.forEach((cells, index) => {
-        const name = (cells[0] ?? '').trim();
+        const name = normalizeProductName(cells[0] ?? '');
         if (!name) return;
 
-        const normalizedName = name.toLocaleLowerCase('tr-TR');
+        const normalizedName = normalizeProductNameKey(name);
         if (existingNames.has(normalizedName)) {
           skipped += 1;
           return;
@@ -3491,7 +3495,7 @@ function ProductsPageContent() {
       return;
     }
 
-    const existingNames = new Set(saleProducts.map((product) => product.name.trim().toLocaleLowerCase('tr-TR')));
+    const existingNames = new Set(saleProducts.map((product) => normalizeProductNameKey(product.name)));
     const existingCategoryKeys = new Set(categories.map((category) => category.trim().toLocaleLowerCase('tr-TR')));
     const createdAt = Date.now();
     const additions: SaleProductCard[] = [];
@@ -3499,10 +3503,10 @@ function ProductsPageContent() {
     let skipped = 0;
 
     importRows.forEach((cells, index) => {
-      const name = (cells[0] ?? '').trim();
+      const name = normalizeProductName(cells[0] ?? '');
       if (!name) return;
 
-      const normalizedName = name.toLocaleLowerCase('tr-TR');
+      const normalizedName = normalizeProductNameKey(name);
       if (existingNames.has(normalizedName)) {
         skipped += 1;
         return;
@@ -3599,21 +3603,22 @@ function ProductsPageContent() {
   }
 
   function saveNewItem() {
-    if (!newItemDraft.name.trim()) {
+    const normalizedDraftName = normalizeProductName(newItemDraft.name);
+    if (!normalizedDraftName) {
       setSavedNotes((current) => ['Urun veya hammadde adi girin.', ...current]);
       return;
     }
     const draftProductType = productTypeForCreateItemType(newItemDraft.itemType);
     const coercedCategory = coerceCategoryForProductType(newItemDraft.category, draftProductType, categories);
     const validation = validateProductDomainGraph({
-      name: newItemDraft.name.trim(),
+      name: normalizedDraftName,
       category: coercedCategory,
       productType: draftProductType,
       price: newItemDraft.salePrice,
     });
     if (!validation.ok) {
       setSavedNotes((current) => [
-        `${newItemDraft.name.trim()} oluşturulmadı: ${validation.issues.map((issue) => issue.message).join(' ')}`,
+        `${normalizedDraftName} oluşturulmadı: ${validation.issues.map((issue) => issue.message).join(' ')}`,
         ...current,
       ]);
       setNewItemDraft((current) => ({ ...current, category: coercedCategory }));
@@ -3624,7 +3629,7 @@ function ProductsPageContent() {
       const rawId = `raw-${Date.now()}`;
       const createdRaw: CreatedRawIngredient = {
         id: rawId,
-        name: newItemDraft.name.trim(),
+        name: normalizedDraftName,
         unit: newItemDraft.unit,
         purchasePrice: newItemDraft.purchasePrice,
         minimumQuantity: newItemDraft.minimumQuantity,
@@ -3649,7 +3654,7 @@ function ProductsPageContent() {
 
     if (newItemDraft.itemType === 'modifier' || newItemDraft.itemType === 'variant') {
       setSavedNotes((current) => [
-        `${newItemDraft.name.trim()} ${newItemDraft.itemType === 'modifier' ? 'modifier grubu' : 'varyant grubu'} oluşturma taslağı kaydedildi. Bu domain POS ürün kartından bağımsız tutulur.`,
+        `${normalizedDraftName} ${newItemDraft.itemType === 'modifier' ? 'modifier grubu' : 'varyant grubu'} oluşturma taslağı kaydedildi. Bu domain POS ürün kartından bağımsız tutulur.`,
         ...current,
       ]);
       setShowNewItemForm(false);
@@ -3661,14 +3666,14 @@ function ProductsPageContent() {
     const isGlassUnit = newItemDraft.salesUnit === 'glass';
     const createdProduct: SaleProductCard = {
       id: nextId,
-      name: newItemDraft.name.trim(),
+      name: normalizedDraftName,
       category: coercedCategory,
       productType: draftProductType === 'combo_product' ? 'combo_product' : 'sale_product',
       salesUnit: newItemDraft.salesUnit,
       currentStock: '0',
       lastCountedAt: undefined,
-      stockProcurementType: isGlassUnit || inferDirectStockDefault(newItemDraft.name, coercedCategory) ? 'direct' : 'recipe',
-      barStockMode: isGlassUnit || inferBarBottleGlassDefault(newItemDraft.name, coercedCategory) ? 'bottle-glass' : 'none',
+      stockProcurementType: isGlassUnit || inferDirectStockDefault(normalizedDraftName, coercedCategory) ? 'direct' : 'recipe',
+      barStockMode: isGlassUnit || inferBarBottleGlassDefault(normalizedDraftName, coercedCategory) ? 'bottle-glass' : 'none',
       glassesPerBottle: '6',
       bottleVolumeCl: '70',
       portionVolumeCl: '5',
@@ -3709,7 +3714,7 @@ function ProductsPageContent() {
   }
 
   function saveQuickSaleItem() {
-    const trimmedName = quickSaleDraft.name.trim();
+    const trimmedName = normalizeProductName(quickSaleDraft.name);
     if (!trimmedName) {
       setSavedNotes((current) => ['Hizli satis urunu adi girin.', ...current]);
       return;
@@ -3731,7 +3736,7 @@ function ProductsPageContent() {
     }
 
     const nameExists = saleProducts.some(
-      (product) => product.name.trim().toLocaleLowerCase('tr-TR') === trimmedName.toLocaleLowerCase('tr-TR'),
+      (product) => normalizeProductNameKey(product.name) === normalizeProductNameKey(trimmedName),
     );
 
     if (nameExists) {
@@ -3796,24 +3801,24 @@ function ProductsPageContent() {
 
   function buildDuplicateProductName(baseName: string) {
     const existingNames = new Set(
-      saleProducts.map((product) => product.name.trim().toLocaleLowerCase('tr-TR')),
+      saleProducts.map((product) => normalizeProductNameKey(product.name)),
     );
 
-    const firstCandidate = `${baseName} Kopya`;
-    if (!existingNames.has(firstCandidate.toLocaleLowerCase('tr-TR'))) {
+    const firstCandidate = normalizeProductName(`${baseName} Kopya`);
+    if (!existingNames.has(normalizeProductNameKey(firstCandidate))) {
       return firstCandidate;
     }
 
     let index = 2;
     while (index < 500) {
-      const candidate = `${baseName} Kopya ${index}`;
-      if (!existingNames.has(candidate.toLocaleLowerCase('tr-TR'))) {
+      const candidate = normalizeProductName(`${baseName} Kopya ${index}`);
+      if (!existingNames.has(normalizeProductNameKey(candidate))) {
         return candidate;
       }
       index += 1;
     }
 
-    return `${baseName} Kopya ${Date.now()}`;
+    return normalizeProductName(`${baseName} Kopya ${Date.now()}`);
   }
 
   function duplicateQuickSaleItem() {

@@ -39,6 +39,7 @@ import {
   type StoredSaleProduct,
 } from '@/lib/sale-product-catalog';
 import { isSellableProductType, type ProductDomainType } from '@/lib/product-domain';
+import { normalizeProductName } from '@/lib/product-name-normalization';
 import { appendStoredFinanceAccountTransaction, buildFinanceTransaction } from '@/lib/finance-runtime-store';
 import { erpAccounts, type Account } from '@/lib/erp-engine';
 import { useSeedBusinessDataEnabled } from '@/lib/tenant-clean-start';
@@ -1748,12 +1749,13 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   };
 
   const addProductToOrder = async (product: ProductCard, source: 'product-grid' | 'search' = 'product-grid') => {
+    const productName = normalizeProductName(product.name);
     console.log('[adisyon-flow] product click received', {
       source,
       tableId: currentTable?.id ?? null,
       selectedTableId,
       productId: product.id,
-      productName: product.name,
+      productName,
       canCreateOrder: Boolean(currentTable && hasPermission('orders.create')),
       isAuthenticated: sessionState.isAuthenticated,
       authLock: getRuntimeAuthFailureSnapshot(),
@@ -1762,7 +1764,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       source,
       tableId: currentTable?.id ?? selectedTableId,
       productId: product.id,
-      productName: product.name,
+      productName,
     })) {
       setFeedbackMessage('Oturum gerekli. Lütfen tekrar giriş yapın.');
       return;
@@ -1771,7 +1773,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       source,
       tableId: currentTable?.id ?? null,
       productId: product.id,
-      productName: product.name,
+      productName,
       posKey: product.posKey ?? product.id,
       catalogRevision: product.catalogRevision,
       productSnapshotStatus: getProductSnapshotStatus(product),
@@ -1853,7 +1855,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       setPosMappingWarning('');
     }
 
-    const storedProduct = storedSaleProducts.find((item) => item.id === product.id || item.name === product.name);
+    const storedProduct = storedSaleProducts.find((item) => item.id === product.id || normalizeProductName(item.name) === productName);
     const resolvedUnitPrice = storedProduct
       ? resolveSaleProductPrice(storedProduct, { at: new Date(), eventMode: eventPricingEnabled })
       : product.price;
@@ -1876,7 +1878,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
         legacyKey: product.legacyKey,
         revision: product.revision,
         productSnapshot: product.productSnapshot,
-        name: product.name,
+        name: productName,
         productType: product.productType,
         price: resolvedUnitPrice,
         category: product.category,
@@ -4421,7 +4423,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
                     className={`flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left transition hover:bg-slate-50 last:border-b-0 ${!currentTable || !hasPermission('orders.create') ? 'cursor-not-allowed opacity-60' : ''}`}
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-[#0F172A]">{product.name}</p>
+                      <p className="truncate text-sm font-semibold text-[#0F172A]">{normalizeProductName(product.name)}</p>
                       <p className="mt-1 text-xs text-slate-500">{sourceCategories.find((category) => category.id === product.category)?.label ?? 'Ürün'}</p>
                     </div>
                     <span className="shrink-0 text-sm font-semibold text-[#2563EB]">{formatGrossMoney(product.price)}</span>
@@ -4476,14 +4478,14 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
                   data-catalog-revision={product.catalogRevision ?? ''}
                   data-snapshot-status={getProductSnapshotStatus(product)}
                   className={`${activeFlash ? 'border-[#60A5FA] bg-[#EFF6FF] shadow-[0_1px_2px_rgba(37,99,235,0.08),0_12px_22px_rgba(37,99,235,0.12)] pos-pop-in' : 'border-slate-200 bg-white hover:-translate-y-[1px] hover:border-slate-300 hover:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_12px_20px_rgba(15,23,42,0.08)] active:scale-[0.97]'} app-card app-card-interactive pos-product-tile flex min-h-[122px] flex-col justify-between rounded-[0.95rem] border p-3 text-left transition duration-150 ${!currentTable || !hasPermission('orders.create') ? 'cursor-not-allowed opacity-60' : ''}`}
-                  aria-label={`${product.name} ekle`}
+                  aria-label={`${normalizeProductName(product.name)} ekle`}
                 >
                   <div className="space-y-1">
                     <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-[#EFF6FF] text-[#2563EB] shadow-sm">
                       <Plus className="h-3.5 w-3.5" />
                     </span>
                     <p className="line-clamp-2 font-semibold tracking-tight text-[#0F172A] text-[0.88rem]">
-                      {product.name}
+                      {normalizeProductName(product.name)}
                     </p>
                   </div>
 
