@@ -4317,20 +4317,16 @@ function ProductsPageContent() {
                     >
                       <Download className="h-4 w-4" /> Excel şablonunu indir
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => quickCreateFileInputRef.current?.click()}
-                      className="inline-flex h-12 items-center gap-2 rounded-2xl border border-white/10 bg-[#111827] px-4 text-sm font-semibold text-white transition hover:bg-[#172033] active:scale-[0.98]"
-                    >
+                    <label className="relative inline-flex h-12 cursor-pointer items-center gap-2 overflow-hidden rounded-2xl border border-white/10 bg-[#111827] px-4 text-sm font-semibold text-white transition hover:bg-[#172033] active:scale-[0.98]">
                       <Upload className="h-4 w-4" /> Doldurulmuş dosyayı seç
-                    </button>
-                    <input
-                      ref={quickCreateFileInputRef}
-                      type="file"
-                      accept=".xlsx,.csv,.txt"
-                      onChange={handleQuickCreateFileChange}
-                      className="hidden"
-                    />
+                      <input
+                        ref={quickCreateFileInputRef}
+                        type="file"
+                        accept=".xlsx,.csv,.txt"
+                        onChange={handleQuickCreateFileChange}
+                        className="absolute inset-0 cursor-pointer opacity-0"
+                      />
+                    </label>
                   </div>
                   <p className="mt-3 text-xs text-slate-400">
                     Dosyayı Excel’de doldurup .xlsx veya CSV olarak kaydet. Aynı şablonu tekrar içe alabilirsin.
