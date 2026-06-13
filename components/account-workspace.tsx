@@ -116,6 +116,10 @@ export function AccountWorkspace() {
   const [selectedAdisyonIds, setSelectedAdisyonIds] = useState<string[]>([]);
   const [accountDiscountInput, setAccountDiscountInput] = useState('');
   const [accountActionMessage, setAccountActionMessage] = useState('');
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<any | null>(null);
+  const [importPolicy, setImportPolicy] = useState<'skip' | 'update'>('skip');
+  const [importLoading, setImportLoading] = useState(false);
 
   const includeSeedData = useSeedBusinessDataEnabled();
   const seedAccounts = useMemo(() => includeSeedData ? erpAccounts : [], [includeSeedData]);
@@ -256,6 +260,67 @@ export function AccountWorkspace() {
     setViewMode('detail');
   }
 
+  function downloadAccountTemplate() {
+    const header = 'Cari Adı / Ünvan;Tip;Telefon;E-posta;Vergi No;Vergi Dairesi;Adres;Açılış Bakiyesi;Bakiye Yönü;Para Birimi;Not;Etiket / Grup';
+    const sample = 'Örnek Müşteri;müşteri;05550000000;musteri@example.com;1234567890;Kadıköy;Adres;1000;borç;TRY;Açılış bakiyesi;VIP';
+    const blob = new Blob([`${header}\n${sample}\n`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'cari-hesap-import-sablonu.csv';
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function runAccountImport(file: File, dryRun: boolean) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('duplicatePolicy', importPolicy);
+    formData.append('dryRun', String(dryRun));
+    const response = await fetch('/api/finance/current-accounts/import', {
+      method: 'POST',
+      credentials: 'include',
+      body: formData,
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload?.ok) {
+      throw new Error(payload?.error ?? 'Cari import yapılamadı.');
+    }
+    return payload;
+  }
+
+  async function previewAccountImport(file: File | null) {
+    if (!file) return;
+    setImportLoading(true);
+    setAccountActionMessage('');
+    setImportFile(file);
+    try {
+      const payload = await runAccountImport(file, true);
+      setImportPreview(payload);
+      setAccountActionMessage(`${payload.valid ?? 0} geçerli satır, ${payload.errors?.length ?? 0} hatalı satır bulundu.`);
+    } catch (error) {
+      setImportPreview(null);
+      setAccountActionMessage(error instanceof Error ? error.message : 'Cari import önizlemesi alınamadı.');
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
+  async function commitAccountImport() {
+    if (!importFile) return;
+    setImportLoading(true);
+    try {
+      const payload = await runAccountImport(importFile, false);
+      setAccountActionMessage(`${payload.created ?? 0} cari oluşturuldu, ${payload.updated ?? 0} güncellendi, ${payload.skipped ?? 0} atlandı, ${payload.openingMovements ?? 0} açılış hareketi oluştu.`);
+      setImportPreview(null);
+      setImportFile(null);
+    } catch (error) {
+      setAccountActionMessage(error instanceof Error ? error.message : 'Cari import yapılamadı.');
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
   if (viewMode === 'new') {
     return (
       <section className="rounded-[1.5rem] border border-white/10 bg-[#111827] shadow-[0_18px_42px_rgba(2,6,23,0.28)]">
@@ -355,8 +420,27 @@ export function AccountWorkspace() {
               <button type="button" onClick={openNewForm} className="h-12 rounded-2xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-[0_0_24px_rgba(59,130,246,0.25)] transition hover:bg-blue-500 active:scale-[0.98]">
                 Yeni cari oluştur
               </button>
+              <button type="button" onClick={downloadAccountTemplate} className="h-12 rounded-2xl border border-white/10 px-5 text-sm font-semibold text-slate-200 transition hover:bg-white/5">
+                Şablon İndir
+              </button>
+              <label className="flex h-12 cursor-pointer items-center rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-5 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/15">
+                Excel'den Cari Aktar
+                <input type="file" accept=".csv,.txt,.tsv" className="hidden" onChange={(event) => void previewAccountImport(event.target.files?.[0] ?? null)} />
+              </label>
             </div>
           </div>
+          <div className="mt-4 grid gap-3 rounded-2xl border border-white/10 bg-[#0B1220]/70 p-4 md:grid-cols-[auto_1fr_auto] md:items-center">
+            <select value={importPolicy} onChange={(event) => setImportPolicy(event.target.value as 'skip' | 'update')} className="h-11 rounded-xl border border-white/10 bg-[#111827] px-3 text-sm font-semibold text-white outline-none">
+              <option value="skip">Duplicate: atla</option>
+              <option value="update">Duplicate: güncelle</option>
+            </select>
+            <p className="text-sm text-slate-400">{importPreview ? `${importPreview.valid ?? 0} geçerli satır hazır.` : 'CSV/Excel şablonunu doldurun, dosyayı seçince önce önizleme alınır.'}</p>
+            <button disabled={!importFile || !importPreview || importLoading} type="button" onClick={() => void commitAccountImport()} className="h-11 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white disabled:opacity-50">
+              {importLoading ? 'İşleniyor...' : 'Geçerli Satırları İçe Aktar'}
+            </button>
+          </div>
+          {importPreview?.errors?.length ? <div className="mt-3 rounded-2xl border border-rose-400/30 bg-rose-500/10 p-3 text-sm text-rose-100">{importPreview.errors.slice(0, 5).map((row: any) => <p key={row.rowNumber}>Satır {row.rowNumber}: {row.message}</p>)}</div> : null}
+          {accountActionMessage ? <p className="mt-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-slate-200">{accountActionMessage}</p> : null}
         </div>
 
         <div className="p-4">

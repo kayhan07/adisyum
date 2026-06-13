@@ -11,6 +11,36 @@ import { normalizeJsonObject, toPrismaJson } from '@/lib/db/prisma-json';
 type TenantStatusLike = 'trial' | 'active' | 'suspended' | 'expired' | 'blocked' | 'demo';
 type SubscriptionStatusLike = 'trial' | 'active' | 'past_due' | 'canceled' | 'suspended' | 'expired' | 'demo';
 type JsonValue = Prisma.JsonValue;
+export type TenantDataResetModule =
+  | 'categories'
+  | 'saleProducts'
+  | 'rawMaterials'
+  | 'recipes'
+  | 'stocks'
+  | 'stockMovements'
+  | 'currentAccounts'
+  | 'currentAccountMovements'
+  | 'payments'
+  | 'cashTransactions'
+  | 'tables'
+  | 'printers'
+  | 'reports';
+
+export const TENANT_DATA_RESET_MODULES: TenantDataResetModule[] = [
+  'categories',
+  'saleProducts',
+  'rawMaterials',
+  'recipes',
+  'stocks',
+  'stockMovements',
+  'currentAccounts',
+  'currentAccountMovements',
+  'payments',
+  'cashTransactions',
+  'tables',
+  'printers',
+  'reports',
+];
 
 const ROLE_PERMISSIONS: Record<string, string[]> = {
   tenant_admin: [
@@ -113,6 +143,7 @@ export type TenantManagementInput =
       action: 'reset_tenant_data';
       tenantId: string;
       confirmationTenantId: string;
+      modules?: TenantDataResetModule[];
       requestedBy: string;
     }
   | {
@@ -1379,55 +1410,143 @@ export async function restoreTenant(input: Extract<TenantManagementInput, { acti
   });
 }
 
+function normalizeTenantDataResetModules(modules: unknown, options?: { allowAllDefault?: boolean }) {
+  if (!Array.isArray(modules) || modules.length === 0) {
+    if (options?.allowAllDefault) return [...TENANT_DATA_RESET_MODULES];
+    throw new Error('En az bir veri modülü seçilmelidir.');
+  }
+  const allowed = new Set(TENANT_DATA_RESET_MODULES);
+  const normalized = [...new Set(modules.map((module) => String(module).trim()).filter(Boolean))];
+  const invalid = normalized.filter((module) => !allowed.has(module as TenantDataResetModule));
+  if (invalid.length > 0) throw new Error(`Desteklenmeyen veri modülü: ${invalid.join(', ')}`);
+  return normalized as TenantDataResetModule[];
+}
+
+async function collectTenantDataResetCounts(db: Prisma.TransactionClient | typeof prisma, tenantId: string, modules: TenantDataResetModule[]) {
+  const counts: Record<string, number> = {};
+  const has = (module: TenantDataResetModule) => modules.includes(module);
+  if (has('reports')) counts.reports = await db.report.count({ where: { tenantId } });
+  if (has('printers')) {
+    counts.printers = await db.printer.count({ where: { tenantId } });
+    counts.printerGroups = await db.printerGroup.count({ where: { tenantId } });
+    counts.tenantPrintJobs = await db.tenantPrintJob.count({ where: { tenantId } });
+    counts.tenantDeviceRegistry = await db.tenantDeviceRegistry.count({ where: { tenantId } });
+    counts.deviceHeartbeats = await db.deviceHeartbeat.count({ where: { tenantId } });
+  }
+  if (has('tables')) {
+    counts.orderItems = await db.orderItem.count({ where: { tenantId } });
+    counts.orders = await db.order.count({ where: { tenantId } });
+    counts.posTables = await db.posTable.count({ where: { tenantId } });
+    counts.tableGroups = await db.tableGroup.count({ where: { tenantId } });
+  }
+  if (has('payments')) counts.payments = await db.payment.count({ where: { tenantId } });
+  if (has('cashTransactions')) {
+    counts.cashTransactions = await db.cashTransaction.count({ where: { tenantId } });
+    counts.cashRegisters = await db.cashRegister.count({ where: { tenantId } });
+    counts.expenses = await db.expense.count({ where: { tenantId } });
+    counts.shifts = await db.shift.count({ where: { tenantId } });
+  }
+  if (has('currentAccountMovements')) counts.currentAccountMovements = await db.currentAccountMovement.count({ where: { tenantId } });
+  if (has('currentAccounts')) {
+    counts.customers = await db.customer.count({ where: { tenantId } });
+    counts.suppliers = await db.supplier.count({ where: { tenantId } });
+  }
+  if (has('stockMovements')) counts.stockMovements = await db.stockMovement.count({ where: { tenantId } });
+  if (has('stocks')) {
+    counts.stockItems = await db.stockItem.count({ where: { tenantId } });
+    counts.warehouses = await db.warehouse.count({ where: { tenantId } });
+  }
+  if (has('recipes')) {
+    counts.recipeItems = await db.recipeItem.count({ where: { tenantId } });
+    counts.recipes = await db.recipe.count({ where: { tenantId } });
+  }
+  if (has('saleProducts')) {
+    counts.productRevisions = await db.productRevision.count({ where: { tenantId } });
+    counts.productVariants = await db.productVariant.count({ where: { tenantId } });
+    counts.saleProducts = await db.product.count({ where: { tenantId, productType: { in: ['sale_product', 'combo_product'] } } });
+  }
+  if (has('rawMaterials')) counts.rawMaterials = await db.product.count({ where: { tenantId, productType: 'stock_item' } });
+  if (has('categories')) counts.productCategories = await db.productCategory.count({ where: { tenantId } });
+  return counts;
+}
+
+export async function previewTenantBusinessDataReset(tenantIdInput: string, modulesInput: unknown) {
+  const tenantId = tenantIdInput.trim().toUpperCase();
+  if (!tenantId) throw new Error('tenantId zorunludur.');
+  const modules = normalizeTenantDataResetModules(modulesInput);
+  const existing = await prisma.tenant.findUnique({ where: { tenantId }, select: { tenantId: true, deletedAt: true } });
+  if (!existing) throw new Error('Tenant bulunamadı.');
+  if (existing.deletedAt) throw new Error('Silinmiş tenant üzerinde veri temizleme yapılamaz.');
+  return { tenantId, modules, deletedCounts: await collectTenantDataResetCounts(prisma, tenantId, modules), dryRun: true };
+}
+
 export async function resetTenantBusinessData(input: Extract<TenantManagementInput, { action: 'reset_tenant_data' }>) {
   const tenantId = input.tenantId.trim().toUpperCase();
   if (!tenantId || input.confirmationTenantId.trim().toUpperCase() !== tenantId) {
     throw new Error('Tenant veri temizleme için abone kodu doğrulaması zorunludur.');
   }
+  const modules = normalizeTenantDataResetModules(input.modules, { allowAllDefault: true });
   const existing = await prisma.tenant.findUnique({ where: { tenantId }, select: { tenantId: true, deletedAt: true, metadata: true } });
   if (!existing) throw new Error('Tenant bulunamadı.');
   if (existing.deletedAt) throw new Error('Silinmiş tenant üzerinde veri temizleme yapılamaz.');
 
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-    const deleted: Record<string, number> = {};
+    const deleted = await collectTenantDataResetCounts(tx, tenantId, modules);
     const record = async (label: string, operation: Promise<{ count: number }>) => {
       const result = await operation;
       deleted[label] = result.count;
     };
+    const has = (module: TenantDataResetModule) => modules.includes(module);
     const resetAt = new Date();
 
     await record('presenceSessions', tx.presenceSession.deleteMany({ where: { tenantId } }));
     await record('syncQueue', tx.syncQueue.deleteMany({ where: { tenantId } }));
     await record('offlineEvents', tx.offlineEvent.deleteMany({ where: { tenantId } }));
-    await record('tenantPrintJobs', tx.tenantPrintJob.deleteMany({ where: { tenantId } }));
-    await record('tenantDeviceRegistry', tx.tenantDeviceRegistry.deleteMany({ where: { tenantId } }));
-    await record('deviceHeartbeats', tx.deviceHeartbeat.deleteMany({ where: { tenantId } }));
+    if (has('printers')) {
+      await record('tenantPrintJobs', tx.tenantPrintJob.deleteMany({ where: { tenantId } }));
+      await record('tenantDeviceRegistry', tx.tenantDeviceRegistry.deleteMany({ where: { tenantId } }));
+      await record('deviceHeartbeats', tx.deviceHeartbeat.deleteMany({ where: { tenantId } }));
+      await record('printers', tx.printer.deleteMany({ where: { tenantId } }));
+      await record('printerGroups', tx.printerGroup.deleteMany({ where: { tenantId } }));
+    }
+    if (has('reports')) await record('reports', tx.report.deleteMany({ where: { tenantId } }));
+    if (has('tables')) {
+      await record('orderItems', tx.orderItem.deleteMany({ where: { tenantId } }));
+      await record('orders', tx.order.deleteMany({ where: { tenantId } }));
+      await record('posTables', tx.posTable.deleteMany({ where: { tenantId } }));
+      await record('tableGroups', tx.tableGroup.deleteMany({ where: { tenantId } }));
+    }
+    if (has('payments')) await record('payments', tx.payment.deleteMany({ where: { tenantId } }));
+    if (has('currentAccountMovements')) await record('currentAccountMovements', tx.currentAccountMovement.deleteMany({ where: { tenantId } }));
+    if (has('cashTransactions')) {
+      await record('cashTransactions', tx.cashTransaction.deleteMany({ where: { tenantId } }));
+      await record('cashRegisters', tx.cashRegister.deleteMany({ where: { tenantId } }));
+      await record('expenses', tx.expense.deleteMany({ where: { tenantId } }));
+      await record('shifts', tx.shift.deleteMany({ where: { tenantId } }));
+    }
+    if (has('currentAccounts')) {
+      await record('customers', tx.customer.deleteMany({ where: { tenantId } }));
+      await record('suppliers', tx.supplier.deleteMany({ where: { tenantId } }));
+    }
+    if (has('stockMovements')) await record('stockMovements', tx.stockMovement.deleteMany({ where: { tenantId } }));
+    if (has('stocks')) {
+      await record('stockItems', tx.stockItem.deleteMany({ where: { tenantId } }));
+      await record('warehouses', tx.warehouse.deleteMany({ where: { tenantId } }));
+    }
+    if (has('recipes')) {
+      await record('recipeItems', tx.recipeItem.deleteMany({ where: { tenantId } }));
+      await record('recipes', tx.recipe.deleteMany({ where: { tenantId } }));
+    }
+    if (has('saleProducts') || has('rawMaterials')) {
+      await record('productRevisions', tx.productRevision.deleteMany({ where: { tenantId } }));
+      await record('productVariants', tx.productVariant.deleteMany({ where: { tenantId } }));
+      await record('mediaAssets', tx.mediaAsset.deleteMany({ where: { tenantId } }));
+    }
+    if (has('saleProducts')) await record('saleProducts', tx.product.deleteMany({ where: { tenantId, productType: { in: ['sale_product', 'combo_product'] } } }));
+    if (has('rawMaterials')) await record('rawMaterials', tx.product.deleteMany({ where: { tenantId, productType: 'stock_item' } }));
+    if (has('categories')) await record('productCategories', tx.productCategory.deleteMany({ where: { tenantId } }));
     await record('templatePackImports', tx.templatePackImport.deleteMany({ where: { tenantId } }));
     await record('templateImports', tx.templateImport.deleteMany({ where: { tenantId } }));
-    await record('orderItems', tx.orderItem.deleteMany({ where: { tenantId } }));
-    await record('payments', tx.payment.deleteMany({ where: { tenantId } }));
-    await record('orders', tx.order.deleteMany({ where: { tenantId } }));
-    await record('posTables', tx.posTable.deleteMany({ where: { tenantId } }));
-    await record('tableGroups', tx.tableGroup.deleteMany({ where: { tenantId } }));
-    await record('recipeItems', tx.recipeItem.deleteMany({ where: { tenantId } }));
-    await record('recipes', tx.recipe.deleteMany({ where: { tenantId } }));
-    await record('productRevisions', tx.productRevision.deleteMany({ where: { tenantId } }));
-    await record('productVariants', tx.productVariant.deleteMany({ where: { tenantId } }));
-    await record('mediaAssets', tx.mediaAsset.deleteMany({ where: { tenantId } }));
-    await record('products', tx.product.deleteMany({ where: { tenantId } }));
-    await record('productCategories', tx.productCategory.deleteMany({ where: { tenantId } }));
-    await record('stockMovements', tx.stockMovement.deleteMany({ where: { tenantId } }));
-    await record('stockItems', tx.stockItem.deleteMany({ where: { tenantId } }));
-    await record('warehouses', tx.warehouse.deleteMany({ where: { tenantId } }));
-    await record('cashTransactions', tx.cashTransaction.deleteMany({ where: { tenantId } }));
-    await record('cashRegisters', tx.cashRegister.deleteMany({ where: { tenantId } }));
-    await record('expenses', tx.expense.deleteMany({ where: { tenantId } }));
-    await record('shifts', tx.shift.deleteMany({ where: { tenantId } }));
-    await record('customers', tx.customer.deleteMany({ where: { tenantId } }));
-    await record('suppliers', tx.supplier.deleteMany({ where: { tenantId } }));
-    await record('reports', tx.report.deleteMany({ where: { tenantId } }));
-    await record('printers', tx.printer.deleteMany({ where: { tenantId } }));
-    await record('printerGroups', tx.printerGroup.deleteMany({ where: { tenantId } }));
     await record('runtimeStates', tx.runtimeState.deleteMany({ where: { tenantId } }));
     await record('operationalMetricBuckets', tx.operationalMetricBucket.deleteMany({ where: { tenantId } }));
     await record('operationalEvents', tx.operationalEvent.deleteMany({ where: { tenantId } }));
@@ -1440,6 +1559,7 @@ export async function resetTenantBusinessData(input: Extract<TenantManagementInp
           ...metadataObject(existing.metadata),
           lastDataResetAt: resetAt.toISOString(),
           lastDataResetBy: input.requestedBy,
+          lastDataResetModules: modules,
         }),
       },
     });
@@ -1449,11 +1569,11 @@ export async function resetTenantBusinessData(input: Extract<TenantManagementInp
       action: 'system_admin_action',
       entity: 'tenant',
       entityId: tenantId,
-      metadata: compactJson({ actionName: 'system_admin_tenant_data_reset', resetAt: resetAt.toISOString(), deleted }),
+      metadata: compactJson({ actionName: 'system_admin_tenant_data_reset', resetAt: resetAt.toISOString(), modules, deleted }),
       db: tx,
     });
 
-    return { tenant, deleted, resetAt: resetAt.toISOString() };
+    return { tenant, modules, deleted, resetAt: resetAt.toISOString() };
   });
 }
 

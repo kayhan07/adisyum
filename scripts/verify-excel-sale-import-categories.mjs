@@ -23,6 +23,7 @@ function assertMatches(source, pattern, label) {
 const productsPage = read('app/products/page.tsx');
 const bulkRoute = read('app/api/products/bulk/route.ts');
 const importExcelRoute = read('app/api/products/import-excel/route.ts');
+const runtimeCatalogRoute = read('app/api/runtime/pos-catalog/route.ts');
 
 assertContains(
   productsPage,
@@ -49,6 +50,16 @@ assertContains(
   'kategori otomatik oluşturuldu',
   'Excel sale import reports automatic category creation',
 );
+assertContains(
+  productsPage,
+  'toLocaleLowerCase(\'tr-TR\')',
+  'Excel sale import normalizes Turkish category names',
+);
+assertContains(
+  productsPage,
+  'persistBulkProductsToServer(additions.map',
+  'Excel sale import persists imported products through tenant API',
+);
 
 assertContains(
   bulkRoute,
@@ -64,6 +75,21 @@ assertContains(
   bulkRoute,
   'visibleInPos: productType !== \'stock_item\'',
   'Bulk product API makes sale product categories visible in POS',
+);
+assertContains(
+  bulkRoute,
+  'tenant.tenantId',
+  'Bulk product API scopes imported categories/products to the authenticated tenant',
+);
+assertContains(
+  bulkRoute,
+  'invalidateRuntimePosCatalog',
+  'Bulk product API refreshes POS catalog/cache after import',
+);
+assertContains(
+  runtimeCatalogRoute,
+  'compileTenantPosCatalog',
+  'POS catalog route compiles tenant-scoped catalog after category import',
 );
 
 assertContains(

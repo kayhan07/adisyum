@@ -270,6 +270,21 @@ type DurableAuditRow = {
   createdAt: string;
 };
 type TenantDrawerTab = 'profile' | 'subscription' | 'password' | 'license' | 'data' | 'export' | 'danger';
+const TENANT_DATA_RESET_MODULE_OPTIONS = [
+  ['categories', 'Kategoriler'],
+  ['saleProducts', 'Satış ürünleri'],
+  ['rawMaterials', 'Hammaddeler'],
+  ['recipes', 'Reçeteler'],
+  ['stocks', 'Stok kartları'],
+  ['stockMovements', 'Stok hareketleri'],
+  ['currentAccounts', 'Cari hesaplar'],
+  ['currentAccountMovements', 'Cari hareketler'],
+  ['payments', 'Ödemeler'],
+  ['cashTransactions', 'Kasa/finans'],
+  ['tables', 'Masa/adisyon'],
+  ['printers', 'Yazıcı/cihaz'],
+  ['reports', 'Raporlar'],
+] as const;
 
 const navGroups: Array<{ label: string; items: Array<{ id: AdminModule; label: string; icon: typeof LayoutDashboard }> }> = [
   {
@@ -1596,6 +1611,9 @@ function DrawerTenantManagement({ activeTab, tenantId, tenant, presence, devices
   const [oneTimePassword, setOneTimePassword] = useState('');
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [dataResetConfirmation, setDataResetConfirmation] = useState('');
+  const [dataResetModules, setDataResetModules] = useState<string[]>([]);
+  const [dataResetPreview, setDataResetPreview] = useState<Record<string, number> | null>(null);
+  const [dataResetPreviewLoading, setDataResetPreviewLoading] = useState(false);
   const [profileDraft, setProfileDraft] = useState({
     companyName: tenant?.companyName ?? '',
     legalName: tenant?.legalName ?? '',
@@ -1611,6 +1629,8 @@ function DrawerTenantManagement({ activeTab, tenantId, tenant, presence, devices
     setManualEndsAt(tenant?.expiresAt?.slice(0, 10) ?? '');
     setDeleteConfirmation('');
     setDataResetConfirmation('');
+    setDataResetModules([]);
+    setDataResetPreview(null);
     setTempPassword('');
     setOneTimePassword('');
     setProfileDraft({
@@ -1640,6 +1660,29 @@ function DrawerTenantManagement({ activeTab, tenantId, tenant, presence, devices
     const generated = `${tenantId}-${randomPart}!`;
     setOneTimePassword(generated);
     await submitAction({ action: 'update_password', username: 'admin', temporaryPassword: generated, forcePasswordChange: true });
+  }
+  function toggleDataResetModule(module: string) {
+    setDataResetPreview(null);
+    setDataResetModules((current) => current.includes(module) ? current.filter((item) => item !== module) : [...current, module]);
+  }
+  async function previewDataReset() {
+    if (dataResetModules.length === 0) {
+      setLocalError('Temizlenecek en az bir modül seçin.');
+      return;
+    }
+    setLocalError('');
+    setDataResetPreviewLoading(true);
+    try {
+      const response = await fetch(`/api/system-admin/tenants/${encodeURIComponent(tenantId)}/reset-preview?modules=${encodeURIComponent(dataResetModules.join(','))}`, { credentials: 'include', cache: 'no-store' });
+      const payload = await response.json().catch(() => null) as { ok?: boolean; error?: string; deletedCounts?: Record<string, number> } | null;
+      if (!response.ok || !payload?.ok) {
+        setLocalError(payload?.error ?? 'Veri temizleme önizlemesi alınamadı.');
+        return;
+      }
+      setDataResetPreview(payload.deletedCounts ?? {});
+    } finally {
+      setDataResetPreviewLoading(false);
+    }
   }
   const activityHint = `${presence.length} aktif kullanıcı / ${devices.length} cihaz / ${events.length} olay / ${state.tenants.length} tenant`;
   const summaryRows = [
@@ -1757,14 +1800,31 @@ function DrawerTenantManagement({ activeTab, tenantId, tenant, presence, devices
     {activeTab === 'data' ? <div className="grid gap-5">
       <TenantDataSummary tenant={tenant} />
       <article className="rounded-[1.35rem] border border-amber-400/30 bg-amber-950/20 p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="grid gap-4">
           <div>
             <h3 className="text-lg font-semibold text-amber-100">Tenant Veri Temizleme</h3>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-amber-100/80">Bu işlem sipariş, ödeme, kasa, ürün, stok, reçete, masa, yazıcı, cihaz kuyruğu, rapor ve runtime verilerini temizler. Abone kaydı, abonelik, şube ve admin kullanıcı korunur; tenant boş veriyle yeniden kullanılabilir.</p>
           </div>
-          <div className="grid min-w-[min(100%,24rem)] gap-2">
+          <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-4">
+            {TENANT_DATA_RESET_MODULE_OPTIONS.map(([module, label]) => (
+              <label key={module} className={`flex items-center gap-3 rounded-xl border px-3 py-2 text-sm font-semibold ${dataResetModules.includes(module) ? 'border-amber-300/45 bg-amber-400/15 text-amber-100' : 'border-white/10 bg-white/5 text-slate-300'}`}>
+                <input type="checkbox" checked={dataResetModules.includes(module)} onChange={() => toggleDataResetModule(module)} />
+                {label}
+              </label>
+            ))}
+          </div>
+          {dataResetPreview ? (
+            <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
+              <p className="text-sm font-semibold text-white">Dry-run önizleme</p>
+              <div className="mt-3 grid gap-2 md:grid-cols-3">
+                {Object.entries(dataResetPreview).map(([key, value]) => <p key={key} className="flex justify-between gap-3 rounded-lg bg-white/5 px-3 py-2 text-xs"><span className="text-slate-400">{key}</span><span className="font-semibold text-white">{value}</span></p>)}
+              </div>
+            </div>
+          ) : null}
+          <div className="grid gap-2 lg:grid-cols-[1fr_auto_auto]">
             <input value={dataResetConfirmation} onChange={(event) => setDataResetConfirmation(event.target.value)} placeholder={tenantId} className="input-dark" aria-label="Tenant veri temizleme onayı" />
-            <button disabled={loading || Boolean(tenant?.deletedAt) || dataResetConfirmation.trim().toUpperCase() !== tenantId.toUpperCase()} type="button" onClick={() => submitAction({ action: 'reset_tenant_data', confirmationTenantId: dataResetConfirmation.trim() })} className="rounded-xl border border-amber-400/40 bg-amber-500/20 px-4 py-3 text-sm font-semibold text-amber-100 disabled:opacity-50">Tenant Verisini Temizle</button>
+            <button disabled={loading || dataResetPreviewLoading || dataResetModules.length === 0} type="button" onClick={() => void previewDataReset()} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold disabled:opacity-50">Dry-run Önizle</button>
+            <button disabled={loading || Boolean(tenant?.deletedAt) || dataResetModules.length === 0 || !dataResetPreview || dataResetConfirmation.trim().toUpperCase() !== tenantId.toUpperCase()} type="button" onClick={() => submitAction({ action: 'reset_tenant_data', confirmationTenantId: dataResetConfirmation.trim(), modules: dataResetModules })} className="rounded-xl border border-amber-400/40 bg-amber-500/20 px-4 py-3 text-sm font-semibold text-amber-100 disabled:opacity-50">Seçili Veriyi Temizle</button>
           </div>
         </div>
       </article>

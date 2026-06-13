@@ -277,6 +277,7 @@ export async function PATCH(request: Request) {
       notes?: string;
       active?: boolean;
       confirmationTenantId?: string;
+      modules?: Array<string>;
       operation?: 'clear_printer_mappings' | 'refresh_bridge_registration' | 'send_test_print';
     };
 
@@ -376,6 +377,7 @@ export async function PATCH(request: Request) {
         action: 'reset_tenant_data',
         tenantId: body.tenantId,
         confirmationTenantId: body.confirmationTenantId,
+        modules: body.modules as never,
         requestedBy: admin.userId,
       });
       const [tenants, jobs, provisioningMetrics] = await Promise.all([listSaasTenants(), listProvisioningJobs(), getProvisioningMetrics()]);

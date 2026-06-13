@@ -29,6 +29,8 @@
     "product:recovery-validate": "node scripts/verify-product-recovery.mjs",
     "verify:excel-sale-import-categories": "node scripts/verify-excel-sale-import-categories.mjs",
     "verify:tenant-data-reset": "node scripts/verify-system-admin-tenant-data-reset.mjs",
+    "verify:system-admin-tenant-data-reset": "node scripts/verify-system-admin-tenant-data-reset.mjs",
+    "verify:current-accounts-excel-import": "node scripts/verify-current-accounts-excel-import.mjs",
     "env:audit-production": "node scripts/audit-production-env.mjs",
     "deploy:verify-runtime": "node scripts/verify-deploy-runtime.mjs",
     "recomposition:phase1-validate": "node scripts/verify-enterprise-recomposition-phase1.mjs",
