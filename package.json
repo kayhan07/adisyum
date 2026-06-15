@@ -43,6 +43,8 @@
     "verify:tables-visible-across-devices": "node scripts/verify-tables-visible-across-devices.mjs",
     "verify:runtime-tenant-snapshot-hydration": "node scripts/verify-runtime-tenant-snapshot-hydration.mjs",
     "verify:runtime-refresh-idempotency": "node scripts/verify-runtime-refresh-idempotency.mjs",
+    "verify:runtime-snapshot-merge-preserves-domain-data": "node scripts/verify-runtime-snapshot-merge-preserves-domain-data.mjs",
+    "verify:desktop-printer-branch-activation": "node scripts/verify-desktop-printer-branch-activation.mjs",
     "diagnose:tenant-tables": "node scripts/diagnose-tenant-tables.mjs",
     "env:audit-production": "node scripts/audit-production-env.mjs",
     "deploy:verify-runtime": "node scripts/verify-deploy-runtime.mjs",

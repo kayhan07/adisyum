@@ -16,6 +16,7 @@ type RuntimeSnapshotMeta = {
 	runtimeScope: RuntimeScope;
 	snapshotVersion?: number;
 	snapshotTimestamp?: string;
+	deletedKeys?: string[];
 };
 
 const snapshots: Record<RuntimeScope, RuntimeSnapshot> = {
@@ -35,6 +36,10 @@ const activeTenantIds: Record<RuntimeScope, string> = {
 	tenant: 'anonymous',
 	'system-admin': 'system-admin',
 };
+const activeBranchIds: Record<RuntimeScope, string | null> = {
+	tenant: null,
+	'system-admin': 'system',
+};
 const LOCAL_WRITE_REFRESH_GRACE_MS = 8000;
 const TABLE_RUNTIME_KEYS = [
 	'aurelia-table-payment-requested',
@@ -42,8 +47,18 @@ const TABLE_RUNTIME_KEYS = [
 	'aurelia-table-meta',
 	'aurelia-table-state-sync-meta',
 ] as const;
+const DOMAIN_RUNTIME_KEYS = [
+	'adisyon-local-accounts',
+	'adisyon-finance-account-transactions',
+	'adisyon-sale-products',
+	'adisyon-table-layout-state',
+	'adisyon-table-reservations',
+	'aurelia-qr-pending-orders',
+	...TABLE_RUNTIME_KEYS,
+] as const;
 const TABLE_STATE_META_KEY = 'aurelia-table-state-sync-meta';
 const SNAPSHOT_META_KEY = '__adisyumRuntimeSnapshotMeta';
+const SNAPSHOT_DELETED_KEYS = '__adisyumRuntimeDeletedKeys';
 const LARGE_RUNTIME_SNAPSHOT_BYTES = 512_000;
 const TENANT_ID_JSON_FIELD_PATTERN = /"(?:tenantId|tenant_id)"\s*:\s*"([^"]+)"/g;
 const lastLocalWriteAt: Record<RuntimeScope, number> = {
@@ -82,6 +97,7 @@ function runtimeDiagnostics(scope: RuntimeScope, extra: Record<string, unknown> 
 		scope,
 		runtimeScope: scope,
 		tenantId: activeTenantIds[scope],
+		branchId: activeBranchIds[scope],
 		runtimeSnapshotVersion: readTableSnapshotVersion(snapshot)?.version ?? null,
 		snapshotKeyCount: Object.keys(snapshot).length,
 		snapshotBytes: bytes,
@@ -144,7 +160,10 @@ function currentBranchIdentity(scope: RuntimeScope) {
 
 function ensureScopeIdentity(scope: RuntimeScope) {
 	const currentIdentity = currentScopeIdentity(scope);
-	if (activeTenantIds[scope] === currentIdentity) return;
+	const currentBranchId = currentBranchIdentity(scope);
+	if (activeTenantIds[scope] === currentIdentity && activeBranchIds[scope] === currentBranchId) return;
+	const previousIdentity = activeTenantIds[scope];
+	const previousBranchId = activeBranchIds[scope];
 
 	const pending = pendingFlushes.get(scope);
 	if (pending) {
@@ -165,9 +184,13 @@ function ensureScopeIdentity(scope: RuntimeScope) {
 	lastLocalWriteAt[scope] = 0;
 	bootstrapPromises.delete(scope);
 	activeTenantIds[scope] = currentIdentity;
+	activeBranchIds[scope] = currentBranchId;
 
 	console.info('[runtime-state] scope identity changed; local snapshot cleared', runtimeDiagnostics(scope, {
+		previousIdentity,
 		currentIdentity,
+		previousBranchId,
+		currentBranchId,
 	}));
 }
 
@@ -221,6 +244,7 @@ function parseRuntimeSnapshotMeta(snapshot: RuntimeSnapshot): Partial<RuntimeSna
 			runtimeScope: runtimeScope === 'tenant' || runtimeScope === 'system-admin' ? runtimeScope : undefined,
 			snapshotVersion: Number.isFinite(Number(parsed.snapshotVersion)) ? Number(parsed.snapshotVersion) : undefined,
 			snapshotTimestamp: typeof parsed.snapshotTimestamp === 'string' ? parsed.snapshotTimestamp : undefined,
+			deletedKeys: Array.isArray(parsed.deletedKeys) ? parsed.deletedKeys.filter((key): key is string => typeof key === 'string') : undefined,
 		};
 	} catch {
 		return null;
@@ -244,6 +268,7 @@ function buildRuntimeSnapshotMeta(scope: RuntimeScope, snapshot: RuntimeSnapshot
 		runtimeScope: scope,
 		snapshotVersion: incoming?.snapshotVersion ?? stableSnapshotVersion(snapshot),
 		snapshotTimestamp: incoming?.snapshotTimestamp ?? 'normalized',
+		deletedKeys: incoming?.deletedKeys,
 	};
 }
 
@@ -255,6 +280,45 @@ function normalizeIncomingSnapshotMeta(scope: RuntimeScope, incoming: RuntimeSna
 		[SNAPSHOT_META_KEY]: JSON.stringify(meta),
 	};
 	return { snapshot: normalized, meta };
+}
+
+function readDeletedRuntimeKeys(snapshot: RuntimeSnapshot) {
+	const deleted = new Set<string>();
+	const rawDeletedKeys = snapshot[SNAPSHOT_DELETED_KEYS];
+	if (rawDeletedKeys) {
+		try {
+			const parsed = JSON.parse(rawDeletedKeys) as unknown;
+			if (Array.isArray(parsed)) {
+				for (const key of parsed) {
+					if (typeof key === 'string' && key !== SNAPSHOT_META_KEY && key !== SNAPSHOT_DELETED_KEYS) {
+						deleted.add(key);
+					}
+				}
+			}
+		} catch {
+			// Invalid tombstones are ignored; a sparse snapshot must never delete local domain data implicitly.
+		}
+	}
+	const parsedMeta = parseRuntimeSnapshotMeta(snapshot) as (Partial<RuntimeSnapshotMeta> & { deletedKeys?: unknown }) | null;
+	if (parsedMeta && Array.isArray(parsedMeta.deletedKeys)) {
+		for (const key of parsedMeta.deletedKeys) {
+			if (typeof key === 'string' && key !== SNAPSHOT_META_KEY && key !== SNAPSHOT_DELETED_KEYS) {
+				deleted.add(key);
+			}
+		}
+	}
+	return deleted;
+}
+
+function mergeRuntimeSnapshots(scope: RuntimeScope, incoming: RuntimeSnapshot) {
+	if (scope !== 'tenant') return incoming;
+	const deletedKeys = readDeletedRuntimeKeys(incoming);
+	const merged: RuntimeSnapshot = { ...snapshots[scope], ...incoming };
+	for (const key of deletedKeys) {
+		delete merged[key];
+	}
+	const normalized = normalizeIncomingSnapshotMeta(scope, merged);
+	return normalized.snapshot;
 }
 
 function snapshotIdentityMatches(scope: RuntimeScope, meta: RuntimeSnapshotMeta): { ok: true; activeTenantId: string; activeBranchId: string | null } | { ok: false; reason: 'tenant_mismatch' | 'branch_mismatch'; activeTenantId: string; activeBranchId: string | null } {
@@ -306,9 +370,9 @@ function mergeIncomingSnapshot(scope: RuntimeScope, incoming: RuntimeSnapshot, s
 			(localMeta?.version ?? 0) > incomingMeta.version ||
 			((localMeta?.version ?? 0) === incomingMeta.version && (localMeta?.updatedAtMs ?? 0) > incomingMeta.updatedAtMs));
 
-	if (!localIsNewer) return normalized.snapshot;
+	const merged = mergeRuntimeSnapshots(scope, normalized.snapshot);
+	if (!localIsNewer) return merged;
 
-	const merged = { ...normalized.snapshot };
 	for (const key of TABLE_RUNTIME_KEYS) {
 		if (snapshots[scope][key] !== undefined) {
 			merged[key] = snapshots[scope][key];
@@ -343,7 +407,7 @@ function findForeignTenantIds(snapshot: RuntimeSnapshot, currentTenantId: string
 function mergePreservingVolatileLocalKeys(scope: RuntimeScope, incoming: RuntimeSnapshot) {
 	if (scope !== 'tenant') return incoming;
 	const merged = { ...incoming };
-	for (const key of TABLE_RUNTIME_KEYS) {
+	for (const key of DOMAIN_RUNTIME_KEYS) {
 		if (snapshots[scope][key] !== undefined) {
 			merged[key] = snapshots[scope][key];
 		}
@@ -359,7 +423,7 @@ function emit(scope: RuntimeScope) {
 function getChannel(scope: RuntimeScope) {
 	if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return null;
 	ensureScopeIdentity(scope);
-	const channelKey = `${scope}:${activeTenantIds[scope]}`;
+	const channelKey = `${scope}:${activeTenantIds[scope]}:${activeBranchIds[scope] ?? 'global'}`;
 	const existing = channels.get(channelKey);
 	if (existing) return existing;
 

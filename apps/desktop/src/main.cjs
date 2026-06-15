@@ -162,6 +162,17 @@ async function cloudJson(route, init = {}) {
   return payload;
 }
 
+async function fetchActivatedSession(origin, setCookie) {
+  const response = await fetch(`${origin}/api/auth/me`, {
+    headers: {
+      cookie: setCookie.split(';')[0],
+      'user-agent': `AdisyumDesktop/${app.getVersion()}`,
+    },
+  });
+  if (!response.ok) return null;
+  return response.json().catch(() => null);
+}
+
 function stablePrinterId(printer) {
   return `printer-${crypto.createHash('sha256')
     .update([printer.name, printer.portName, printer.driverName].join('|').toLowerCase())
@@ -315,7 +326,11 @@ async function activateDevice(input) {
   const now = new Date().toISOString();
   const deviceId = ensureDeviceId();
   const localAuthToken = crypto.randomBytes(32).toString('base64url');
-  const resolvedBranchId = branchId || 'mrk';
+  const sessionPayload = await fetchActivatedSession(origin, setCookie);
+  const sessionBranchId = typeof sessionPayload?.session?.branchId === 'string'
+    ? sessionPayload.session.branchId.trim()
+    : '';
+  const resolvedBranchId = branchId || sessionBranchId || 'mrk';
 
   store.set({
     setupCompleted: true,
