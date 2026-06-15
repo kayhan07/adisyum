@@ -7,6 +7,16 @@ export type RuntimeScope = 'tenant' | 'system-admin';
 
 type RuntimeSnapshot = Record<string, string>;
 type RuntimeListener = () => void;
+type RuntimeSnapshotMeta = {
+	tenantId: string;
+	branchId: string | null;
+	tenantCode?: string | null;
+	branchName?: string | null;
+	scope: RuntimeScope;
+	runtimeScope: RuntimeScope;
+	snapshotVersion?: number;
+	snapshotTimestamp?: string;
+};
 
 const snapshots: Record<RuntimeScope, RuntimeSnapshot> = {
 	tenant: {},
@@ -33,6 +43,7 @@ const TABLE_RUNTIME_KEYS = [
 	'aurelia-table-state-sync-meta',
 ] as const;
 const TABLE_STATE_META_KEY = 'aurelia-table-state-sync-meta';
+const SNAPSHOT_META_KEY = '__adisyumRuntimeSnapshotMeta';
 const LARGE_RUNTIME_SNAPSHOT_BYTES = 512_000;
 const TENANT_ID_JSON_FIELD_PATTERN = /"(?:tenantId|tenant_id)"\s*:\s*"([^"]+)"/g;
 const lastLocalWriteAt: Record<RuntimeScope, number> = {
@@ -106,6 +117,14 @@ function currentScopeIdentity(scope: RuntimeScope) {
 	return session.isAuthenticated && session.tenantId ? session.tenantId : 'anonymous';
 }
 
+function currentBranchIdentity(scope: RuntimeScope) {
+	if (scope === 'system-admin') return 'system';
+	const session = loadSessionState();
+	return session.isAuthenticated
+		? session.activeBranchId || session.currentUser.branchId || null
+		: null;
+}
+
 function ensureScopeIdentity(scope: RuntimeScope) {
 	const currentIdentity = currentScopeIdentity(scope);
 	if (activeTenantIds[scope] === currentIdentity) return;
@@ -155,9 +174,105 @@ function readTableSnapshotVersion(snapshot: RuntimeSnapshot) {
 	}
 }
 
+function parseRuntimeSnapshotMeta(snapshot: RuntimeSnapshot): Partial<RuntimeSnapshotMeta> | null {
+	const raw = snapshot[SNAPSHOT_META_KEY];
+	if (!raw) return null;
+	try {
+		const parsed = JSON.parse(raw) as Record<string, unknown>;
+		const tenantId = typeof parsed.tenantId === 'string'
+			? parsed.tenantId
+			: typeof parsed.snapshotTenantId === 'string'
+				? parsed.snapshotTenantId
+				: '';
+		const branchId = typeof parsed.branchId === 'string'
+			? parsed.branchId
+			: typeof parsed.snapshotBranchId === 'string'
+				? parsed.snapshotBranchId
+				: null;
+		const scope = typeof parsed.scope === 'string'
+			? parsed.scope
+			: typeof parsed.snapshotScope === 'string'
+				? parsed.snapshotScope
+				: undefined;
+		const runtimeScope = typeof parsed.runtimeScope === 'string' ? parsed.runtimeScope : scope;
+		return {
+			tenantId,
+			branchId,
+			tenantCode: typeof parsed.tenantCode === 'string' ? parsed.tenantCode : null,
+			branchName: typeof parsed.branchName === 'string' ? parsed.branchName : null,
+			scope: scope === 'tenant' || scope === 'system-admin' ? scope : undefined,
+			runtimeScope: runtimeScope === 'tenant' || runtimeScope === 'system-admin' ? runtimeScope : undefined,
+			snapshotVersion: Number.isFinite(Number(parsed.snapshotVersion)) ? Number(parsed.snapshotVersion) : undefined,
+			snapshotTimestamp: typeof parsed.snapshotTimestamp === 'string' ? parsed.snapshotTimestamp : undefined,
+		};
+	} catch {
+		return null;
+	}
+}
+
+function buildRuntimeSnapshotMeta(scope: RuntimeScope, incoming?: Partial<RuntimeSnapshotMeta> | null): RuntimeSnapshotMeta {
+	const session = loadSessionState();
+	const tenantId = scope === 'system-admin'
+		? 'system-admin'
+		: incoming?.tenantId || (session.isAuthenticated ? session.tenantId : activeTenantIds[scope]);
+	const branchId = scope === 'system-admin'
+		? 'system'
+		: incoming?.branchId ?? currentBranchIdentity(scope);
+	return {
+		tenantId,
+		branchId,
+		tenantCode: incoming?.tenantCode ?? null,
+		branchName: incoming?.branchName ?? (scope === 'tenant' ? session.currentUser.branch : null),
+		scope,
+		runtimeScope: scope,
+		snapshotVersion: incoming?.snapshotVersion ?? Date.now(),
+		snapshotTimestamp: incoming?.snapshotTimestamp ?? runtimeTimestamp(),
+	};
+}
+
+function normalizeIncomingSnapshotMeta(scope: RuntimeScope, incoming: RuntimeSnapshot): { snapshot: RuntimeSnapshot; meta: RuntimeSnapshotMeta } {
+	const parsed = parseRuntimeSnapshotMeta(incoming);
+	const normalized: RuntimeSnapshot = {
+		...incoming,
+		[SNAPSHOT_META_KEY]: JSON.stringify(buildRuntimeSnapshotMeta(scope, parsed)),
+	};
+	return { snapshot: normalized, meta: buildRuntimeSnapshotMeta(scope, parsed) };
+}
+
+function snapshotIdentityMatches(scope: RuntimeScope, meta: RuntimeSnapshotMeta): { ok: true; activeTenantId: string; activeBranchId: string | null } | { ok: false; reason: 'tenant_mismatch' | 'branch_mismatch'; activeTenantId: string; activeBranchId: string | null } {
+	if (scope === 'system-admin') {
+		const ok = meta.tenantId === 'system-admin' && meta.runtimeScope === 'system-admin';
+		return ok
+			? { ok: true, activeTenantId: 'system-admin', activeBranchId: 'system' }
+			: { ok: false, reason: 'tenant_mismatch', activeTenantId: 'system-admin', activeBranchId: 'system' };
+	}
+	const activeTenantId = activeTenantIds[scope];
+	const activeBranchId = currentBranchIdentity(scope);
+	if (activeTenantId && activeTenantId !== 'anonymous' && meta.tenantId && meta.tenantId !== activeTenantId) {
+		return { ok: false, reason: 'tenant_mismatch' as const, activeTenantId, activeBranchId };
+	}
+	if (activeBranchId && meta.branchId && meta.branchId !== activeBranchId) {
+		return { ok: false, reason: 'branch_mismatch' as const, activeTenantId, activeBranchId };
+	}
+	return { ok: true as const, activeTenantId, activeBranchId };
+}
+
 function mergeIncomingSnapshot(scope: RuntimeScope, incoming: RuntimeSnapshot, source: string) {
 	if (scope !== 'tenant') return incoming;
-	const foreignTenantIds = findForeignTenantIds(incoming, activeTenantIds[scope]);
+	const normalized = normalizeIncomingSnapshotMeta(scope, incoming);
+	const identity = snapshotIdentityMatches(scope, normalized.meta);
+	if (!identity.ok) {
+		console.error('[tenant-drift] runtime snapshot rejected for tenant mismatch', runtimeDiagnostics(scope, {
+			source,
+			reason: identity.reason,
+			snapshotTenantId: normalized.meta.tenantId,
+			snapshotBranchId: normalized.meta.branchId,
+			activeTenantId: identity.activeTenantId,
+			activeBranchId: identity.activeBranchId,
+		}));
+		return snapshots[scope];
+	}
+	const foreignTenantIds = findForeignTenantIds(normalized.snapshot, activeTenantIds[scope]);
 	if (foreignTenantIds.length > 0) {
 		console.error('[tenant-drift] runtime snapshot rejected for tenant mismatch', runtimeDiagnostics(scope, {
 			source,
@@ -166,16 +281,16 @@ function mergeIncomingSnapshot(scope: RuntimeScope, incoming: RuntimeSnapshot, s
 		return snapshots[scope];
 	}
 	const localMeta = readTableSnapshotVersion(snapshots[scope]);
-	const incomingMeta = readTableSnapshotVersion(incoming);
+	const incomingMeta = readTableSnapshotVersion(normalized.snapshot);
 	const localIsNewer =
 		Boolean(localMeta) &&
 		(!incomingMeta ||
 			(localMeta?.version ?? 0) > incomingMeta.version ||
 			((localMeta?.version ?? 0) === incomingMeta.version && (localMeta?.updatedAtMs ?? 0) > incomingMeta.updatedAtMs));
 
-	if (!localIsNewer) return incoming;
+	if (!localIsNewer) return normalized.snapshot;
 
-	const merged = { ...incoming };
+	const merged = { ...normalized.snapshot };
 	for (const key of TABLE_RUNTIME_KEYS) {
 		if (snapshots[scope][key] !== undefined) {
 			merged[key] = snapshots[scope][key];
@@ -193,7 +308,8 @@ function mergeIncomingSnapshot(scope: RuntimeScope, incoming: RuntimeSnapshot, s
 function findForeignTenantIds(snapshot: RuntimeSnapshot, currentTenantId: string) {
 	if (!currentTenantId || currentTenantId === 'anonymous') return [];
 	const foreign = new Set<string>();
-	for (const value of Object.values(snapshot)) {
+	for (const [key, value] of Object.entries(snapshot)) {
+		if (key === SNAPSHOT_META_KEY) continue;
 		TENANT_ID_JSON_FIELD_PATTERN.lastIndex = 0;
 		let match: RegExpExecArray | null;
 		while ((match = TENANT_ID_JSON_FIELD_PATTERN.exec(value)) !== null) {
@@ -204,6 +320,17 @@ function findForeignTenantIds(snapshot: RuntimeSnapshot, currentTenantId: string
 		}
 	}
 	return Array.from(foreign);
+}
+
+function mergePreservingVolatileLocalKeys(scope: RuntimeScope, incoming: RuntimeSnapshot) {
+	if (scope !== 'tenant') return incoming;
+	const merged = { ...incoming };
+	for (const key of TABLE_RUNTIME_KEYS) {
+		if (snapshots[scope][key] !== undefined) {
+			merged[key] = snapshots[scope][key];
+		}
+	}
+	return merged;
 }
 
 function emit(scope: RuntimeScope) {
@@ -248,7 +375,7 @@ async function requestSnapshot(scope: RuntimeScope, method: 'GET' | 'POST' | 'DE
 		method,
 		cache: 'no-store',
 		headers: method === 'POST' ? { 'content-type': 'application/json' } : undefined,
-		body: method === 'POST' ? JSON.stringify({ state }) : undefined,
+		body: method === 'POST' ? JSON.stringify({ state: state ? normalizeIncomingSnapshotMeta(scope, state).snapshot : state }) : undefined,
 	});
 
 	if (response.status === 401 || response.status === 403) {
@@ -366,11 +493,12 @@ export async function bootstrapRuntimeScope(scope: RuntimeScope) {
 	return promise;
 }
 
-export async function refreshRuntimeScope(scope: RuntimeScope) {
+export async function refreshRuntimeScope(scope: RuntimeScope, options: { force?: boolean; preserveLocalRuntimeKeys?: boolean } = {}) {
 	if (typeof window === 'undefined') return snapshots[scope];
 	ensureScopeIdentity(scope);
 	if (isRuntimeAuthRequired()) return snapshots[scope];
-	if (dirtyScopes[scope] || persistInFlight[scope] || pendingFlushes.has(scope) || Date.now() - lastLocalWriteAt[scope] < LOCAL_WRITE_REFRESH_GRACE_MS) {
+	const localMutationActive = dirtyScopes[scope] || persistInFlight[scope] || pendingFlushes.has(scope) || Date.now() - lastLocalWriteAt[scope] < LOCAL_WRITE_REFRESH_GRACE_MS;
+	if (localMutationActive && !options.force) {
 		console.info('[runtime-state] refresh skipped during local mutation', runtimeDiagnostics(scope, {
 			ageMs: Date.now() - lastLocalWriteAt[scope],
 		}));
@@ -379,8 +507,9 @@ export async function refreshRuntimeScope(scope: RuntimeScope) {
 	const refreshStartedAt = Date.now();
 	try {
 		const snapshot = await requestSnapshot(scope, 'GET');
-		if (dirtyScopes[scope] || persistInFlight[scope] || Date.now() - lastLocalWriteAt[scope] < LOCAL_WRITE_REFRESH_GRACE_MS) return snapshots[scope];
-		const nextSnapshot = mergeIncomingSnapshot(scope, snapshot, 'refresh');
+		if (!options.force && (dirtyScopes[scope] || persistInFlight[scope] || Date.now() - lastLocalWriteAt[scope] < LOCAL_WRITE_REFRESH_GRACE_MS)) return snapshots[scope];
+		const incoming = options.preserveLocalRuntimeKeys ? mergePreservingVolatileLocalKeys(scope, snapshot) : snapshot;
+		const nextSnapshot = mergeIncomingSnapshot(scope, incoming, options.force ? 'forced-refresh' : 'refresh');
 		if (areSnapshotsEqual(snapshots[scope], nextSnapshot)) return snapshots[scope];
 		snapshots[scope] = nextSnapshot;
 		emit(scope);

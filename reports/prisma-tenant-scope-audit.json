@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-15T11:00:39.569Z",
+  "generatedAt": "2026-06-15T11:38:04.683Z",
   "mode": "strict",
   "filesScanned": 215,
   "totalTenantOwnedQueries": 277,
@@ -1046,16 +1046,16 @@
       "findings": [
         {
           "file": "app/api/runtime/state/[scope]/route.ts",
-          "line": 152,
+          "line": 162,
           "model": "runtimeState",
           "operation": "delete",
           "classification": "safe-system-admin",
           "risk": "System-admin/global access appears intentional and guarded.",
-          "snippet": "\n  state[SNAPSHOT_META_KEY] = snapshotMeta(target.tenantId, target.scope);\n  return { state, gcAction, gcReason } satisfies NormalizedSnapshot;\n}\n\nasync function applyRuntimeSnapshotGc(target: { tenantId: string; key: string }, normalized: NormalizedSnapshot) {\n  if (normalized.gcAction === 'none') return;\n  if (normalized.gcAction === 'delete') {\n    await prisma.runtimeState.delete({\n      where: runtimeStateTenantKey(target.tenantId, target.key),\n    }).catch((error: unknown) => {\n      console.warn('[runtime-state] rejected snapshot delete skipped', {\n        tenantId: target.tenantId,\n        key: target.key,\n        reason: normalized.gcReason,\n        error: error instanceof Error ? error.message : String(error),\n      });\n    });"
+          "snippet": "\n  state[SNAPSHOT_META_KEY] = snapshotMeta(target.tenantId, target.scope, target.branchId);\n  return { state, gcAction, gcReason } satisfies NormalizedSnapshot;\n}\n\nasync function applyRuntimeSnapshotGc(target: { tenantId: string; key: string }, normalized: NormalizedSnapshot) {\n  if (normalized.gcAction === 'none') return;\n  if (normalized.gcAction === 'delete') {\n    await prisma.runtimeState.delete({\n      where: runtimeStateTenantKey(target.tenantId, target.key),\n    }).catch((error: unknown) => {\n      console.warn('[runtime-state] rejected snapshot delete skipped', {\n        tenantId: target.tenantId,\n        key: target.key,\n        reason: normalized.gcReason,\n        error: error instanceof Error ? error.message : String(error),\n      });\n    });"
         },
         {
           "file": "app/api/runtime/state/[scope]/route.ts",
-          "line": 165,
+          "line": 175,
           "model": "runtimeState",
           "operation": "update",
           "classification": "safe-system-admin",
@@ -1064,7 +1064,7 @@
         },
         {
           "file": "app/api/runtime/state/[scope]/route.ts",
-          "line": 213,
+          "line": 225,
           "model": "runtimeState",
           "operation": "findUnique",
           "classification": "safe-system-admin",
@@ -1073,7 +1073,7 @@
         },
         {
           "file": "app/api/runtime/state/[scope]/route.ts",
-          "line": 261,
+          "line": 273,
           "model": "runtimeState",
           "operation": "findUnique",
           "classification": "safe-system-admin",
@@ -1082,7 +1082,7 @@
         },
         {
           "file": "app/api/runtime/state/[scope]/route.ts",
-          "line": 274,
+          "line": 286,
           "model": "runtimeState",
           "operation": "delete",
           "classification": "safe-system-admin",
@@ -1091,7 +1091,7 @@
         },
         {
           "file": "app/api/runtime/state/[scope]/route.ts",
-          "line": 281,
+          "line": 293,
           "model": "runtimeState",
           "operation": "upsert",
           "classification": "safe-system-admin",
@@ -1100,7 +1100,7 @@
         },
         {
           "file": "app/api/runtime/state/[scope]/route.ts",
-          "line": 320,
+          "line": 332,
           "model": "runtimeState",
           "operation": "delete",
           "classification": "safe-system-admin",

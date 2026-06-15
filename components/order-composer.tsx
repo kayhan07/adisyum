@@ -72,6 +72,7 @@ import {
 } from '@/lib/pos-runtime/runtime-persistence-engine';
 import { hydrateRuntimeSessionContext, traceRuntimeSessionHydrated } from '@/lib/runtime/runtime-session-engine';
 import { getRuntimeAuthFailureSnapshot, isRuntimeAuthRequired, resetRuntimeAuthFailureLock, runtimeFetch } from '@/lib/runtime/runtime-api';
+import { refreshRuntimeScope } from '@/lib/client/runtime-state';
 import { resolveStockRuntimeBranchId } from '@/lib/runtime/tenant-runtime-context';
 import {
   isRuntimeBarCategory,
@@ -873,20 +874,16 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
     setStoredCatalogProducts(buildPosCatalogFromStored(storedSaleProducts, { eventMode: eventPricingEnabled }));
   }, [eventPricingEnabled, includeSeedData, isOnline, storedSaleProducts]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const hydrateRuntimeCatalog = (source: 'initial' | 'interval' | 'focus') => {
+  const hydrateRuntimeCatalog = useCallback((source: 'initial' | 'interval' | 'focus' | 'table-select') => {
       const params = new URLSearchParams({ channel: 'pos' });
       if (activeBranchId) params.set('branchId', activeBranchId);
 
-      runtimeFetch(`/api/runtime/pos-catalog?${params.toString()}` as `/api/${string}`, {
+      return runtimeFetch(`/api/runtime/pos-catalog?${params.toString()}` as `/api/${string}`, {
         method: 'GET',
         cache: 'no-store',
       })
         .then((response) => readJsonResponse(response).then((payload) => ({ response, payload })))
         .then(({ response, payload }) => {
-          if (cancelled) return;
           const catalog = payload.catalog as { catalogRevision?: string; checksum?: string; items?: ProductCard[] } | undefined;
           if (!response.ok || !Array.isArray(catalog?.items)) {
             logOrderFlow('runtime-catalog-hydration-skipped', {
@@ -907,24 +904,32 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
             checksum: catalog.checksum,
             itemCount: catalog.items.length,
           });
+          return catalog;
         })
         .catch((error) => {
-          if (cancelled) return;
           logOrderFlow('runtime-catalog-hydration-failed', {
             source,
             branchId: activeBranchId,
             message: error instanceof Error ? error.message : String(error),
           });
+          return null;
         });
-    };
+  }, [activeBranchId]);
 
-    const handleFocus = () => hydrateRuntimeCatalog('focus');
+  useEffect(() => {
+    let cancelled = false;
+
+    const handleFocus = () => {
+      if (!cancelled) void hydrateRuntimeCatalog('focus');
+    };
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') hydrateRuntimeCatalog('focus');
+      if (!cancelled && document.visibilityState === 'visible') void hydrateRuntimeCatalog('focus');
     };
 
-    hydrateRuntimeCatalog('initial');
-    const interval = window.setInterval(() => hydrateRuntimeCatalog('interval'), 5000);
+    void hydrateRuntimeCatalog('initial');
+    const interval = window.setInterval(() => {
+      if (!cancelled) void hydrateRuntimeCatalog('interval');
+    }, 5000);
     window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleVisibility);
 
@@ -934,7 +939,7 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [activeBranchId]);
+  }, [hydrateRuntimeCatalog]);
 
   useEffect(() => {
     setOrdersByTable((current) =>
@@ -1398,6 +1403,50 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [ordersHydrated, reconcileAuthoritativeOrders, sourceProducts]);
+
+  useEffect(() => {
+    if (!selectedTableId || typeof window === 'undefined') return;
+    if (isRuntimeAuthRequired()) return;
+    let cancelled = false;
+
+    const hydrateSelectedTableContext = async () => {
+      logOrderFlow('table-selected-server-hydration-started', {
+        selectedTableId,
+        branchId: activeBranchId,
+      });
+      await Promise.all([
+        refreshRuntimeScope('tenant', { force: true, preserveLocalRuntimeKeys: true }),
+        refreshTableLayoutState().then((state) => {
+          if (!cancelled) setTableLayoutState(state);
+        }),
+        hydrateRuntimeCatalog('table-select'),
+        refreshAuthoritativeOrdersByTable<OrderLine>().then((serverOrders) => {
+          if (cancelled) return;
+          const normalized = normalizeStoredOrders(serverOrders, sourceProducts);
+          setOrdersByTable((current) => reconcileAuthoritativeOrders(current, normalized, 'manual-refresh'));
+        }),
+      ]).then(() => {
+        if (cancelled) return;
+        logOrderFlow('table-selected-server-hydration-completed', {
+          selectedTableId,
+          branchId: activeBranchId,
+        });
+      }).catch((error) => {
+        if (cancelled) return;
+        logOrderFlow('table-selected-server-hydration-failed', {
+          selectedTableId,
+          branchId: activeBranchId,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
+    };
+
+    void hydrateSelectedTableContext();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeBranchId, hydrateRuntimeCatalog, reconcileAuthoritativeOrders, selectedTableId, sourceProducts]);
 
   useEffect(() => {
     logOrderFlow('authoritative-orders-background-sync-disabled', {
