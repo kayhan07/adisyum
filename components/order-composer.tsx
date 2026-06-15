@@ -772,6 +772,8 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   const holdDelayRef = useRef<number | null>(null);
   const holdIntervalRef = useRef<number | null>(null);
   const productSearchRef = useRef<HTMLInputElement | null>(null);
+  const runtimeCatalogSignatureRef = useRef<string>('');
+  const selectedTableHydrationKeyRef = useRef<string>('');
   const lastPaymentGuardRef = useRef<{ tableId: string; total: number; at: number } | null>(null);
   const paymentInFlightRef = useRef(false);
   const lineMutationInFlightRef = useRef<Set<string>>(new Set());
@@ -895,6 +897,18 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
             });
             return;
           }
+          const catalogSignature = `${catalog.catalogRevision ?? 'no-revision'}:${catalog.checksum ?? 'no-checksum'}:${catalog.items.length}`;
+          if (runtimeCatalogSignatureRef.current === catalogSignature) {
+            logOrderFlow('runtime-catalog-hydration-noop', {
+              source,
+              branchId: activeBranchId,
+              catalogRevision: catalog.catalogRevision,
+              checksum: catalog.checksum,
+              itemCount: catalog.items.length,
+            });
+            return catalog;
+          }
+          runtimeCatalogSignatureRef.current = catalogSignature;
           setStoredSaleProducts([]);
           setStoredCatalogProducts(catalog.items);
           logOrderFlow('runtime-catalog-hydrated', {
@@ -1407,6 +1421,9 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
   useEffect(() => {
     if (!selectedTableId || typeof window === 'undefined') return;
     if (isRuntimeAuthRequired()) return;
+    const hydrationKey = `${activeBranchId || 'branch'}:${selectedTableId}`;
+    if (selectedTableHydrationKeyRef.current === hydrationKey) return;
+    selectedTableHydrationKeyRef.current = hydrationKey;
     let cancelled = false;
 
     const hydrateSelectedTableContext = async () => {

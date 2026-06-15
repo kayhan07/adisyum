@@ -42,6 +42,7 @@
     "verify:receipt-currency-summary": "node scripts/verify-receipt-currency-summary.mjs",
     "verify:tables-visible-across-devices": "node scripts/verify-tables-visible-across-devices.mjs",
     "verify:runtime-tenant-snapshot-hydration": "node scripts/verify-runtime-tenant-snapshot-hydration.mjs",
+    "verify:runtime-refresh-idempotency": "node scripts/verify-runtime-refresh-idempotency.mjs",
     "diagnose:tenant-tables": "node scripts/diagnose-tenant-tables.mjs",
     "env:audit-production": "node scripts/audit-production-env.mjs",
     "deploy:verify-runtime": "node scripts/verify-deploy-runtime.mjs",

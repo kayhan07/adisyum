@@ -111,6 +111,23 @@ function areSnapshotsEqual(first: RuntimeSnapshot, second: RuntimeSnapshot) {
 	return firstKeys.every((key) => first[key] === second[key]);
 }
 
+function stableSnapshotSignature(snapshot: RuntimeSnapshot) {
+	return Object.entries(snapshot)
+		.filter(([key]) => key !== SNAPSHOT_META_KEY)
+		.sort(([first], [second]) => first.localeCompare(second))
+		.map(([key, value]) => `${key}:${value}`)
+		.join('|');
+}
+
+function stableSnapshotVersion(snapshot: RuntimeSnapshot) {
+	let hash = 0;
+	const signature = stableSnapshotSignature(snapshot);
+	for (let index = 0; index < signature.length; index += 1) {
+		hash = ((hash << 5) - hash + signature.charCodeAt(index)) | 0;
+	}
+	return Math.abs(hash);
+}
+
 function currentScopeIdentity(scope: RuntimeScope) {
 	if (scope === 'system-admin') return 'system-admin';
 	const session = loadSessionState();
@@ -210,7 +227,7 @@ function parseRuntimeSnapshotMeta(snapshot: RuntimeSnapshot): Partial<RuntimeSna
 	}
 }
 
-function buildRuntimeSnapshotMeta(scope: RuntimeScope, incoming?: Partial<RuntimeSnapshotMeta> | null): RuntimeSnapshotMeta {
+function buildRuntimeSnapshotMeta(scope: RuntimeScope, snapshot: RuntimeSnapshot, incoming?: Partial<RuntimeSnapshotMeta> | null): RuntimeSnapshotMeta {
 	const session = loadSessionState();
 	const tenantId = scope === 'system-admin'
 		? 'system-admin'
@@ -225,18 +242,19 @@ function buildRuntimeSnapshotMeta(scope: RuntimeScope, incoming?: Partial<Runtim
 		branchName: incoming?.branchName ?? (scope === 'tenant' ? session.currentUser.branch : null),
 		scope,
 		runtimeScope: scope,
-		snapshotVersion: incoming?.snapshotVersion ?? Date.now(),
-		snapshotTimestamp: incoming?.snapshotTimestamp ?? runtimeTimestamp(),
+		snapshotVersion: incoming?.snapshotVersion ?? stableSnapshotVersion(snapshot),
+		snapshotTimestamp: incoming?.snapshotTimestamp ?? 'normalized',
 	};
 }
 
 function normalizeIncomingSnapshotMeta(scope: RuntimeScope, incoming: RuntimeSnapshot): { snapshot: RuntimeSnapshot; meta: RuntimeSnapshotMeta } {
 	const parsed = parseRuntimeSnapshotMeta(incoming);
+	const meta = buildRuntimeSnapshotMeta(scope, incoming, parsed);
 	const normalized: RuntimeSnapshot = {
 		...incoming,
-		[SNAPSHOT_META_KEY]: JSON.stringify(buildRuntimeSnapshotMeta(scope, parsed)),
+		[SNAPSHOT_META_KEY]: JSON.stringify(meta),
 	};
-	return { snapshot: normalized, meta: buildRuntimeSnapshotMeta(scope, parsed) };
+	return { snapshot: normalized, meta };
 }
 
 function snapshotIdentityMatches(scope: RuntimeScope, meta: RuntimeSnapshotMeta): { ok: true; activeTenantId: string; activeBranchId: string | null } | { ok: false; reason: 'tenant_mismatch' | 'branch_mismatch'; activeTenantId: string; activeBranchId: string | null } {
@@ -330,6 +348,7 @@ function mergePreservingVolatileLocalKeys(scope: RuntimeScope, incoming: Runtime
 			merged[key] = snapshots[scope][key];
 		}
 	}
+	if (areSnapshotsEqual(merged, incoming)) return incoming;
 	return merged;
 }
 

@@ -33,10 +33,27 @@ type NormalizedSnapshot = {
   gcReason?: string;
 };
 
-function snapshotMeta(tenantId: string, scope: string, branchId?: string | null) {
+function stableSnapshotSignature(state: Record<string, string>) {
+  return Object.entries(state)
+    .filter(([key]) => key !== SNAPSHOT_META_KEY)
+    .sort(([first], [second]) => first.localeCompare(second))
+    .map(([key, value]) => `${key}:${value}`)
+    .join('|');
+}
+
+function stableSnapshotVersion(state: Record<string, string>) {
+  let hash = 0;
+  const signature = stableSnapshotSignature(state);
+  for (let index = 0; index < signature.length; index += 1) {
+    hash = ((hash << 5) - hash + signature.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash);
+}
+
+function snapshotMeta(tenantId: string, scope: string, branchId: string | null | undefined, state: Record<string, string>, existing?: ReturnType<typeof parseSnapshotMeta> | null) {
   return JSON.stringify({
-    snapshotVersion: Date.now(),
-    snapshotTimestamp: new Date().toISOString(),
+    snapshotVersion: existing?.snapshotVersion ?? stableSnapshotVersion(state),
+    snapshotTimestamp: existing?.snapshotTimestamp ?? 'normalized',
     tenantId,
     branchId: branchId ?? null,
     scope,
@@ -63,6 +80,8 @@ function parseSnapshotMeta(raw: string | undefined) {
           ? parsed.branchId
           : '',
       snapshotScope: typeof parsed.snapshotScope === 'string' ? parsed.snapshotScope : '',
+      snapshotVersion: Number.isFinite(Number(parsed.snapshotVersion)) ? Number(parsed.snapshotVersion) : undefined,
+      snapshotTimestamp: timestamp || undefined,
       snapshotSchemaVersion: Number(parsed.snapshotSchemaVersion),
       snapshotTimestampMs: Number.isFinite(timestampMs) ? timestampMs : 0,
     };
@@ -131,7 +150,7 @@ function normalizeSnapshot(input: unknown, target: { tenantId: string; branchId?
 
   const rawSaleProducts = state[SALE_PRODUCTS_RUNTIME_KEY];
   if (!rawSaleProducts) {
-    state[SNAPSHOT_META_KEY] = snapshotMeta(target.tenantId, target.scope, target.branchId);
+    state[SNAPSHOT_META_KEY] = snapshotMeta(target.tenantId, target.scope, target.branchId, state, meta);
     return { state, gcAction, gcReason } satisfies NormalizedSnapshot;
   }
 
@@ -152,7 +171,7 @@ function normalizeSnapshot(input: unknown, target: { tenantId: string; branchId?
     gcReason = 'invalid_sale_product_snapshot';
   }
 
-  state[SNAPSHOT_META_KEY] = snapshotMeta(target.tenantId, target.scope, target.branchId);
+  state[SNAPSHOT_META_KEY] = snapshotMeta(target.tenantId, target.scope, target.branchId, state, meta);
   return { state, gcAction, gcReason } satisfies NormalizedSnapshot;
 }
 
