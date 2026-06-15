@@ -1,15 +1,15 @@
 {
   "summary": {
-    "totalRoutes": 80,
+    "totalRoutes": 83,
     "byClass": {
       "auth-bootstrap": 18,
-      "tenant-protected": 40,
+      "tenant-protected": 41,
       "internal-protected": 1,
       "public-safe": 4,
-      "system-admin-protected": 17
+      "system-admin-protected": 19
     },
     "unsafeCandidates": 0,
-    "generatedAt": "2026-06-10T10:30:31.363Z",
+    "generatedAt": "2026-06-15T09:15:22.219Z",
     "mode": "strict"
   },
   "routes": [
@@ -397,6 +397,32 @@
       "meta": {
         "hasPrisma": true,
         "hasTenantOwnedModel": true,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": true,
+        "hasRequireSystemAdmin": false,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/finance/current-accounts/import/route.ts",
+      "classification": "tenant-protected",
+      "guardSignals": [
+        "requireTenant"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "findMany",
+        "update(",
+        "upsert(",
+        "create("
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": true,
+        "hasTenantOwnedModel": false,
         "hasTenantIdFromInput": false,
         "hasBranchIdFromInput": false,
         "hasSessionGuard": false,
@@ -952,8 +978,10 @@
         "request.json()",
         "findMany",
         "findFirst",
+        "findUnique",
+        "update(",
         "updateMany",
-        "upsert("
+        "create("
       ],
       "reasons": [],
       "meta": {
@@ -1721,6 +1749,51 @@
       ],
       "riskSignals": [
         "request.json()"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": true,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/system-admin/tenants/[tenantId]/reset-data/route.ts",
+      "classification": "system-admin-protected",
+      "guardSignals": [
+        "requireSystemAdmin"
+      ],
+      "riskSignals": [
+        "tenantId",
+        "request.json()"
+      ],
+      "reasons": [],
+      "meta": {
+        "hasPrisma": false,
+        "hasTenantOwnedModel": false,
+        "hasTenantIdFromInput": false,
+        "hasBranchIdFromInput": false,
+        "hasSessionGuard": false,
+        "hasRequireTenant": false,
+        "hasRequireSystemAdmin": true,
+        "hasAssertTenantAccess": false,
+        "hasInternalSecret": false
+      }
+    },
+    {
+      "file": "app/api/system-admin/tenants/[tenantId]/reset-preview/route.ts",
+      "classification": "system-admin-protected",
+      "guardSignals": [
+        "requireSystemAdmin"
+      ],
+      "riskSignals": [
+        "tenantId"
       ],
       "reasons": [],
       "meta": {

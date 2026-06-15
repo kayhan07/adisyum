@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { normalizeProductName } from '@/lib/product-name-normalization';
 import { requireTenant, TenantAuthError, tenantAuthErrorResponse } from '@/lib/requireTenant';
+import { publishTenantEvent } from '@/lib/realtime/tenant-events';
 import { invalidateRuntimePosCatalog } from '@/lib/server/runtime-pos-catalog';
 
 export const runtime = 'nodejs';
@@ -149,6 +150,10 @@ export async function POST(request: Request) {
 
     const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const saved = [];
+      const categories = new Set<string>();
+      const productTypes = new Set<string>();
+      let createdCount = 0;
+      let updatedCount = 0;
       let skipped = 0;
 
       for (const [index, input] of products.entries()) {
@@ -159,6 +164,8 @@ export async function POST(request: Request) {
         }
 
         const productType = normalizeProductType(input.productType);
+        productTypes.add(productType);
+        categories.add(cleanText(input.category, productType === 'stock_item' ? 'Hammadde' : 'Mutfak'));
         const categoryId = await findOrCreateCategory(tx, tenant.tenantId, input.category ?? '', productType);
         const existing = await tx.product.findFirst({
           where: {
@@ -196,6 +203,7 @@ export async function POST(request: Request) {
             select: { id: true, name: true, posKey: true, revision: true },
           });
           saved.push(updated);
+          updatedCount += 1;
           continue;
         }
 
@@ -223,9 +231,10 @@ export async function POST(request: Request) {
           select: { id: true, name: true, posKey: true, revision: true },
         });
         saved.push(created);
+        createdCount += 1;
       }
 
-      return { saved, skipped };
+      return { saved, skipped, createdCount, updatedCount, categories: [...categories], productTypes: [...productTypes] };
     });
 
     await invalidateRuntimePosCatalog(tenant.tenantId, 'product-bulk-import', tenant.branchId).catch((error) => {
@@ -236,12 +245,43 @@ export async function POST(request: Request) {
       });
     });
 
+    const source = body?.source ?? 'excel-import';
+    const eventType = source === 'excel-import'
+      ? 'product.imported'
+      : result.createdCount > 0 && result.updatedCount === 0
+        ? 'product.created'
+        : result.updatedCount > 0 && result.createdCount === 0
+          ? 'product.updated'
+          : 'product.imported';
+
+    await publishTenantEvent(tenant.tenantId, 'products', {
+      type: eventType,
+      source,
+      branchId: tenant.branchId,
+      savedCount: result.saved.length,
+      skippedCount: result.skipped,
+      createdCount: result.createdCount,
+      updatedCount: result.updatedCount,
+      categories: result.categories,
+      productTypes: result.productTypes,
+      catalogInvalidationRequired: true,
+      runtimeCacheCleared: true,
+    }).catch((error) => {
+      console.warn('[products] tenant product event publish failed after bulk save', {
+        tenantId: tenant.tenantId,
+        branchId: tenant.branchId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+
     return NextResponse.json({
       ok: true,
       tenantId: tenant.tenantId,
       branchId: tenant.branchId,
       savedCount: result.saved.length,
       skippedCount: result.skipped,
+      createdCount: result.createdCount,
+      updatedCount: result.updatedCount,
       products: result.saved,
     });
   } catch (error) {

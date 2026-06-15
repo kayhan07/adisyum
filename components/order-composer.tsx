@@ -843,6 +843,12 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
   useEffect(() => {
     const refreshStoredProducts = () => {
+      if (isOnline) {
+        setStoredSaleProducts([]);
+        setStoredCatalogProducts([]);
+        return;
+      }
+
       const stored = loadStoredSaleProducts();
       if (stored?.length) {
         setStoredSaleProducts((current) => (JSON.stringify(current) === JSON.stringify(stored) ? current : stored));
@@ -856,64 +862,79 @@ export function OrderComposer({ initialTableId, autoOpenPayment = false }: Order
 
     refreshStoredProducts();
     return subscribeToStoredSaleProductsChanges(refreshStoredProducts);
-  }, [eventPricingEnabled, includeSeedData]);
+  }, [eventPricingEnabled, includeSeedData, isOnline]);
 
   useEffect(() => {
+    if (isOnline) return;
     if (!storedSaleProducts.length) {
       setStoredCatalogProducts(includeSeedData ? getDefaultPosCatalog() : []);
       return;
     }
     setStoredCatalogProducts(buildPosCatalogFromStored(storedSaleProducts, { eventMode: eventPricingEnabled }));
-  }, [eventPricingEnabled, includeSeedData, storedSaleProducts]);
+  }, [eventPricingEnabled, includeSeedData, isOnline, storedSaleProducts]);
 
   useEffect(() => {
     let cancelled = false;
-    const params = new URLSearchParams({ channel: 'pos' });
-    if (activeBranchId) params.set('branchId', activeBranchId);
 
-    runtimeFetch(`/api/runtime/pos-catalog?${params.toString()}` as `/api/${string}`, {
-      method: 'GET',
-      cache: 'no-store',
-    })
-      .then((response) => readJsonResponse(response).then((payload) => ({ response, payload })))
-      .then(({ response, payload }) => {
-        if (cancelled) return;
-        const catalog = payload.catalog as { catalogRevision?: string; checksum?: string; items?: ProductCard[] } | undefined;
-        if (!response.ok || !Array.isArray(catalog?.items)) {
-          logOrderFlow('runtime-catalog-hydration-skipped', {
-            status: response.status,
-            itemCount: catalog?.items?.length ?? 0,
-            error: payload.error,
-            message: payload.message,
-          });
-          return;
-        }
-        if (catalog.items.length === 0) {
-          const localCreatedProducts = (loadStoredSaleProducts() ?? []).filter((product) => product.source === 'created');
-          setStoredSaleProducts(localCreatedProducts);
-          setStoredCatalogProducts(buildPosCatalogFromStored(localCreatedProducts, { eventMode: eventPricingEnabled }));
-        } else {
-          setStoredCatalogProducts(catalog.items);
-        }
-        logOrderFlow('runtime-catalog-hydrated', {
-          branchId: activeBranchId,
-          catalogRevision: catalog.catalogRevision,
-          checksum: catalog.checksum,
-          itemCount: catalog.items.length,
-        });
+    const hydrateRuntimeCatalog = (source: 'initial' | 'interval' | 'focus') => {
+      const params = new URLSearchParams({ channel: 'pos' });
+      if (activeBranchId) params.set('branchId', activeBranchId);
+
+      runtimeFetch(`/api/runtime/pos-catalog?${params.toString()}` as `/api/${string}`, {
+        method: 'GET',
+        cache: 'no-store',
       })
-      .catch((error) => {
-        if (cancelled) return;
-        logOrderFlow('runtime-catalog-hydration-failed', {
-          branchId: activeBranchId,
-          message: error instanceof Error ? error.message : String(error),
+        .then((response) => readJsonResponse(response).then((payload) => ({ response, payload })))
+        .then(({ response, payload }) => {
+          if (cancelled) return;
+          const catalog = payload.catalog as { catalogRevision?: string; checksum?: string; items?: ProductCard[] } | undefined;
+          if (!response.ok || !Array.isArray(catalog?.items)) {
+            logOrderFlow('runtime-catalog-hydration-skipped', {
+              source,
+              status: response.status,
+              itemCount: catalog?.items?.length ?? 0,
+              error: payload.error,
+              message: payload.message,
+            });
+            return;
+          }
+          setStoredSaleProducts([]);
+          setStoredCatalogProducts(catalog.items);
+          logOrderFlow('runtime-catalog-hydrated', {
+            source,
+            branchId: activeBranchId,
+            catalogRevision: catalog.catalogRevision,
+            checksum: catalog.checksum,
+            itemCount: catalog.items.length,
+          });
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          logOrderFlow('runtime-catalog-hydration-failed', {
+            source,
+            branchId: activeBranchId,
+            message: error instanceof Error ? error.message : String(error),
+          });
         });
-      });
+    };
+
+    const handleFocus = () => hydrateRuntimeCatalog('focus');
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') hydrateRuntimeCatalog('focus');
+    };
+
+    hydrateRuntimeCatalog('initial');
+    const interval = window.setInterval(() => hydrateRuntimeCatalog('interval'), 5000);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
       cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [activeBranchId, eventPricingEnabled]);
+  }, [activeBranchId]);
 
   useEffect(() => {
     setOrdersByTable((current) =>

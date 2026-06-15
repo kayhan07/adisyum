@@ -1197,6 +1197,7 @@ function ProductsPageContent() {
     salePrice: '0',
     vatRate: 10 as VatRate,
   });
+  const [serverRefreshNonce, setServerRefreshNonce] = useState(0);
   const [quickDuplicateSourceId, setQuickDuplicateSourceId] = useState('');
   const [quickDuplicateMode, setQuickDuplicateMode] = useState<'full' | 'price-only'>('full');
   const [quickDuplicateWithRecipe, setQuickDuplicateWithRecipe] = useState(true);
@@ -2270,7 +2271,25 @@ function ProductsPageContent() {
     void hydrateServerProducts();
 
     return () => controller.abort();
-  }, [hydrated, includeSeedData, recipePool]);
+  }, [hydrated, includeSeedData, recipePool, serverRefreshNonce]);
+
+  useEffect(() => {
+    if (!hydrated || typeof window === 'undefined') return;
+    const triggerServerRefresh = () => refreshServerProducts();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') triggerServerRefresh();
+    };
+
+    const interval = window.setInterval(triggerServerRefresh, 5000);
+    window.addEventListener('focus', triggerServerRefresh);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', triggerServerRefresh);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [hydrated]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -2563,10 +2582,55 @@ function ProductsPageContent() {
     }));
   }
 
-  function deleteSelectedProduct() {
+  async function saveSelectedProductToServer() {
+    if (!selectedProduct) return;
+    try {
+      await persistBulkProductsToServer([{
+        id: selectedProduct.id,
+        name: selectedProduct.name,
+        category: selectedProduct.category,
+        productType: selectedProduct.productType === 'combo_product' ? 'combo_product' : 'sale_product',
+        price: selectedProduct.salePrice1 || selectedProduct.salePrice,
+        vatRate: selectedProduct.vatRate,
+        unitType: selectedProduct.salesUnit,
+      }], 'manual-update');
+      refreshServerProducts();
+      setSavedNotes((current) => [`${selectedProduct.name} kartı server kataloğuna kaydedildi.`, ...current]);
+    } catch (error) {
+      setSavedNotes((current) => [
+        error instanceof Error ? error.message : 'Ürün server tarafına kaydedilemedi.',
+        ...current,
+      ]);
+    }
+  }
+
+  async function deleteSelectedProduct() {
     if (!selectedProduct) return;
     const confirmed = window.confirm(`${selectedProduct.name} ürününü silmek istiyor musunuz? Bu ürün masalarda yeni satış için görünmez.`);
     if (!confirmed) return;
+
+    const localOnlyProduct = selectedProduct.id.startsWith('created-') || selectedProduct.id.startsWith('quick-sale-') || selectedProduct.id.startsWith('sale-bulk-');
+    if (!localOnlyProduct) {
+      try {
+        const response = await fetch('/api/products/lifecycle', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          credentials: 'include',
+          cache: 'no-store',
+          body: JSON.stringify({ productId: selectedProduct.id, action: 'delete', force: true }),
+        });
+        const payload = await response.json().catch(() => null) as { ok?: boolean; error?: string } | null;
+        if (!response.ok || !payload?.ok) {
+          throw new Error(payload?.error ?? 'Ürün server tarafında silinemedi.');
+        }
+      } catch (error) {
+        setSavedNotes((current) => [
+          error instanceof Error ? error.message : 'Ürün server tarafında silinemedi.',
+          ...current,
+        ]);
+        return;
+      }
+    }
 
     setSaleProducts((current) => {
       const nextProducts = current.filter((product) => product.id !== selectedProduct.id);
@@ -2578,6 +2642,7 @@ function ProductsPageContent() {
       delete next[selectedProduct.id];
       return next;
     });
+    refreshServerProducts();
     setSavedNotes((current) => [`${selectedProduct.name} satış ürünü silindi.`, ...current]);
   }
 
@@ -3409,7 +3474,11 @@ function ProductsPageContent() {
     event.target.value = '';
   }
 
-  async function persistBulkProductsToServer(products: BulkProductInput[]) {
+  function refreshServerProducts() {
+    setServerRefreshNonce((current) => current + 1);
+  }
+
+  async function persistBulkProductsToServer(products: BulkProductInput[], source = 'excel-import') {
     if (products.length === 0) return { savedCount: 0 };
 
     const response = await fetch('/api/products/bulk', {
@@ -3417,7 +3486,7 @@ function ProductsPageContent() {
       headers: { 'content-type': 'application/json' },
       credentials: 'include',
       cache: 'no-store',
-      body: JSON.stringify({ source: 'excel-import', products }),
+      body: JSON.stringify({ source, products }),
     });
     const payload = await response.json().catch(() => null) as { ok?: boolean; savedCount?: number; error?: string } | null;
     if (!response.ok || !payload?.ok) {
@@ -3486,6 +3555,7 @@ function ProductsPageContent() {
           })));
           setCreatedRawIngredients((current) => [...additions, ...current]);
           setSelectedRawId(additions[0].id);
+          refreshServerProducts();
         } catch (error) {
           console.error('[products] raw excel import server save failed', error);
           setSavedNotes((current) => [
@@ -3594,6 +3664,7 @@ function ProductsPageContent() {
           saveStoredProductCategories(nextCategories);
           return nextCategories;
         });
+        refreshServerProducts();
       } catch (error) {
         console.error('[products] sale excel import server save failed', error);
         setSavedNotes((current) => [
@@ -3612,7 +3683,7 @@ function ProductsPageContent() {
     setBulkFileNames((current) => ({ ...current, sale: '' }));
   }
 
-  function saveNewItem() {
+  async function saveNewItem() {
     const normalizedDraftName = normalizeProductName(newItemDraft.name);
     if (!normalizedDraftName) {
       setSavedNotes((current) => ['Urun veya hammadde adi girin.', ...current]);
@@ -3714,16 +3785,34 @@ function ProductsPageContent() {
       operationalCost: '0',
       source: 'created',
     };
+    try {
+      await persistBulkProductsToServer([{
+        id: createdProduct.id,
+        name: createdProduct.name,
+        category: createdProduct.category,
+        productType: createdProduct.productType === 'combo_product' ? 'combo_product' : 'sale_product',
+        price: createdProduct.salePrice1 || createdProduct.salePrice,
+        vatRate: createdProduct.vatRate,
+        unitType: createdProduct.salesUnit,
+      }], 'manual-create');
+    } catch (error) {
+      setSavedNotes((current) => [
+        error instanceof Error ? error.message : 'Satış ürünü server tarafına kaydedilemedi.',
+        ...current,
+      ]);
+      return;
+    }
     setSaleProducts((current) => [createdProduct, ...current]);
     setCategories((current) => current.some((category) => category.toLocaleLowerCase('tr-TR') === coercedCategory.toLocaleLowerCase('tr-TR')) ? current : [...current, coercedCategory]);
     setSelectedProductId(nextId);
     setSavedNotes((current) => [`${createdProduct.name} satış ürünü oluşturuldu. Şimdi reçetesini ekleyebilirsin.`, ...current]);
+    refreshServerProducts();
     changeActiveWindow('sale');
     setShowNewItemForm(false);
     resetNewItemDraft('sale');
   }
 
-  function saveQuickSaleItem() {
+  async function saveQuickSaleItem() {
     const trimmedName = normalizeProductName(quickSaleDraft.name);
     if (!trimmedName) {
       setSavedNotes((current) => ['Hizli satis urunu adi girin.', ...current]);
@@ -3797,6 +3886,24 @@ function ProductsPageContent() {
       source: 'created',
     };
 
+    try {
+      await persistBulkProductsToServer([{
+        id: createdProduct.id,
+        name: createdProduct.name,
+        category: createdProduct.category,
+        productType: 'sale_product',
+        price: createdProduct.salePrice1 || createdProduct.salePrice,
+        vatRate: createdProduct.vatRate,
+        unitType: createdProduct.salesUnit,
+      }], 'manual-create');
+    } catch (error) {
+      setSavedNotes((current) => [
+        error instanceof Error ? error.message : 'Satış ürünü server tarafına kaydedilemedi.',
+        ...current,
+      ]);
+      return;
+    }
+
     setSaleProducts((current) => [createdProduct, ...current]);
     setSelectedProductId(nextId);
     setCategories((current) => {
@@ -3806,6 +3913,7 @@ function ProductsPageContent() {
       return [...current, quickCategory];
     });
     setQuickSaleDraft((current) => ({ ...current, name: '', salePrice: '0' }));
+    refreshServerProducts();
     setSavedNotes((current) => [`${trimmedName} hızlı ekleme ile satış ürünlerine eklendi.`, ...current]);
   }
 
@@ -5093,7 +5201,7 @@ function ProductsPageContent() {
             <article className="rounded-[1.75rem] border border-white/10 bg-[#111827] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_18px_42px_rgba(2,6,23,0.28)]">
               {selectedProduct ? (
                 <>
-                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.24em] text-blue-300">Ürün kartı ve reçete</p><h2 className="mt-2 text-2xl font-semibold text-white">{selectedProduct.name}</h2><p className="mt-2 text-sm leading-6 text-slate-400">Satış ürünü bilgileri ile reçete yönetimi tek yerde. Reçete kalemleri sadece hammadde stokundan seçilir.</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setSavedNotes((current) => [`${selectedProduct.name} kartı güncellendi.`, ...current])} className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-500 active:scale-[0.98]"><Save className="h-4 w-4" /> Kaydet</button><button type="button" onClick={deleteSelectedProduct} className="inline-flex items-center gap-2 rounded-2xl border border-rose-400/30 bg-rose-500/15 px-4 py-3 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/25 active:scale-[0.98]"><Trash2 className="h-4 w-4" /> Ürünü Sil</button></div></div>
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.24em] text-blue-300">Ürün kartı ve reçete</p><h2 className="mt-2 text-2xl font-semibold text-white">{selectedProduct.name}</h2><p className="mt-2 text-sm leading-6 text-slate-400">Satış ürünü bilgileri ile reçete yönetimi tek yerde. Reçete kalemleri sadece hammadde stokundan seçilir.</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={saveSelectedProductToServer} className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-500 active:scale-[0.98]"><Save className="h-4 w-4" /> Kaydet</button><button type="button" onClick={deleteSelectedProduct} className="inline-flex items-center gap-2 rounded-2xl border border-rose-400/30 bg-rose-500/15 px-4 py-3 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/25 active:scale-[0.98]"><Trash2 className="h-4 w-4" /> Ürünü Sil</button></div></div>
 
                   <div className="mt-5 space-y-4">
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1.1fr)_220px_minmax(0,1fr)_220px]">
