@@ -1,8 +1,10 @@
 'use client';
 
 import type { AccountTransaction, AccountTransactionType } from '@/lib/erp-engine';
+import type { Account } from '@/lib/erp-engine';
 import { readRuntimeItem, subscribeRuntimeScope, writeRuntimeItem } from '@/lib/client/runtime-state';
 import { runtimeFetch } from '@/lib/runtime/runtime-api';
+import { saveStoredAccounts } from '@/lib/account-store';
 
 const FINANCE_INVOICES_KEY = 'adisyon-finance-invoices';
 const FINANCE_ACCOUNT_TX_KEY = 'adisyon-finance-account-transactions';
@@ -179,12 +181,16 @@ export async function loadAuthoritativeFinanceAccountTransactions() {
   const payload = await response.json().catch(() => null) as {
     ok?: boolean;
     movements?: AuthoritativeCurrentAccountMovement[];
+    accounts?: Account[];
     error?: string;
   } | null;
   if (!response.ok || !payload?.ok) {
     throw new Error(payload?.error ?? `Cari hareketleri yüklenemedi: ${response.status}`);
   }
   const transactions = (payload.movements ?? []).map(mapAuthoritativeMovement);
+  if (Array.isArray(payload.accounts) && payload.accounts.length > 0) {
+    saveStoredAccounts(payload.accounts);
+  }
   replaceStoredFinanceAccountTransactions(transactions);
   return transactions;
 }

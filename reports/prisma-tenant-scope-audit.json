@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-06-15T12:59:39.080Z",
+  "generatedAt": "2026-06-15T14:00:23.922Z",
   "mode": "strict",
   "filesScanned": 215,
-  "totalTenantOwnedQueries": 277,
-  "safe-tenant-scoped": 140,
+  "totalTenantOwnedQueries": 279,
+  "safe-tenant-scoped": 142,
   "safe-system-admin": 118,
   "safe-public": 0,
   "review-needed": 19,
@@ -237,16 +237,16 @@
         },
         {
           "file": "app/api/finance/current-account-movements/route.ts",
-          "line": 36,
+          "line": 37,
           "model": "currentAccountMovement",
           "operation": "findMany",
           "classification": "safe-tenant-scoped",
           "risk": "Read/query operation contains tenant scope.",
-          "snippet": "  return Number(((Number(aggregate._sum.debit ?? 0) - Number(aggregate._sum.credit ?? 0))).toFixed(2));\n}\n\nexport async function GET(request: Request) {\n  try {\n    const tenant = await requireTenant(request);\n    const url = new URL(request.url);\n    const accountId = url.searchParams.get('accountId')?.trim();\n    const movements = await prisma.currentAccountMovement.findMany({\n      where: { tenantId: tenant.tenantId, ...(accountId ? { accountId } : {}) },\n      orderBy: { createdAt: 'desc' },\n      take: 500,\n    });\n    return NextResponse.json({ ok: true, source: 'db', movements });\n  } catch (error) {\n    console.error('[cari-flow] current account movement list failed', error);\n    if (error instanceof TenantAuthError) return tenantAuthErrorResponse(error);\n    return NextResponse.json({ ok: false, error: 'Cari hareketleri yüklenemedi.' }, { status: 500 });"
+          "snippet": "}\n\nexport async function GET(request: Request) {\n  try {\n    const tenant = await requireTenant(request);\n    const url = new URL(request.url);\n    const accountId = url.searchParams.get('accountId')?.trim();\n    const [movements, customers, suppliers] = await Promise.all([\n      prisma.currentAccountMovement.findMany({\n        where: { tenantId: tenant.tenantId, ...(accountId ? { accountId } : {}) },\n        orderBy: { createdAt: 'desc' },\n        take: 500,\n      }),\n      prisma.customer.findMany({\n        where: { tenantId: tenant.tenantId, ...(accountId ? { id: accountId } : {}) },\n        orderBy: { createdAt: 'desc' },\n        take: 1000,\n        select: { id: true, name: true, phone: true, metadata: true },"
         },
         {
           "file": "app/api/finance/current-account-movements/route.ts",
-          "line": 72,
+          "line": 105,
           "model": "currentAccountMovement",
           "operation": "findUnique",
           "classification": "safe-tenant-scoped",
@@ -255,7 +255,7 @@
         },
         {
           "file": "app/api/finance/current-account-movements/route.ts",
-          "line": 77,
+          "line": 110,
           "model": "currentAccountMovement",
           "operation": "aggregate",
           "classification": "safe-tenant-scoped",
@@ -264,7 +264,7 @@
         },
         {
           "file": "app/api/finance/current-account-movements/route.ts",
-          "line": 82,
+          "line": 115,
           "model": "currentAccountMovement",
           "operation": "update",
           "classification": "safe-tenant-scoped",
@@ -273,7 +273,7 @@
         },
         {
           "file": "app/api/finance/current-account-movements/route.ts",
-          "line": 100,
+          "line": 133,
           "model": "currentAccountMovement",
           "operation": "aggregate",
           "classification": "safe-tenant-scoped",
@@ -282,7 +282,7 @@
         },
         {
           "file": "app/api/finance/current-account-movements/route.ts",
-          "line": 110,
+          "line": 143,
           "model": "currentAccountMovement",
           "operation": "create",
           "classification": "safe-tenant-scoped",
@@ -291,7 +291,7 @@
         },
         {
           "file": "app/api/finance/current-account-movements/route.ts",
-          "line": 126,
+          "line": 159,
           "model": "cashTransaction",
           "operation": "create",
           "classification": "safe-tenant-scoped",
@@ -301,9 +301,9 @@
       ]
     },
     "app/api/finance/current-accounts/import/route.ts": {
-      "total": 1,
+      "total": 3,
       "byClass": {
-        "safe-tenant-scoped": 1,
+        "safe-tenant-scoped": 3,
         "safe-system-admin": 0,
         "safe-public": 0,
         "review-needed": 0,
@@ -313,12 +313,30 @@
       "findings": [
         {
           "file": "app/api/finance/current-accounts/import/route.ts",
-          "line": 174,
+          "line": 201,
           "model": "currentAccountMovement",
-          "operation": "upsert",
+          "operation": "aggregate",
           "classification": "safe-tenant-scoped",
-          "risk": "Write operation uses explicit tenant scope or compound tenant key.",
-          "snippet": "            ? await tx.supplier.update({ where: { id: duplicate.id }, data: { name: row.name, phone: row.phone || null, email: row.email || null, metadata }, select: { id: true } })\n            : await tx.supplier.create({ data: { tenantId: tenant.tenantId, name: row.name, phone: row.phone || null, email: row.email || null, metadata }, select: { id: true } })\n          : duplicate\n            ? await tx.customer.update({ where: { id: duplicate.id }, data: { name: row.name, phone: row.phone || null, email: row.email || null, metadata }, select: { id: true } })\n            : await tx.customer.create({ data: { tenantId: tenant.tenantId, name: row.name, phone: row.phone || null, email: row.email || null, metadata }, select: { id: true } });\n        duplicate ? updated += 1 : created += 1;\n        if (row.openingBalance > 0) {\n          const reconciliationKey = `${importId}:${row.rowNumber}:opening`;\n          await tx.currentAccountMovement.upsert({\n            where: { tenantId_reconciliationKey: { tenantId: tenant.tenantId, reconciliationKey } },\n            update: {},\n            create: {\n              tenantId: tenant.tenantId,\n              accountId: account.id,\n              customerId: row.type === 'supplier' ? null : account.id,\n              reconciliationKey,\n              type: 'OPENING_BALANCE',\n              method: 'import',"
+          "risk": "Read/query operation contains tenant scope.",
+          "snippet": "    const metadata = metadataRecord(candidate.metadata);\n    const candidateTaxNumber = typeof metadata.taxNumber === 'string' ? normalizeTaxNumber(metadata.taxNumber) : '';\n    if (row.taxNumber && candidateTaxNumber && row.taxNumber === candidateTaxNumber) return true;\n    return normalizeName(candidate.name) === rowName;\n  }) ?? null;\n}\n\nasync function accountBalance(tx: Prisma.TransactionClient, tenantId: string, accountId: string) {\n  const totals = await tx.currentAccountMovement.aggregate({\n    where: { tenantId, accountId },\n    _sum: { debit: true, credit: true },\n  });\n  return Number(totals._sum.debit ?? 0) - Number(totals._sum.credit ?? 0);\n}\n\nfunction openingReconciliationKey(tenantId: string, branchId: string | null, row: ImportRow) {\n  const hash = crypto\n    .createHash('sha1')"
+        },
+        {
+          "file": "app/api/finance/current-accounts/import/route.ts",
+          "line": 307,
+          "model": "currentAccountMovement",
+          "operation": "findUnique",
+          "classification": "safe-tenant-scoped",
+          "risk": "Read/query operation contains tenant scope.",
+          "snippet": "          invoiceTitle: row.name,\n        });\n        if (row.openingBalance === 0) {\n          zeroBalanceAccountsCreated += 1;\n          continue;\n        }\n        const amount = Math.abs(row.openingBalance);\n        const reconciliationKey = openingReconciliationKey(tenant.tenantId, branchId, row);\n        const existingMovement = await tx.currentAccountMovement.findUnique({\n          where: { tenantId_reconciliationKey: { tenantId: tenant.tenantId, reconciliationKey } },\n          select: { id: true },\n        });\n        if (existingMovement) continue;\n        const previousBalance = await accountBalance(tx, tenant.tenantId, account.id);\n        const debit = row.balanceDirection === 'debit' ? amount : 0;\n        const credit = row.balanceDirection === 'credit' ? amount : 0;\n        await tx.currentAccountMovement.create({\n          data: {"
+        },
+        {
+          "file": "app/api/finance/current-accounts/import/route.ts",
+          "line": 315,
+          "model": "currentAccountMovement",
+          "operation": "create",
+          "classification": "safe-tenant-scoped",
+          "risk": "Create operation writes tenantId from trusted context.",
+          "snippet": "        const existingMovement = await tx.currentAccountMovement.findUnique({\n          where: { tenantId_reconciliationKey: { tenantId: tenant.tenantId, reconciliationKey } },\n          select: { id: true },\n        });\n        if (existingMovement) continue;\n        const previousBalance = await accountBalance(tx, tenant.tenantId, account.id);\n        const debit = row.balanceDirection === 'debit' ? amount : 0;\n        const credit = row.balanceDirection === 'credit' ? amount : 0;\n        await tx.currentAccountMovement.create({\n          data: {\n            tenantId: tenant.tenantId,\n            accountId: account.id,\n            customerId: row.type === 'supplier' ? null : account.id,\n            reconciliationKey,\n            type: 'OPENING_BALANCE',\n            method: 'import',\n            debit,\n            credit,"
         }
       ]
     },
@@ -2916,9 +2934,9 @@
       }
     },
     "currentAccountMovement": {
-      "total": 15,
+      "total": 17,
       "byClass": {
-        "safe-tenant-scoped": 12,
+        "safe-tenant-scoped": 14,
         "safe-system-admin": 3,
         "safe-public": 0,
         "review-needed": 0,
@@ -3149,9 +3167,9 @@
       }
     },
     "findUnique": {
-      "total": 22,
+      "total": 23,
       "byClass": {
-        "safe-tenant-scoped": 14,
+        "safe-tenant-scoped": 15,
         "safe-system-admin": 5,
         "safe-public": 0,
         "review-needed": 3,
@@ -3160,9 +3178,9 @@
       }
     },
     "upsert": {
-      "total": 15,
+      "total": 14,
       "byClass": {
-        "safe-tenant-scoped": 11,
+        "safe-tenant-scoped": 10,
         "safe-system-admin": 4,
         "safe-public": 0,
         "review-needed": 0,
@@ -3171,9 +3189,9 @@
       }
     },
     "create": {
-      "total": 24,
+      "total": 25,
       "byClass": {
-        "safe-tenant-scoped": 20,
+        "safe-tenant-scoped": 21,
         "safe-system-admin": 4,
         "safe-public": 0,
         "review-needed": 0,
@@ -3182,9 +3200,9 @@
       }
     },
     "aggregate": {
-      "total": 7,
+      "total": 8,
       "byClass": {
-        "safe-tenant-scoped": 6,
+        "safe-tenant-scoped": 7,
         "safe-system-admin": 1,
         "safe-public": 0,
         "review-needed": 0,

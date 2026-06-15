@@ -33,12 +33,45 @@ export async function GET(request: Request) {
     const tenant = await requireTenant(request);
     const url = new URL(request.url);
     const accountId = url.searchParams.get('accountId')?.trim();
-    const movements = await prisma.currentAccountMovement.findMany({
-      where: { tenantId: tenant.tenantId, ...(accountId ? { accountId } : {}) },
-      orderBy: { createdAt: 'desc' },
-      take: 500,
-    });
-    return NextResponse.json({ ok: true, source: 'db', movements });
+    const [movements, customers, suppliers] = await Promise.all([
+      prisma.currentAccountMovement.findMany({
+        where: { tenantId: tenant.tenantId, ...(accountId ? { accountId } : {}) },
+        orderBy: { createdAt: 'desc' },
+        take: 500,
+      }),
+      prisma.customer.findMany({
+        where: { tenantId: tenant.tenantId, ...(accountId ? { id: accountId } : {}) },
+        orderBy: { createdAt: 'desc' },
+        take: 1000,
+        select: { id: true, name: true, phone: true, metadata: true },
+      }),
+      prisma.supplier.findMany({
+        where: { tenantId: tenant.tenantId, ...(accountId ? { id: accountId } : {}) },
+        orderBy: { createdAt: 'desc' },
+        take: 1000,
+        select: { id: true, name: true, phone: true, metadata: true },
+      }),
+    ]);
+    const mapAccount = (account: { id: string; name: string; phone: string | null; metadata: unknown }, type: 'customer' | 'supplier') => {
+      const metadata = isRecord(account.metadata) ? account.metadata : {};
+      return {
+        id: account.id,
+        code: stringField(metadata, 'code') || `${type === 'supplier' ? 'SUP' : 'CUS'}-${account.id.slice(0, 8)}`,
+        name: account.name,
+        type,
+        openingBalance: 0,
+        phone: account.phone ?? '',
+        address: stringField(metadata, 'address'),
+        taxOffice: stringField(metadata, 'taxOffice'),
+        taxNumber: stringField(metadata, 'taxNumber'),
+        invoiceTitle: stringField(metadata, 'invoiceTitle') || account.name,
+      };
+    };
+    const accounts = [
+      ...customers.map((account) => mapAccount(account, 'customer')),
+      ...suppliers.map((account) => mapAccount(account, 'supplier')),
+    ];
+    return NextResponse.json({ ok: true, source: 'db', movements, accounts });
   } catch (error) {
     console.error('[cari-flow] current account movement list failed', error);
     if (error instanceof TenantAuthError) return tenantAuthErrorResponse(error);

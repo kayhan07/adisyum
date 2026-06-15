@@ -9,7 +9,7 @@
       "system-admin-protected": 19
     },
     "unsafeCandidates": 0,
-    "generatedAt": "2026-06-15T12:59:38.671Z",
+    "generatedAt": "2026-06-15T14:00:23.807Z",
     "mode": "strict"
   },
   "routes": [
@@ -414,9 +414,10 @@
       ],
       "riskSignals": [
         "tenantId",
+        "branchId",
         "findMany",
+        "findUnique",
         "update(",
-        "upsert(",
         "create("
       ],
       "reasons": [],

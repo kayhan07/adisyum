@@ -5,6 +5,7 @@ import { ArrowLeft, Building2, ChevronRight, FileText, ReceiptText, Search, User
 import {
   appendStoredAccount,
   loadStoredAccounts,
+  saveStoredAccounts,
   subscribeToStoredAccountChanges,
 } from '@/lib/account-store';
 import { createAuthoritativeFinanceAccountMovement, loadAuthoritativeFinanceAccountTransactions, loadStoredFinanceAccountTransactions, subscribeToFinanceRuntimeChanges } from '@/lib/finance-runtime-store';
@@ -322,7 +323,13 @@ export function AccountWorkspace() {
     setImportLoading(true);
     try {
       const payload = await runAccountImport(importFile, false);
-      setAccountActionMessage(`${payload.created ?? 0} cari oluşturuldu, ${payload.updated ?? 0} güncellendi, ${payload.skipped ?? 0} atlandı, ${payload.openingMovements ?? 0} açılış hareketi oluştu.`);
+      if (Array.isArray(payload.accounts) && payload.accounts.length > 0) {
+        saveStoredAccounts(payload.accounts);
+        setLocalAccounts(loadStoredAccounts());
+      }
+      await loadAuthoritativeFinanceAccountTransactions().catch((error) => console.error('[cari-flow] post-import movement refresh failed', error));
+      setStoredTransactions(loadStoredFinanceAccountTransactions());
+      setAccountActionMessage(`${payload.created ?? 0} cari oluşturuldu, ${payload.updated ?? 0} cari güncellendi, ${payload.zeroBalanceAccountsCreated ?? 0} sıfır bakiyeli cari, ${payload.movementCreated ?? payload.openingMovements ?? 0} bakiye hareketi, ${payload.skipped ?? 0} satır atlandı.`);
       setImportPreview(null);
       setImportFile(null);
     } catch (error) {
