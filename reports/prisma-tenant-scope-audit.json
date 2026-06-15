@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-15T09:15:22.992Z",
+  "generatedAt": "2026-06-15T10:08:39.946Z",
   "mode": "strict",
   "filesScanned": 215,
   "totalTenantOwnedQueries": 272,
@@ -626,7 +626,7 @@
         },
         {
           "file": "app/api/pos/table-orders/route.ts",
-          "line": 1117,
+          "line": 1118,
           "model": "order",
           "operation": "findUnique",
           "classification": "safe-tenant-scoped",
@@ -635,7 +635,7 @@
         },
         {
           "file": "app/api/pos/table-orders/route.ts",
-          "line": 1148,
+          "line": 1149,
           "model": "payment",
           "operation": "update",
           "classification": "safe-tenant-scoped",
@@ -644,7 +644,7 @@
         },
         {
           "file": "app/api/pos/table-orders/route.ts",
-          "line": 1159,
+          "line": 1160,
           "model": "cashTransaction",
           "operation": "create",
           "classification": "safe-tenant-scoped",
@@ -653,7 +653,7 @@
         },
         {
           "file": "app/api/pos/table-orders/route.ts",
-          "line": 1178,
+          "line": 1179,
           "model": "payment",
           "operation": "findUnique",
           "classification": "safe-tenant-scoped",
@@ -662,7 +662,7 @@
         },
         {
           "file": "app/api/pos/table-orders/route.ts",
-          "line": 1185,
+          "line": 1186,
           "model": "currentAccountMovement",
           "operation": "aggregate",
           "classification": "safe-tenant-scoped",
@@ -671,7 +671,7 @@
         },
         {
           "file": "app/api/pos/table-orders/route.ts",
-          "line": 1190,
+          "line": 1191,
           "model": "currentAccountMovement",
           "operation": "upsert",
           "classification": "safe-tenant-scoped",
@@ -680,7 +680,7 @@
         },
         {
           "file": "app/api/pos/table-orders/route.ts",
-          "line": 1215,
+          "line": 1216,
           "model": "order",
           "operation": "update",
           "classification": "safe-tenant-scoped",
@@ -689,7 +689,7 @@
         },
         {
           "file": "app/api/pos/table-orders/route.ts",
-          "line": 1252,
+          "line": 1253,
           "model": "payment",
           "operation": "create",
           "classification": "safe-tenant-scoped",
@@ -698,7 +698,7 @@
         },
         {
           "file": "app/api/pos/table-orders/route.ts",
-          "line": 1284,
+          "line": 1285,
           "model": "cashTransaction",
           "operation": "create",
           "classification": "safe-tenant-scoped",
@@ -707,7 +707,7 @@
         },
         {
           "file": "app/api/pos/table-orders/route.ts",
-          "line": 1311,
+          "line": 1312,
           "model": "currentAccountMovement",
           "operation": "aggregate",
           "classification": "safe-tenant-scoped",
@@ -716,7 +716,7 @@
         },
         {
           "file": "app/api/pos/table-orders/route.ts",
-          "line": 1316,
+          "line": 1317,
           "model": "currentAccountMovement",
           "operation": "create",
           "classification": "safe-tenant-scoped",
@@ -725,7 +725,7 @@
         },
         {
           "file": "app/api/pos/table-orders/route.ts",
-          "line": 1349,
+          "line": 1350,
           "model": "orderItem",
           "operation": "deleteMany",
           "classification": "safe-tenant-scoped",
@@ -734,7 +734,7 @@
         },
         {
           "file": "app/api/pos/table-orders/route.ts",
-          "line": 1350,
+          "line": 1351,
           "model": "order",
           "operation": "update",
           "classification": "safe-tenant-scoped",
@@ -743,7 +743,7 @@
         },
         {
           "file": "app/api/pos/table-orders/route.ts",
-          "line": 1762,
+          "line": 1779,
           "model": "product",
           "operation": "findFirst",
           "classification": "safe-tenant-scoped",
@@ -752,7 +752,7 @@
         },
         {
           "file": "app/api/pos/table-orders/route.ts",
-          "line": 1783,
+          "line": 1800,
           "model": "productCategory",
           "operation": "findFirst",
           "classification": "safe-tenant-scoped",
@@ -761,7 +761,7 @@
         },
         {
           "file": "app/api/pos/table-orders/route.ts",
-          "line": 1894,
+          "line": 1911,
           "model": "order",
           "operation": "upsert",
           "classification": "safe-tenant-scoped",
@@ -770,7 +770,7 @@
         },
         {
           "file": "app/api/pos/table-orders/route.ts",
-          "line": 1931,
+          "line": 1948,
           "model": "orderItem",
           "operation": "findMany",
           "classification": "safe-tenant-scoped",
@@ -779,7 +779,7 @@
         },
         {
           "file": "app/api/pos/table-orders/route.ts",
-          "line": 1954,
+          "line": 1971,
           "model": "orderItem",
           "operation": "update",
           "classification": "safe-tenant-scoped",
@@ -788,7 +788,7 @@
         },
         {
           "file": "app/api/pos/table-orders/route.ts",
-          "line": 2018,
+          "line": 2035,
           "model": "orderItem",
           "operation": "create",
           "classification": "safe-tenant-scoped",
@@ -797,7 +797,7 @@
         },
         {
           "file": "app/api/pos/table-orders/route.ts",
-          "line": 2091,
+          "line": 2108,
           "model": "orderItem",
           "operation": "findMany",
           "classification": "safe-tenant-scoped",
@@ -806,7 +806,7 @@
         },
         {
           "file": "app/api/pos/table-orders/route.ts",
-          "line": 2105,
+          "line": 2122,
           "model": "order",
           "operation": "update",
           "classification": "safe-tenant-scoped",

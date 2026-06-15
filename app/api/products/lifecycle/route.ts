@@ -194,7 +194,8 @@ async function applyLifecycleAction(
 
   const invalidatedRuntimeCatalogs = await invalidateRuntimePosCatalog(tenant.tenantId, `product_lifecycle_${action}`, tenant.branchId ?? undefined);
   await publishTenantEvent(tenant.tenantId, 'products', {
-    type: 'product.lifecycle.changed',
+    type: action === 'delete' || action === 'archive' ? 'product.deleted' : action === 'publish' || action === 'activate' ? 'product.updated' : 'product.lifecycle.changed',
+    lifecycleEventType: 'product.lifecycle.changed',
     productId: next.id,
     posKey: next.posKey,
     action,

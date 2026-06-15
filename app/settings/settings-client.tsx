@@ -307,11 +307,15 @@ export default function SettingsPage() {
 
   const receiptPreviewOrder = useMemo(
     () => ({
+      id: 'AD-20260615-0042',
       table: 'Salon 4',
+      staffName: 'Garson Ayşe',
       createdAt: new Date('2026-05-31T20:45:00'),
       discount: 15,
+      serviceCharge: 25,
+      taxTotal: 0,
       items: [
-        { id: 'preview-1', name: 'Izgara köfte porsiyon', qty: 2, price: 285 },
+        { id: 'preview-1', name: 'Izgara köfte porsiyon uzun ürün adı kontrolü', qty: 2, price: 285 },
         { id: 'preview-2', name: 'Çoban salata', qty: 1, price: 95 },
         { id: 'preview-3', name: 'Türk kahvesi', qty: 2, price: 65 },
       ],
@@ -335,6 +339,8 @@ export default function SettingsPage() {
       headerScale: company.receiptHeaderScale,
       itemScale: company.receiptItemScale,
       totalScale: company.receiptTotalScale,
+      usdRate: company.receiptUsdRate,
+      eurRate: company.receiptEurRate,
     }),
     [company, receiptPreviewOrder],
   );
@@ -1065,6 +1071,28 @@ export default function SettingsPage() {
                     <option value="80mm">80 mm</option>
                     <option value="58mm">58 mm</option>
                   </select>
+                </label>
+
+                <label className="block">
+                  <span className="text-sm font-medium text-muted">USD kuru</span>
+                  <input
+                    value={company.receiptUsdRate}
+                    onChange={(event) => setCompany((current) => ({ ...current, receiptUsdRate: event.target.value }))}
+                    inputMode="decimal"
+                    placeholder="Örn. 32,95"
+                    className="mt-2 h-12 w-full rounded-2xl border border-line bg-canvas px-4 font-semibold text-ink outline-none"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-sm font-medium text-muted">EUR kuru</span>
+                  <input
+                    value={company.receiptEurRate}
+                    onChange={(event) => setCompany((current) => ({ ...current, receiptEurRate: event.target.value }))}
+                    inputMode="decimal"
+                    placeholder="Örn. 35,70"
+                    className="mt-2 h-12 w-full rounded-2xl border border-line bg-canvas px-4 font-semibold text-ink outline-none"
+                  />
                 </label>
 
                 {[

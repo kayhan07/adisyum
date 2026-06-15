@@ -1083,7 +1083,8 @@ export async function POST(request: Request) {
       });
 
       publishTenantOrderEventBestEffort(tenantId, {
-        type: normalizedBody.action === 'remove_line' ? 'order.item.removed' : 'order.item.quantity_updated',
+        type: normalizedBody.action === 'remove_line' ? 'order.item_deleted' : 'order.item_updated',
+        legacyType: normalizedBody.action === 'remove_line' ? 'order.item.removed' : 'order.item.quantity_updated',
         tableId,
         lineId,
         quantity: nextQuantity,
@@ -1380,6 +1381,22 @@ export async function POST(request: Request) {
         reconciliationKey,
         paidTotal: transactionResult.paymentState.paidTotal,
         remainingTotal: transactionResult.paymentState.remainingTotal,
+      });
+      if (transactionResult.paymentCreated) {
+        void publishTenantEvent(tenantId, 'payments', {
+          type: 'payment.created',
+          tableId,
+          mutationId: normalizedBody.mutationId,
+          reconciliationKey,
+          paidTotal: transactionResult.paymentState.paidTotal,
+          remainingTotal: transactionResult.paymentState.remainingTotal,
+        }).catch(() => undefined);
+      }
+      publishTenantOrderEventBestEffort(tenantId, {
+        type: 'table.updated',
+        tableId,
+        mutationId: normalizedBody.mutationId,
+        paymentClosed: transactionResult.closed,
       });
 
       const ordersByTable = await loadAuthoritativeOrdersByTable(tenantId, tenant.branchId ?? undefined);
@@ -2138,6 +2155,13 @@ export async function POST(request: Request) {
       mutationId,
     });
 
+    publishTenantOrderEventBestEffort(tenantId, {
+      type: 'order.item_added',
+      tableId,
+      mutationId,
+      productId: product?.id,
+      posKey: identity.posKey,
+    });
     publishTenantOrderEventBestEffort(tenantId, {
       type: 'order.updated',
       tableId,

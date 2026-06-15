@@ -22,6 +22,8 @@ export type CompanyState = {
   receiptItemScale: 1 | 2;
   receiptTotalScale: 1 | 2;
   receiptFooter: string;
+  receiptUsdRate: string;
+  receiptEurRate: string;
 };
 
 export type TenantCompanyProfile = {
@@ -59,6 +61,8 @@ export function getDefaultCompanyState(): CompanyState {
     receiptItemScale: 2,
     receiptTotalScale: 2,
     receiptFooter: 'Afiyet olsun.',
+    receiptUsdRate: '',
+    receiptEurRate: '',
   };
 }
 

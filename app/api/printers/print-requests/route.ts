@@ -202,6 +202,14 @@ export async function PATCH(request: Request) {
     });
 
     if (job.count === 0) return NextResponse.json({ ok: false, error: 'Print job not found for this device.' }, { status: 404 });
+    if (body.status === 'printed') {
+      await publishTenantEvent(tenant.tenantId, 'system', {
+        type: 'receipt.printed',
+        branchId,
+        jobId: body.jobId,
+        deviceId: body.deviceId,
+      }).catch(() => undefined);
+    }
     return NextResponse.json({ ok: true, tenantId: tenant.tenantId, branchId });
   } catch (error) {
     return tenantAuthErrorResponse(error);

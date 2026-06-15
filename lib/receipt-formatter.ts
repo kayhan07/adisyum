@@ -86,10 +86,13 @@ export interface ReceiptItem {
 export interface ReceiptOrder {
   id?: string;
   table?: string | number;
+  staffName?: string;
   items: ReceiptItem[];
   total?: number;
   subtotal?: number;
   discount?: number;
+  serviceCharge?: number;
+  taxTotal?: number;
   netTotal?: number;
   createdAt?: Date;
   printedItems?: string[];
@@ -110,6 +113,8 @@ export interface ReceiptSettings {
   headerScale?: 1 | 2;
   itemScale?: 1 | 2;
   totalScale?: 1 | 2;
+  usdRate?: string | number | null;
+  eurRate?: string | number | null;
 }
 
 export interface PrintRequest {
@@ -304,9 +309,35 @@ function toTimePart(date: Date) {
   return date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
 }
 
+function parseRate(value: string | number | null | undefined) {
+  const parsed = Number(String(value ?? '').replace(',', '.'));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 function formatAmount(value: number) {
   const safe = Number.isFinite(value) ? value : 0;
-  return `${safe.toFixed(2)} TL`;
+  return new Intl.NumberFormat('tr-TR', {
+    style: 'currency',
+    currency: 'TRY',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(safe);
+}
+
+function formatForeignAmount(value: number, currency: 'USD' | 'EUR') {
+  const symbol = currency === 'USD' ? '$' : '€';
+  const safe = Number.isFinite(value) ? value : 0;
+  return `${symbol}${safe.toFixed(2)}`;
+}
+
+function buildCurrencySummary(total: number, settings: ReceiptSettings) {
+  const rows: string[] = [];
+  const usdRate = parseRate(settings.usdRate);
+  const eurRate = parseRate(settings.eurRate);
+  if (usdRate) rows.push(`USD: ${formatForeignAmount(total / usdRate, 'USD')}`);
+  if (eurRate) rows.push(`EUR: ${formatForeignAmount(total / eurRate, 'EUR')}`);
+  if (rows.length === 0 && (settings.usdRate || settings.eurRate)) rows.push('Kur tanımlı değil');
+  return rows;
 }
 
 function roundReceiptAmount(value: number) {
@@ -511,7 +542,10 @@ async function buildReceiptBytes(order: ReceiptOrder, settings: ReceiptSettings 
   const displaySubtotal = roundReceiptAmount(order.items.reduce((sum, item) => sum + ((item.qty || 0) * (item.price || 0)), 0));
   const subtotal = displaySubtotal;
   const discount = Number(order.discount ?? 0);
-  const netTotal = roundReceiptAmount(Math.max(0, subtotal - discount));
+  const serviceCharge = Number(order.serviceCharge ?? 0);
+  const taxTotal = Number(order.taxTotal ?? 0);
+  const netTotal = roundReceiptAmount(order.netTotal ?? order.total ?? Math.max(0, subtotal - discount + serviceCharge + taxTotal));
+  const currencyRows = buildCurrencySummary(netTotal, settings);
 
   const builder = new EscPosBuilder().init();
 
@@ -547,6 +581,8 @@ async function buildReceiptBytes(order: ReceiptOrder, settings: ReceiptSettings 
   if (infoLine) {
     builder.line(infoLine);
   }
+  if (order.id) builder.line(`Adisyon: ${truncate(String(order.id), width - 9)}`);
+  if (order.staffName) builder.line(`Personel: ${truncate(String(order.staffName), width - 10)}`);
 
   builder.line(separator(width)).newLine(1);
 
@@ -572,14 +608,21 @@ async function buildReceiptBytes(order: ReceiptOrder, settings: ReceiptSettings 
   }
 
   builder.newLine(1).line(separator(width));
-  builder.line(columnText('Adisyon Toplam', '', formatAmount(subtotal), { left: Math.floor(width * 0.72), middle: 0, right: width - Math.floor(width * 0.72) }));
-  builder.line(columnText('Indirim', '', formatAmount(discount), { left: Math.floor(width * 0.72), middle: 0, right: width - Math.floor(width * 0.72) }));
+  builder.line(columnText('Adisyon Toplam', '', formatAmount(subtotal), { left: Math.floor(width * 0.62), middle: 0, right: width - Math.floor(width * 0.62) }));
+  if (discount > 0) builder.line(columnText('Indirim', '', formatAmount(discount), { left: Math.floor(width * 0.62), middle: 0, right: width - Math.floor(width * 0.62) }));
+  if (serviceCharge > 0) builder.line(columnText('Servis', '', formatAmount(serviceCharge), { left: Math.floor(width * 0.62), middle: 0, right: width - Math.floor(width * 0.62) }));
+  if (taxTotal > 0) builder.line(columnText('KDV', '', formatAmount(taxTotal), { left: Math.floor(width * 0.62), middle: 0, right: width - Math.floor(width * 0.62) }));
   builder.line(separator(width));
 
   builder.align('CT').bold(true).setTextSize(template.totalScale, template.totalScale);
-  builder.line('TOPLAM');
+  builder.line('GENEL TOPLAM');
   builder.line(formatAmount(netTotal));
   builder.setTextSize(1, 1).bold(false).align('LT');
+  if (currencyRows.length > 0) {
+    builder.setFont('B').align('CT');
+    currencyRows.forEach((row) => builder.line(row));
+    builder.setFont('A').align('LT');
+  }
 
   builder.line(separator(width)).newLine(1);
   builder.align('CT').line(footerText);
@@ -604,7 +647,10 @@ export function formatReceiptPreviewText(order: ReceiptOrder, settings: ReceiptS
 
   const subtotal = roundReceiptAmount(order.items.reduce((sum, item) => sum + ((item.qty || 0) * (item.price || 0)), 0));
   const discount = Number(order.discount ?? 0);
-  const netTotal = roundReceiptAmount(Math.max(0, subtotal - discount));
+  const serviceCharge = Number(order.serviceCharge ?? 0);
+  const taxTotal = Number(order.taxTotal ?? 0);
+  const netTotal = roundReceiptAmount(order.netTotal ?? order.total ?? Math.max(0, subtotal - discount + serviceCharge + taxTotal));
+  const currencyRows = buildCurrencySummary(netTotal, settings);
   const cols = itemColumns(width);
   const lines: string[] = [];
 
@@ -624,6 +670,8 @@ export function formatReceiptPreviewText(order: ReceiptOrder, settings: ReceiptS
   lines.push(separator(width));
   const infoLine = buildReceiptInfoLine(width, date, table, template);
   if (infoLine) lines.push(infoLine);
+  if (order.id) lines.push(`Adisyon: ${truncate(String(order.id), width - 9)}`);
+  if (order.staffName) lines.push(`Personel: ${truncate(String(order.staffName), width - 10)}`);
   lines.push(separator(width));
 
   if (template.showItemHeader) {
@@ -643,11 +691,14 @@ export function formatReceiptPreviewText(order: ReceiptOrder, settings: ReceiptS
   }
 
   lines.push(separator(width));
-  lines.push(columnText('Adisyon Toplam', '', formatAmount(subtotal), { left: Math.floor(width * 0.72), middle: 0, right: width - Math.floor(width * 0.72) }));
-  lines.push(columnText('İndirim', '', formatAmount(discount), { left: Math.floor(width * 0.72), middle: 0, right: width - Math.floor(width * 0.72) }));
+  lines.push(columnText('Adisyon Toplam', '', formatAmount(subtotal), { left: Math.floor(width * 0.62), middle: 0, right: width - Math.floor(width * 0.62) }));
+  if (serviceCharge > 0) lines.push(columnText('Servis', '', formatAmount(serviceCharge), { left: Math.floor(width * 0.62), middle: 0, right: width - Math.floor(width * 0.62) }));
+  if (taxTotal > 0) lines.push(columnText('KDV', '', formatAmount(taxTotal), { left: Math.floor(width * 0.62), middle: 0, right: width - Math.floor(width * 0.62) }));
+  if (discount > 0) lines.push(columnText('Indirim', '', formatAmount(discount), { left: Math.floor(width * 0.62), middle: 0, right: width - Math.floor(width * 0.62) }));
   lines.push(separator(width));
-  lines.push(padCenter('TOPLAM', width).trimEnd());
+  lines.push(padCenter('GENEL TOPLAM', width).trimEnd());
   lines.push(padCenter(formatAmount(netTotal), width).trimEnd());
+  currencyRows.forEach((row) => lines.push(padCenter(row, width).trimEnd()));
   lines.push(separator(width));
   lines.push(padCenter(footerText, width).trimEnd());
 
