@@ -40,6 +40,8 @@
     "verify:order-composer-fast-flow": "node scripts/verify-order-composer-fast-flow.mjs",
     "verify:receipt-print-preview": "node scripts/verify-receipt-print-preview.mjs",
     "verify:receipt-currency-summary": "node scripts/verify-receipt-currency-summary.mjs",
+    "verify:tables-visible-across-devices": "node scripts/verify-tables-visible-across-devices.mjs",
+    "diagnose:tenant-tables": "node scripts/diagnose-tenant-tables.mjs",
     "env:audit-production": "node scripts/audit-production-env.mjs",
     "deploy:verify-runtime": "node scripts/verify-deploy-runtime.mjs",
     "recomposition:phase1-validate": "node scripts/verify-enterprise-recomposition-phase1.mjs",

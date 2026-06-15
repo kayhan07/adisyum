@@ -9,7 +9,7 @@
       "system-admin-protected": 19
     },
     "unsafeCandidates": 0,
-    "generatedAt": "2026-06-15T10:08:39.364Z",
+    "generatedAt": "2026-06-15T11:00:38.879Z",
     "mode": "strict"
   },
   "routes": [
@@ -1206,16 +1206,22 @@
         "requireTenant"
       ],
       "riskSignals": [
+        "prisma.posTable",
+        "prisma.branch",
+        "prisma.tenant",
         "tenantId",
         "branchId",
         "request.json()",
+        "findMany",
         "findUnique",
-        "upsert("
+        "update(",
+        "upsert(",
+        "create("
       ],
       "reasons": [],
       "meta": {
         "hasPrisma": true,
-        "hasTenantOwnedModel": false,
+        "hasTenantOwnedModel": true,
         "hasTenantIdFromInput": false,
         "hasBranchIdFromInput": true,
         "hasSessionGuard": false,

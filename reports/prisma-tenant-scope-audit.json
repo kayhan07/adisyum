@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-06-15T10:08:39.946Z",
+  "generatedAt": "2026-06-15T11:00:39.569Z",
   "mode": "strict",
   "filesScanned": 215,
-  "totalTenantOwnedQueries": 272,
-  "safe-tenant-scoped": 135,
+  "totalTenantOwnedQueries": 277,
+  "safe-tenant-scoped": 140,
   "safe-system-admin": 118,
   "safe-public": 0,
   "review-needed": 19,
@@ -1110,9 +1110,9 @@
       ]
     },
     "app/api/runtime/table-state/route.ts": {
-      "total": 3,
+      "total": 8,
       "byClass": {
-        "safe-tenant-scoped": 3,
+        "safe-tenant-scoped": 8,
         "safe-system-admin": 0,
         "safe-public": 0,
         "review-needed": 0,
@@ -1122,25 +1122,70 @@
       "findings": [
         {
           "file": "app/api/runtime/table-state/route.ts",
-          "line": 45,
+          "line": 85,
+          "model": "branch",
+          "operation": "findMany",
+          "classification": "safe-tenant-scoped",
+          "risk": "Read/query operation contains tenant scope.",
+          "snippet": "  if (tenant.branchId?.trim()) return tenant.branchId.trim();\n\n  const tenantRecord = await prisma.tenant.findUnique({\n    where: { tenantId: tenant.tenantId },\n    select: { mainBranchId: true },\n  }).catch(() => null);\n  if (tenantRecord?.mainBranchId) return tenantRecord.mainBranchId;\n\n  const branches = await prisma.branch.findMany({\n    where: { tenantId: tenant.tenantId, active: true, deletedAt: null },\n    orderBy: [{ createdAt: 'asc' }],\n    select: { branchId: true },\n    take: 2,\n  }).catch(() => []);\n  if (branches.length === 1) return branches[0].branchId;\n  return branches[0]?.branchId ?? 'mrk';\n}\n"
+        },
+        {
+          "file": "app/api/runtime/table-state/route.ts",
+          "line": 96,
+          "model": "posTable",
+          "operation": "findMany",
+          "classification": "safe-tenant-scoped",
+          "risk": "Read/query operation contains tenant scope.",
+          "snippet": "    select: { branchId: true },\n    take: 2,\n  }).catch(() => []);\n  if (branches.length === 1) return branches[0].branchId;\n  return branches[0]?.branchId ?? 'mrk';\n}\n\nasync function loadDbTables(tenantId: string, branchId: string | null) {\n  const rows = await prisma.posTable.findMany({\n    where: { tenantId },\n    orderBy: [{ createdAt: 'asc' }],\n    select: { id: true, name: true, status: true, seats: true, metadata: true },\n  });\n\n  return rows\n    .map((row) => {\n      const metadata = metadataRecord(row.metadata);\n      const rowBranchId = tableBranchId(metadata);"
+        },
+        {
+          "file": "app/api/runtime/table-state/route.ts",
+          "line": 127,
+          "model": "posTable",
+          "operation": "findMany",
+          "classification": "safe-tenant-scoped",
+          "risk": "Read/query operation contains tenant scope.",
+          "snippet": "}\n\nasync function persistDbTables(tenantId: string, branchId: string | null, tables: unknown[]) {\n  const normalizedTables = tables\n    .map((table) => normalizeTableInput(table, branchId))\n    .filter((table): table is NonNullable<ReturnType<typeof normalizeTableInput>> => Boolean(table));\n  if (normalizedTables.length === 0) return [];\n\n  const existingRows = await prisma.posTable.findMany({\n    where: { tenantId },\n    select: { id: true, name: true, metadata: true },\n  });\n  const byTableKey = new Map(existingRows.map((row) => [tableKey(row.metadata, row.id), row]));\n\n  await Promise.all(normalizedTables.map((table) => {\n    const existing = byTableKey.get(table.id);\n    const metadata = {\n      ...(existing ? metadataRecord(existing.metadata) : {}),"
+        },
+        {
+          "file": "app/api/runtime/table-state/route.ts",
+          "line": 143,
+          "model": "posTable",
+          "operation": "update",
+          "classification": "safe-tenant-scoped",
+          "risk": "Write operation uses explicit tenant scope or compound tenant key.",
+          "snippet": "    const metadata = {\n      ...(existing ? metadataRecord(existing.metadata) : {}),\n      tableKey: table.id,\n      branchId: table.branchId,\n      group: table.group,\n      source: 'runtime-table-state',\n    };\n    if (existing) {\n      return prisma.posTable.update({\n        where: { id: existing.id },\n        data: {\n          name: table.name,\n          status: table.status,\n          seats: table.guests,\n          metadata: toPrismaJson(metadata),\n        },\n      });\n    }"
+        },
+        {
+          "file": "app/api/runtime/table-state/route.ts",
+          "line": 153,
+          "model": "posTable",
+          "operation": "create",
+          "classification": "safe-tenant-scoped",
+          "risk": "Create operation writes tenantId from trusted context.",
+          "snippet": "        data: {\n          name: table.name,\n          status: table.status,\n          seats: table.guests,\n          metadata: toPrismaJson(metadata),\n        },\n      });\n    }\n    return prisma.posTable.create({\n      data: {\n        tenantId,\n        name: table.name,\n        status: table.status,\n        seats: table.guests,\n        metadata: toPrismaJson(metadata),\n      },\n    });\n  }));"
+        },
+        {
+          "file": "app/api/runtime/table-state/route.ts",
+          "line": 185,
           "model": "runtimeState",
           "operation": "findUnique",
           "classification": "safe-tenant-scoped",
           "risk": "Tenant scope is present; branch scope should still be reviewed where branch-owned records exist.",
-          "snippet": "}\n\nexport async function GET(request: Request) {\n  try {\n    const tenant = await requireTenant(request);\n    const url = new URL(request.url);\n    const branchId = url.searchParams.get('branchId') ?? tenant.branchId ?? null;\n    const key = tableStateKey(branchId);\n    const stored = await prisma.runtimeState.findUnique({\n      where: runtimeStateTenantKey(tenant.tenantId, key),\n      select: { payload: true },\n    }).catch(() => null);\n    const state = stored?.payload && typeof stored.payload === 'object'\n      ? stored.payload\n      : getDefaultState();\n\n    return NextResponse.json({\n      ok: true,"
+          "snippet": "}\n\nexport async function GET(request: Request) {\n  try {\n    const tenant = await requireTenant(request);\n    const url = new URL(request.url);\n    const branchId = await resolveBranchId(tenant, url.searchParams.get('branchId'));\n    const key = tableStateKey(branchId);\n    const stored = await prisma.runtimeState.findUnique({\n      where: runtimeStateTenantKey(tenant.tenantId, key),\n      select: { payload: true },\n    }).catch(() => null);\n    const runtimeState = stored?.payload && typeof stored.payload === 'object'\n      ? stored.payload\n      : getDefaultState();\n    let dbTables = await loadDbTables(tenant.tenantId, branchId);\n    const runtimeTables = Array.isArray((runtimeState as SharedTablePaymentState).tables)\n      ? (runtimeState as SharedTablePaymentState).tables"
         },
         {
           "file": "app/api/runtime/table-state/route.ts",
-          "line": 80,
+          "line": 236,
           "model": "runtimeState",
           "operation": "findUnique",
           "classification": "safe-tenant-scoped",
           "risk": "Tenant scope is present; branch scope should still be reviewed where branch-owned records exist.",
-          "snippet": "\n  const body = (await request.json().catch(() => null)) as (Partial<SharedTablePaymentState> & { branchId?: string }) | null;\n  if (!body) {\n    return NextResponse.json({ ok: false, error: 'Geçersiz table state payload.' }, { status: 400 });\n  }\n\n  const branchId = body.branchId ?? tenant.branchId ?? null;\n  const key = tableStateKey(branchId);\n  const stored = await prisma.runtimeState.findUnique({\n    where: runtimeStateTenantKey(tenant.tenantId, key),\n    select: { payload: true },\n  });\n  const current = stored?.payload && typeof stored.payload === 'object'\n    ? stored.payload as SharedTablePaymentState\n    : getDefaultState();\n  const nextState = {\n    tables: Array.isArray(body.tables)\n      ? body.tables.filter((value) => value && typeof value === 'object')"
+          "snippet": "\n  const body = (await request.json().catch(() => null)) as (Partial<SharedTablePaymentState> & { branchId?: string }) | null;\n  if (!body) {\n    return NextResponse.json({ ok: false, error: 'Geçersiz table state payload.' }, { status: 400 });\n  }\n\n  const branchId = await resolveBranchId(tenant, body.branchId ?? null);\n  const key = tableStateKey(branchId);\n  const stored = await prisma.runtimeState.findUnique({\n    where: runtimeStateTenantKey(tenant.tenantId, key),\n    select: { payload: true },\n  });\n  const current = stored?.payload && typeof stored.payload === 'object'\n    ? stored.payload as SharedTablePaymentState\n    : getDefaultState();\n  const persistedTables = Array.isArray(body.tables)\n    ? await persistDbTables(tenant.tenantId, branchId, body.tables)\n    : undefined;"
         },
         {
           "file": "app/api/runtime/table-state/route.ts",
-          "line": 114,
+          "line": 273,
           "model": "runtimeState",
           "operation": "upsert",
           "classification": "safe-tenant-scoped",
@@ -2860,9 +2905,9 @@
       }
     },
     "branch": {
-      "total": 8,
+      "total": 9,
       "byClass": {
-        "safe-tenant-scoped": 3,
+        "safe-tenant-scoped": 4,
         "safe-system-admin": 4,
         "safe-public": 0,
         "review-needed": 1,
@@ -3003,9 +3048,9 @@
       }
     },
     "posTable": {
-      "total": 7,
+      "total": 11,
       "byClass": {
-        "safe-tenant-scoped": 4,
+        "safe-tenant-scoped": 8,
         "safe-system-admin": 3,
         "safe-public": 0,
         "review-needed": 0,
@@ -3093,9 +3138,9 @@
       }
     },
     "update": {
-      "total": 27,
+      "total": 28,
       "byClass": {
-        "safe-tenant-scoped": 18,
+        "safe-tenant-scoped": 19,
         "safe-system-admin": 6,
         "safe-public": 0,
         "review-needed": 3,
@@ -3126,9 +3171,9 @@
       }
     },
     "create": {
-      "total": 23,
+      "total": 24,
       "byClass": {
-        "safe-tenant-scoped": 19,
+        "safe-tenant-scoped": 20,
         "safe-system-admin": 4,
         "safe-public": 0,
         "review-needed": 0,
@@ -3148,9 +3193,9 @@
       }
     },
     "findMany": {
-      "total": 50,
+      "total": 53,
       "byClass": {
-        "safe-tenant-scoped": 34,
+        "safe-tenant-scoped": 37,
         "safe-system-admin": 8,
         "safe-public": 0,
         "review-needed": 8,

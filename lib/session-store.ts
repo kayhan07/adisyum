@@ -82,6 +82,7 @@ export function hydrateSessionStateFromAuth(session: {
   tenantId: string;
   role: string;
   branchId?: string;
+  branchName?: string;
   packageType?: 'mini' | 'gold' | 'premium';
   subscriptionEndDate?: string;
   username?: string;
@@ -94,13 +95,19 @@ export function hydrateSessionStateFromAuth(session: {
   }
 
   const defaults = getDefaultSessionState();
-  const activeBranchId = session.branchId && defaults.branches.some((branch) => branch.id === session.branchId)
-    ? session.branchId
-    : defaults.activeBranchId;
-  const activeBranch = defaults.branches.find((branch) => branch.id === activeBranchId) ?? defaults.branches[0];
+  const activeBranchId = session.branchId || defaults.activeBranchId;
+  const knownBranch = defaults.branches.find((branch) => branch.id === activeBranchId);
+  const activeBranch = knownBranch ?? {
+    id: activeBranchId,
+    label: session.branchName || activeBranchId,
+    type: 'Canli sube',
+    address: '',
+  };
+  const branches = knownBranch ? defaults.branches : [...defaults.branches, activeBranch];
 
   currentSessionState = {
     ...defaults,
+    branches,
     activeBranchId,
     tenantId: session.tenantId,
     packageType: session.packageType ?? defaults.packageType,

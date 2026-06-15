@@ -75,6 +75,7 @@ export async function GET(request: Request) {
       role: session.role,
       permissions: session.permissions,
       branchId: session.branchId,
+      branchName: branch?.name,
       packageType: session.packageType,
       username: user?.username,
       name: user?.name,
