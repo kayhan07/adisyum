@@ -40,6 +40,7 @@
     "verify:order-composer-fast-flow": "node scripts/verify-order-composer-fast-flow.mjs",
     "verify:receipt-print-preview": "node scripts/verify-receipt-print-preview.mjs",
     "verify:receipt-currency-summary": "node scripts/verify-receipt-currency-summary.mjs",
+    "verify:daily-report-80mm-print": "tsx scripts/verify-daily-report-80mm-print.ts",
     "verify:tables-visible-across-devices": "node scripts/verify-tables-visible-across-devices.mjs",
     "verify:runtime-tenant-snapshot-hydration": "node scripts/verify-runtime-tenant-snapshot-hydration.mjs",
     "verify:runtime-refresh-idempotency": "node scripts/verify-runtime-refresh-idempotency.mjs",
