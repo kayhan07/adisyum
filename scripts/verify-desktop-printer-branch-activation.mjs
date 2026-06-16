@@ -4,6 +4,7 @@ import path from 'node:path';
 const root = process.cwd();
 const mainPath = path.join(root, 'apps', 'desktop', 'src', 'main.cjs');
 const main = fs.readFileSync(mainPath, 'utf8');
+const localAgent = fs.readFileSync(path.join(root, 'lib', 'local-agent.ts'), 'utf8');
 
 const checks = [];
 
@@ -30,6 +31,13 @@ check(
   main.includes('branchId: resolvedBranchId') &&
     main.includes("store.get('branchId')") &&
     main.includes("cloudJson('/api/devices/registry'"),
+);
+
+check(
+  'Desktop proxy fallback sends the current computer device id',
+  localAgent.includes('async function desktopDeviceHeaders') &&
+    localAgent.includes("'x-adisyum-device-id': deviceId") &&
+    localAgent.includes('const deviceHeaders = await desktopDeviceHeaders();'),
 );
 
 const failed = checks.filter((item) => !item.ok);

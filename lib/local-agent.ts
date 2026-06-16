@@ -24,6 +24,10 @@ declare global {
   }
 }
 
+type DesktopBridgeApi = {
+  getConfig?: () => Promise<{ deviceId?: string; tenantId?: string }>;
+};
+
 export function isLocalBridgeBrowserRuntimeEnabled() {
   if (typeof window === 'undefined') return false;
   if (window.adisyumDesktop) return true;
@@ -57,6 +61,23 @@ function directLocalAgentBases() {
     buildLoopbackBase('https', 'localhost', httpsPort),
     buildLoopbackBase('https', '127.0.0.1', httpsPort),
   ];
+}
+
+async function desktopDeviceHeaders() {
+  if (typeof window === 'undefined' || !window.adisyumDesktop) return {};
+  const api = window.adisyumDesktop as DesktopBridgeApi;
+  if (typeof api.getConfig !== 'function') return {};
+  try {
+    const config = await api.getConfig();
+    const deviceId = typeof config?.deviceId === 'string' ? config.deviceId.trim() : '';
+    const tenantId = typeof config?.tenantId === 'string' ? config.tenantId.trim() : '';
+    return {
+      ...(deviceId ? { 'x-adisyum-device-id': deviceId } : {}),
+      ...(tenantId ? { 'x-adisyum-tenant-id': tenantId } : {}),
+    };
+  } catch {
+    return {};
+  }
 }
 
 async function fetchDirectLocalAgent(path: string, options: LocalAgentRequestOptions = {}) {
@@ -159,11 +180,13 @@ export async function fetchFromLocalAgent(path: string, options: LocalAgentReque
   }
 
   const proxyRoute = PROXY_ROUTES[path] ?? '/api/printers/local-agent';
+  const deviceHeaders = await desktopDeviceHeaders();
   const response = await runtimeFetch(proxyRoute as `/api/${string}`, {
     method: options.method ?? 'GET',
     cache: 'no-store',
     headers: {
       ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      ...deviceHeaders,
       ...(options.headers ?? {}),
     },
     body: nextBody !== undefined ? JSON.stringify(nextBody) : undefined,

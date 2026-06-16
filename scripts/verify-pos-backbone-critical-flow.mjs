@@ -21,6 +21,7 @@ const tableStateRoute = read('app/api/runtime/table-state/route.ts');
 const tableOrdersRoute = read('app/api/pos/table-orders/route.ts');
 const printRequestsRoute = read('app/api/printers/print-requests/route.ts');
 const localAgentRoute = read('app/api/printers/local-agent/route.ts');
+const localAgentClient = read('lib/local-agent.ts');
 const desktopMain = read('apps/desktop/src/main.cjs');
 const runtimeState = read('lib/client/runtime-state.ts');
 const tablePaymentState = read('lib/table-payment-state.ts');
@@ -129,6 +130,15 @@ check(
 );
 
 check(
+  'Printer discovery is scoped to this computer device id',
+  localAgentRoute.includes("request.headers.get('x-adisyum-device-id')") &&
+    localAgentRoute.includes('deviceId: requestedDeviceId') &&
+    localAgentRoute.includes('agent_device_required') &&
+    localAgentClient.includes('async function desktopDeviceHeaders') &&
+    localAgentClient.includes("'x-adisyum-device-id': deviceId"),
+);
+
+check(
   'Print requests are tenant branch and role scoped',
   printRequestsRoute.includes('tenantId: tenant.tenantId') &&
     printRequestsRoute.includes('branchId') &&
@@ -176,8 +186,8 @@ check(
 );
 
 if (failures.length > 0) {
-  console.error(`\n${failures.length}/20 POS backbone checks failed.`);
+  console.error(`\n${failures.length}/21 POS backbone checks failed.`);
   process.exit(1);
 }
 
-console.log('\n20/20 POS backbone checks passed.');
+console.log('\n21/21 POS backbone checks passed.');

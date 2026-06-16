@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-16T00:11:41.860Z",
+  "generatedAt": "2026-06-16T09:01:11.806Z",
   "mode": "strict",
   "filesScanned": 215,
   "totalTenantOwnedQueries": 279,
@@ -846,7 +846,7 @@
       "findings": [
         {
           "file": "app/api/printers/local-agent/route.ts",
-          "line": 89,
+          "line": 94,
           "model": "printer",
           "operation": "findMany",
           "classification": "safe-tenant-scoped",

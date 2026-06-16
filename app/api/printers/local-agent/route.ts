@@ -63,15 +63,20 @@ export async function GET(request: Request) {
   try {
     const tenant = await requireTenant(request);
     const branchId = tenant.branchId ?? 'mrk';
+    const url = new URL(request.url);
+    const requestedDeviceId = (request.headers.get('x-adisyum-device-id') || url.searchParams.get('deviceId') || '').trim();
     const [device, latestTenantDevice, registeredPrinters] = await Promise.all([
-      prisma.tenantDeviceRegistry.findFirst({
-        where: {
-          tenantId: tenant.tenantId,
-          OR: [{ branchId }, { branchId: null }],
-          revokedAt: null,
-        },
-        orderBy: { lastHeartbeatAt: 'desc' },
-      }),
+      requestedDeviceId
+        ? prisma.tenantDeviceRegistry.findFirst({
+            where: {
+              tenantId: tenant.tenantId,
+              deviceId: requestedDeviceId,
+              OR: [{ branchId }, { branchId: null }],
+              revokedAt: null,
+            },
+            orderBy: { lastHeartbeatAt: 'desc' },
+          })
+        : Promise.resolve(null),
       prisma.tenantDeviceRegistry.findFirst({
         where: {
           tenantId: tenant.tenantId,
@@ -104,6 +109,20 @@ export async function GET(request: Request) {
     const branchPrinters = filterRegisteredPrintersByBranch(registeredPrinters, branchId);
 
     if (!device) {
+      if (!requestedDeviceId) {
+        const printers = mergePrinters([], branchPrinters);
+        return NextResponse.json({
+          ok: printers.length > 0,
+          tenantId: tenant.tenantId,
+          branchId,
+          code: printers.length > 0 ? 'registered_printers_only' : 'agent_device_required',
+          message: printers.length > 0
+            ? 'Bu bilgisayarÄ±n Windows agent kimliÄŸi alÄ±namadÄ±. Sadece kayÄ±tlÄ± yazÄ±cÄ± eÅŸleÅŸmeleri gÃ¶steriliyor.'
+            : 'Bu bilgisayarÄ±n Windows agent kimliÄŸi alÄ±namadÄ±. YazÄ±cÄ±larÄ± gÃ¶rmek iÃ§in Adisyum Desktop/Printer Bridge ile bu bilgisayarÄ± aktive edin.',
+          agent: { found: false, online: false, deviceScoped: false },
+          printers,
+        });
+      }
       if (latestTenantDevice?.branchId && latestTenantDevice.branchId !== branchId) {
         return NextResponse.json({
           ok: false,
