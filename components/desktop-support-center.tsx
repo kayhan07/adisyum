@@ -25,45 +25,47 @@ type DownloadItem = {
   sha256: string;
 };
 
+const latestBuildId = 'windows-1781605136279';
+
 const fallbackDownloads: DownloadItem[] = [
   {
     name: 'Adisyum Desktop',
     fileName: 'AdisyumDesktopSetup.exe',
     path: '/downloads/windows/latest/AdisyumDesktopSetup.exe',
     versionedPath: '/downloads/windows/v0.1.6/AdisyumDesktopSetup.exe',
-    url: 'https://adisyum.com/downloads/windows/v0.1.6/AdisyumDesktopSetup.exe?v=windows-1781605136279',
+    url: `https://adisyum.com/downloads/windows/latest/AdisyumDesktopSetup.exe?v=${latestBuildId}`,
     exists: true,
     executable: true,
     healthy: true,
-    sizeBytes: 85928011,
-    sizeLabel: '81.9 MB (85.928.011 byte)',
-    sha256: '5b62f38475242011cba5f6e7485af34da92273f4315191310752162fa516a0d2',
+    sizeBytes: 85929196,
+    sizeLabel: '81.9 MB (85.929.196 byte)',
+    sha256: 'ab4df288fc45fd6083b4b017d75383a39ef8af4a11f7f479aeb2e04018a8734d',
   },
   {
     name: 'Printer Bridge',
     fileName: 'PrinterBridgeSetup.exe',
     path: '/downloads/windows/latest/PrinterBridgeSetup.exe',
     versionedPath: '/downloads/windows/v0.1.6/PrinterBridgeSetup.exe',
-    url: 'https://adisyum.com/downloads/windows/v0.1.6/PrinterBridgeSetup.exe?v=windows-1781605136279',
+    url: `https://adisyum.com/downloads/windows/latest/PrinterBridgeSetup.exe?v=${latestBuildId}`,
     exists: true,
     executable: true,
     healthy: true,
-    sizeBytes: 69260817,
-    sizeLabel: '66.1 MB (69.260.817 byte)',
-    sha256: 'ba8f413d590adc2b2eff30de774ed9f759b88e58eaee2dc97e604a7861978453',
+    sizeBytes: 69239825,
+    sizeLabel: '66.0 MB (69.239.825 byte)',
+    sha256: '00bee368b74633d89578e95ca65e32f1ccdc65e01ba1148462cda7aa7b338925',
   },
   {
     name: 'Fiscal POS Bridge',
     fileName: 'FiscalPosBridgeSetup.exe',
     path: '/downloads/windows/latest/FiscalPosBridgeSetup.exe',
     versionedPath: '/downloads/windows/v0.1.6/FiscalPosBridgeSetup.exe',
-    url: 'https://adisyum.com/downloads/windows/v0.1.6/FiscalPosBridgeSetup.exe?v=windows-1781605136279',
+    url: `https://adisyum.com/downloads/windows/latest/FiscalPosBridgeSetup.exe?v=${latestBuildId}`,
     exists: true,
     executable: true,
     healthy: true,
-    sizeBytes: 69260817,
-    sizeLabel: '66.1 MB (69.260.817 byte)',
-    sha256: 'ba8f413d590adc2b2eff30de774ed9f759b88e58eaee2dc97e604a7861978453',
+    sizeBytes: 69239825,
+    sizeLabel: '66.0 MB (69.239.825 byte)',
+    sha256: '00bee368b74633d89578e95ca65e32f1ccdc65e01ba1148462cda7aa7b338925',
   },
 ];
 
@@ -73,8 +75,14 @@ const details: Record<string, string> = {
   'Fiscal POS Bridge': 'Mali POS sürücü katmanı ve vendor adaptör paketi',
 };
 
+const downloadLabels: Record<string, string> = {
+  AdisyumDesktopSetup: 'Windows Uygulamasını İndir',
+  PrinterBridgeSetup: 'Yazıcı Köprüsünü İndir',
+  FiscalPosBridgeSetup: 'Mali POS Köprüsünü İndir',
+};
+
 function cacheBustedUrl(item: DownloadItem, buildId?: string) {
-  const path = item.versionedPath || item.path;
+  const path = item.path || item.versionedPath || item.url;
   const originSafePath = path.startsWith('http') ? path : `https://adisyum.com${path}`;
   const separator = originSafePath.includes('?') ? '&' : '?';
   return `${originSafePath}${separator}v=${encodeURIComponent(buildId || item.sha256 || 'latest')}`;
@@ -98,8 +106,8 @@ export function DesktopSupportCenter() {
 
   const downloads = useMemo(() => metadata?.files ?? fallbackDownloads, [metadata]);
   const releaseVersion = metadata?.version ?? '0.1.6';
-  const releaseBuildId = metadata?.buildId ?? 'windows-1779822987588';
-  const releaseDate = metadata?.releasedAt ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium' }).format(new Date(metadata.releasedAt)) : '26 May 2026';
+  const releaseBuildId = metadata?.buildId ?? latestBuildId;
+  const releaseDate = metadata?.releasedAt ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium' }).format(new Date(metadata.releasedAt)) : '16 Haziran 2026';
   const shortBuildId = releaseBuildId.replace(/^windows-/, '').slice(-8);
 
   function trackDownload(fileName: string) {
@@ -134,6 +142,7 @@ export function DesktopSupportCenter() {
           const Icon = index === 0 ? MonitorCog : index === 1 ? Printer : ShieldCheck;
           const ready = item.exists && (item.healthy ?? item.executable ?? item.sizeBytes > 100 * 1024);
           const href = cacheBustedUrl(item, releaseBuildId);
+          const label = downloadLabels[item.fileName.replace('.exe', '')] ?? 'İndir';
           return (
             <a
               key={item.fileName}
@@ -157,7 +166,7 @@ export function DesktopSupportCenter() {
               </div>
               <span className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-cyan-100">
                 <Download className="h-4 w-4" />
-                İndir
+                {label}
               </span>
             </a>
           );
