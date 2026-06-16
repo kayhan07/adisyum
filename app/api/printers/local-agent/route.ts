@@ -7,6 +7,16 @@ export const dynamic = 'force-dynamic';
 
 const AGENT_ONLINE_WINDOW_MS = 45_000;
 
+function jsonUtf8(data: unknown, init?: ResponseInit) {
+  return NextResponse.json(data, {
+    ...init,
+    headers: {
+      ...(init?.headers ?? {}),
+      'content-type': 'application/json; charset=utf-8',
+    },
+  });
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -111,20 +121,21 @@ export async function GET(request: Request) {
     if (!device) {
       if (!requestedDeviceId) {
         const printers = mergePrinters([], branchPrinters);
-        return NextResponse.json({
+        return jsonUtf8({
           ok: printers.length > 0,
           tenantId: tenant.tenantId,
           branchId,
           code: printers.length > 0 ? 'registered_printers_only' : 'agent_device_required',
           message: printers.length > 0
-            ? 'Bu bilgisayarÄ±n Windows agent kimliÄŸi alÄ±namadÄ±. Sadece kayÄ±tlÄ± yazÄ±cÄ± eÅŸleÅŸmeleri gÃ¶steriliyor.'
-            : 'Bu bilgisayarÄ±n Windows agent kimliÄŸi alÄ±namadÄ±. YazÄ±cÄ±larÄ± gÃ¶rmek iÃ§in Adisyum Desktop/Printer Bridge ile bu bilgisayarÄ± aktive edin.',
-          agent: { found: false, online: false, deviceScoped: false },
+            ? 'Bu bilgisayarın Windows agent kimliği alınamadı. Sadece kayıtlı yazıcı eşleşmeleri gösteriliyor.'
+            : 'Bu bilgisayarın Windows agent kimliği alınamadı. Yazıcıları görmek için Adisyum Desktop/Printer Bridge ile bu bilgisayarı aktive edin.',
+          agent: { found: false, online: false, deviceScoped: false, tenantId: tenant.tenantId, branchId },
           printers,
         });
       }
+
       if (latestTenantDevice?.branchId && latestTenantDevice.branchId !== branchId) {
-        return NextResponse.json({
+        return jsonUtf8({
           ok: false,
           tenantId: tenant.tenantId,
           branchId,
@@ -133,25 +144,27 @@ export async function GET(request: Request) {
           agent: {
             found: true,
             online: false,
+            tenantId: tenant.tenantId,
+            branchId: latestTenantDevice.branchId,
             deviceId: latestTenantDevice.deviceId,
             deviceName: latestTenantDevice.hostname,
-            branchId: latestTenantDevice.branchId,
             lastSeenAt: latestTenantDevice.lastHeartbeatAt,
             status: latestTenantDevice.status,
           },
           printers: [],
         });
       }
+
       const printers = mergePrinters([], branchPrinters);
-      return NextResponse.json({
+      return jsonUtf8({
         ok: printers.length > 0,
         tenantId: tenant.tenantId,
         branchId,
         code: printers.length > 0 ? 'registered_printers_only' : 'agent_not_found',
         message: branchPrinters.length > 0
-          ? 'Windows agent bağlı değil. Kayıtlı yazıcı eşleşmeleri gösteriliyor.'
-          : 'Bu aboneye bağlı Windows agent bulunamadı.',
-        agent: { found: false, online: false },
+          ? 'Yazıcı köprüsü çalışmıyor. Kayıtlı yazıcı eşleşmeleri gösteriliyor.'
+          : 'Yazıcı köprüsü çalışmıyor. Lütfen Printer Bridge uygulamasını açın.',
+        agent: { found: false, online: false, tenantId: tenant.tenantId, branchId },
         printers,
       });
     }
@@ -165,6 +178,8 @@ export async function GET(request: Request) {
     const agent = {
       found: true,
       online,
+      tenantId: tenant.tenantId,
+      branchId,
       deviceId: device.deviceId,
       deviceName: device.hostname,
       agentVersion: device.bridgeVersion,
@@ -176,27 +191,27 @@ export async function GET(request: Request) {
     };
 
     if (!online) {
-      return NextResponse.json({
+      return jsonUtf8({
         ok: printers.length > 0,
         tenantId: tenant.tenantId,
         branchId,
         code: printers.length > 0 ? 'agent_offline_registered_printers' : 'agent_offline',
         message: printers.length > 0
-          ? 'Windows agent çevrimdışı. Kayıtlı yazıcı eşleşmeleri gösteriliyor.'
-          : 'Windows agent çevrimdışı. Masaüstü uygulamasını ve Printer Bridge servisini kontrol edin.',
+          ? 'Yazıcı köprüsü çevrimdışı. Kayıtlı yazıcı eşleşmeleri gösteriliyor.'
+          : 'Yazıcı köprüsü çalışmıyor. Lütfen Printer Bridge uygulamasını açın.',
         agent,
         printers,
       });
     }
 
-    return NextResponse.json({
+    return jsonUtf8({
       ok: true,
       tenantId: tenant.tenantId,
       branchId,
       code: printers.length > 0 ? 'printers_found' : 'no_printers',
       message: printers.length > 0
         ? `${printers.length} yazıcı bulundu.`
-        : 'Agent bağlı fakat Windows üzerinde yazıcı bulunamadı.',
+        : 'Yazıcı köprüsü bağlı fakat bu bilgisayarda kurulu yazıcı yok veya Windows spooler kapalı.',
       agent,
       printers,
     });

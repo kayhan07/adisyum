@@ -74,6 +74,9 @@ export type PrinterDeviceRecord = {
   systemName?: string;
   driverName?: string;
   portName?: string;
+  agentDeviceId?: string;
+  agentTenantId?: string;
+  agentBranchId?: string;
   ip: string;
   port: number;
   status: 'Aktif' | 'Yedek' | 'Pasif';

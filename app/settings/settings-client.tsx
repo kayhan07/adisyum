@@ -37,6 +37,9 @@ type SystemPrinter = {
 type AgentStatus = 'checking' | 'online' | 'offline' | 'missing';
 type AgentDiagnostic = {
   message?: string;
+  tenantId?: string | null;
+  branchId?: string | null;
+  deviceId?: string | null;
   deviceName?: string | null;
   agentVersion?: string | null;
   lastSeenAt?: string | null;
@@ -430,7 +433,7 @@ export default function SettingsPage() {
         if (!isOnline) {
           setSystemPrinters([]);
           setSelectedSystemPrinterName('');
-          setMessage(agentDiagnostic.message || 'Windows agent bulunamadı. Masaüstü uygulamasını ve Printer Bridge servisini kontrol edin.');
+          setMessage(agentDiagnostic.message || 'Yazıcı köprüsü çalışmıyor. Lütfen Printer Bridge uygulamasını açın.');
           return;
         }
 
@@ -448,14 +451,17 @@ export default function SettingsPage() {
           return;
         }
 
-        setMessage('Local agent çalışıyor ancak yazıcı bulunamadı.');
+        const spoolerStatus = agentDiagnostic.spoolerStatus?.toLocaleLowerCase('tr-TR') ?? '';
+        setMessage(spoolerStatus && spoolerStatus !== 'healthy'
+          ? 'Windows spooler kapalı veya sorunlu görünüyor. Yazdırma biriktiricisini kontrol edin.'
+          : 'Yazıcı köprüsü bağlı fakat bu bilgisayarda kurulu yazıcı yok.');
       } catch (error) {
         console.error('[business-flow] system printer scan failed', {
           durationMs: Date.now() - scanStartedAt,
           timestamp: new Date().toISOString(),
           error,
         });
-        setMessage(`Yazıcılar okunamadı. POS bilgisayarında Adisyum Local Agent çalışmalı ve ${getLocalAgentBaseHint()} erişilebilir olmalı.`);
+        setMessage(`Yazıcılar okunamadı. Yazıcı köprüsü çalışmıyor olabilir. Printer Bridge uygulamasını açın ve ${getLocalAgentBaseHint()} erişimini kontrol edin.`);
       } finally {
         setPrinterScanLoading(false);
       }
@@ -593,6 +599,9 @@ export default function SettingsPage() {
     systemName?: string;
     driverName?: string;
     portName?: string;
+    agentDeviceId?: string;
+    agentTenantId?: string;
+    agentBranchId?: string;
   }) {
     const trimmedName = device.name.trim();
     if (!trimmedName) return;
@@ -606,6 +615,9 @@ export default function SettingsPage() {
       systemName: device.systemName,
       driverName: device.driverName,
       portName: device.portName,
+      agentDeviceId: device.agentDeviceId,
+      agentTenantId: device.agentTenantId,
+      agentBranchId: device.agentBranchId,
       ip: device.connectionType === 'network' ? device.ip ?? '' : '',
       port: device.connectionType === 'network' ? device.port ?? 9100 : 0,
       status: 'Aktif' as const,
@@ -667,6 +679,9 @@ export default function SettingsPage() {
       systemName: selectedSystemPrinter.name,
       driverName: selectedSystemPrinter.driverName,
       portName: selectedSystemPrinter.portName,
+      agentDeviceId: agentDiagnostic.deviceId ?? undefined,
+      agentTenantId: agentDiagnostic.tenantId ?? undefined,
+      agentBranchId: agentDiagnostic.branchId ?? undefined,
     });
   }
 
@@ -1212,8 +1227,11 @@ export default function SettingsPage() {
                 <p><span className="font-semibold text-ink">Agent sürümü:</span> <span className="text-muted">{agentDiagnostic.agentVersion || '-'}</span></p>
                 <p><span className="font-semibold text-ink">Spooler:</span> <span className="text-muted">{agentDiagnostic.spoolerStatus || '-'}</span></p>
                 <p><span className="font-semibold text-ink">Son bağlantı:</span> <span className="text-muted">{agentDiagnostic.lastSeenAt ? new Date(agentDiagnostic.lastSeenAt).toLocaleString('tr-TR') : '-'}</span></p>
+                <p><span className="font-semibold text-ink">DeviceId:</span> <span className="text-muted">{agentDiagnostic.deviceId || '-'}</span></p>
+                <p><span className="font-semibold text-ink">TenantId:</span> <span className="text-muted">{agentDiagnostic.tenantId || '-'}</span></p>
+                <p><span className="font-semibold text-ink">BranchId:</span> <span className="text-muted">{agentDiagnostic.branchId || '-'}</span></p>
                 <p><span className="font-semibold text-ink">Bulunan yazıcı:</span> <span className="text-muted">{agentDiagnostic.printerCount ?? systemPrinters.length}</span></p>
-                <p className="sm:col-span-2 lg:col-span-3"><span className="font-semibold text-ink">Tanı:</span> <span className="text-muted">{agentDiagnostic.lastError || agentDiagnostic.message || 'Bağlantı bilgisi bekleniyor.'}</span></p>
+                <p className="sm:col-span-2 lg:col-span-4"><span className="font-semibold text-ink">Tanı:</span> <span className="text-muted">{agentDiagnostic.lastError || agentDiagnostic.message || 'Bağlantı bilgisi bekleniyor.'}</span></p>
               </div>
 
               <div className="mt-5 grid gap-4 lg:grid-cols-2">
@@ -1232,7 +1250,7 @@ export default function SettingsPage() {
                   </select>
                   {!printerScanLoading && systemPrinters.length === 0 ? (
                     <div className="mt-3 rounded-2xl border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-700">
-                      {agentDiagnostic.message || `Sistem yazıcısı görünmüyor. Windows agent bağlantısını kontrol edin: ${getLocalAgentBaseHint()}`}
+                      {agentDiagnostic.message || `Sistem yazıcısı görünmüyor. Yazıcı köprüsünü ve ${getLocalAgentBaseHint()} erişimini kontrol edin.`}
                     </div>
                   ) : null}
                   {selectedSystemPrinter ? (
@@ -1325,6 +1343,7 @@ export default function SettingsPage() {
                           <p className="font-semibold text-ink">{printer.name}</p>
                           <p className="mt-1 text-xs text-muted">
                             {printer.connectionType === 'usb' ? `USB · ${printer.systemName ?? printer.portName ?? 'Windows yazıcı kuyruğu'}` : `Ağ · ${printer.ip}:${printer.port || 9100}`} · {printer.role}
+                            {printer.agentDeviceId ? ` · Device ${printer.agentDeviceId}` : ''}
                           </p>
                           <p className="mt-1 text-xs text-muted">{deviceTypeLabels[printer.deviceType ?? 'receipt_printer']}</p>
                           {printer.deviceType === 'fiscal_pos' ? (
