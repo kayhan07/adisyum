@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-15T14:00:23.922Z",
+  "generatedAt": "2026-06-16T00:11:41.860Z",
   "mode": "strict",
   "filesScanned": 215,
   "totalTenantOwnedQueries": 279,
@@ -846,12 +846,12 @@
       "findings": [
         {
           "file": "app/api/printers/local-agent/route.ts",
-          "line": 75,
+          "line": 89,
           "model": "printer",
           "operation": "findMany",
           "classification": "safe-tenant-scoped",
           "risk": "Read/query operation contains tenant scope.",
-          "snippet": "      prisma.tenantDeviceRegistry.findFirst({\n        where: {\n          tenantId: tenant.tenantId,\n          OR: [{ branchId }, { branchId: null }],\n          revokedAt: null,\n        },\n        orderBy: { lastHeartbeatAt: 'desc' },\n      }),\n      prisma.printer.findMany({\n        where: {\n          tenantId: tenant.tenantId,\n          active: true,\n        },\n        orderBy: { name: 'asc' },\n        select: {\n          name: true,\n          type: true,\n          endpoint: true,"
+          "snippet": "        select: {\n          deviceId: true,\n          hostname: true,\n          branchId: true,\n          lastHeartbeatAt: true,\n          status: true,\n        },\n      }),\n      prisma.printer.findMany({\n        where: {\n          tenantId: tenant.tenantId,\n          active: true,\n        },\n        orderBy: { name: 'asc' },\n        select: {\n          name: true,\n          type: true,\n          endpoint: true,"
         }
       ]
     },

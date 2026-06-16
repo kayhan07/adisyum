@@ -26,9 +26,11 @@ export async function GET(request: Request) {
     const jobs = await prisma.tenantPrintJob.findMany({
       where: {
         tenantId: tenant.tenantId,
-        OR: [{ branchId }, { branchId: null }],
+        AND: [
+          { OR: [{ branchId }, { branchId: null }] },
+          ...(deviceId ? [{ OR: [{ targetDeviceId: deviceId }, { targetDeviceId: null }] }] : []),
+        ],
         status: { in: ['pending', 'failed'] },
-        ...(deviceId ? { targetDeviceId: deviceId } : {}),
       },
       orderBy: { createdAt: 'asc' },
       take: 100,
@@ -86,10 +88,6 @@ export async function POST(request: Request) {
           orderBy: { lastHeartbeatAt: 'desc' },
         });
 
-    if (!activeDevice) {
-      return NextResponse.json({ ok: false, tenantId: tenant.tenantId, branchId, error: 'No active printer bridge registered for tenant/branch.', code: 'no_active_bridge' }, { status: 409 });
-    }
-
     const existingJob = await prisma.tenantPrintJob.findUnique({
       where: { tenantId_mutationId: { tenantId: tenant.tenantId, mutationId: validated.mutationId } },
     });
@@ -112,7 +110,7 @@ export async function POST(request: Request) {
           where: { tenantId_mutationId: { tenantId: tenant.tenantId, mutationId: validated.mutationId } },
           data: {
             branchId,
-            targetDeviceId: activeDevice.deviceId,
+            targetDeviceId: activeDevice?.deviceId ?? validated.targetDeviceId ?? existingJob.targetDeviceId,
             printerName: validated.printerName,
             printerRole: body?.printerRole ?? 'general',
             payload: toPrismaJson({ bytesBase64: body?.bytesBase64, metadata: body?.metadata ?? {} }),
@@ -124,7 +122,7 @@ export async function POST(request: Request) {
           data: {
             tenantId: tenant.tenantId,
             branchId,
-            targetDeviceId: activeDevice.deviceId,
+            targetDeviceId: activeDevice?.deviceId ?? validated.targetDeviceId,
             printerName: validated.printerName,
             printerRole: body?.printerRole ?? 'general',
             payload: toPrismaJson({ bytesBase64: body?.bytesBase64, metadata: body?.metadata ?? {} }),
@@ -154,9 +152,10 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       status: 'queued',
+      code: activeDevice ? 'queued_for_active_bridge' : 'queued_waiting_for_bridge',
       tenantId: tenant.tenantId,
       branchId,
-      deviceId: activeDevice.deviceId,
+      deviceId: activeDevice?.deviceId ?? validated.targetDeviceId ?? null,
       printerName: job.printerName,
       role: job.printerRole,
       job,

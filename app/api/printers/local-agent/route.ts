@@ -63,7 +63,7 @@ export async function GET(request: Request) {
   try {
     const tenant = await requireTenant(request);
     const branchId = tenant.branchId ?? 'mrk';
-    const [device, registeredPrinters] = await Promise.all([
+    const [device, latestTenantDevice, registeredPrinters] = await Promise.all([
       prisma.tenantDeviceRegistry.findFirst({
         where: {
           tenantId: tenant.tenantId,
@@ -71,6 +71,20 @@ export async function GET(request: Request) {
           revokedAt: null,
         },
         orderBy: { lastHeartbeatAt: 'desc' },
+      }),
+      prisma.tenantDeviceRegistry.findFirst({
+        where: {
+          tenantId: tenant.tenantId,
+          revokedAt: null,
+        },
+        orderBy: { lastHeartbeatAt: 'desc' },
+        select: {
+          deviceId: true,
+          hostname: true,
+          branchId: true,
+          lastHeartbeatAt: true,
+          status: true,
+        },
       }),
       prisma.printer.findMany({
         where: {
@@ -90,6 +104,25 @@ export async function GET(request: Request) {
     const branchPrinters = filterRegisteredPrintersByBranch(registeredPrinters, branchId);
 
     if (!device) {
+      if (latestTenantDevice?.branchId && latestTenantDevice.branchId !== branchId) {
+        return NextResponse.json({
+          ok: false,
+          tenantId: tenant.tenantId,
+          branchId,
+          code: 'agent_branch_mismatch',
+          message: `Yazıcı farklı şubeye bağlı. Aktif şube: ${branchId}. Yazıcı şubesi: ${latestTenantDevice.branchId}.`,
+          agent: {
+            found: true,
+            online: false,
+            deviceId: latestTenantDevice.deviceId,
+            deviceName: latestTenantDevice.hostname,
+            branchId: latestTenantDevice.branchId,
+            lastSeenAt: latestTenantDevice.lastHeartbeatAt,
+            status: latestTenantDevice.status,
+          },
+          printers: [],
+        });
+      }
       const printers = mergePrinters([], branchPrinters);
       return NextResponse.json({
         ok: printers.length > 0,

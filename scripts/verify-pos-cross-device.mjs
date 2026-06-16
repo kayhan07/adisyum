@@ -34,8 +34,9 @@ assert(tablePaymentState.includes('refreshAuthoritativeOrdersByTable'), 'Client 
 assert(tablePaymentState.includes("runtimeFetch(`/api/runtime/table-state${query}`"), 'Client table state sync must hydrate branch-scoped runtime table-state');
 assert(tablePaymentState.includes('applySnapshot(payload.state)'), 'Client table state sync must apply server table-state snapshots');
 assert(tablePaymentState.includes('replaceAuthoritativeOrdersByTable(snapshot.ordersByTable)'), 'Client table state snapshot must update authoritative orders');
-assert(tablePaymentState.includes('PRODUCT_RECOVERY_DISABLE_TABLE_RUNTIME_SERVER_PERSIST'), 'Client table runtime writes must not overwrite server authoritative POS orders');
-assert(tableLayoutStore.includes("`${LOCAL_STORAGE_KEY}:${session.tenantId}:${branchId}`"), 'Table layout local cache must be tenant and branch scoped');
+assert(tablePaymentState.includes('const PRODUCT_RECOVERY_DISABLE_TABLE_RUNTIME_SERVER_PERSIST = false;'), 'Product recovery mode must not disable table runtime server persistence');
+assert(tablePaymentState.includes("void persistRuntimeScope('tenant');"), 'Client table runtime writes must still persist the branch-scoped server snapshot');
+assert(tableLayoutStore.includes("`${LOCAL_STORAGE_KEY}:${session.tenantId}:${branchId}`"), 'Table layout local cache must be tenant and branch scoped offline fallback');
 
 if (failures.length > 0) {
   console.error('[pos:cross-device] FAIL');

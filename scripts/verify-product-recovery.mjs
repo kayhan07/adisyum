@@ -93,7 +93,7 @@ assert(/offline-auto-sync-disabled/.test(orderComposer), 'OrderComposer must exp
 assert(/hydrateAuthoritativeRuntime/.test(orderComposer), 'OrderComposer must retain one bounded initial table hydration');
 assert(/!Array\.isArray\(catalog\?\.items\)/.test(orderComposer), 'OrderComposer must accept authoritative empty POS catalogs');
 assert(!/!catalog\?\.items\?\.length/.test(orderComposer), 'OrderComposer must not preserve stale product cards when authoritative POS catalog is empty');
-assert(/localCreatedProducts/.test(orderComposer), 'OrderComposer must preserve locally created tenant products when the DB catalog is still empty');
+assert(/setStoredSaleProducts\(\[\]\)/.test(orderComposer) && /setStoredCatalogProducts\(catalog\.items\)/.test(orderComposer), 'OrderComposer must use the server POS catalog as source of truth while online');
 assert(/orderItemBelongsToCurrentCatalog/.test(posTableOrdersRoute), 'POS table-orders must not hydrate order lines for products outside the current tenant catalog');
 assert(/tenantProductIds/.test(posTableOrdersRoute), 'POS table-orders must preserve active tenant-linked open order lines while rejecting foreign catalog residue');
 assert(!/catalog\.items\.length === 0[\s\S]{0,120}return \{\}/.test(posTableOrdersRoute), 'POS table-orders must not hide active tenant-linked open orders while the runtime catalog is rebuilding');
@@ -137,7 +137,8 @@ assert(/window\.location\.replace\(target\)/.test(secureLogout) && /'\/app\/logi
 assert(/'\/system-admin\/login'/.test(secureLogout), 'Logout must return system-admin users to /system-admin/login');
 assert(/runtimeFetch\('\/api\/auth\/login'/.test(appLogin), '/app/login must perform manual login via /api/auth/login');
 assert(/router\.replace\('\/app'\)/.test(appLogin), '/app/login must navigate once to /app after successful manual login');
-assert(!/localStorage|sessionStorage/.test(appLogin), '/app/login must not restore auth from browser storage');
+assert(/REMEMBER_LOGIN_KEY/.test(appLogin), '/app/login may remember tenant/user identity only');
+assert(!/sessionStorage/.test(appLogin) && !/loadSessionState|saveSessionState|adisyum-session|authSnapshot/.test(appLogin), '/app/login must not restore auth/session from browser storage');
 assert(/runtimeFetch\('\/api\/auth\/system-admin'/.test(systemAdminLogin), '/system-admin/login must perform manual login via /api/auth/system-admin');
 assert(/router\.replace\('\/system-admin'\)/.test(systemAdminLogin), '/system-admin/login must navigate once to /system-admin after successful manual login');
 assert(!/localStorage|sessionStorage/.test(systemAdminLogin), '/system-admin/login must not restore auth from browser storage');

@@ -18,7 +18,7 @@ let tableStateWriteCounter = 0;
 let tableStateSyncCounter = 0;
 let tableRuntimeServerPersistWarned = false;
 const runtimeClientId = `pos-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-const PRODUCT_RECOVERY_DISABLE_TABLE_RUNTIME_SERVER_PERSIST = true;
+const PRODUCT_RECOVERY_DISABLE_TABLE_RUNTIME_SERVER_PERSIST = false;
 
 type TableStateSyncMeta = {
   version: number;
@@ -231,15 +231,15 @@ export async function syncTableStateFromServer() {
 }
 
 export function publishTableState() {
-  if (!canUseStorage()) return;
-  if (PRODUCT_RECOVERY_DISABLE_TABLE_RUNTIME_SERVER_PERSIST) {
-    if (!tableRuntimeServerPersistWarned) {
-      tableRuntimeServerPersistWarned = true;
-      console.warn('[adisyon-flow] table runtime server persistence disabled in product recovery mode', {
-        blockedEndpoint: '/api/runtime/state/tenant',
-        activeMutationEndpoint: '/api/pos/table-orders',
-      });
-    }
+	if (!canUseStorage()) return;
+	if (PRODUCT_RECOVERY_DISABLE_TABLE_RUNTIME_SERVER_PERSIST) {
+		if (!tableRuntimeServerPersistWarned) {
+			tableRuntimeServerPersistWarned = true;
+			console.warn('[adisyon-flow] table runtime server persistence disabled by explicit developer override', {
+				blockedEndpoint: '/api/runtime/state/tenant',
+				activeMutationEndpoint: '/api/pos/table-orders',
+			});
+		}
     return;
   }
   void persistRuntimeScope('tenant');
