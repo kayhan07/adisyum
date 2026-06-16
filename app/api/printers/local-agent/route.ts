@@ -162,8 +162,8 @@ export async function GET(request: Request) {
         branchId,
         code: printers.length > 0 ? 'registered_printers_only' : 'agent_not_found',
         message: branchPrinters.length > 0
-          ? 'Yazıcı köprüsü çalışmıyor. Kayıtlı yazıcı eşleşmeleri gösteriliyor.'
-          : 'Yazıcı köprüsü çalışmıyor. Lütfen Printer Bridge uygulamasını açın.',
+          ? 'Bu bilgisayarda Printer Bridge çalışmıyor. Kayıtlı yazıcı eşleşmeleri gösteriliyor.'
+          : 'Bu bilgisayarda Printer Bridge çalışmıyor. Yazıcıları görebilmek için Printer Bridge’i kurup açın.',
         agent: { found: false, online: false, tenantId: tenant.tenantId, branchId },
         printers,
       });
@@ -198,7 +198,7 @@ export async function GET(request: Request) {
         code: printers.length > 0 ? 'agent_offline_registered_printers' : 'agent_offline',
         message: printers.length > 0
           ? 'Yazıcı köprüsü çevrimdışı. Kayıtlı yazıcı eşleşmeleri gösteriliyor.'
-          : 'Yazıcı köprüsü çalışmıyor. Lütfen Printer Bridge uygulamasını açın.',
+          : 'Bu bilgisayarda Printer Bridge çalışmıyor. Yazıcıları görebilmek için Printer Bridge’i kurup açın.',
         agent,
         printers,
       });

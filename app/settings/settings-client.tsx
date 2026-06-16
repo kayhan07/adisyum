@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Building2, CheckCircle2, Code2, KeyRound, PlugZap, Printer, RefreshCw, Save, ShieldCheck, Trash2, UserPlus, XCircle } from 'lucide-react';
+import { Building2, CheckCircle2, Code2, Download, KeyRound, LifeBuoy, PlugZap, Printer, RefreshCw, Save, ShieldCheck, Trash2, UserPlus, XCircle } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { fetchLocalAgentJson, getLocalAgentBaseHint } from '@/lib/local-agent';
 import { getDefaultCompanyState, loadCompanyState, saveCompanyState, subscribeToCompanyChanges, type CompanyState } from '@/lib/company-store';
@@ -36,6 +36,7 @@ type SystemPrinter = {
 
 type AgentStatus = 'checking' | 'online' | 'offline' | 'missing';
 type AgentDiagnostic = {
+  code?: string;
   message?: string;
   tenantId?: string | null;
   branchId?: string | null;
@@ -61,6 +62,8 @@ const printableDeviceTypeOptions: PrintableDeviceType[] = ['receipt_printer', 'k
 const AGENT_STATUS_RETRY_COUNT = 3;
 const AGENT_STATUS_RETRY_DELAY_MS = 500;
 const AGENT_HEARTBEAT_MS = 6000;
+const PRINTER_BRIDGE_LATEST_URL = 'https://adisyum.com/downloads/windows/latest/PrinterBridgeSetup.exe?v=windows-1781605136279';
+const CURRENT_PRINTER_BRIDGE_VERSION = '0.1.6';
 
 function isPrintableDeviceType(value: string): value is PrintableDeviceType {
   return value === 'receipt_printer' || value === 'kitchen_printer' || value === 'bar_printer';
@@ -116,6 +119,45 @@ function slugify(value: string) {
     .toLocaleLowerCase('tr-TR')
     .replace(/[^a-z0-9ğüşöçıİĞÜŞÖÇ]+/gi, '-')
     .replace(/^-+|-+$/g, '');
+}
+
+function compareSemver(left: string, right: string) {
+  const parse = (value: string) => {
+    const match = value.match(/(\d+)\.(\d+)\.(\d+)/);
+    return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+  };
+  const a = parse(left);
+  const b = parse(right);
+  if (!a || !b) return 0;
+  for (let index = 0; index < 3; index += 1) {
+    if (a[index] !== b[index]) return a[index] - b[index];
+  }
+  return 0;
+}
+
+function isLegacyPrinterBridgeVersion(version?: string | null) {
+  if (!version) return false;
+  return compareSemver(version, CURRENT_PRINTER_BRIDGE_VERSION) < 0;
+}
+
+function resolveAgentActionMessage(status: AgentStatus, diagnostic: AgentDiagnostic) {
+  const spoolerStatus = diagnostic.spoolerStatus?.toLocaleLowerCase('tr-TR') ?? '';
+  if (spoolerStatus && spoolerStatus !== 'healthy') {
+    return 'Windows Yazdırma Biriktiricisi kapalı. Windows Hizmetler’den Print Spooler’ı başlatın.';
+  }
+  if (isLegacyPrinterBridgeVersion(diagnostic.agentVersion)) {
+    return 'Printer Bridge eski sürüm. Güncel sürümü indirip kurun.';
+  }
+  if (diagnostic.code === 'agent_device_required' || (!diagnostic.deviceId && status === 'online')) {
+    return 'Bu bilgisayarın agent kimliği alınamadı. Printer Bridge’i yeniden başlatın.';
+  }
+  if (status === 'offline' || status === 'missing') {
+    return 'Bu bilgisayarda Printer Bridge çalışmıyor. Yazıcıları görebilmek için Printer Bridge’i kurup açın.';
+  }
+  if ((diagnostic.printerCount ?? 0) === 0) {
+    return 'Yazıcı köprüsü bağlı fakat bu bilgisayarda kurulu yazıcı yok.';
+  }
+  return diagnostic.message || 'Bağlantı bilgisi bekleniyor.';
 }
 
 export default function SettingsPage() {
@@ -307,6 +349,16 @@ export default function SettingsPage() {
     () => systemPrinters.find((printer) => printer.name === selectedSystemPrinterName) ?? null,
     [selectedSystemPrinterName, systemPrinters],
   );
+  const agentActionMessage = useMemo(
+    () => resolveAgentActionMessage(agentStatus, agentDiagnostic),
+    [agentDiagnostic, agentStatus],
+  );
+  const spoolerStatus = agentDiagnostic.spoolerStatus?.toLocaleLowerCase('tr-TR') ?? '';
+  const agentNeedsAction = agentStatus !== 'online'
+    || agentDiagnostic.code === 'agent_device_required'
+    || isLegacyPrinterBridgeVersion(agentDiagnostic.agentVersion)
+    || Boolean(spoolerStatus && spoolerStatus !== 'healthy')
+    || (!printerScanLoading && systemPrinters.length === 0);
 
   const receiptPreviewOrder = useMemo(
     () => ({
@@ -433,7 +485,7 @@ export default function SettingsPage() {
         if (!isOnline) {
           setSystemPrinters([]);
           setSelectedSystemPrinterName('');
-          setMessage(agentDiagnostic.message || 'Yazıcı köprüsü çalışmıyor. Lütfen Printer Bridge uygulamasını açın.');
+          setMessage(agentDiagnostic.message || 'Bu bilgisayarda Printer Bridge çalışmıyor. Yazıcıları görebilmek için Printer Bridge’i kurup açın.');
           return;
         }
 
@@ -491,9 +543,9 @@ export default function SettingsPage() {
       for (let attempt = 1; attempt <= retries; attempt += 1) {
         const attemptStartedAt = Date.now();
         try {
-          const { data } = await fetchLocalAgentJson<{ message?: string; agent?: AgentDiagnostic }>('/health');
+          const { data } = await fetchLocalAgentJson<{ code?: string; message?: string; agent?: AgentDiagnostic }>('/health');
           setAgentStatus('online');
-          setAgentDiagnostic({ ...(data.agent ?? {}), message: data.message });
+          setAgentDiagnostic({ ...(data.agent ?? {}), code: data.code, message: data.message });
           if (!options.quiet) {
             console.info('[business-flow] local agent status check completed', {
               attempt,
@@ -505,7 +557,7 @@ export default function SettingsPage() {
           return true;
         } catch (error) {
           const diagnosticError = error as Error & { code?: string; payload?: { message?: string; agent?: AgentDiagnostic } };
-          setAgentDiagnostic({ ...(diagnosticError.payload?.agent ?? {}), message: diagnosticError.payload?.message ?? diagnosticError.message });
+          setAgentDiagnostic({ ...(diagnosticError.payload?.agent ?? {}), code: diagnosticError.code, message: diagnosticError.payload?.message ?? diagnosticError.message });
           if (diagnosticError.code === 'agent_not_found') {
             setAgentStatus('missing');
             return false;
@@ -542,10 +594,10 @@ export default function SettingsPage() {
     try {
       const { data } = await fetchLocalAgentJson<
         Array<string | { Name?: string; name?: string; driver?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string; default?: boolean; online?: boolean }>
-        | { ok?: boolean; message?: string; agent?: AgentDiagnostic; printers?: Array<string | { Name?: string; name?: string; driver?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string; default?: boolean; online?: boolean }>; error?: string }
+        | { ok?: boolean; code?: string; message?: string; agent?: AgentDiagnostic; printers?: Array<string | { Name?: string; name?: string; driver?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string; default?: boolean; online?: boolean }>; error?: string }
       >('/printers');
       if (!Array.isArray(data)) {
-        setAgentDiagnostic({ ...(data.agent ?? {}), message: data.message });
+        setAgentDiagnostic({ ...(data.agent ?? {}), code: data.code, message: data.message });
       }
       const rawPrinters = Array.isArray(data)
         ? data
@@ -1231,8 +1283,38 @@ export default function SettingsPage() {
                 <p><span className="font-semibold text-ink">TenantId:</span> <span className="text-muted">{agentDiagnostic.tenantId || '-'}</span></p>
                 <p><span className="font-semibold text-ink">BranchId:</span> <span className="text-muted">{agentDiagnostic.branchId || '-'}</span></p>
                 <p><span className="font-semibold text-ink">Bulunan yazıcı:</span> <span className="text-muted">{agentDiagnostic.printerCount ?? systemPrinters.length}</span></p>
-                <p className="sm:col-span-2 lg:col-span-4"><span className="font-semibold text-ink">Tanı:</span> <span className="text-muted">{agentDiagnostic.lastError || agentDiagnostic.message || 'Bağlantı bilgisi bekleniyor.'}</span></p>
+                <p className="sm:col-span-2 lg:col-span-4"><span className="font-semibold text-ink">Tanı:</span> <span className="text-muted">{agentDiagnostic.lastError || agentActionMessage}</span></p>
               </div>
+              {agentNeedsAction ? (
+                <div className="mt-3 rounded-2xl border border-amber-400/25 bg-amber-500/10 p-4 text-sm text-amber-800">
+                  <p className="font-semibold">{agentActionMessage}</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <a
+                      href={PRINTER_BRIDGE_LATEST_URL}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-2xl bg-amber-500 px-4 text-sm font-semibold text-white"
+                    >
+                      <Download className="h-4 w-4" />
+                      Printer Bridge’i İndir
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => void scanSystemPrinters()}
+                      disabled={printerScanLoading}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-2xl border border-amber-500/30 bg-white/50 px-4 text-sm font-semibold text-amber-900 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${printerScanLoading ? 'animate-spin' : ''}`} />
+                      Yeniden Tara
+                    </button>
+                    <Link
+                      href="/app/login"
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-2xl border border-amber-500/30 bg-white/50 px-4 text-sm font-semibold text-amber-900"
+                    >
+                      <LifeBuoy className="h-4 w-4" />
+                      Kurulum Yardımı
+                    </Link>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="mt-5 grid gap-4 lg:grid-cols-2">
                 <div className="rounded-3xl border border-line bg-canvas p-4">
@@ -1250,7 +1332,7 @@ export default function SettingsPage() {
                   </select>
                   {!printerScanLoading && systemPrinters.length === 0 ? (
                     <div className="mt-3 rounded-2xl border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-700">
-                      {agentDiagnostic.message || `Sistem yazıcısı görünmüyor. Yazıcı köprüsünü ve ${getLocalAgentBaseHint()} erişimini kontrol edin.`}
+                      {agentActionMessage || `Sistem yazıcısı görünmüyor. Yazıcı köprüsünü ve ${getLocalAgentBaseHint()} erişimini kontrol edin.`}
                     </div>
                   ) : null}
                   {selectedSystemPrinter ? (

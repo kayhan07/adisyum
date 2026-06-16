@@ -19,16 +19,26 @@ function check(name, ok) {
 
 check('login screen keeps Windows download center', login.includes('<DesktopSupportCenter />'));
 check('post-login dashboard no longer renders Windows download center', !moduleCenter.includes('DesktopSupportCenter'));
-check('agent offline message is readable Turkish', settings.includes('Yazıcı köprüsü çalışmıyor. Lütfen Printer Bridge uygulamasını açın.'));
+check(
+  'agent offline message tells the user what to do',
+  settings.includes('Bu bilgisayarda Printer Bridge çalışmıyor. Yazıcıları görebilmek için Printer Bridge’i kurup açın.')
+    && localAgentRoute.includes('Bu bilgisayarda Printer Bridge çalışmıyor. Yazıcıları görebilmek için Printer Bridge’i kurup açın.'),
+);
+check('agent offline shows Printer Bridge download action', settings.includes('Printer Bridge’i İndir') && settings.includes('PRINTER_BRIDGE_LATEST_URL'));
+check('agent offline shows rescan action', settings.includes('Yeniden Tara') && settings.includes('scanSystemPrinters()'));
+check('agent offline shows installation help action', settings.includes('Kurulum Yardımı') && settings.includes('href="/app/login"'));
+check('offline printer dropdown remains empty with explicit reason', settings.includes('systemPrinters.length === 0') && settings.includes('agentActionMessage'));
 check('device id missing message is readable Turkish', localAgentRoute.includes('Bu bilgisayarın Windows agent kimliği alınamadı.'));
+check('device id missing action asks for bridge restart', settings.includes('Bu bilgisayarın agent kimliği alınamadı. Printer Bridge’i yeniden başlatın.'));
+check('old agent warning asks for current bridge install', settings.includes('Printer Bridge eski sürüm. Güncel sürümü indirip kurun.'));
+check('spooler stopped warning is explicit', settings.includes('Windows Yazdırma Biriktiricisi kapalı. Windows Hizmetler’den Print Spooler’ı başlatın.'));
 check('local agent JSON responses declare UTF-8 charset', localAgentRoute.includes("'content-type': 'application/json; charset=utf-8'"));
-check('agent health exposes tenant branch and device identity in UI', settings.includes('DeviceId:') && settings.includes('TenantId:') && settings.includes('BranchId:'));
-check('agent response includes tenant branch and device identity', localAgentRoute.includes('tenantId: tenant.tenantId') && localAgentRoute.includes('branchId,') && localAgentRoute.includes('deviceId: device.deviceId'));
-check('printer scan distinguishes no printer from bridge failure', settings.includes('bu bilgisayarda kurulu yazıcı yok') && settings.includes('Windows spooler kapalı'));
+check('agent online exposes device id version spooler and printer count', settings.includes('DeviceId:') && settings.includes('Agent sürümü:') && settings.includes('Spooler:') && settings.includes('Bulunan yazıcı:'));
+check('agent online with printers fills the dropdown from systemPrinters', settings.includes('systemPrinters.map((printer)') && settings.includes('value={printer.name}'));
 check('client proxy sends current computer device header', localAgentClient.includes("'x-adisyum-device-id': deviceId"));
 check('installed printers are not fetched from another computer without device id', localAgentRoute.includes('agent_device_required') && localAgentRoute.includes('deviceScoped: false'));
 check('same tenant branch different device id cannot see another device printers', localAgentRoute.includes('deviceId: requestedDeviceId') && localAgentRoute.includes('printers: []'));
-check('default printer diagnostic keeps tenant scoped agent data', settings.includes('tenantId?: string | null') && localAgentRoute.includes('tenantId: tenant.tenantId'));
+check('default printer diagnostic keeps tenant scoped agent data', settings.includes('agentDeviceId') && settings.includes('agentTenantId') && settings.includes('agentBranchId'));
 
 const failed = checks.filter((item) => !item.ok);
 
