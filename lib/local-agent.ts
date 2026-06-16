@@ -31,7 +31,7 @@ type DesktopBridgeApi = {
 export function isLocalBridgeBrowserRuntimeEnabled() {
   if (typeof window === 'undefined') return false;
   if (window.adisyumDesktop) return true;
-  return process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_ENABLE_LOCAL_BRIDGE === '1';
+  return process.env.NEXT_PUBLIC_DISABLE_LOCAL_BRIDGE !== '1';
 }
 
 function buildLoopbackBase(protocol: 'http' | 'https', host: 'localhost' | '127.0.0.1', port: string) {

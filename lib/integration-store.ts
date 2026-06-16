@@ -63,7 +63,7 @@ export type PartnerIntegrationRecord = {
   notes?: string;
 };
 
-export type PrinterDeviceType = 'receipt_printer' | 'kitchen_printer' | 'bar_printer' | 'fiscal_pos';
+export type PrinterDeviceType = 'receipt_printer' | 'kitchen_printer' | 'bar_printer' | 'daily_report_printer' | 'fiscal_pos';
 
 export type PrinterDeviceRecord = {
   id: string;

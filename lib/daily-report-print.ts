@@ -1,6 +1,6 @@
 export const DAILY_REPORT_80MM_WIDTH = 48;
 
-export type DailyReportPrinterRole = 'cashier';
+export type DailyReportPrinterRole = 'daily_report';
 
 export type DailyReportPaymentTotals = {
   cash: number;
@@ -39,6 +39,7 @@ export type DailyReportPrintRequest = {
   bytesBase64: string;
   metadata: {
     reportType: 'daily-report';
+    fallbackPrinterRole: 'cashier';
     paperWidth: '80mm';
     tenantId: string;
     branchId: string;
@@ -136,12 +137,13 @@ export function findDailyReport80mmOverflow(text: string, width = DAILY_REPORT_8
 export function buildDailyReportPrintRequest(input: DailyReportPrintInput): DailyReportPrintRequest {
   const text = formatDailyReport80mmText(input);
   return {
-    printerRole: 'cashier',
+    printerRole: 'daily_report',
     ticketType: 'daily-report',
     printerName: input.printerName,
     bytesBase64: encodeBase64Utf8(text),
     metadata: {
       reportType: 'daily-report',
+      fallbackPrinterRole: 'cashier',
       paperWidth: '80mm',
       tenantId: input.tenantId,
       branchId: input.branchId,

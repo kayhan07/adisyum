@@ -36,6 +36,8 @@ check('local agent JSON responses declare UTF-8 charset', localAgentRoute.includ
 check('agent online exposes device id version spooler and printer count', settings.includes('DeviceId:') && settings.includes('Agent sürümü:') && settings.includes('Spooler:') && settings.includes('Bulunan yazıcı:'));
 check('agent online with printers fills the dropdown from systemPrinters', settings.includes('systemPrinters.map((printer)') && settings.includes('value={printer.name}'));
 check('client proxy sends current computer device header', localAgentClient.includes("'x-adisyum-device-id': deviceId"));
+check('browser settings scan can reach local Printer Bridge directly', localAgentClient.includes("NEXT_PUBLIC_DISABLE_LOCAL_BRIDGE !== '1'"));
+check('settings scan registers bridge device and printers to cloud registry', settings.includes('/api/devices/registry') && settings.includes('registerLocalAgentDevice'));
 check('installed printers are not fetched from another computer without device id', localAgentRoute.includes('agent_device_required') && localAgentRoute.includes('deviceScoped: false'));
 check('same tenant branch different device id cannot see another device printers', localAgentRoute.includes('deviceId: requestedDeviceId') && localAgentRoute.includes('printers: []'));
 check('default printer diagnostic keeps tenant scoped agent data', settings.includes('agentDeviceId') && settings.includes('agentTenantId') && settings.includes('agentBranchId'));

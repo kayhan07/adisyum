@@ -56,7 +56,8 @@ record('daily report text is generated', text.includes('Günlük Rapor') && text
 record('Turkish branch/product text is preserved', text.includes('Şube') && text.includes('İÇECEK') && text.includes('ÇOBAN'));
 record('80mm lines do not overflow', overflow.length === 0, { overflow });
 record('daily report print request uses daily-report ticket type', printRequest.ticketType === 'daily-report');
-record('daily report print request targets default cashier/POS printer role', printRequest.printerRole === 'cashier');
+record('daily report print request targets daily report printer role', printRequest.printerRole === 'daily_report');
+record('daily report print request falls back to cashier/POS printer role', printRequest.metadata.fallbackPrinterRole === 'cashier');
 record('daily report metadata keeps tenant and branch scope', printRequest.metadata.tenantId === sample.tenantId && printRequest.metadata.branchId === sample.branchId);
 record('daily report output is encoded as printable UTF-8 bytes', decoded === text);
 record('daily report request keeps selected cashier printer name', printRequest.printerName === sample.printerName);

@@ -81,8 +81,11 @@ async function applySessionCookie() {
 
 function maybeStartBridge() {
   const candidates = [
+    path.join(process.env.ProgramData || 'C:\\ProgramData', 'Adisyum', 'DesktopBridge', 'AdisyumDesktopBridge.exe'),
+    path.join(process.env.ProgramData || 'C:\\ProgramData', 'Adisyum', 'DesktopBridge', 'AdisyumPosAgentInstaller.exe'),
     path.join(process.env.LOCALAPPDATA || '', 'AdisyumPosAgent', 'adisyum-pos-agent.exe'),
     path.join(process.env.LOCALAPPDATA || '', 'Adisyum', 'DesktopBridge', 'AdisyumPosAgent.exe'),
+    path.join(process.env.LOCALAPPDATA || '', 'Adisyum', 'DesktopBridge', 'AdisyumDesktopBridge.exe'),
   ].filter(Boolean);
 
   const target = candidates.find((candidate) => fs.existsSync(candidate));

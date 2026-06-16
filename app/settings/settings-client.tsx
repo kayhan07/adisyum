@@ -18,7 +18,7 @@ import {
   type PartnerIntegrationRecord,
   type PrintLogRecord,
 } from '@/lib/integration-store';
-import { getDefaultSessionState, updateSessionUser } from '@/lib/session-store';
+import { getDefaultSessionState, loadSessionState, updateSessionUser } from '@/lib/session-store';
 
 type SettingsTab = 'company' | 'integrations' | 'access' | 'developer';
 type PrinterConnectionType = 'usb' | 'network';
@@ -49,28 +49,42 @@ type AgentDiagnostic = {
   lastError?: string | null;
 };
 
+type LocalAgentHealthPayload = {
+  ok?: boolean;
+  code?: string;
+  message?: string;
+  deviceId?: string;
+  version?: string;
+  spooler?: { status?: string };
+  printerCount?: number;
+  installedPrinters?: Array<string | { Name?: string; name?: string; driver?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string; default?: boolean; online?: boolean }>;
+  printers?: Array<string | { Name?: string; name?: string; driver?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string; default?: boolean; online?: boolean }>;
+  agent?: AgentDiagnostic;
+};
+
 type PrintableDeviceType = Exclude<PrinterDeviceType, 'fiscal_pos'>;
 
 const deviceTypeLabels: Record<PrinterDeviceType, string> = {
   receipt_printer: 'Fiş yazıcı',
   kitchen_printer: 'Mutfak yazıcı',
   bar_printer: 'Bar yazıcı',
+  daily_report_printer: 'Günlük rapor yazıcı',
   fiscal_pos: 'Yazar kasa POS',
 };
 
-const printableDeviceTypeOptions: PrintableDeviceType[] = ['receipt_printer', 'kitchen_printer', 'bar_printer'];
+const printableDeviceTypeOptions: PrintableDeviceType[] = ['receipt_printer', 'kitchen_printer', 'bar_printer', 'daily_report_printer'];
 const AGENT_STATUS_RETRY_COUNT = 3;
 const AGENT_STATUS_RETRY_DELAY_MS = 500;
 const AGENT_HEARTBEAT_MS = 6000;
-const PRINTER_BRIDGE_LATEST_URL = 'https://adisyum.com/downloads/windows/latest/PrinterBridgeSetup.exe?v=windows-1781605136279';
+const PRINTER_BRIDGE_LATEST_URL = 'https://adisyum.com/downloads/windows/latest/PrinterBridgeSetup.exe?v=windows-1781620892355';
 const CURRENT_PRINTER_BRIDGE_VERSION = '0.1.6';
 
 function isPrintableDeviceType(value: string): value is PrintableDeviceType {
-  return value === 'receipt_printer' || value === 'kitchen_printer' || value === 'bar_printer';
+  return value === 'receipt_printer' || value === 'kitchen_printer' || value === 'bar_printer' || value === 'daily_report_printer';
 }
 
 function isPrinterDeviceType(value: string): value is PrinterDeviceType {
-  return value === 'receipt_printer' || value === 'kitchen_printer' || value === 'bar_printer' || value === 'fiscal_pos';
+  return value === 'receipt_printer' || value === 'kitchen_printer' || value === 'bar_printer' || value === 'daily_report_printer' || value === 'fiscal_pos';
 };
 type PrinterDraft = {
   name: string;
@@ -158,6 +172,18 @@ function resolveAgentActionMessage(status: AgentStatus, diagnostic: AgentDiagnos
     return 'Yazıcı köprüsü bağlı fakat bu bilgisayarda kurulu yazıcı yok.';
   }
   return diagnostic.message || 'Bağlantı bilgisi bekleniyor.';
+}
+
+function normalizeAgentDiagnostic(payload: LocalAgentHealthPayload): AgentDiagnostic {
+  return {
+    ...(payload.agent ?? {}),
+    code: payload.code,
+    message: payload.message,
+    deviceId: payload.agent?.deviceId ?? payload.deviceId ?? null,
+    agentVersion: payload.agent?.agentVersion ?? payload.version ?? null,
+    spoolerStatus: payload.agent?.spoolerStatus ?? payload.spooler?.status ?? null,
+    printerCount: payload.agent?.printerCount ?? payload.printerCount ?? payload.installedPrinters?.length ?? payload.printers?.length ?? 0,
+  };
 }
 
 export default function SettingsPage() {
@@ -490,6 +516,15 @@ export default function SettingsPage() {
         }
 
         const localAgentResult = await scanLocalAgentPrinters();
+        if (localAgentResult.agent) {
+          const registeredDevice = await registerLocalAgentDevice(localAgentResult.printers, localAgentResult.agent);
+          setAgentDiagnostic((current) => ({
+            ...current,
+            ...localAgentResult.agent,
+            tenantId: registeredDevice?.tenantId ?? current.tenantId ?? null,
+            branchId: registeredDevice?.branchId ?? localAgentResult.agent?.branchId ?? current.branchId ?? null,
+          }));
+        }
         setSystemPrinters(localAgentResult.printers);
         setSelectedSystemPrinterName(localAgentResult.printers[0]?.name ?? '');
         console.info('[business-flow] system printer scan completed', {
@@ -543,9 +578,9 @@ export default function SettingsPage() {
       for (let attempt = 1; attempt <= retries; attempt += 1) {
         const attemptStartedAt = Date.now();
         try {
-          const { data } = await fetchLocalAgentJson<{ code?: string; message?: string; agent?: AgentDiagnostic }>('/health');
+          const { data } = await fetchLocalAgentJson<LocalAgentHealthPayload>('/health');
           setAgentStatus('online');
-          setAgentDiagnostic({ ...(data.agent ?? {}), code: data.code, message: data.message });
+          setAgentDiagnostic(normalizeAgentDiagnostic(data));
           if (!options.quiet) {
             console.info('[business-flow] local agent status check completed', {
               attempt,
@@ -589,15 +624,39 @@ export default function SettingsPage() {
     }
   }
 
-  async function scanLocalAgentPrinters(): Promise<{ printers: SystemPrinter[]; error?: string }> {
+  async function registerLocalAgentDevice(printers: SystemPrinter[], diagnostic: AgentDiagnostic) {
+    if (!diagnostic.deviceId) return null;
+    const session = loadSessionState();
+    const response = await fetch('/api/devices/registry', {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        deviceId: diagnostic.deviceId,
+        branchId: diagnostic.branchId || session.activeBranchId || 'mrk',
+        hostname: diagnostic.deviceName || undefined,
+        bridgeVersion: diagnostic.agentVersion || undefined,
+        printers,
+        spoolerHealth: diagnostic.spoolerStatus || 'unknown',
+        metadata: { source: 'settings-printer-scan' },
+      }),
+    });
+    const payload = await response.json().catch(() => null) as { ok?: boolean; device?: { tenantId?: string; branchId?: string } } | null;
+    if (!response.ok || !payload?.ok) return null;
+    return payload.device ?? null;
+  }
+
+  async function scanLocalAgentPrinters(): Promise<{ printers: SystemPrinter[]; agent?: AgentDiagnostic; error?: string }> {
     const scanStartedAt = Date.now();
     try {
+      const { data: health } = await fetchLocalAgentJson<LocalAgentHealthPayload>('/health');
+      const healthAgent = normalizeAgentDiagnostic(health);
       const { data } = await fetchLocalAgentJson<
         Array<string | { Name?: string; name?: string; driver?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string; default?: boolean; online?: boolean }>
         | { ok?: boolean; code?: string; message?: string; agent?: AgentDiagnostic; printers?: Array<string | { Name?: string; name?: string; driver?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string; default?: boolean; online?: boolean }>; error?: string }
       >('/printers');
       if (!Array.isArray(data)) {
-        setAgentDiagnostic({ ...(data.agent ?? {}), code: data.code, message: data.message });
+        setAgentDiagnostic({ ...healthAgent, ...(data.agent ?? {}), code: data.code ?? healthAgent.code, message: data.message ?? healthAgent.message });
       }
       const rawPrinters = Array.isArray(data)
         ? data
@@ -626,6 +685,7 @@ export default function SettingsPage() {
 
       return {
         printers,
+        agent: healthAgent,
       };
     } catch (error) {
       console.error('[business-flow] local agent printer scan failed', {
@@ -714,12 +774,15 @@ export default function SettingsPage() {
 
     const inferredType: PrintableDeviceType = printerDraft.deviceType === 'kitchen_printer' || printerDraft.deviceType === 'bar_printer'
       ? printerDraft.deviceType
+      : printerDraft.deviceType === 'daily_report_printer'
+        ? 'daily_report_printer'
       : 'receipt_printer';
 
     addPrinterDevice({
       name: selectedSystemPrinter.name,
       role: inferredType === 'kitchen_printer' ? 'Mutfak'
         : inferredType === 'bar_printer' ? 'Bar'
+          : inferredType === 'daily_report_printer' ? 'Günlük rapor'
           : 'Kasa',
       connectionType: selectedSystemPrinter.connectionType,
       deviceType: inferredType,
@@ -727,6 +790,7 @@ export default function SettingsPage() {
       port: 9100,
       group: inferredType === 'kitchen_printer' ? 'Mutfak hattı'
         : inferredType === 'bar_printer' ? 'Bar hattı'
+          : inferredType === 'daily_report_printer' ? 'Günlük rapor hattı'
           : 'Kasa hattı',
       systemName: selectedSystemPrinter.name,
       driverName: selectedSystemPrinter.driverName,

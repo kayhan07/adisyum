@@ -98,6 +98,12 @@ namespace AdisyumPosAgentInstaller
         private const string RunArg = "--run-agent";
         private const string ServiceName = "AdisyumDesktopBridge";
         private const string TaskName = "AdisyumDesktopBridge";
+        private const string BridgeVersion = "0.1.6";
+        private static readonly string DeviceIdentityPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "Adisyum",
+            "DesktopBridge",
+            "device-id.txt");
         private static readonly string PrinterCachePath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
             "Adisyum",
@@ -345,14 +351,34 @@ namespace AdisyumPosAgentInstaller
             // ---------- GET /health ----------
             if (request.HttpMethod == "GET" && path == "health")
             {
+                var printers = GetInstalledPrinters();
+                var deviceId = EnsureDeviceId();
+                var spoolerStatus = GetSpoolerStatus();
+                var now = DateTimeOffset.UtcNow;
                 WriteJson(response, new
                 {
                     ok = true,
                     service = "adisyum-desktop-bridge",
+                    deviceId = deviceId,
+                    version = BridgeVersion,
                     localApi = LocalApiPrefix,
-                    startedAt = DateTimeOffset.UtcNow,
+                    startedAt = now,
+                    spooler = new { status = spoolerStatus },
+                    installedPrinters = printers,
+                    printers = printers,
+                    printerCount = printers.Count,
                     printerCachePath = PrinterCachePath,
                     administrator = IsAdministrator(),
+                    agent = new
+                    {
+                        found = true,
+                        online = true,
+                        deviceId = deviceId,
+                        agentVersion = BridgeVersion,
+                        lastSeenAt = now,
+                        printerCount = printers.Count,
+                        spoolerStatus = spoolerStatus,
+                    },
                 });
                 return;
             }
@@ -563,6 +589,39 @@ namespace AdisyumPosAgentInstaller
                 new DiscoveryMethod("Win32_Printer", "Get-CimInstance Win32_Printer | Select-Object Name,DriverName,PortName,PrinterStatus,Shared,WorkOffline,Default | ConvertTo-Json -Depth 4"),
                 new DiscoveryMethod("WMI-Object", "Get-WmiObject Win32_Printer | Select-Object Name,DriverName,PortName,PrinterStatus,Shared,WorkOffline,Default | ConvertTo-Json -Depth 4"),
             };
+        }
+
+        private static string EnsureDeviceId()
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(DeviceIdentityPath));
+                if (File.Exists(DeviceIdentityPath))
+                {
+                    var current = File.ReadAllText(DeviceIdentityPath, Encoding.UTF8).Trim();
+                    if (!string.IsNullOrWhiteSpace(current)) return current;
+                }
+                var next = "adisyum-bridge-" + Guid.NewGuid().ToString("N");
+                File.WriteAllText(DeviceIdentityPath, next, Encoding.UTF8);
+                return next;
+            }
+            catch
+            {
+                return "adisyum-bridge-" + Environment.MachineName.ToLowerInvariant();
+            }
+        }
+
+        private static string GetSpoolerStatus()
+        {
+            try
+            {
+                var output = RunProcessWithOutput("sc.exe", "query Spooler", 5000);
+                return output.IndexOf("RUNNING", StringComparison.OrdinalIgnoreCase) >= 0 ? "healthy" : "stopped";
+            }
+            catch
+            {
+                return "unknown";
+            }
         }
 
         private static string RunPowerShell(string script)
