@@ -76,7 +76,7 @@ const printableDeviceTypeOptions: PrintableDeviceType[] = ['receipt_printer', 'k
 const AGENT_STATUS_RETRY_COUNT = 3;
 const AGENT_STATUS_RETRY_DELAY_MS = 500;
 const AGENT_HEARTBEAT_MS = 6000;
-const PRINTER_BRIDGE_LATEST_URL = 'https://adisyum.com/downloads/windows/latest/PrinterBridgeSetup.exe?v=windows-1781695779253';
+const PRINTER_BRIDGE_LATEST_URL = 'https://adisyum.com/downloads/windows/latest/PrinterBridgeSetup.exe?v=windows-1781700703379';
 const CURRENT_PRINTER_BRIDGE_VERSION = '0.1.7';
 
 function isPrintableDeviceType(value: string): value is PrintableDeviceType {

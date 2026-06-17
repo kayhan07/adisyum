@@ -79,6 +79,12 @@ function findBridgeInstaller() {
   return found;
 }
 
+function readBridgeVersion() {
+  const program = readFileSync(path.join(repoRoot, 'tools', 'agent-installer', 'Program.cs'), 'utf8');
+  const match = program.match(/BridgeVersion\s*=\s*"([^"]+)"/);
+  return match?.[1] ?? null;
+}
+
 function copyTreeArtifacts(root, files, manifest) {
   const latestDir = path.join(root, 'latest');
   const versionDir = path.join(root, `v${manifest.version}`);
@@ -100,6 +106,7 @@ function copyTreeArtifacts(root, files, manifest) {
 const desktopPackage = readJson(path.join(desktopRoot, 'package.json'));
 const rootPackage = readJson(path.join(repoRoot, 'package.json'));
 const version = process.env.ADISYUM_WINDOWS_VERSION || desktopPackage.version || '1.0.0';
+const bridgeVersion = process.env.ADISYUM_BRIDGE_VERSION || readBridgeVersion() || version;
 const buildId = process.env.ADISYUM_BUILD_ID || `windows-${Date.now()}`;
 const releasedAt = new Date().toISOString();
 const desktopInstaller = findDesktopInstaller();
@@ -115,6 +122,7 @@ const files = [
     sourcePath: desktopInstaller,
     sha256: sha256(desktopInstaller),
     sizeBytes: desktopStat.size,
+    version,
     mandatory: false,
     component: 'desktop',
   },
@@ -124,6 +132,7 @@ const files = [
     sourcePath: bridgeInstaller,
     sha256: sha256(bridgeInstaller),
     sizeBytes: bridgeStat.size,
+    version: bridgeVersion,
     mandatory: false,
     component: 'printer-bridge',
   },
@@ -133,6 +142,7 @@ const files = [
     sourcePath: bridgeInstaller,
     sha256: sha256(bridgeInstaller),
     sizeBytes: bridgeStat.size,
+    version: bridgeVersion,
     mandatory: false,
     component: 'fiscal-pos-bridge',
   },

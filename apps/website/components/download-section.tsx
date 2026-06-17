@@ -6,11 +6,11 @@ const TRUST_ITEMS = [
   'Windows Compatible',
 ];
 
-const RELEASE_VERSION = process.env.NEXT_PUBLIC_ADISYUM_WINDOWS_VERSION || '0.1.6';
+const RELEASE_VERSION = process.env.NEXT_PUBLIC_ADISYUM_WINDOWS_VERSION || '0.1.7';
 const INSTALLER_SIZE = process.env.NEXT_PUBLIC_ADISYUM_WINDOWS_INSTALLER_SIZE || '85.9 MB';
 const INSTALLER_URL =
   process.env.NEXT_PUBLIC_ADISYUM_WINDOWS_INSTALLER_URL ||
-  '/downloads/windows/v0.1.6/AdisyumDesktopSetup.exe?v=windows-1779822987588';
+  '/downloads/windows/latest/AdisyumDesktopSetup.exe?v=windows-1781700703379';
 
 export function DownloadSection() {
   return (

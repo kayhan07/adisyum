@@ -10,6 +10,7 @@ type DownloadFile = {
   fileName: string;
   path: string;
   versionedPath?: string;
+  version?: string;
   sha256: string;
   mandatory: boolean;
   component?: string;

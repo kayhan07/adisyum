@@ -45,6 +45,7 @@
     "verify:printer-agent-csp-localhost": "node scripts/verify-printer-agent-csp-localhost.mjs",
     "verify:printer-bridge-install-startup": "node scripts/verify-printer-bridge-install-startup.mjs",
     "verify:printer-agent-installed-printers": "node scripts/verify-printer-agent-installed-printers.mjs",
+    "verify:windows-download-version-metadata": "node scripts/verify-windows-download-version-metadata.mjs",
     "verify:printer-role-assignment": "node scripts/verify-printer-role-assignment.mjs",
     "verify:tables-visible-across-devices": "node scripts/verify-tables-visible-across-devices.mjs",
     "verify:runtime-tenant-snapshot-hydration": "node scripts/verify-runtime-tenant-snapshot-hydration.mjs",
