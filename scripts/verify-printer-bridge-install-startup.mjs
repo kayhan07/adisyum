@@ -16,14 +16,14 @@ const check = (name, ok) => {
 };
 
 check('Printer Bridge listens on the same port the web panel expects', installer.includes('http://127.0.0.1:4891/') && localAgent.includes("?? '4891'") && desktop.includes("http://127.0.0.1:4891"));
-check('installer registers auto-start Windows service', installer.includes('sc.exe') && installer.includes('start= auto') && installer.includes('AdisyumDesktopBridge'));
+check('installer registers auto-start Windows service', installer.includes('sc.exe') && installer.includes('start= auto') && installer.includes('AdisyumPrinterBridge') && installer.includes('Adisyum Printer Bridge'));
 check('installer registers logon startup fallback', installer.includes('schtasks.exe') && installer.includes('/SC ONLOGON') && installer.includes('CurrentVersion\\\\Run'));
 check('installer starts bridge immediately after install', installer.includes('StartServiceOrFallback') && installer.includes('Process.Start(info)') && installer.includes('WaitForHealth()'));
 check('desktop can start ProgramData bridge executable', desktop.includes('ProgramData') && desktop.includes('AdisyumDesktopBridge.exe'));
 check('health endpoint exposes device id version spooler and printers', installer.includes('deviceId = deviceId') && installer.includes('version = BridgeVersion') && installer.includes('spooler = new') && installer.includes('installedPrinters = printers') && installer.includes('printerCount = printers.Count'));
 check('bridge device id is generated and persisted', installer.includes('DeviceIdentityPath') && installer.includes('EnsureDeviceId()') && installer.includes('device-id.txt'));
 check('CORS and private network headers allow HTTPS web to reach loopback bridge', installer.includes('Access-Control-Allow-Origin') && installer.includes('Access-Control-Allow-Private-Network'));
-check('latest manifest keeps current Windows build id', latest.includes('windows-1781700703379'));
+check('latest manifest keeps current Windows build id', latest.includes('windows-1781707461630'));
 
 const failed = checks.filter((item) => !item.ok);
 if (failed.length > 0) {
