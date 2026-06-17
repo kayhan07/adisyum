@@ -100,9 +100,11 @@ namespace AdisyumPosAgentInstaller
         private const string LocalhostApiPrefix = "http://localhost:4891/";
         private const string RunArg = "--run-agent";
         private const string DiagnoseArg = "--diagnose";
+        private const string UninstallArg = "--uninstall";
         private const string ServiceName = "AdisyumPrinterBridge";
         private const string LegacyServiceName = "AdisyumDesktopBridge";
         private const string ServiceDisplayName = "Adisyum Printer Bridge";
+        private const string FiscalDisplayName = "Adisyum Fiscal POS Bridge";
         private const string TaskName = "AdisyumPrinterBridge";
         private const string LegacyTaskName = "AdisyumDesktopBridge";
         private const string BridgeVersion = "0.1.7";
@@ -146,6 +148,11 @@ namespace AdisyumPosAgentInstaller
                     if (string.Equals(arg, DiagnoseArg, StringComparison.OrdinalIgnoreCase))
                     {
                         PrintDiagnostics();
+                        return 0;
+                    }
+                    if (string.Equals(arg, UninstallArg, StringComparison.OrdinalIgnoreCase))
+                    {
+                        UninstallAgent();
                         return 0;
                     }
                 }
@@ -200,6 +207,7 @@ namespace AdisyumPosAgentInstaller
             RegisterStartMenuShortcuts(targetExe, installDir);
             RegisterWindowsService(targetExe);
             RegisterStartupTask(targetExe);
+            RegisterUninstallEntries(targetExe, installDir);
 
             using (var runKey = Registry.CurrentUser.OpenSubKey("Software\\Microsoft\\Windows\\CurrentVersion\\Run", true))
             {
@@ -239,6 +247,77 @@ namespace AdisyumPosAgentInstaller
             var args = "/Create /TN \"" + TaskName + "\" /TR \"\\\"" + targetExe + "\\\" " + RunArg + "\" /SC ONLOGON /RL HIGHEST /F";
             RunProcess("schtasks.exe", args, false);
             Console.WriteLine("Startup task registered: " + TaskName);
+        }
+
+        private static void RegisterUninstallEntries(string targetExe, string installDir)
+        {
+            RegisterUninstallEntry("AdisyumPrinterBridge", ServiceDisplayName, targetExe, installDir);
+            RegisterUninstallEntry("AdisyumFiscalPosBridge", FiscalDisplayName, targetExe, installDir);
+        }
+
+        private static void RegisterUninstallEntry(string keyName, string displayName, string targetExe, string installDir)
+        {
+            var keyPath = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + keyName;
+            using (var key = CreateUninstallRegistryKey(keyPath))
+            {
+                if (key == null) throw new InvalidOperationException("Uninstall registry key yazilamadi: " + keyName);
+                var uninstall = "\"" + targetExe + "\" " + UninstallArg;
+                key.SetValue("DisplayName", displayName, RegistryValueKind.String);
+                key.SetValue("Publisher", "Adisyum", RegistryValueKind.String);
+                key.SetValue("DisplayVersion", BridgeVersion, RegistryValueKind.String);
+                key.SetValue("InstallLocation", installDir, RegistryValueKind.String);
+                key.SetValue("DisplayIcon", targetExe, RegistryValueKind.String);
+                key.SetValue("UninstallString", uninstall, RegistryValueKind.String);
+                key.SetValue("QuietUninstallString", uninstall + " --quiet", RegistryValueKind.String);
+                key.SetValue("NoModify", 1, RegistryValueKind.DWord);
+                key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
+                try
+                {
+                    var sizeKb = new FileInfo(targetExe).Length / 1024;
+                    key.SetValue("EstimatedSize", Convert.ToInt32(Math.Max(1, sizeKb)), RegistryValueKind.DWord);
+                }
+                catch { }
+            }
+            Console.WriteLine("Uninstall registry registered: " + displayName);
+        }
+
+        private static RegistryKey CreateUninstallRegistryKey(string keyPath)
+        {
+            try
+            {
+                return Registry.LocalMachine.CreateSubKey(keyPath);
+            }
+            catch
+            {
+                return Registry.CurrentUser.CreateSubKey(keyPath);
+            }
+        }
+
+        private static void UninstallAgent()
+        {
+            var installDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                "Adisyum",
+                "DesktopBridge");
+
+            RunProcess("sc.exe", "stop " + ServiceName, false);
+            RunProcess("sc.exe", "delete " + ServiceName, false);
+            RunProcess("schtasks.exe", "/Delete /TN \"" + TaskName + "\" /F", false);
+            using (var runKey = Registry.CurrentUser.OpenSubKey("Software\\Microsoft\\Windows\\CurrentVersion\\Run", true))
+            {
+                runKey?.DeleteValue(ServiceName, false);
+            }
+            DeleteUninstallEntry("AdisyumPrinterBridge");
+            DeleteUninstallEntry("AdisyumFiscalPosBridge");
+            Console.WriteLine("Adisyum Printer Bridge kaldirma kayitlari temizlendi.");
+            Console.WriteLine("Install dir: " + installDir);
+        }
+
+        private static void DeleteUninstallEntry(string keyName)
+        {
+            var keyPath = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + keyName;
+            try { Registry.LocalMachine.DeleteSubKeyTree(keyPath, false); } catch { }
+            try { Registry.CurrentUser.DeleteSubKeyTree(keyPath, false); } catch { }
         }
 
         private static void WriteDiagnosticScript(string targetExe, string installDir)

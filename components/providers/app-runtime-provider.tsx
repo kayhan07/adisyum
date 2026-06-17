@@ -246,6 +246,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
 
     const ingestBridgeRelease = async () => {
       if (isRuntimeAuthRequired()) return;
+      if (typeof window !== 'undefined' && window.adisyumLocalAgent) return;
       const bridgeHealthUrl = getLocalBridgeHealthUrl();
       if (!bridgeHealthUrl) return;
       try {

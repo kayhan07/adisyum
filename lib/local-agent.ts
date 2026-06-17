@@ -28,11 +28,22 @@ const PROXY_ROUTES: Record<string, string> = {
 declare global {
   interface Window {
     adisyumDesktop?: unknown;
+    adisyumLocalAgent?: unknown;
   }
 }
 
 type DesktopBridgeApi = {
   getConfig?: () => Promise<{ deviceId?: string; tenantId?: string }>;
+  bridgeHealth?: () => Promise<unknown>;
+  listPrinters?: () => Promise<unknown>;
+  request?: (path: string, options?: LocalAgentRequestOptions) => Promise<unknown>;
+};
+
+type DesktopLocalAgentApi = {
+  request?: (path: string, options?: LocalAgentRequestOptions) => Promise<unknown>;
+  getLocalPrinterHealth?: () => Promise<unknown>;
+  getInstalledPrinters?: () => Promise<unknown>;
+  registerPrinterRole?: (input: unknown) => Promise<unknown>;
 };
 
 export function isLocalBridgeBrowserRuntimeEnabled() {
@@ -90,6 +101,52 @@ async function desktopDeviceHeaders() {
   } catch {
     return {};
   }
+}
+
+function desktopJsonResponse(payload: unknown) {
+  return new Response(JSON.stringify(payload ?? null), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+  });
+}
+
+async function fetchViaDesktopPreload(path: string, options: LocalAgentRequestOptions = {}) {
+  if (typeof window === 'undefined') return null;
+
+  const localAgent = window.adisyumLocalAgent as DesktopLocalAgentApi | undefined;
+  const desktop = window.adisyumDesktop as DesktopBridgeApi | undefined;
+
+  if (localAgent?.request) {
+    const data = await localAgent.request(path, options);
+    return { response: desktopJsonResponse(data), base: 'desktop-preload' };
+  }
+
+  if (path === '/health' && localAgent?.getLocalPrinterHealth) {
+    const data = await localAgent.getLocalPrinterHealth();
+    return { response: desktopJsonResponse(data), base: 'desktop-preload' };
+  }
+
+  if (path === '/printers' && localAgent?.getInstalledPrinters) {
+    const data = await localAgent.getInstalledPrinters();
+    return { response: desktopJsonResponse(data), base: 'desktop-preload' };
+  }
+
+  if (path === '/health' && desktop?.bridgeHealth) {
+    const data = await desktop.bridgeHealth();
+    return { response: desktopJsonResponse(data), base: 'desktop-preload' };
+  }
+
+  if (path === '/printers' && desktop?.listPrinters) {
+    const data = await desktop.listPrinters();
+    return { response: desktopJsonResponse(data), base: 'desktop-preload' };
+  }
+
+  if (desktop?.request) {
+    const data = await desktop.request(path, options);
+    return { response: desktopJsonResponse(data), base: 'desktop-preload' };
+  }
+
+  return null;
 }
 
 async function fetchDirectLocalAgent(path: string, options: LocalAgentRequestOptions = {}) {
@@ -232,6 +289,18 @@ export async function fetchFromLocalAgent(path: string, options: LocalAgentReque
 
     return { ...body, source: 'local-agent-client' };
   })();
+
+  const desktopResult = await fetchViaDesktopPreload(path, { ...options, body: nextBody });
+  if (desktopResult) {
+    if (path !== '/health') {
+      console.info('[business-flow] desktop preload local agent connected', {
+        path,
+        durationMs: Date.now() - startedAt,
+        timestamp: new Date().toISOString(),
+      });
+    }
+    return desktopResult;
+  }
 
   if (isLocalBridgeBrowserRuntimeEnabled()) {
     try {

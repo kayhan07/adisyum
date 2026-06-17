@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, session } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, shell, session } = require('electron');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -132,10 +132,62 @@ function createWindow() {
   }
 }
 
+function createApplicationMenu() {
+  const template = [
+    {
+      label: 'Adisyum',
+      submenu: [
+        {
+          label: 'POS ekranini ac',
+          click: () => {
+            if (mainWindow) {
+              applySessionCookie()
+                .catch(() => false)
+                .finally(() => mainWindow.loadURL(operationalUrl()));
+            }
+          },
+        },
+        {
+          label: 'Bu cihazi yeniden aktive et',
+          click: () => {
+            if (mainWindow) mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+          },
+        },
+        {
+          label: 'Yerel baglanti tanisini ac',
+          click: () => {
+            if (mainWindow) mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+          },
+        },
+        { type: 'separator' },
+        {
+          label: 'Cikis',
+          role: 'quit',
+        },
+      ],
+    },
+  ];
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 async function bridgeJson(route, init) {
   const response = await fetch(`${store.get('bridgeUrl')}${route}`, init);
   if (!response.ok) throw new Error(`Bridge status ${response.status}`);
   return response.json();
+}
+
+async function bridgeRequest(route, options = {}) {
+  const method = options.method || 'GET';
+  const headers = {
+    ...(options.body !== undefined ? { 'content-type': 'application/json' } : {}),
+    ...(options.headers || {}),
+  };
+  return bridgeJson(route, {
+    method,
+    headers,
+    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+  });
 }
 
 function cloudDeviceHeaders() {
@@ -387,6 +439,7 @@ async function activateDevice(input) {
 
 app.whenReady().then(() => {
   app.setLoginItemSettings({ openAtLogin: true, path: process.execPath });
+  createApplicationMenu();
   createWindow();
 });
 
@@ -426,8 +479,13 @@ ipcMain.handle('desktop:open-cloud', () => {
 ipcMain.handle('desktop:show-shell', () => {
   if (mainWindow) mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 });
+ipcMain.handle('desktop:local-agent-request', (_event, route, options) => bridgeRequest(route, options || {}));
 ipcMain.handle('desktop:bridge-health', () => bridgeJson('/health'));
 ipcMain.handle('desktop:list-printers', () => bridgeJson('/printers'));
+ipcMain.handle('desktop:register-printer-role', (_event, input) => cloudJson('/api/settings/pos/mappings/bulk', {
+  method: 'POST',
+  body: JSON.stringify(input || {}),
+}));
 ipcMain.handle('desktop:test-print', (_event, printerName) => bridgeJson('/print', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },

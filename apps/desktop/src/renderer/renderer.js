@@ -53,8 +53,8 @@ resetActivation.addEventListener('click', async () => {
 });
 
 openPos.addEventListener('click', () => api.openCloud());
-downloadPrinterBridge.addEventListener('click', () => api.openExternal('https://adisyum.com/downloads/windows/latest/PrinterBridgeSetup.exe?v=windows-1781730259814'));
-downloadFiscalBridge.addEventListener('click', () => api.openExternal('https://adisyum.com/downloads/windows/latest/FiscalPosBridgeSetup.exe?v=windows-1781730259814'));
+downloadPrinterBridge.addEventListener('click', () => api.openExternal('https://adisyum.com/downloads/windows/latest/PrinterBridgeSetup.exe?v=windows-1781737725566'));
+downloadFiscalBridge.addEventListener('click', () => api.openExternal('https://adisyum.com/downloads/windows/latest/FiscalPosBridgeSetup.exe?v=windows-1781737725566'));
 
 scanPrinters.addEventListener('click', async () => {
   printerList.innerHTML = '';

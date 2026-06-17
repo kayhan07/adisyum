@@ -16,3 +16,10 @@ contextBridge.exposeInMainWorld('adisyumDesktop', {
   serviceStatus: () => ipcRenderer.invoke('desktop:service-status'),
   openExternal: (url) => ipcRenderer.invoke('desktop:open-external', url),
 });
+
+contextBridge.exposeInMainWorld('adisyumLocalAgent', {
+  request: (route, options) => ipcRenderer.invoke('desktop:local-agent-request', route, options || {}),
+  getLocalPrinterHealth: () => ipcRenderer.invoke('desktop:bridge-health'),
+  getInstalledPrinters: () => ipcRenderer.invoke('desktop:list-printers'),
+  registerPrinterRole: (input) => ipcRenderer.invoke('desktop:register-printer-role', input || {}),
+});
