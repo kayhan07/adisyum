@@ -1,7 +1,7 @@
 {
   "version": "0.1.7",
-  "buildId": "windows-1781722235136",
-  "releasedAt": "2026-06-17T18:50:35.136Z",
+  "buildId": "windows-1781730259814",
+  "releasedAt": "2026-06-17T21:04:19.814Z",
   "mandatory": false,
   "channel": "latest",
   "appVersion": "0.1.0",
@@ -15,8 +15,8 @@
     {
       "name": "Adisyum Desktop",
       "fileName": "AdisyumDesktopSetup.exe",
-      "sha256": "0ec2172ad28cbe5f7df14603e3cecf687c4955289ef1ea8ed58d59123a505c71",
-      "sizeBytes": 85929118,
+      "sha256": "3da578a10821fb93f587587e35856baa852f7291263adbbf58bb0253dfd1e819",
+      "sizeBytes": 85929211,
       "version": "0.1.7",
       "mandatory": false,
       "component": "desktop",
@@ -26,8 +26,8 @@
     {
       "name": "Printer Bridge",
       "fileName": "PrinterBridgeSetup.exe",
-      "sha256": "10c8d563bb922aa6e1bfd4ac11191f947d0e7f7facb8f1c220c8361c70ca10f8",
-      "sizeBytes": 69284369,
+      "sha256": "5cd06e43718b975f4d4f3e49eb99a43839ae38933b901a23d862a6915e06c415",
+      "sizeBytes": 69284881,
       "version": "0.1.7",
       "mandatory": false,
       "component": "printer-bridge",
@@ -37,8 +37,8 @@
     {
       "name": "Fiscal POS Bridge",
       "fileName": "FiscalPosBridgeSetup.exe",
-      "sha256": "10c8d563bb922aa6e1bfd4ac11191f947d0e7f7facb8f1c220c8361c70ca10f8",
-      "sizeBytes": 69284369,
+      "sha256": "5cd06e43718b975f4d4f3e49eb99a43839ae38933b901a23d862a6915e06c415",
+      "sizeBytes": 69284881,
       "version": "0.1.7",
       "mandatory": false,
       "component": "fiscal-pos-bridge",

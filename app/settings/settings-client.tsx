@@ -47,6 +47,9 @@ type AgentDiagnostic = {
   printerCount?: number;
   spoolerStatus?: string | null;
   lastError?: string | null;
+  attemptedEndpoints?: string[];
+  successfulEndpoint?: string | null;
+  timeoutMs?: number;
 };
 
 type LocalAgentHealthPayload = {
@@ -57,6 +60,7 @@ type LocalAgentHealthPayload = {
   message?: string;
   deviceId?: string;
   version?: string;
+  localApi?: string;
   spooler?: { status?: string };
   cachedPrinterCount?: number;
   cachedPrinters?: Array<string | { Name?: string; name?: string; driver?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string; default?: boolean; online?: boolean }>;
@@ -80,7 +84,7 @@ const printableDeviceTypeOptions: PrintableDeviceType[] = ['receipt_printer', 'k
 const AGENT_STATUS_RETRY_COUNT = 3;
 const AGENT_STATUS_RETRY_DELAY_MS = 500;
 const AGENT_HEARTBEAT_MS = 6000;
-const PRINTER_BRIDGE_LATEST_URL = 'https://adisyum.com/downloads/windows/latest/PrinterBridgeSetup.exe?v=windows-1781722235136';
+const PRINTER_BRIDGE_LATEST_URL = 'https://adisyum.com/downloads/windows/latest/PrinterBridgeSetup.exe?v=windows-1781730259814';
 const CURRENT_PRINTER_BRIDGE_VERSION = '0.1.7';
 
 function isPrintableDeviceType(value: string): value is PrintableDeviceType {
@@ -176,7 +180,9 @@ function resolveAgentActionMessage(status: AgentStatus, diagnostic: AgentDiagnos
     return 'Tarayıcı Printer Bridge bağlantısını engelliyor. CSP/CORS izni veya localhost erişimi engellenmiş olabilir.';
   }
   if (diagnostic.code === 'local_agent_timeout') {
-    return 'Printer Bridge yanıt vermiyor. Servis çalışıyor olabilir ama health yanıtı 2 saniye içinde gelmedi.';
+    const attempted = diagnostic.attemptedEndpoints?.length ? ` Denenen: ${diagnostic.attemptedEndpoints.join(' -> ')}.` : '';
+    const lastError = diagnostic.lastError ? ` Son hata: ${diagnostic.lastError}` : '';
+    return `Printer Bridge yanıt vermiyor. Timeout: ${Math.round((diagnostic.timeoutMs ?? 5000) / 1000)} sn.${attempted}${lastError}`;
   }
   if (status === 'offline' || status === 'missing') {
     return 'Bu bilgisayarda Printer Bridge çalışmıyor. Yazıcıları görebilmek için Printer Bridge’i kurup açın.';
@@ -196,6 +202,7 @@ function normalizeAgentDiagnostic(payload: LocalAgentHealthPayload): AgentDiagno
     agentVersion: payload.agent?.agentVersion ?? payload.agent?.version ?? payload.version ?? null,
     spoolerStatus: payload.agent?.spoolerStatus ?? payload.spooler?.status ?? null,
     printerCount: payload.agent?.printerCount ?? payload.printerCount ?? payload.installedPrinters?.length ?? payload.printers?.length ?? 0,
+    successfulEndpoint: payload.localApi ?? null,
   };
 }
 
@@ -595,9 +602,9 @@ export default function SettingsPage() {
       for (let attempt = 1; attempt <= retries; attempt += 1) {
         const attemptStartedAt = Date.now();
         try {
-          const { data } = await fetchLocalAgentJson<LocalAgentHealthPayload>('/health');
+          const { data, base } = await fetchLocalAgentJson<LocalAgentHealthPayload>('/health');
           setAgentStatus('online');
-          setAgentDiagnostic(normalizeAgentDiagnostic(data));
+          setAgentDiagnostic({ ...normalizeAgentDiagnostic(data), successfulEndpoint: `${base}/health` });
           if (!options.quiet) {
             console.info('[business-flow] local agent status check completed', {
               attempt,
@@ -608,8 +615,23 @@ export default function SettingsPage() {
           }
           return true;
         } catch (error) {
-          const diagnosticError = error as Error & { code?: string; payload?: { message?: string; agent?: AgentDiagnostic } };
-          setAgentDiagnostic({ ...(diagnosticError.payload?.agent ?? {}), code: diagnosticError.code, message: diagnosticError.payload?.message ?? diagnosticError.message });
+          const diagnosticError = error as Error & {
+            code?: string;
+            payload?: { message?: string; agent?: AgentDiagnostic };
+            attemptedEndpoints?: string[];
+            timeoutMs?: number;
+            lastError?: string;
+            base?: string;
+          };
+          setAgentDiagnostic({
+            ...(diagnosticError.payload?.agent ?? {}),
+            code: diagnosticError.code,
+            message: diagnosticError.payload?.message ?? diagnosticError.message,
+            attemptedEndpoints: diagnosticError.attemptedEndpoints,
+            timeoutMs: diagnosticError.timeoutMs,
+            lastError: diagnosticError.lastError ?? diagnosticError.message,
+            successfulEndpoint: null,
+          });
           if (diagnosticError.code === 'agent_not_found') {
             setAgentStatus('missing');
             return false;
@@ -666,8 +688,8 @@ export default function SettingsPage() {
   async function scanLocalAgentPrinters(): Promise<{ printers: SystemPrinter[]; agent?: AgentDiagnostic; error?: string }> {
     const scanStartedAt = Date.now();
     try {
-      const { data: health } = await fetchLocalAgentJson<LocalAgentHealthPayload>('/health');
-      const healthAgent = normalizeAgentDiagnostic(health);
+      const { data: health, base: healthBase } = await fetchLocalAgentJson<LocalAgentHealthPayload>('/health');
+      const healthAgent = { ...normalizeAgentDiagnostic(health), successfulEndpoint: `${healthBase}/health` };
       const { data } = await fetchLocalAgentJson<
         Array<string | { Name?: string; name?: string; driver?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string; default?: boolean; online?: boolean }>
         | LocalAgentHealthPayload
@@ -1369,6 +1391,9 @@ export default function SettingsPage() {
                 <p><span className="font-semibold text-ink">TenantId:</span> <span className="text-muted">{agentDiagnostic.tenantId || '-'}</span></p>
                 <p><span className="font-semibold text-ink">BranchId:</span> <span className="text-muted">{agentDiagnostic.branchId || '-'}</span></p>
                 <p><span className="font-semibold text-ink">Bulunan yazıcı:</span> <span className="text-muted">{agentDiagnostic.printerCount ?? systemPrinters.length}</span></p>
+                <p><span className="font-semibold text-ink">Başarılı endpoint:</span> <span className="text-muted">{agentDiagnostic.successfulEndpoint || '-'}</span></p>
+                <p><span className="font-semibold text-ink">Timeout:</span> <span className="text-muted">{agentDiagnostic.timeoutMs ? `${Math.round(agentDiagnostic.timeoutMs / 1000)} sn` : '-'}</span></p>
+                <p className="sm:col-span-2 lg:col-span-4"><span className="font-semibold text-ink">Denenen endpoint:</span> <span className="text-muted">{agentDiagnostic.attemptedEndpoints?.length ? agentDiagnostic.attemptedEndpoints.join(' -> ') : '-'}</span></p>
                 <p className="sm:col-span-2 lg:col-span-4"><span className="font-semibold text-ink">Tanı:</span> <span className="text-muted">{agentDiagnostic.lastError || agentActionMessage}</span></p>
               </div>
               {agentNeedsAction ? (

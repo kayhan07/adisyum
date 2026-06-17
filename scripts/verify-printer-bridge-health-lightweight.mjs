@@ -26,10 +26,15 @@ check('printer discovery is isolated to printers endpoint', printersBlock.includ
 check('printers endpoint returns cached printers on timeout', printersBlock.includes('printer_scan_timeout') && printersBlock.includes('cachedPrinters = printers'));
 check('printer cache file is written by discovery', installer.includes('WritePrinterCache(printers, diagnostics)') && installer.includes('printer-cache.json'));
 check('service start queues background printer discovery', installer.includes('QueuePrinterDiscovery("startup")') && installer.includes('ThreadPool.QueueUserWorkItem'));
-check('browser health timeout is 2 seconds not 5 seconds', localAgent.includes("path === '/printers' ? 30000 : 2000") && localAgent.includes('/health 2 saniye'));
+const firstLoopbackIndex = localAgent.indexOf("buildLoopbackBase('http', '127.0.0.1', httpPort)");
+const secondLoopbackIndex = localAgent.indexOf("buildLoopbackBase('http', 'localhost', httpPort)");
+check('browser health timeout is 5 seconds and 127.0.0.1 remains primary', localAgent.includes("path === '/printers' ? 30000 : 5000") && localAgent.includes('Math.round(timeoutMs / 1000)') && firstLoopbackIndex >= 0 && secondLoopbackIndex > firstLoopbackIndex);
 check('degraded health with device id is accepted by web client', localAgent.includes("path === '/health'") && localAgent.includes("healthPayload.status === 'degraded'"));
 check('settings UI keeps agent online when printer scan times out', settings.includes('Yazıcı taraması zaman aşımına uğradı.') && settings.includes("localAgentResult.error === 'printer_scan_timeout'"));
 check('settings UI can use cachedPrinters list', settings.includes('Array.isArray(data.cachedPrinters)'));
+check('settings UI displays attempted successful endpoint and timeout', settings.includes('Denenen endpoint') && settings.includes('Başarılı endpoint') && settings.includes('Timeout:'));
+check('bridge CORS allows adisyum origin and Authorization header', installer.includes('"https://adisyum.com"') && installer.includes('Content-Type, Authorization, x-adisyum-device-id'));
+check('bridge attempts localhost listener as secondary prefix', installer.includes('LocalhostApiPrefix') && installer.includes('listener.Prefixes.Add(LocalhostApiPrefix)'));
 
 const failed = checks.filter((item) => !item.ok);
 if (failed.length > 0) {

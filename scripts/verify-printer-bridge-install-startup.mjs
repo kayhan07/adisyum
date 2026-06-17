@@ -23,7 +23,7 @@ check('desktop can start ProgramData bridge executable', desktop.includes('Progr
 check('health endpoint exposes device id version spooler and printers', installer.includes('deviceId = deviceId') && installer.includes('version = BridgeVersion') && installer.includes('spooler = new') && installer.includes('installedPrinters = printers') && installer.includes('printerCount = printers.Count'));
 check('bridge device id is generated and persisted', installer.includes('DeviceIdentityPath') && installer.includes('EnsureDeviceId()') && installer.includes('device-id.txt'));
 check('CORS and private network headers allow HTTPS web to reach loopback bridge', installer.includes('Access-Control-Allow-Origin') && installer.includes('Access-Control-Allow-Private-Network'));
-check('latest manifest keeps current Windows build id', latest.includes('windows-1781722235136'));
+check('latest manifest keeps current Windows build id', latest.includes('windows-1781730259814'));
 
 const failed = checks.filter((item) => !item.ok);
 if (failed.length > 0) {

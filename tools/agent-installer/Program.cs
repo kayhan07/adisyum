@@ -97,6 +97,7 @@ namespace AdisyumPosAgentInstaller
     internal static class Program
     {
         private const string LocalApiPrefix = "http://127.0.0.1:4891/";
+        private const string LocalhostApiPrefix = "http://localhost:4891/";
         private const string RunArg = "--run-agent";
         private const string DiagnoseArg = "--diagnose";
         private const string ServiceName = "AdisyumPrinterBridge";
@@ -409,6 +410,7 @@ namespace AdisyumPosAgentInstaller
         {
             var listener = new HttpListener();
             listener.Prefixes.Add(LocalApiPrefix);
+            listener.Prefixes.Add(LocalhostApiPrefix);
             try
             {
                 listener.Start();
@@ -470,9 +472,12 @@ namespace AdisyumPosAgentInstaller
 
         private static void SetCorsHeaders(HttpListenerResponse response, string origin)
         {
-            response.Headers["Access-Control-Allow-Origin"]          = "*";
+            var allowedOrigin = string.Equals(origin, "https://adisyum.com", StringComparison.OrdinalIgnoreCase)
+                ? origin
+                : "https://adisyum.com";
+            response.Headers["Access-Control-Allow-Origin"]          = allowedOrigin;
             response.Headers["Access-Control-Allow-Methods"]         = "GET, POST, OPTIONS";
-            response.Headers["Access-Control-Allow-Headers"]         = "Content-Type, x-adisyum-device-id";
+            response.Headers["Access-Control-Allow-Headers"]         = "Content-Type, Authorization, x-adisyum-device-id";
             response.Headers["Access-Control-Allow-Private-Network"] = "true";
         }
 

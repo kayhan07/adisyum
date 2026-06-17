@@ -96,11 +96,13 @@ async function fetchDirectLocalAgent(path: string, options: LocalAgentRequestOpt
   let lastError: unknown = null;
   let lastCode: LocalAgentConnectivityCode = 'local_agent_unreachable';
   let lastBase = '';
+  const attemptedEndpoints: string[] = [];
+  const timeoutMs = path === '/printers' ? 30000 : 5000;
 
   for (const base of directLocalAgentBases()) {
     lastBase = base;
+    attemptedEndpoints.push(`${base}${path}`);
     const controller = new AbortController();
-    const timeoutMs = path === '/printers' ? 30000 : 2000;
     const startedAt = Date.now();
     const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
@@ -163,8 +165,15 @@ async function fetchDirectLocalAgent(path: string, options: LocalAgentRequestOpt
     }
   }
 
-  const error = new Error(buildLocalAgentErrorMessage(lastCode, lastBase, lastError));
-  Object.assign(error, { code: lastCode, cause: lastError, base: lastBase });
+  const error = new Error(buildLocalAgentErrorMessage(lastCode, lastBase, lastError, timeoutMs, attemptedEndpoints));
+  Object.assign(error, {
+    code: lastCode,
+    cause: lastError,
+    base: lastBase,
+    attemptedEndpoints,
+    timeoutMs,
+    lastError: lastError instanceof Error ? lastError.message : String(lastError ?? ''),
+  });
   throw error;
 }
 
@@ -185,21 +194,28 @@ function classifyLocalAgentError(error: unknown): LocalAgentConnectivityCode {
   return 'local_agent_unreachable';
 }
 
-function buildLocalAgentErrorMessage(code: LocalAgentConnectivityCode, base: string, error: unknown) {
+function buildLocalAgentErrorMessage(
+  code: LocalAgentConnectivityCode,
+  base: string,
+  error: unknown,
+  timeoutMs: number,
+  attemptedEndpoints: string[],
+) {
   const detail = error instanceof Error ? error.message : String(error ?? '');
+  const attempted = attemptedEndpoints.length ? ` Denenen endpoint: ${attemptedEndpoints.join(' -> ')}.` : '';
   if (code === 'local_agent_timeout') {
-    return `Printer Bridge yanıt vermedi. ${base}/health 2 saniye içinde cevap dönmedi.`;
+    return `Printer Bridge yanıt vermedi. ${base}/health ${Math.round(timeoutMs / 1000)} saniye içinde cevap dönmedi.${attempted}`;
   }
   if (code === 'local_agent_port_closed') {
-    return `Printer Bridge portu kapalı görünüyor. ${base}/health bağlantısı reddedildi.`;
+    return `Printer Bridge portu kapalı görünüyor. ${base}/health bağlantısı reddedildi.${attempted}`;
   }
   if (code === 'local_agent_csp_or_cors_blocked') {
-    return `Tarayıcı Printer Bridge bağlantısını engelledi. CSP/CORS izinlerini ve ${base}/health erişimini kontrol edin.`;
+    return `Tarayıcı Printer Bridge bağlantısını engelledi. CSP/CORS izinlerini ve ${base}/health erişimini kontrol edin.${attempted}`;
   }
   if (code === 'local_agent_http_status') {
-    return `Printer Bridge beklenmeyen HTTP yanıtı verdi. ${detail}`;
+    return `Printer Bridge beklenmeyen HTTP yanıtı verdi. ${detail}.${attempted}`;
   }
-  return `Printer Bridge erişilemedi. ${base}/health kontrolü başarısız oldu${detail ? `: ${detail}` : ''}.`;
+  return `Printer Bridge erişilemedi. ${base}/health kontrolü başarısız oldu${detail ? `: ${detail}` : ''}.${attempted}`;
 }
 
 export async function fetchFromLocalAgent(path: string, options: LocalAgentRequestOptions = {}) {

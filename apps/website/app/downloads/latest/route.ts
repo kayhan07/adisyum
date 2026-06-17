@@ -4,7 +4,7 @@ export const runtime = 'edge';
 
 const latestInstallerUrl =
   process.env.NEXT_PUBLIC_ADISYUM_WINDOWS_INSTALLER_URL ||
-  'https://adisyum.com/downloads/windows/latest/AdisyumDesktopSetup.exe?v=windows-1781722235136';
+  'https://adisyum.com/downloads/windows/latest/AdisyumDesktopSetup.exe?v=windows-1781730259814';
 
 export function GET() {
   const response = NextResponse.redirect(latestInstallerUrl, 302);
