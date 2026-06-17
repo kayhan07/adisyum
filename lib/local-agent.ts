@@ -12,6 +12,13 @@ type LocalAgentFetchInit = RequestInit & {
   targetAddressSpace?: 'local' | 'loopback' | 'private' | 'public';
 };
 
+type LocalAgentConnectivityCode =
+  | 'local_agent_timeout'
+  | 'local_agent_csp_or_cors_blocked'
+  | 'local_agent_port_closed'
+  | 'local_agent_http_status'
+  | 'local_agent_unreachable';
+
 const PROXY_ROUTES: Record<string, string> = {
   '/health': '/api/printers/local-agent',
   '/printers': '/api/printers/local-agent/printers',
@@ -87,8 +94,11 @@ async function desktopDeviceHeaders() {
 
 async function fetchDirectLocalAgent(path: string, options: LocalAgentRequestOptions = {}) {
   let lastError: unknown = null;
+  let lastCode: LocalAgentConnectivityCode = 'local_agent_unreachable';
+  let lastBase = '';
 
   for (const base of directLocalAgentBases()) {
+    lastBase = base;
     const controller = new AbortController();
     const timeoutMs = path === '/printers' ? 30000 : 5000;
     const startedAt = Date.now();
@@ -112,6 +122,7 @@ async function fetchDirectLocalAgent(path: string, options: LocalAgentRequestOpt
       const response = await fetch(`${base}${path}`, init);
 
       if (!response.ok) {
+        lastCode = 'local_agent_http_status';
         lastError = new Error(`Local agent status ${response.status}`);
         if (path !== '/health') {
           console.warn('[business-flow] direct local agent returned non-ok status', {
@@ -135,6 +146,7 @@ async function fetchDirectLocalAgent(path: string, options: LocalAgentRequestOpt
       }
       return { response, base };
     } catch (error) {
+      lastCode = classifyLocalAgentError(error);
       lastError = error;
       if (path !== '/health') {
         console.warn('[business-flow] direct local agent base failed', {
@@ -151,7 +163,43 @@ async function fetchDirectLocalAgent(path: string, options: LocalAgentRequestOpt
     }
   }
 
-  throw (lastError ?? new Error('Local agent erişilemedi.'));
+  const error = new Error(buildLocalAgentErrorMessage(lastCode, lastBase, lastError));
+  Object.assign(error, { code: lastCode, cause: lastError, base: lastBase });
+  throw error;
+}
+
+function classifyLocalAgentError(error: unknown): LocalAgentConnectivityCode {
+  if (error instanceof DOMException && error.name === 'AbortError') {
+    return 'local_agent_timeout';
+  }
+  if (error instanceof Error) {
+    const message = error.message.toLocaleLowerCase('tr-TR');
+    if (message.includes('status')) return 'local_agent_http_status';
+    if (message.includes('connection refused') || message.includes('err_connection_refused')) {
+      return 'local_agent_port_closed';
+    }
+    if (message.includes('failed to fetch') || message.includes('load failed') || message.includes('networkerror')) {
+      return 'local_agent_csp_or_cors_blocked';
+    }
+  }
+  return 'local_agent_unreachable';
+}
+
+function buildLocalAgentErrorMessage(code: LocalAgentConnectivityCode, base: string, error: unknown) {
+  const detail = error instanceof Error ? error.message : String(error ?? '');
+  if (code === 'local_agent_timeout') {
+    return `Printer Bridge yanıt vermedi. ${base}/health 5 saniye içinde cevap dönmedi.`;
+  }
+  if (code === 'local_agent_port_closed') {
+    return `Printer Bridge portu kapalı görünüyor. ${base}/health bağlantısı reddedildi.`;
+  }
+  if (code === 'local_agent_csp_or_cors_blocked') {
+    return `Tarayıcı Printer Bridge bağlantısını engelledi. CSP/CORS izinlerini ve ${base}/health erişimini kontrol edin.`;
+  }
+  if (code === 'local_agent_http_status') {
+    return `Printer Bridge beklenmeyen HTTP yanıtı verdi. ${detail}`;
+  }
+  return `Printer Bridge erişilemedi. ${base}/health kontrolü başarısız oldu${detail ? `: ${detail}` : ''}.`;
 }
 
 export async function fetchFromLocalAgent(path: string, options: LocalAgentRequestOptions = {}) {
@@ -173,6 +221,9 @@ export async function fetchFromLocalAgent(path: string, options: LocalAgentReque
     try {
       return await fetchDirectLocalAgent(path, { ...options, body: nextBody });
     } catch (error) {
+      if (path === '/health') {
+        throw error;
+      }
       if (path !== '/health') {
         console.warn('[business-flow] direct local agent fetch failed; trying proxy fallback', {
           path,
@@ -232,6 +283,10 @@ export async function fetchLocalAgentJson<T>(path: string, options: LocalAgentRe
   if (typeof data === 'object' && data !== null && 'ok' in data) {
     const result = data as { ok?: boolean; error?: string; message?: string; code?: string };
     if (result.ok === false) {
+      const healthPayload = data as { deviceId?: string; status?: string };
+      if (path === '/health' && healthPayload.deviceId && healthPayload.status === 'degraded') {
+        return { data, base };
+      }
       const error = new Error(result.message || result.error || 'Local agent erişilemedi.');
       Object.assign(error, { code: result.code, payload: data });
       throw error;

@@ -26,7 +26,7 @@ const scriptSrc = scriptSrcMatch?.[1]?.trim() ?? '';
 check('production CSP has connect-src directive', Boolean(connectSrcMatch));
 check('production CSP connect-src allows 127.0.0.1 Printer Bridge', connectSrc.includes('http://127.0.0.1:4891'));
 check('production CSP connect-src allows localhost Printer Bridge', connectSrc.includes('http://localhost:4891'));
-check('production CSP connect-src allows IPv6 loopback Printer Bridge only on 4891', connectSrc.includes('http://[::1]:4891'));
+check('production CSP connect-src omits invalid IPv6 loopback source', !connectSrc.includes('http://[::1]:4891'));
 check('production CSP connect-src keeps self/https/ws/wss', ["'self'", 'https:', 'ws:', 'wss:'].every((token) => connectSrc.includes(token)));
 check('production CSP connect-src has no wildcard', !connectSrc.includes('*'));
 check('production CSP connect-src does not allow broad http scheme', !/(^|\s)http:(\s|$)/.test(connectSrc));

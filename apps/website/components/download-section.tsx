@@ -10,7 +10,7 @@ const RELEASE_VERSION = process.env.NEXT_PUBLIC_ADISYUM_WINDOWS_VERSION || '0.1.
 const INSTALLER_SIZE = process.env.NEXT_PUBLIC_ADISYUM_WINDOWS_INSTALLER_SIZE || '85.9 MB';
 const INSTALLER_URL =
   process.env.NEXT_PUBLIC_ADISYUM_WINDOWS_INSTALLER_URL ||
-  '/downloads/windows/latest/AdisyumDesktopSetup.exe?v=windows-1781707461630';
+  '/downloads/windows/latest/AdisyumDesktopSetup.exe?v=windows-1781714257228';
 
 export function DownloadSection() {
   return (

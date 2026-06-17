@@ -105,7 +105,6 @@ const connectSrc = connectSrcMatch?.[1]?.trim() ?? '';
 const requiredPrinterBridgeOrigins = [
   'http://127.0.0.1:4891',
   'http://localhost:4891',
-  'http://[::1]:4891',
 ];
 if (!connectSrcMatch) {
   failures.push('CSP connect-src directive is missing');

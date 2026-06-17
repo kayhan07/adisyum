@@ -328,6 +328,10 @@ namespace AdisyumPosAgentInstaller
             Console.WriteLine("Printer cache: " + PrinterCachePath);
             Console.WriteLine("Log file: " + BridgeLogPath);
             Console.WriteLine("Diagnose script: " + DiagnoseScriptPath);
+            Console.WriteLine("Service: " + GetServiceStatus(ServiceName));
+            Console.WriteLine("Legacy service: " + GetServiceStatus(LegacyServiceName));
+            Console.WriteLine("Port 4891 owner: " + GetPortOwner("4891"));
+            Console.WriteLine("Health JSON: " + ReadHealthJson(2500));
             Console.WriteLine("Spooler: " + GetSpoolerStatus());
             try
             {
@@ -403,7 +407,22 @@ namespace AdisyumPosAgentInstaller
             catch (Exception ex)
             {
                 Log("Bridge listener failed to start: " + ex.Message);
-                throw;
+                var owner = GetPortOwner("4891");
+                Log("Port 4891 owner: " + owner);
+                if (TryGetExistingBridgeHealth(out var existingHealth))
+                {
+                    var message = "Adisyum Printer Bridge zaten arka planda çalışıyor.";
+                    Console.WriteLine(message);
+                    Console.WriteLine(existingHealth);
+                    Log(message);
+                    return;
+                }
+
+                Console.Error.WriteLine("Adisyum Printer Bridge 4891 portunu açamadı.");
+                Console.Error.WriteLine("Port 4891 başka bir process tarafından kullanılıyor olabilir: " + owner);
+                Console.Error.WriteLine("Health yanıtı alınamadı: " + LocalApiPrefix + "health");
+                Console.Error.WriteLine("Log yolu: " + BridgeLogPath);
+                return;
             }
             Log("Bridge agent listening on " + LocalApiPrefix);
 
@@ -803,6 +822,103 @@ namespace AdisyumPosAgentInstaller
             catch
             {
                 return "unknown";
+            }
+        }
+
+        private static bool TryGetExistingBridgeHealth(out string healthJson)
+        {
+            healthJson = ReadHealthJson(1500);
+            if (string.IsNullOrWhiteSpace(healthJson) || healthJson.StartsWith("ERROR:", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            try
+            {
+                using (var document = JsonDocument.Parse(healthJson))
+                {
+                    var root = document.RootElement;
+                    var hasDeviceId = root.TryGetProperty("deviceId", out var deviceId)
+                        && deviceId.ValueKind == JsonValueKind.String
+                        && !string.IsNullOrWhiteSpace(deviceId.GetString());
+                    var hasLocalApi = root.TryGetProperty("localApi", out var localApi)
+                        && localApi.ValueKind == JsonValueKind.String
+                        && localApi.GetString() == LocalApiPrefix;
+                    var isBridgeService = root.TryGetProperty("service", out var service)
+                        && service.ValueKind == JsonValueKind.String
+                        && service.GetString()?.IndexOf("adisyum", StringComparison.OrdinalIgnoreCase) >= 0;
+                    return hasDeviceId && (hasLocalApi || isBridgeService);
+                }
+            }
+            catch
+            {
+                return healthJson.IndexOf("deviceId", StringComparison.OrdinalIgnoreCase) >= 0
+                    && healthJson.IndexOf("adisyum", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+        }
+
+        private static string ReadHealthJson(int timeoutMs)
+        {
+            try
+            {
+                var request = WebRequest.Create(LocalApiPrefix + "health");
+                request.Timeout = timeoutMs;
+                using (var response = request.GetResponse())
+                using (var stream = response.GetResponseStream())
+                using (var reader = new StreamReader(stream ?? Stream.Null, Encoding.UTF8))
+                {
+                    var text = reader.ReadToEnd();
+                    return string.IsNullOrWhiteSpace(text) ? "EMPTY" : text.Trim();
+                }
+            }
+            catch (Exception ex)
+            {
+                return "ERROR: " + ex.Message;
+            }
+        }
+
+        private static string GetServiceStatus(string serviceName)
+        {
+            try
+            {
+                var query = RunProcessWithOutput("sc.exe", "query " + serviceName, 5000);
+                var config = RunProcessWithOutput("sc.exe", "qc " + serviceName, 5000);
+                var failure = RunProcessWithOutput("sc.exe", "qfailure " + serviceName, 5000);
+                var running = query.IndexOf("RUNNING", StringComparison.OrdinalIgnoreCase) >= 0 ? "running" : "not-running";
+                var automatic = config.IndexOf("AUTO_START", StringComparison.OrdinalIgnoreCase) >= 0 ? "automatic" : "manual-or-disabled";
+                var recovery = failure.IndexOf("RESTART", StringComparison.OrdinalIgnoreCase) >= 0 ? "restart" : "not-configured";
+                return running + ", " + automatic + ", recovery=" + recovery;
+            }
+            catch (Exception ex)
+            {
+                return "not-installed (" + ex.Message.Trim() + ")";
+            }
+        }
+
+        private static string GetPortOwner(string port)
+        {
+            try
+            {
+                var script = "$row = Get-NetTCPConnection -LocalPort " + port + " -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; " +
+                    "if ($row) { $p = Get-Process -Id $row.OwningProcess -ErrorAction SilentlyContinue; " +
+                    "if ($p) { \"$($p.ProcessName) pid=$($p.Id) path=$($p.Path)\" } else { \"pid=$($row.OwningProcess)\" } } else { 'none' }";
+                var output = RunPowerShell(script).Trim();
+                return string.IsNullOrWhiteSpace(output) ? "none" : output;
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    var output = RunProcessWithOutput("netstat.exe", "-ano -p tcp", 5000);
+                    var line = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                        .FirstOrDefault(item => item.IndexOf(":" + port, StringComparison.OrdinalIgnoreCase) >= 0
+                            && item.IndexOf("LISTENING", StringComparison.OrdinalIgnoreCase) >= 0);
+                    return string.IsNullOrWhiteSpace(line) ? "unknown (" + ex.Message.Trim() + ")" : line.Trim();
+                }
+                catch (Exception fallback)
+                {
+                    return "unknown (" + fallback.Message.Trim() + ")";
+                }
             }
         }
 

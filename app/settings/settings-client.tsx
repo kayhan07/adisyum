@@ -76,7 +76,7 @@ const printableDeviceTypeOptions: PrintableDeviceType[] = ['receipt_printer', 'k
 const AGENT_STATUS_RETRY_COUNT = 3;
 const AGENT_STATUS_RETRY_DELAY_MS = 500;
 const AGENT_HEARTBEAT_MS = 6000;
-const PRINTER_BRIDGE_LATEST_URL = 'https://adisyum.com/downloads/windows/latest/PrinterBridgeSetup.exe?v=windows-1781707461630';
+const PRINTER_BRIDGE_LATEST_URL = 'https://adisyum.com/downloads/windows/latest/PrinterBridgeSetup.exe?v=windows-1781714257228';
 const CURRENT_PRINTER_BRIDGE_VERSION = '0.1.7';
 
 function isPrintableDeviceType(value: string): value is PrintableDeviceType {
@@ -164,6 +164,15 @@ function resolveAgentActionMessage(status: AgentStatus, diagnostic: AgentDiagnos
   }
   if (diagnostic.code === 'agent_device_required' || (!diagnostic.deviceId && status === 'online')) {
     return 'Bu bilgisayarın agent kimliği alınamadı. Printer Bridge’i yeniden başlatın.';
+  }
+  if (diagnostic.code === 'local_agent_port_closed') {
+    return 'Printer Bridge portu kapalı. Servisin çalıştığını ve 127.0.0.1:4891/health adresinin JSON döndürdüğünü kontrol edin.';
+  }
+  if (diagnostic.code === 'local_agent_csp_or_cors_blocked') {
+    return 'Tarayıcı Printer Bridge bağlantısını engelliyor. CSP/CORS izni veya localhost erişimi engellenmiş olabilir.';
+  }
+  if (diagnostic.code === 'local_agent_timeout') {
+    return 'Printer Bridge yanıt vermiyor. Servis çalışıyor olabilir ama health yanıtı 5 saniye içinde gelmedi.';
   }
   if (status === 'offline' || status === 'missing') {
     return 'Bu bilgisayarda Printer Bridge çalışmıyor. Yazıcıları görebilmek için Printer Bridge’i kurup açın.';
