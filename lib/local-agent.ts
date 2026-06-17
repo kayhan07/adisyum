@@ -100,7 +100,7 @@ async function fetchDirectLocalAgent(path: string, options: LocalAgentRequestOpt
   for (const base of directLocalAgentBases()) {
     lastBase = base;
     const controller = new AbortController();
-    const timeoutMs = path === '/printers' ? 30000 : 5000;
+    const timeoutMs = path === '/printers' ? 30000 : 2000;
     const startedAt = Date.now();
     const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
@@ -188,7 +188,7 @@ function classifyLocalAgentError(error: unknown): LocalAgentConnectivityCode {
 function buildLocalAgentErrorMessage(code: LocalAgentConnectivityCode, base: string, error: unknown) {
   const detail = error instanceof Error ? error.message : String(error ?? '');
   if (code === 'local_agent_timeout') {
-    return `Printer Bridge yanıt vermedi. ${base}/health 5 saniye içinde cevap dönmedi.`;
+    return `Printer Bridge yanıt vermedi. ${base}/health 2 saniye içinde cevap dönmedi.`;
   }
   if (code === 'local_agent_port_closed') {
     return `Printer Bridge portu kapalı görünüyor. ${base}/health bağlantısı reddedildi.`;

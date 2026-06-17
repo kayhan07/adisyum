@@ -51,11 +51,15 @@ type AgentDiagnostic = {
 
 type LocalAgentHealthPayload = {
   ok?: boolean;
+  status?: string;
   code?: string;
+  error?: string;
   message?: string;
   deviceId?: string;
   version?: string;
   spooler?: { status?: string };
+  cachedPrinterCount?: number;
+  cachedPrinters?: Array<string | { Name?: string; name?: string; driver?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string; default?: boolean; online?: boolean }>;
   printerCount?: number;
   installedPrinters?: Array<string | { Name?: string; name?: string; driver?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string; default?: boolean; online?: boolean }>;
   printers?: Array<string | { Name?: string; name?: string; driver?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string; default?: boolean; online?: boolean }>;
@@ -76,7 +80,7 @@ const printableDeviceTypeOptions: PrintableDeviceType[] = ['receipt_printer', 'k
 const AGENT_STATUS_RETRY_COUNT = 3;
 const AGENT_STATUS_RETRY_DELAY_MS = 500;
 const AGENT_HEARTBEAT_MS = 6000;
-const PRINTER_BRIDGE_LATEST_URL = 'https://adisyum.com/downloads/windows/latest/PrinterBridgeSetup.exe?v=windows-1781714257228';
+const PRINTER_BRIDGE_LATEST_URL = 'https://adisyum.com/downloads/windows/latest/PrinterBridgeSetup.exe?v=windows-1781722235136';
 const CURRENT_PRINTER_BRIDGE_VERSION = '0.1.7';
 
 function isPrintableDeviceType(value: string): value is PrintableDeviceType {
@@ -172,7 +176,7 @@ function resolveAgentActionMessage(status: AgentStatus, diagnostic: AgentDiagnos
     return 'Tarayıcı Printer Bridge bağlantısını engelliyor. CSP/CORS izni veya localhost erişimi engellenmiş olabilir.';
   }
   if (diagnostic.code === 'local_agent_timeout') {
-    return 'Printer Bridge yanıt vermiyor. Servis çalışıyor olabilir ama health yanıtı 5 saniye içinde gelmedi.';
+    return 'Printer Bridge yanıt vermiyor. Servis çalışıyor olabilir ama health yanıtı 2 saniye içinde gelmedi.';
   }
   if (status === 'offline' || status === 'missing') {
     return 'Bu bilgisayarda Printer Bridge çalışmıyor. Yazıcıları görebilmek için Printer Bridge’i kurup açın.';
@@ -546,6 +550,10 @@ export default function SettingsPage() {
           setMessage(`${localAgentResult.printers.length} yazıcı local agent üzerinden bulundu.`);
           return;
         }
+        if (localAgentResult.error === 'printer_scan_timeout') {
+          setMessage('Yazıcı taraması zaman aşımına uğradı.');
+          return;
+        }
 
         const spoolerStatus = agentDiagnostic.spoolerStatus?.toLocaleLowerCase('tr-TR') ?? '';
         setMessage(spoolerStatus && spoolerStatus !== 'healthy'
@@ -673,6 +681,8 @@ export default function SettingsPage() {
           ? data.printers
           : Array.isArray(data.installedPrinters)
             ? data.installedPrinters
+            : Array.isArray(data.cachedPrinters)
+              ? data.cachedPrinters
           : [];
       const printers: SystemPrinter[] = Array.isArray(rawPrinters)
         ? rawPrinters
@@ -697,6 +707,7 @@ export default function SettingsPage() {
       return {
         printers,
         agent: healthAgent,
+        error: Array.isArray(data) ? undefined : data.code ?? data.error,
       };
     } catch (error) {
       console.error('[business-flow] local agent printer scan failed', {

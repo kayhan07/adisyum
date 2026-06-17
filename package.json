@@ -43,6 +43,7 @@
     "verify:daily-report-80mm-print": "tsx scripts/verify-daily-report-80mm-print.ts",
     "verify:printer-agent-health-ui": "node scripts/verify-printer-agent-health-ui.mjs",
     "verify:printer-agent-csp-localhost": "node scripts/verify-printer-agent-csp-localhost.mjs",
+    "verify:printer-bridge-health-lightweight": "node scripts/verify-printer-bridge-health-lightweight.mjs",
     "verify:printer-bridge-installer-shortcuts": "node scripts/verify-printer-bridge-installer-shortcuts.mjs",
     "verify:printer-bridge-single-instance": "node scripts/verify-printer-bridge-single-instance.mjs",
     "verify:printer-bridge-diagnose-health": "node scripts/verify-printer-bridge-diagnose-health.mjs",

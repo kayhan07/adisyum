@@ -26,7 +26,7 @@ type DownloadItem = {
   sha256: string;
 };
 
-const latestBuildId = 'windows-1781714257228';
+const latestBuildId = 'windows-1781722235136';
 
 const fallbackDownloads: DownloadItem[] = [
   {
@@ -39,9 +39,9 @@ const fallbackDownloads: DownloadItem[] = [
     exists: true,
     executable: true,
     healthy: true,
-    sizeBytes: 85929150,
-    sizeLabel: '81.9 MB (85.929.150 byte)',
-    sha256: 'c33870632210b2a921e37f51ba4c5f1f5cee9b32bc903b7053a65481595dce87',
+    sizeBytes: 85929118,
+    sizeLabel: '81.9 MB (85.929.118 byte)',
+    sha256: '0ec2172ad28cbe5f7df14603e3cecf687c4955289ef1ea8ed58d59123a505c71',
   },
   {
     name: 'Printer Bridge',
@@ -53,9 +53,9 @@ const fallbackDownloads: DownloadItem[] = [
     exists: true,
     executable: true,
     healthy: true,
-    sizeBytes: 69278737,
-    sizeLabel: '66.1 MB (69.278.737 byte)',
-    sha256: 'e046812f0e8dc92289d31ed724488cae7bbaf22bcaa70b785fc20c459248ceed',
+    sizeBytes: 69284369,
+    sizeLabel: '66.1 MB (69.284.369 byte)',
+    sha256: '10c8d563bb922aa6e1bfd4ac11191f947d0e7f7facb8f1c220c8361c70ca10f8',
   },
   {
     name: 'Fiscal POS Bridge',
@@ -67,9 +67,9 @@ const fallbackDownloads: DownloadItem[] = [
     exists: true,
     executable: true,
     healthy: true,
-    sizeBytes: 69278737,
-    sizeLabel: '66.1 MB (69.278.737 byte)',
-    sha256: 'e046812f0e8dc92289d31ed724488cae7bbaf22bcaa70b785fc20c459248ceed',
+    sizeBytes: 69284369,
+    sizeLabel: '66.1 MB (69.284.369 byte)',
+    sha256: '10c8d563bb922aa6e1bfd4ac11191f947d0e7f7facb8f1c220c8361c70ca10f8',
   },
 ];
 

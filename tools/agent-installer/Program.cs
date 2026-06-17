@@ -8,6 +8,8 @@ using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Win32;
 
 namespace AdisyumPosAgentInstaller
@@ -103,6 +105,9 @@ namespace AdisyumPosAgentInstaller
         private const string TaskName = "AdisyumPrinterBridge";
         private const string LegacyTaskName = "AdisyumDesktopBridge";
         private const string BridgeVersion = "0.1.7";
+        private const int HealthSpoolerTimeoutMs = 700;
+        private const int PrinterScanTimeoutMs = 8000;
+        private static int backgroundScanRunning = 0;
         private static readonly string DeviceIdentityPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
             "Adisyum",
@@ -150,9 +155,10 @@ namespace AdisyumPosAgentInstaller
                 Console.WriteLine("Adisyum Printer Bridge setup starting...");
                 Console.WriteLine("Administrator: " + (IsAdministrator() ? "yes" : "no"));
                 InstallAndStartAgent();
-                var printers = GetInstalledPrinters();
+                var scan = GetInstalledPrintersWithTimeout(PrinterScanTimeoutMs);
+                var printers = scan.Printers;
                 Console.WriteLine("Local API: " + LocalApiPrefix);
-                Console.WriteLine("Printers discovered: " + printers.Count);
+                Console.WriteLine("Printers discovered: " + printers.Count + (scan.TimedOut ? " (cached; scan timeout)" : ""));
                 foreach (var printer in printers.Take(8))
                 {
                     Console.WriteLine("- " + printer.Name + " [" + printer.ConnectionType + "] " + (printer.Online ? "online" : "offline"));
@@ -335,8 +341,11 @@ namespace AdisyumPosAgentInstaller
             Console.WriteLine("Spooler: " + GetSpoolerStatus());
             try
             {
-                var printers = GetInstalledPrinters();
+                var scan = GetInstalledPrintersWithTimeout(PrinterScanTimeoutMs);
+                var printers = scan.Printers;
                 Console.WriteLine("Printer count: " + printers.Count);
+                if (scan.TimedOut) Console.WriteLine("Printer discovery warning: printer_scan_timeout; cached printers shown.");
+                if (!string.IsNullOrWhiteSpace(scan.Error)) Console.WriteLine("Printer discovery warning: " + scan.Error);
                 foreach (var printer in printers.Take(20))
                 {
                     Console.WriteLine("- " + printer.Name + " [" + printer.ConnectionType + "] " + (printer.Online ? "online" : "offline"));
@@ -425,6 +434,7 @@ namespace AdisyumPosAgentInstaller
                 return;
             }
             Log("Bridge agent listening on " + LocalApiPrefix);
+            QueuePrinterDiscovery("startup");
 
             while (true)
             {
@@ -494,39 +504,28 @@ namespace AdisyumPosAgentInstaller
             // ---------- GET /health ----------
             if (request.HttpMethod == "GET" && path == "health")
             {
-                var degraded = false;
-                string error = null;
-                List<PrinterInventoryItem> printers;
-                try
-                {
-                    printers = GetInstalledPrinters();
-                }
-                catch (Exception ex)
-                {
-                    degraded = true;
-                    error = ex.Message;
-                    Log("Health printer discovery degraded: " + ex.Message);
-                    printers = ReadPrinterCache();
-                }
+                var cache = ReadPrinterCacheSnapshot();
                 var deviceId = EnsureDeviceId();
-                var spoolerStatus = GetSpoolerStatus();
+                var spoolerStatus = GetSpoolerStatus(HealthSpoolerTimeoutMs);
+                var degraded = spoolerStatus == "unknown" || spoolerStatus == "stopped";
                 var now = DateTimeOffset.UtcNow;
                 WriteJson(response, new
                 {
-                    ok = !degraded,
+                    ok = true,
                     status = degraded ? "degraded" : "healthy",
                     service = "adisyum-desktop-bridge",
+                    serviceStatus = degraded ? "degraded" : "running",
                     deviceId = deviceId,
                     version = BridgeVersion,
                     localApi = LocalApiPrefix,
                     startedAt = now,
                     spooler = new { status = spoolerStatus },
-                    installedPrinters = printers,
-                    printers = printers,
-                    printerCount = printers.Count,
+                    lastPrinterScanAt = cache.SavedAt,
+                    cachedPrinterCount = cache.Printers.Count,
+                    printerCount = cache.Printers.Count,
                     printerCachePath = PrinterCachePath,
                     logPath = BridgeLogPath,
-                    error = error,
+                    error = degraded ? "spooler_status_" + spoolerStatus : null,
                     administrator = IsAdministrator(),
                     agent = new
                     {
@@ -535,7 +534,7 @@ namespace AdisyumPosAgentInstaller
                         deviceId = deviceId,
                         agentVersion = BridgeVersion,
                         lastSeenAt = now,
-                        printerCount = printers.Count,
+                        printerCount = cache.Printers.Count,
                         spoolerStatus = spoolerStatus,
                     },
                 });
@@ -545,18 +544,24 @@ namespace AdisyumPosAgentInstaller
             // ---------- GET /diagnostics ----------
             if (request.HttpMethod == "GET" && path == "diagnostics")
             {
-                var printers = GetInstalledPrinters();
+                var scan = GetInstalledPrintersWithTimeout(PrinterScanTimeoutMs);
+                var printers = scan.Printers;
                 WriteJson(response, new
                 {
-                    ok = true,
+                    ok = !scan.TimedOut,
+                    status = scan.TimedOut ? "degraded" : "healthy",
                     service = "adisyum-desktop-bridge",
                     localApi = LocalApiPrefix,
                     deviceId = EnsureDeviceId(),
                     version = BridgeVersion,
                     printers = printers,
                     printerCount = printers.Count,
+                    cachedPrinters = printers,
+                    lastPrinterScanAt = scan.SavedAt,
+                    cachedPrinterCount = printers.Count,
                     printerCachePath = PrinterCachePath,
                     logPath = BridgeLogPath,
+                    error = scan.TimedOut ? "printer_scan_timeout" : scan.Error,
                     administrator = IsAdministrator(),
                 });
                 return;
@@ -565,34 +570,29 @@ namespace AdisyumPosAgentInstaller
             // ---------- GET /printers ----------
             if (request.HttpMethod == "GET" && path == "printers")
             {
-                var degraded = false;
-                string error = null;
-                List<PrinterInventoryItem> printers;
-                try
-                {
-                    printers = GetInstalledPrinters();
-                }
-                catch (Exception ex)
-                {
-                    degraded = true;
-                    error = ex.Message;
-                    Log("Printers endpoint degraded: " + ex.Message);
-                    printers = ReadPrinterCache();
-                }
+                var scan = GetInstalledPrintersWithTimeout(PrinterScanTimeoutMs);
+                var degraded = scan.TimedOut || !string.IsNullOrWhiteSpace(scan.Error);
+                var error = scan.TimedOut ? "printer_scan_timeout" : scan.Error;
+                var printers = scan.Printers;
                 var deviceId = EnsureDeviceId();
-                var spoolerStatus = GetSpoolerStatus();
+                var spoolerStatus = GetSpoolerStatus(HealthSpoolerTimeoutMs);
                 var now = DateTimeOffset.UtcNow;
                 WriteJson(response, new
                 {
-                    ok = !degraded,
+                    ok = true,
                     status = degraded ? "degraded" : "healthy",
                     service = "adisyum-desktop-bridge",
                     deviceId = deviceId,
                     version = BridgeVersion,
+                    code = error,
+                    message = scan.TimedOut ? "Yazıcı taraması zaman aşımına uğradı." : null,
                     spooler = new { status = spoolerStatus },
                     installedPrinters = printers,
                     printers = printers,
                     printerCount = printers.Count,
+                    cachedPrinters = printers,
+                    lastPrinterScanAt = scan.SavedAt,
+                    cachedPrinterCount = printers.Count,
                     logPath = BridgeLogPath,
                     error = error,
                     agent = new
@@ -812,17 +812,81 @@ namespace AdisyumPosAgentInstaller
             }
         }
 
-        private static string GetSpoolerStatus()
+        private static string GetSpoolerStatus(int timeoutMs = 5000)
         {
             try
             {
-                var output = RunProcessWithOutput("sc.exe", "query Spooler", 5000);
+                var output = RunProcessWithOutput("sc.exe", "query Spooler", timeoutMs);
                 return output.IndexOf("RUNNING", StringComparison.OrdinalIgnoreCase) >= 0 ? "healthy" : "stopped";
             }
             catch
             {
                 return "unknown";
             }
+        }
+
+        private static PrinterScanResult GetInstalledPrintersWithTimeout(int timeoutMs)
+        {
+            try
+            {
+                var task = Task.Run(() => GetInstalledPrinters());
+                if (task.Wait(timeoutMs))
+                {
+                    return new PrinterScanResult
+                    {
+                        Printers = task.Result,
+                        SavedAt = DateTimeOffset.UtcNow,
+                    };
+                }
+
+                Log("Printer discovery timed out after " + timeoutMs + "ms; returning cached inventory.");
+                QueuePrinterDiscovery("timeout-retry");
+                var cache = ReadPrinterCacheSnapshot();
+                return new PrinterScanResult
+                {
+                    Printers = cache.Printers,
+                    SavedAt = cache.SavedAt,
+                    TimedOut = true,
+                    Error = "printer_scan_timeout",
+                };
+            }
+            catch (Exception ex)
+            {
+                Log("Printer discovery degraded: " + ex.Message);
+                var cache = ReadPrinterCacheSnapshot();
+                return new PrinterScanResult
+                {
+                    Printers = cache.Printers,
+                    SavedAt = cache.SavedAt,
+                    Error = ex.Message,
+                };
+            }
+        }
+
+        private static void QueuePrinterDiscovery(string reason)
+        {
+            if (Interlocked.Exchange(ref backgroundScanRunning, 1) == 1)
+            {
+                return;
+            }
+
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                try
+                {
+                    Log("Background printer discovery started: " + reason);
+                    GetInstalledPrinters();
+                    Log("Background printer discovery finished: " + reason);
+                }
+                catch (Exception ex)
+                {
+                    Log("Background printer discovery failed: " + ex.Message);
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref backgroundScanRunning, 0);
+                }
+            });
         }
 
         private static bool TryGetExistingBridgeHealth(out string healthJson)
@@ -1047,16 +1111,39 @@ namespace AdisyumPosAgentInstaller
 
         private static List<PrinterInventoryItem> ReadPrinterCache()
         {
+            return ReadPrinterCacheSnapshot().Printers;
+        }
+
+        private static PrinterInventoryCache ReadPrinterCacheSnapshot()
+        {
             try
             {
-                if (!File.Exists(PrinterCachePath)) return new List<PrinterInventoryItem>();
+                if (!File.Exists(PrinterCachePath))
+                {
+                    return new PrinterInventoryCache
+                    {
+                        SavedAt = null,
+                        Printers = new List<PrinterInventoryItem>(),
+                        Diagnostics = new List<object>(),
+                    };
+                }
                 var cache = JsonSerializer.Deserialize<PrinterInventoryCache>(File.ReadAllText(PrinterCachePath));
-                return cache?.Printers ?? new List<PrinterInventoryItem>();
+                return new PrinterInventoryCache
+                {
+                    SavedAt = cache?.SavedAt,
+                    Printers = cache?.Printers ?? new List<PrinterInventoryItem>(),
+                    Diagnostics = cache?.Diagnostics ?? new List<object>(),
+                };
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine("[adisyum-agent] printer cache read failed: " + ex.Message);
-                return new List<PrinterInventoryItem>();
+                return new PrinterInventoryCache
+                {
+                    SavedAt = null,
+                    Printers = new List<PrinterInventoryItem>(),
+                    Diagnostics = new List<object>(),
+                };
             }
         }
 
@@ -1150,9 +1237,17 @@ namespace AdisyumPosAgentInstaller
 
         private sealed class PrinterInventoryCache
         {
-            public DateTimeOffset SavedAt { get; set; }
+            public DateTimeOffset? SavedAt { get; set; }
             public List<PrinterInventoryItem> Printers { get; set; }
             public List<object> Diagnostics { get; set; }
+        }
+
+        private sealed class PrinterScanResult
+        {
+            public List<PrinterInventoryItem> Printers { get; set; } = new List<PrinterInventoryItem>();
+            public DateTimeOffset? SavedAt { get; set; }
+            public bool TimedOut { get; set; }
+            public string Error { get; set; }
         }
     }
 }
