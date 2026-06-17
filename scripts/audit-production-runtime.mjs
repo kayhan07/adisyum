@@ -100,11 +100,32 @@ for (const envFile of envFiles) {
     warnings.push(`${envFile} contains a PORT assignment that differs from 3000`);
   }
 }
-if (!/connect-src 'self' https: ws: wss:/.test(middleware)) {
+const connectSrcMatch = middleware.match(/connect-src\s+([^;"]+);/);
+const connectSrc = connectSrcMatch?.[1]?.trim() ?? '';
+const requiredPrinterBridgeOrigins = [
+  'http://127.0.0.1:4891',
+  'http://localhost:4891',
+  'http://[::1]:4891',
+];
+if (!connectSrcMatch) {
+  failures.push('CSP connect-src directive is missing');
+}
+if (!connectSrc.includes("'self'") || !connectSrc.includes('https:') || !connectSrc.includes('ws:') || !connectSrc.includes('wss:')) {
   failures.push('CSP connect-src governance changed unexpectedly');
 }
-if (/connect-src[^"]*(127\.0\.0\.1|localhost)/.test(middleware)) {
-  failures.push('CSP allows localhost in production connect-src');
+for (const origin of requiredPrinterBridgeOrigins) {
+  if (!connectSrc.includes(origin)) {
+    failures.push(`CSP connect-src must allow local Printer Bridge origin ${origin}`);
+  }
+}
+if (/\*/.test(connectSrc) || /(^|\s)http:(\s|$)/.test(connectSrc)) {
+  failures.push('CSP connect-src is too broad for production');
+}
+const disallowedLoopbackOrigins = [...connectSrc.matchAll(/https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):(\d+)/g)]
+  .map((match) => match[0])
+  .filter((origin) => !requiredPrinterBridgeOrigins.includes(origin));
+if (disallowedLoopbackOrigins.length > 0) {
+  failures.push(`CSP connect-src allows unexpected loopback origins: ${[...new Set(disallowedLoopbackOrigins)].join(', ')}`);
 }
 
 const browserSourceWithDirectBridge = walk('.', (file) => (
@@ -164,7 +185,8 @@ const report = {
   },
   envFiles,
   csp: {
-    localhostAllowed: /connect-src[^"]*(127\.0\.0\.1|localhost)/.test(middleware),
+    loopbackBridgeAllowed: requiredPrinterBridgeOrigins.every((origin) => connectSrc.includes(origin)),
+    connectSrc,
   },
   staticRouting: {
     rootAssetPrefix: /adisyum-root-assets/.test(nextConfig),

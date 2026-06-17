@@ -42,6 +42,7 @@
     "verify:receipt-currency-summary": "node scripts/verify-receipt-currency-summary.mjs",
     "verify:daily-report-80mm-print": "tsx scripts/verify-daily-report-80mm-print.ts",
     "verify:printer-agent-health-ui": "node scripts/verify-printer-agent-health-ui.mjs",
+    "verify:printer-agent-csp-localhost": "node scripts/verify-printer-agent-csp-localhost.mjs",
     "verify:printer-bridge-install-startup": "node scripts/verify-printer-bridge-install-startup.mjs",
     "verify:printer-agent-installed-printers": "node scripts/verify-printer-agent-installed-printers.mjs",
     "verify:printer-role-assignment": "node scripts/verify-printer-role-assignment.mjs",

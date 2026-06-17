@@ -54,13 +54,18 @@ export function getLocalAgentBaseHint() {
 
 function directLocalAgentBases() {
   const httpPort = process.env.NEXT_PUBLIC_LOCAL_BRIDGE_PORT ?? '4891';
-  const httpsPort = process.env.NEXT_PUBLIC_LOCAL_BRIDGE_HTTPS_PORT ?? '3443';
-  return [
-    buildLoopbackBase('http', 'localhost', httpPort),
+  const bases = [
     buildLoopbackBase('http', '127.0.0.1', httpPort),
-    buildLoopbackBase('https', 'localhost', httpsPort),
-    buildLoopbackBase('https', '127.0.0.1', httpsPort),
+    buildLoopbackBase('http', 'localhost', httpPort),
   ];
+  if (process.env.NEXT_PUBLIC_LOCAL_BRIDGE_ENABLE_HTTPS === '1') {
+    const httpsPort = process.env.NEXT_PUBLIC_LOCAL_BRIDGE_HTTPS_PORT ?? '3443';
+    bases.push(
+      buildLoopbackBase('https', '127.0.0.1', httpsPort),
+      buildLoopbackBase('https', 'localhost', httpsPort),
+    );
+  }
+  return bases;
 }
 
 async function desktopDeviceHeaders() {
