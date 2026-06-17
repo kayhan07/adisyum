@@ -25,7 +25,7 @@ type DownloadItem = {
   sha256: string;
 };
 
-const latestBuildId = 'windows-1781620892355';
+const latestBuildId = 'windows-1781695779253';
 
 const fallbackDownloads: DownloadItem[] = [
   {

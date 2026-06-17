@@ -23,13 +23,15 @@ const check = (name, ok) => {
 
 check('test fixture has three printers', samplePrinters.length === 3);
 check('agent health returns all installed printers not only default', installer.includes('installedPrinters = printers') && installer.includes('printers = printers') && installer.includes('printerCount = printers.Count'));
-check('agent /printers endpoint returns GetInstalledPrinters list', installer.includes('path == "printers"') && installer.includes('WriteJson(response, printers)'));
+check('agent /printers endpoint returns device identity and GetInstalledPrinters list', installer.includes('path == "printers"') && installer.includes('deviceId = deviceId') && installer.includes('installedPrinters = printers') && installer.includes('printers = printers'));
 check('printer inventory includes name default status port and connection type', installer.includes('Name = name.Trim()') && installer.includes('Default = ReadBool') && installer.includes('Status =') && installer.includes('PortName = portName') && installer.includes('ConnectionType = InferConnectionType'));
 check('web dropdown renders every system printer from systemPrinters.map', settings.includes('systemPrinters.map((printer)') && settings.includes('printer.connectionType') && settings.includes('printer.default'));
 check('web scan registers local printers to tenant device registry', settings.includes('/api/devices/registry') && settings.includes('deviceId: diagnostic.deviceId') && settings.includes('printers,'));
 check('direct loopback bridge is enabled for browser settings scan', localAgentClient.includes("NEXT_PUBLIC_DISABLE_LOCAL_BRIDGE !== '1'"));
 check('device id is required before cloud proxy returns installed printers', localAgentRoute.includes('agent_device_required') && localAgentRoute.includes('deviceScoped: false'));
 check('another device printers are not shown on branch mismatch', localAgentRoute.includes('agent_branch_mismatch') && localAgentRoute.includes('printers: []'));
+check('local bridge CORS allows browser health and printer requests', installer.includes('Access-Control-Allow-Origin"]          = "*"') && installer.includes('GET, POST, OPTIONS') && installer.includes('Content-Type, x-adisyum-device-id'));
+check('local bridge supports OPTIONS preflight', installer.includes('request.HttpMethod == "OPTIONS"') && installer.includes('response.StatusCode = 204'));
 
 const failed = checks.filter((item) => !item.ok);
 if (failed.length > 0) {

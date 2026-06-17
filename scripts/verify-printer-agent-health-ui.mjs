@@ -33,8 +33,12 @@ check('device id missing action asks for bridge restart', settings.includes('Bu 
 check('old agent warning asks for current bridge install', settings.includes('Printer Bridge eski sürüm. Güncel sürümü indirip kurun.'));
 check('spooler stopped warning is explicit', settings.includes('Windows Yazdırma Biriktiricisi kapalı. Windows Hizmetler’den Print Spooler’ı başlatın.'));
 check('local agent JSON responses declare UTF-8 charset', localAgentRoute.includes("'content-type': 'application/json; charset=utf-8'"));
+check('local bridge CORS allows adisyum browser requests', localAgentClient.includes('targetAddressSpace') && localAgentClient.includes("mode: 'cors'"));
+check('Windows bridge allows health/printers CORS preflight', read('tools/agent-installer/Program.cs').includes('Access-Control-Allow-Origin"]          = "*"') && read('tools/agent-installer/Program.cs').includes('Content-Type, x-adisyum-device-id') && read('tools/agent-installer/Program.cs').includes('request.HttpMethod == "OPTIONS"'));
 check('agent online exposes device id version spooler and printer count', settings.includes('DeviceId:') && settings.includes('Agent sürümü:') && settings.includes('Spooler:') && settings.includes('Bulunan yazıcı:'));
 check('agent online with printers fills the dropdown from systemPrinters', settings.includes('systemPrinters.map((printer)') && settings.includes('value={printer.name}'));
+check('health parser accepts top-level and nested agent device id', settings.includes('payload.agent?.deviceId ?? payload.deviceId') && settings.includes('payload.agent?.agentVersion ?? payload.agent?.version ?? payload.version'));
+check('printer parser accepts installedPrinters object response', settings.includes('Array.isArray(data.installedPrinters)') && settings.includes('data.installedPrinters'));
 check('client proxy sends current computer device header', localAgentClient.includes("'x-adisyum-device-id': deviceId"));
 check('browser settings scan can reach local Printer Bridge directly', localAgentClient.includes("NEXT_PUBLIC_DISABLE_LOCAL_BRIDGE !== '1'"));
 check('settings scan registers bridge device and printers to cloud registry', settings.includes('/api/devices/registry') && settings.includes('registerLocalAgentDevice'));

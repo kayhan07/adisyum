@@ -98,7 +98,7 @@ namespace AdisyumPosAgentInstaller
         private const string RunArg = "--run-agent";
         private const string ServiceName = "AdisyumDesktopBridge";
         private const string TaskName = "AdisyumDesktopBridge";
-        private const string BridgeVersion = "0.1.6";
+        private const string BridgeVersion = "0.1.7";
         private static readonly string DeviceIdentityPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
             "Adisyum",
@@ -316,10 +316,9 @@ namespace AdisyumPosAgentInstaller
 
         private static void SetCorsHeaders(HttpListenerResponse response, string origin)
         {
-            response.Headers["Access-Control-Allow-Origin"]          = string.IsNullOrEmpty(origin) ? "*" : origin;
+            response.Headers["Access-Control-Allow-Origin"]          = "*";
             response.Headers["Access-Control-Allow-Methods"]         = "GET, POST, OPTIONS";
-            response.Headers["Access-Control-Allow-Headers"]         = "Content-Type, Authorization";
-            response.Headers["Access-Control-Allow-Credentials"]     = "true";
+            response.Headers["Access-Control-Allow-Headers"]         = "Content-Type, x-adisyum-device-id";
             response.Headers["Access-Control-Allow-Private-Network"] = "true";
         }
 
@@ -404,7 +403,30 @@ namespace AdisyumPosAgentInstaller
             if (request.HttpMethod == "GET" && path == "printers")
             {
                 var printers = GetInstalledPrinters();
-                WriteJson(response, printers);
+                var deviceId = EnsureDeviceId();
+                var spoolerStatus = GetSpoolerStatus();
+                var now = DateTimeOffset.UtcNow;
+                WriteJson(response, new
+                {
+                    ok = true,
+                    service = "adisyum-desktop-bridge",
+                    deviceId = deviceId,
+                    version = BridgeVersion,
+                    spooler = new { status = spoolerStatus },
+                    installedPrinters = printers,
+                    printers = printers,
+                    printerCount = printers.Count,
+                    agent = new
+                    {
+                        found = true,
+                        online = true,
+                        deviceId = deviceId,
+                        agentVersion = BridgeVersion,
+                        lastSeenAt = now,
+                        printerCount = printers.Count,
+                        spoolerStatus = spoolerStatus,
+                    },
+                });
                 return;
             }
 

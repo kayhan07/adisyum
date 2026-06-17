@@ -59,7 +59,7 @@ type LocalAgentHealthPayload = {
   printerCount?: number;
   installedPrinters?: Array<string | { Name?: string; name?: string; driver?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string; default?: boolean; online?: boolean }>;
   printers?: Array<string | { Name?: string; name?: string; driver?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string; default?: boolean; online?: boolean }>;
-  agent?: AgentDiagnostic;
+  agent?: AgentDiagnostic & { version?: string };
 };
 
 type PrintableDeviceType = Exclude<PrinterDeviceType, 'fiscal_pos'>;
@@ -76,8 +76,8 @@ const printableDeviceTypeOptions: PrintableDeviceType[] = ['receipt_printer', 'k
 const AGENT_STATUS_RETRY_COUNT = 3;
 const AGENT_STATUS_RETRY_DELAY_MS = 500;
 const AGENT_HEARTBEAT_MS = 6000;
-const PRINTER_BRIDGE_LATEST_URL = 'https://adisyum.com/downloads/windows/latest/PrinterBridgeSetup.exe?v=windows-1781620892355';
-const CURRENT_PRINTER_BRIDGE_VERSION = '0.1.6';
+const PRINTER_BRIDGE_LATEST_URL = 'https://adisyum.com/downloads/windows/latest/PrinterBridgeSetup.exe?v=windows-1781695779253';
+const CURRENT_PRINTER_BRIDGE_VERSION = '0.1.7';
 
 function isPrintableDeviceType(value: string): value is PrintableDeviceType {
   return value === 'receipt_printer' || value === 'kitchen_printer' || value === 'bar_printer' || value === 'daily_report_printer';
@@ -180,7 +180,7 @@ function normalizeAgentDiagnostic(payload: LocalAgentHealthPayload): AgentDiagno
     code: payload.code,
     message: payload.message,
     deviceId: payload.agent?.deviceId ?? payload.deviceId ?? null,
-    agentVersion: payload.agent?.agentVersion ?? payload.version ?? null,
+    agentVersion: payload.agent?.agentVersion ?? payload.agent?.version ?? payload.version ?? null,
     spoolerStatus: payload.agent?.spoolerStatus ?? payload.spooler?.status ?? null,
     printerCount: payload.agent?.printerCount ?? payload.printerCount ?? payload.installedPrinters?.length ?? payload.printers?.length ?? 0,
   };
@@ -653,15 +653,17 @@ export default function SettingsPage() {
       const healthAgent = normalizeAgentDiagnostic(health);
       const { data } = await fetchLocalAgentJson<
         Array<string | { Name?: string; name?: string; driver?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string; default?: boolean; online?: boolean }>
-        | { ok?: boolean; code?: string; message?: string; agent?: AgentDiagnostic; printers?: Array<string | { Name?: string; name?: string; driver?: string; driverName?: string; portName?: string; status?: string; shared?: boolean; connectionType?: string; ip?: string; default?: boolean; online?: boolean }>; error?: string }
+        | LocalAgentHealthPayload
       >('/printers');
       if (!Array.isArray(data)) {
-        setAgentDiagnostic({ ...healthAgent, ...(data.agent ?? {}), code: data.code ?? healthAgent.code, message: data.message ?? healthAgent.message });
+        setAgentDiagnostic({ ...healthAgent, ...normalizeAgentDiagnostic(data), code: data.code ?? healthAgent.code, message: data.message ?? healthAgent.message });
       }
       const rawPrinters = Array.isArray(data)
         ? data
         : Array.isArray(data.printers)
           ? data.printers
+          : Array.isArray(data.installedPrinters)
+            ? data.installedPrinters
           : [];
       const printers: SystemPrinter[] = Array.isArray(rawPrinters)
         ? rawPrinters
