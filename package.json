@@ -57,6 +57,7 @@
     "verify:runtime-tenant-snapshot-hydration": "node scripts/verify-runtime-tenant-snapshot-hydration.mjs",
     "verify:runtime-refresh-idempotency": "node scripts/verify-runtime-refresh-idempotency.mjs",
     "verify:runtime-snapshot-merge-preserves-domain-data": "node scripts/verify-runtime-snapshot-merge-preserves-domain-data.mjs",
+    "verify:final-production-readiness": "node scripts/verify-final-production-readiness.mjs final-production-readiness",
     "verify:tenant-data-isolation-final": "node scripts/verify-final-production-readiness.mjs tenant-data-isolation-final",
     "verify:multi-device-tenant-realtime-final": "node scripts/verify-final-production-readiness.mjs multi-device-tenant-realtime-final",
     "verify:pos-backbone-final": "node scripts/verify-final-production-readiness.mjs pos-backbone-final",

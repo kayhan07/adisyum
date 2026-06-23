@@ -1,6 +1,13 @@
 import { spawnSync } from 'node:child_process';
 
 const scenarios = {
+  'final-production-readiness': [
+    ['verify:tenant-data-isolation-final', 'tenant data isolation final scenario'],
+    ['verify:multi-device-tenant-realtime-final', 'same tenant multi-device realtime final scenario'],
+    ['verify:pos-backbone-final', 'POS backbone final scenario'],
+    ['verify:printer-tenant-device-isolation-final', 'printer tenant device isolation final scenario'],
+    ['verify:daily-report-cash-register-flow', 'daily report cash register final scenario'],
+  ],
   'tenant-data-isolation-final': [
     ['verify:tables-visible-across-devices', 'tables stay tenant and branch scoped'],
     ['verify:pos-catalog-categories', 'products and categories stay tenant scoped'],
