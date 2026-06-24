@@ -205,7 +205,7 @@ namespace AdisyumPosAgentInstaller
             EnsureDeviceId();
             WriteDiagnosticScript(targetExe, installDir);
             RegisterStartMenuShortcuts(targetExe, installDir);
-            RegisterWindowsService(targetExe);
+            RepairWindowsService(targetExe);
             RegisterStartupTask(targetExe);
             RegisterUninstallEntries(targetExe, installDir);
 
@@ -223,7 +223,7 @@ namespace AdisyumPosAgentInstaller
             WaitForHealth();
         }
 
-        private static void RegisterWindowsService(string targetExe)
+        private static void RepairWindowsService(string targetExe)
         {
             if (!IsAdministrator())
             {
@@ -231,14 +231,39 @@ namespace AdisyumPosAgentInstaller
                 return;
             }
 
+            Console.WriteLine("Repairing Windows service: " + ServiceName);
             RunProcess("sc.exe", "stop " + LegacyServiceName, false);
             RunProcess("sc.exe", "delete " + LegacyServiceName, false);
-            RunProcess("sc.exe", "stop " + ServiceName, false);
-            RunProcess("sc.exe", "delete " + ServiceName, false);
-            RunProcess("sc.exe", "create " + ServiceName + " binPath= \"" + targetExe + " " + RunArg + "\" start= auto DisplayName= \"" + ServiceDisplayName + "\"", true);
+            var existing = GetServiceRawConfig(ServiceName);
+            if (!string.IsNullOrWhiteSpace(existing))
+            {
+                var expectedPath = targetExe + " " + RunArg;
+                if (existing.IndexOf(expectedPath, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    Console.WriteLine("Existing service path is stale; recreating service.");
+                    RunProcess("sc.exe", "stop " + ServiceName, false);
+                    RunProcess("sc.exe", "delete " + ServiceName, false);
+                    Thread.Sleep(1000);
+                }
+                else
+                {
+                    Console.WriteLine("Existing service path is valid; refreshing startup and recovery policy.");
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(GetServiceRawConfig(ServiceName)))
+            {
+                RunProcess("sc.exe", "create " + ServiceName + " binPath= \"" + targetExe + " " + RunArg + "\" start= auto DisplayName= \"" + ServiceDisplayName + "\"", true);
+            }
+            else
+            {
+                RunProcess("sc.exe", "config " + ServiceName + " binPath= \"" + targetExe + " " + RunArg + "\" start= auto DisplayName= \"" + ServiceDisplayName + "\"", false);
+            }
+
             RunProcess("sc.exe", "description " + ServiceName + " \"Adisyum local printer, fiscal POS and offline queue bridge\"", false);
             RunProcess("sc.exe", "failure " + ServiceName + " reset= 60 actions= restart/5000/restart/10000/restart/30000", false);
-            Console.WriteLine("Windows service registered: " + ServiceName);
+            RunProcess("sc.exe", "failureflag " + ServiceName + " 1", false);
+            Console.WriteLine("Windows service repaired: " + ServiceName);
         }
 
         private static void RegisterStartupTask(string targetExe)
@@ -377,7 +402,18 @@ namespace AdisyumPosAgentInstaller
 
         private static void StartServiceOrFallback(string targetExe, string installDir)
         {
-            if (IsAdministrator()) RunProcess("sc.exe", "start " + ServiceName, false);
+            if (IsAdministrator())
+            {
+                RunProcess("sc.exe", "start " + ServiceName, false);
+                Thread.Sleep(1000);
+                if (GetServiceStatus(ServiceName).IndexOf("RUNNING", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    Console.WriteLine("Bridge service is running.");
+                    return;
+                }
+
+                Console.WriteLine("Bridge service did not reach RUNNING; starting process fallback.");
+            }
 
             var info = new ProcessStartInfo
             {
@@ -416,9 +452,16 @@ namespace AdisyumPosAgentInstaller
             Console.WriteLine("Diagnose script: " + DiagnoseScriptPath);
             Console.WriteLine("Service: " + GetServiceStatus(ServiceName));
             Console.WriteLine("Legacy service: " + GetServiceStatus(LegacyServiceName));
+            Console.WriteLine("Service executable path: " + GetServiceExecutablePath(ServiceName));
+            Console.WriteLine("Service start type: " + GetServiceStartType(ServiceName));
             Console.WriteLine("Port 4891 owner: " + GetPortOwner("4891"));
             Console.WriteLine("Health JSON: " + ReadHealthJson(2500));
+            Console.WriteLine("Printers JSON: " + ReadPrintersJson(5000));
             Console.WriteLine("Spooler: " + GetSpoolerStatus());
+            Console.WriteLine("Bridge log tail:");
+            Console.WriteLine(ReadLogTail(BridgeLogPath, 120));
+            Console.WriteLine("Windows Event Log:");
+            Console.WriteLine(ReadServiceEventLogTail(ServiceName, 10));
             try
             {
                 var scan = GetInstalledPrintersWithTimeout(PrinterScanTimeoutMs);
@@ -465,6 +508,7 @@ namespace AdisyumPosAgentInstaller
         private static void WaitForHealth()
         {
             var deadline = DateTime.UtcNow.AddSeconds(12);
+            string lastError = "not attempted";
             while (DateTime.UtcNow < deadline)
             {
                 try
@@ -477,12 +521,22 @@ namespace AdisyumPosAgentInstaller
                         return;
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
+                    lastError = ex.Message;
                     System.Threading.Thread.Sleep(500);
                 }
             }
-            throw new TimeoutException("Bridge health endpoint did not answer: " + LocalApiPrefix + "health");
+            var status = GetServiceStatus(ServiceName);
+            var portOwner = GetPortOwner("4891");
+            var message = "Bridge health endpoint did not answer: " + LocalApiPrefix + "health"
+                + ". Last error: " + lastError
+                + ". Service: " + status
+                + ". Port 4891 owner: " + portOwner
+                + ". Log: " + BridgeLogPath;
+            Log(message);
+            Console.Error.WriteLine(message);
+            throw new TimeoutException(message);
         }
 
         private static void RunAgent()
@@ -1025,6 +1079,89 @@ namespace AdisyumPosAgentInstaller
             }
         }
 
+        private static string ReadPrintersJson(int timeoutMs)
+        {
+            try
+            {
+                var request = WebRequest.Create(LocalApiPrefix + "printers");
+                request.Timeout = timeoutMs;
+                using (var response = request.GetResponse())
+                using (var stream = response.GetResponseStream())
+                using (var reader = new StreamReader(stream ?? Stream.Null, Encoding.UTF8))
+                {
+                    var text = reader.ReadToEnd();
+                    return string.IsNullOrWhiteSpace(text) ? "EMPTY" : text.Trim();
+                }
+            }
+            catch (Exception ex)
+            {
+                return "ERROR: " + ex.Message;
+            }
+        }
+
+        private static string GetServiceRawConfig(string serviceName)
+        {
+            try
+            {
+                return RunProcessWithOutput("sc.exe", "qc " + serviceName, 5000);
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private static string GetServiceExecutablePath(string serviceName)
+        {
+            var config = GetServiceRawConfig(serviceName);
+            if (string.IsNullOrWhiteSpace(config)) return "NOT_FOUND";
+            var line = config.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .FirstOrDefault(item => item.IndexOf("BINARY_PATH_NAME", StringComparison.OrdinalIgnoreCase) >= 0);
+            if (string.IsNullOrWhiteSpace(line)) return "UNKNOWN";
+            var index = line.IndexOf(':');
+            return index >= 0 ? line.Substring(index + 1).Trim() : line.Trim();
+        }
+
+        private static string GetServiceStartType(string serviceName)
+        {
+            var config = GetServiceRawConfig(serviceName);
+            if (string.IsNullOrWhiteSpace(config)) return "NOT_FOUND";
+            if (config.IndexOf("AUTO_START", StringComparison.OrdinalIgnoreCase) >= 0) return "AUTO";
+            if (config.IndexOf("DEMAND_START", StringComparison.OrdinalIgnoreCase) >= 0) return "DEMAND";
+            if (config.IndexOf("DISABLED", StringComparison.OrdinalIgnoreCase) >= 0) return "DISABLED";
+            return "UNKNOWN";
+        }
+
+        private static string ReadLogTail(string filePath, int lineCount)
+        {
+            try
+            {
+                if (!File.Exists(filePath)) return "NO_LOG_FILE";
+                var lines = File.ReadAllLines(filePath, Encoding.UTF8);
+                return string.Join(Environment.NewLine, lines.Skip(Math.Max(0, lines.Length - lineCount)));
+            }
+            catch (Exception ex)
+            {
+                return "ERROR: " + ex.Message;
+            }
+        }
+
+        private static string ReadServiceEventLogTail(string serviceName, int count)
+        {
+            try
+            {
+                var script = "$events = Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Service Control Manager'} -MaxEvents 80 -ErrorAction SilentlyContinue | " +
+                    "Where-Object { $_.Message -match '" + serviceName + "|Adisyum Printer Bridge' } | Select-Object -First " + count + "; " +
+                    "if ($events) { $events | ForEach-Object { ($_.TimeCreated.ToString() + ' [' + $_.Id + '] ' + ($_.Message -replace '\\r?\\n',' ')) } } else { 'NO_EVENT_LOG_MATCH' }";
+                var output = RunPowerShell(script).Trim();
+                return string.IsNullOrWhiteSpace(output) ? "NO_EVENT_LOG_MATCH" : output;
+            }
+            catch (Exception ex)
+            {
+                return "ERROR: " + ex.Message;
+            }
+        }
+
         private static string GetServiceStatus(string serviceName)
         {
             try
@@ -1032,14 +1169,16 @@ namespace AdisyumPosAgentInstaller
                 var query = RunProcessWithOutput("sc.exe", "query " + serviceName, 5000);
                 var config = RunProcessWithOutput("sc.exe", "qc " + serviceName, 5000);
                 var failure = RunProcessWithOutput("sc.exe", "qfailure " + serviceName, 5000);
-                var running = query.IndexOf("RUNNING", StringComparison.OrdinalIgnoreCase) >= 0 ? "running" : "not-running";
-                var automatic = config.IndexOf("AUTO_START", StringComparison.OrdinalIgnoreCase) >= 0 ? "automatic" : "manual-or-disabled";
+                var state = query.IndexOf("RUNNING", StringComparison.OrdinalIgnoreCase) >= 0 ? "RUNNING/running" : "STOPPED/not-running";
+                var startType = config.IndexOf("AUTO_START", StringComparison.OrdinalIgnoreCase) >= 0 ? "AUTO/automatic" :
+                    config.IndexOf("DEMAND_START", StringComparison.OrdinalIgnoreCase) >= 0 ? "DEMAND/manual" :
+                    config.IndexOf("DISABLED", StringComparison.OrdinalIgnoreCase) >= 0 ? "DISABLED" : "UNKNOWN";
                 var recovery = failure.IndexOf("RESTART", StringComparison.OrdinalIgnoreCase) >= 0 ? "restart" : "not-configured";
-                return running + ", " + automatic + ", recovery=" + recovery;
+                return state + ", startType=" + startType + ", recovery=" + recovery;
             }
             catch (Exception ex)
             {
-                return "not-installed (" + ex.Message.Trim() + ")";
+                return "NOT_FOUND/not-installed (" + ex.Message.Trim() + ")";
             }
         }
 

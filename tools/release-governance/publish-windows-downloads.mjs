@@ -173,6 +173,19 @@ if (existsSync(websiteWindowsDownloadsRoot)) {
   copyTreeArtifacts(websiteWindowsDownloadsRoot, files, manifest);
 }
 
+const desktopSupportPath = path.join(repoRoot, 'components', 'desktop-support-center.tsx');
+if (existsSync(desktopSupportPath)) {
+  const desktopSupport = readFileSync(desktopSupportPath, 'utf8');
+  const nextDesktopSupport = desktopSupport.replace(
+    /const latestBuildId = 'windows-\d+';/,
+    `const latestBuildId = '${buildId}';`,
+  );
+  if (nextDesktopSupport === desktopSupport) {
+    throw new Error('Desktop support latestBuildId marker was not found.');
+  }
+  writeFileSync(desktopSupportPath, nextDesktopSupport, 'utf8');
+}
+
 console.log(JSON.stringify({
   ok: true,
   version,

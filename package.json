@@ -154,7 +154,10 @@
     "verify:live-pos-business-flow": "node scripts/verify-live-pos-business-flow.mjs",
     "audit:saas-security-integrity": "node scripts/audit-saas-security-integrity.mjs",
     "verify:restaurant-real-usage-flow": "node scripts/verify-restaurant-real-usage-flow.mjs",
-    "verify:mobile-pos-ui": "node scripts/verify-mobile-pos-ui.mjs"
+    "verify:mobile-pos-ui": "node scripts/verify-mobile-pos-ui.mjs",
+    "verify:printer-bridge-service-repair": "node scripts/verify-printer-bridge-service-repair.mjs",
+    "verify:printer-bridge-installer-health-check": "node scripts/verify-printer-bridge-installer-health-check.mjs",
+    "verify:printer-bridge-diagnose-stopped-service": "node scripts/verify-printer-bridge-diagnose-stopped-service.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
